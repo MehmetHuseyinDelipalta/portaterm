@@ -12,8 +12,8 @@
 
 ## Implement
 
-- [ ] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [x] All tasks done (`tasks.md`)
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
@@ -44,3 +44,4 @@ Handback (review round 2, cycle 2): F003 persists — the bound lived at one of 
 Replan (fastlane, after round 2): D3 bound moved into `withAdded` over providerKit's `rowsOf`, D5 gains bounded names and focus restore; 5_1 and 5_2 added.
 Plan attack (round 2 replan): the oracle refuted the 199 bound (a capped read already hands the host 200 rows → issued bound is `rowsOf ≤ MAX_MODEL_ROWS`), the shown-row tick snapshots (a denser switch hides a suffix → one per-repository tick vector by record ordinal), the reissue idempotence (the withholding problem is tagged with the marker string and stripped like a marker row), the focus guard (eligibility captured at the press, withdrawn on `focusin`), and `rowsOf` as budget spend (it counts the final model; the merge can drop a charged row). Excluded rows stay counted and unselectable. All repaired in D3/D5 before build.
 Replan (fastlane, after round 2, oracle-repaired): Gate 2 re-earned. Planned at: ddc5fd08
+Verify gate (cycle 3, after 5_1/5_2): observed at 7c97f98e on a clean tree — 7757/7757, type check clean, I10 and fs-deletion gates green, bundle gate green against a fresh `node esbuild.js --production`; Biome in check mode: the pre-existing `worktreeFormat.ts:30` error and `src/vault/VaultService.customName.test.ts:23` noCommaOperator, both in files this change does not touch and both present at the base, plus the same 14 CSS warnings; `verify-status` exits 0.
