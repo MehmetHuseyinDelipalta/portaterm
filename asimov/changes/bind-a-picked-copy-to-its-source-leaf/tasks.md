@@ -1,6 +1,6 @@
 ## 1. Hold one exact regular source object
 
-- [ ] 1_1 Add lifecycle slots for bounded held-file admission and copy
+- [x] 1_1 Add lifecycle slots for bounded held-file admission and copy — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/utils/heldRegularFile.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: none
   - **Refs**: design.md D1, D5
   - **Acceptance**:
