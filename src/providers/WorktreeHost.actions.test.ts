@@ -4211,7 +4211,7 @@ describe("[D8] a save is recorded in one file, under the order a switch obeys", 
     };
     const SAVED: ProvisionModel = {
       entries: [{ id: "i3", path: ".env.local", mode: "copy", source: ".vscode/worktree.json" }],
-      setup: [],
+      setup: [{ id: "i4", kind: "shell", script: "pnpm install", source: "pnpm-lock.yaml", suggestion: "lockfile" }],
       ports: [],
       providers: [{ id: "native", files: [".vscode/worktree.json"], present: [".vscode/worktree.json"], active: true }],
       excluded: [],
@@ -4237,11 +4237,65 @@ describe("[D8] a save is recorded in one file, under the order a switch obeys", 
 
     expect(h.seen[0]?.divergence.addCopy).toEqual([".env.local"]);
     expect(h.seen[0]?.divergence.exclude).toEqual([]);
-    // The re-offer is the saved configuration: the copy returns as a native
-    // configured entry and no fallback suggestion, setup included, survives.
+    // The copy returns configured. Setup consent was never saved, so the
+    // lockfile suggestion returns unchecked through its marker.
     const reoffered = (offersIn(h.view).at(-1) as { model: ProvisionModel }).model;
     expect(reoffered.entries.map((e) => [e.path, e.suggestion])).toEqual([[".env.local", undefined]]);
-    expect(reoffered.setup).toEqual([]);
+    expect(reoffered.setup.map((step) => [step.script, step.suggestion])).toEqual([["pnpm install", "lockfile"]]);
+    h.dispose();
+  });
+
+  it("saves a supplemental file over a non-native source, but never its setup suggestion", async () => {
+    const MIXED: ProvisionModel = {
+      entries: [
+        { id: "i1", path: "node_modules", mode: "link", source: "orca.yaml" },
+        { id: "i2", path: ".env.local", mode: "copy", source: ".env.local", suggestion: "May contain secrets." },
+      ],
+      setup: [
+        {
+          id: "i3",
+          kind: "shell",
+          script: "pnpm install",
+          source: "pnpm-lock.yaml",
+          suggestion: "Runs after files are copied.",
+        },
+      ],
+      ports: [],
+      providers: [{ id: "orca", files: ["orca.yaml"], present: ["orca.yaml"], active: true }],
+      excluded: [],
+      contenders: [],
+      problems: [],
+    };
+    const REREAD: ProvisionModel = {
+      ...MIXED,
+      entries: [
+        { id: "i4", path: "node_modules", mode: "link", source: "orca.yaml" },
+        { id: "i5", path: ".env.local", mode: "copy", source: ".vscode/worktree.json" },
+      ],
+      setup: [{ ...MIXED.setup[0]!, id: "i6" }],
+      providers: [
+        { id: "native", files: [".vscode/worktree.json"], present: [".vscode/worktree.json"], active: false },
+        { id: "orca", files: ["orca.yaml"], present: ["orca.yaml"], active: true },
+      ],
+    };
+    let saved = false;
+    const h = await opened({
+      read: async () => (saved ? REREAD : MIXED),
+      write: async () => {
+        saved = true;
+        return { ok: true, wrote: true };
+      },
+    });
+
+    h.host.handleMessage(h.view, save({ offerId: liveOffer(h.view), kept: [shownId(h.view, ".env.local")] }));
+    await settle();
+
+    expect(h.seen[0]?.divergence.addCopy).toEqual([".env.local"]);
+    expect(h.seen[0]?.divergence.extends).toBe("orca.yaml");
+    expect(JSON.stringify(h.seen[0]?.divergence)).not.toContain("pnpm install");
+    const reoffered = (offersIn(h.view).at(-1) as { model: ProvisionModel }).model;
+    expect(reoffered.entries.find((entry) => entry.path === ".env.local")?.suggestion).toBeUndefined();
+    expect(reoffered.setup[0]?.suggestion).toBe("Runs after files are copied.");
     h.dispose();
   });
 

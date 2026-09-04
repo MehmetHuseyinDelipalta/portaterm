@@ -137,7 +137,7 @@ export const vscodeTasksAdapter: ProviderAdapter = {
       // Present and refused — reported, never read as "this repository declared
       // nothing".
       report(draft, `\`${VSCODE_TASKS_FILE}\``, opened.problem);
-      return { model: modelFromDraft(draft) };
+      return { model: modelFromDraft(draft), suggestible: false };
     }
 
     const errors: ParseError[] = [];
@@ -148,21 +148,24 @@ export const vscodeTasksAdapter: ProviderAdapter = {
         `\`${VSCODE_TASKS_FILE}\``,
         problem(TASKS, "malformed", `\`${VSCODE_TASKS_FILE}\` is not valid JSON with comments.`),
       );
-      return { model: modelFromDraft(draft) };
+      return { model: modelFromDraft(draft), suggestible: false };
+    }
+    if (parsed === undefined) {
+      return { model: modelFromDraft(draft), suggestible: true };
     }
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       if (parsed !== undefined) {
         report(draft, `\`${VSCODE_TASKS_FILE}\``, problem(TASKS, "malformed", "The file is not a mapping of keys."));
       }
-      return { model: modelFromDraft(draft) };
+      return { model: modelFromDraft(draft), suggestible: false };
     }
     const declared = (parsed as Record<string, unknown>).tasks;
     if (declared === undefined) {
-      return { model: modelFromDraft(draft) };
+      return { model: modelFromDraft(draft), suggestible: true };
     }
     if (!Array.isArray(declared)) {
       report(draft, "`tasks`", problem(TASKS, "malformed", "`tasks` must be a list."));
-      return { model: modelFromDraft(draft) };
+      return { model: modelFromDraft(draft), suggestible: false };
     }
 
     // File order, so the section lists the steps in the order the repository
@@ -194,6 +197,7 @@ export const vscodeTasksAdapter: ProviderAdapter = {
         break;
       }
     }
-    return { model: modelFromDraft(draft) };
+    const model = modelFromDraft(draft);
+    return { model, suggestible: model.problems.length === 0 };
   },
 };

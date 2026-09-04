@@ -1109,7 +1109,7 @@ describe("a suggestion is consent to record, never a preference (suggest-worktre
     expect(await fs.readFile(target, "utf8")).toBe(before);
   });
 
-  it("a saved suggestion becomes the provisioning source, and every suggestion disappears", async () => {
+  it("a saved file suggestion becomes configured while missing setup is suggested again", async () => {
     await fs.writeFile(path.join(root, ".env.local"), "SECRET=1\n", "utf8");
     await fs.writeFile(path.join(root, "pnpm-lock.yaml"), "", "utf8");
     const before = await readProvisioning(createProvisioningDeps(), root);
@@ -1127,10 +1127,12 @@ describe("a suggestion is consent to record, never a preference (suggest-worktre
     expect(after.entries.map((e) => [e.path, e.source, e.suggestion])).toEqual([
       [".env.local", NATIVE_PROVIDER_FILE, undefined],
     ]);
-    // The unsaved setup suggestion does not survive the save: the native file
-    // now governs, and fallback authority ended with the configuration-free
-    // state (spec: a saved configuration replaces fallback suggestions).
-    expect(after.setup).toEqual([]);
+    // Setup consent is still current-create-only. The native file expresses
+    // the copy now, but not the install, so the lockfile suggests it again and
+    // leaves it unchecked through the suggestion marker.
+    expect(after.setup.map((step) => [step.script, step.source, step.suggestion])).toEqual([
+      ["pnpm install", "pnpm-lock.yaml", "Runs after files are copied."],
+    ]);
     expect(after.providers.map((p) => [p.id, p.active])).toEqual([["native", true]]);
   });
 

@@ -507,7 +507,12 @@ describe("[D1] an adapter answers from one open of each file it reads", () => {
   it("carries a declared base and exclusions out of the same record", () => {
     // The shape the native adapter fills in 2_1. Asserted here so the seam is
     // not silently narrowed back to a bare model before anything uses it.
-    const answer: AdapterRead = { model: emptyModel(), extends: "asimov/worktree.yaml", exclude: [".cache"] };
+    const answer: AdapterRead = {
+      model: emptyModel(),
+      suggestible: true,
+      extends: "asimov/worktree.yaml",
+      exclude: [".cache"],
+    };
 
     expect(answer.extends).toBe("asimov/worktree.yaml");
     expect(answer.exclude).toEqual([".cache"]);

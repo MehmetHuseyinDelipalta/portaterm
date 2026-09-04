@@ -491,9 +491,7 @@ export function contendersOf(entries: readonly ProvisionEntry[], favouredSource?
  * F003).
  */
 export function rowsOf(model: ProvisionModel): number {
-  return (
-    model.entries.length + model.ports.length + model.setup.length + model.excluded.length + model.problems.length
-  );
+  return model.entries.length + model.ports.length + model.setup.length + model.excluded.length + model.problems.length;
 }
 
 export function modelFromDraft(draft: Draft): ProvisionModel {
@@ -958,6 +956,8 @@ export async function entriesFor(
  */
 export interface AdapterRead {
   readonly model: ProvisionModel;
+  /** True only when the adapter finished a complete answer safe to supplement. */
+  readonly suggestible: boolean;
   /** Repo-relative path of a file to build on, exactly as the file spelled it. */
   readonly extends?: string;
   /** Repo-relative paths to drop from what was inherited. */

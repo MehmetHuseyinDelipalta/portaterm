@@ -196,6 +196,7 @@ export const orcaAdapter: ProviderAdapter = {
     if (!present) {
       return null;
     }
-    return { model: modelFromDraft(draft) };
+    const model = modelFromDraft(draft);
+    return { model, suggestible: model.problems.length === 0 };
   },
 };

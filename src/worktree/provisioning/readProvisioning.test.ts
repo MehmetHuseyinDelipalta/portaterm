@@ -8,7 +8,7 @@ import type { ProvisionModel } from "../../types/messages";
 import { ASIMOV_PROVIDER_FILE } from "./asimovProvider";
 import { NATIVE_PROVIDER_FILE } from "./nativeProvider";
 import { ORCA_INCLUDE_FILE, ORCA_YAML_FILE } from "./orcaProvider";
-import { foldSegment, MAX_MODEL_ROWS, MAX_SCAN, type ProviderDeps } from "./providerKit";
+import { foldSegment, MAX_MODEL_ROWS, MAX_READ_ROWS, MAX_SCAN, type ProviderDeps, rowsOf } from "./providerKit";
 import { createProvisioningDeps } from "./provisioningDeps";
 import { DETECTION_ORDER, readProvisioning } from "./readProvisioning";
 import type { SuggestDeps } from "./suggestProvisioning";
@@ -121,13 +121,13 @@ describe("a repository with no provisioning source gets bounded suggestions", ()
     expect(model.problems).toEqual([]);
   });
 
-  it("does not suggest over a present but empty source", async () => {
-    // An empty checked-in file is the repository answering "nothing here" —
-    // falling through it would offer an answer the repository already declined.
+  it("supplements a present, complete but empty source", async () => {
     const model = await readProvisioning(fs({ asimov: "", root: [".env", "pnpm-lock.yaml"] }), ROOT);
 
-    expect(model.entries).toEqual([]);
-    expect(model.setup).toEqual([]);
+    expect(model.entries.map((entry) => [entry.path, entry.suggestion])).toEqual([[".env", "May contain secrets."]]);
+    expect(model.setup.map((step) => [step.script, step.suggestion])).toEqual([
+      ["pnpm install", "Runs after files are copied."],
+    ]);
     expect(model.providers.map((p) => p.id)).toEqual(["asimov"]);
   });
 
@@ -148,6 +148,140 @@ describe("a repository with no provisioning source gets bounded suggestions", ()
     expect(model.problems.map((p) => p.reason)).toEqual(["unreadable"]);
     expect(model.entries).toEqual([]);
     expect(model.setup).toEqual([]);
+  });
+});
+
+describe("complete provider answers gain only their own missing suggestions", () => {
+  it("keeps configured rows first and adds missing env and setup rows unchecked", async () => {
+    const model = await readProvisioning(
+      fs({
+        asimov: `copy:
+  - .env
+`,
+        root: [".env", ".env.local", "pnpm-lock.yaml"],
+      }),
+      ROOT,
+    );
+
+    expect(model.entries.map((entry) => [entry.path, entry.source, entry.suggestion])).toEqual([
+      [".env", ASIMOV_PROVIDER_FILE, undefined],
+      [".env.local", ".env.local", "May contain secrets."],
+    ]);
+    expect(model.setup.map((step) => [step.script, step.source, step.suggestion])).toEqual([
+      ["pnpm install", "pnpm-lock.yaml", "Runs after files are copied."],
+    ]);
+  });
+
+  it("does not duplicate a configured environment path or exact setup script", async () => {
+    const model = await readProvisioning(
+      fs({
+        asimov: `copy:
+  - .env.local
+setup:
+  - pnpm install
+`,
+        root: [".env.local", "pnpm-lock.yaml"],
+      }),
+      ROOT,
+    );
+
+    expect(model.entries.map((entry) => entry.path)).toEqual([".env.local"]);
+    expect(model.setup.map((step) => step.script)).toEqual(["pnpm install"]);
+    expect([...model.entries, ...model.setup].every((row) => row.suggestion === undefined)).toBe(true);
+  });
+
+  it("fails closed over malformed partial native material and an unresolved extends", async () => {
+    const damaged = await readProvisioning(
+      fs({ native: '{ "copy": ["README.md"], "broken":', root: [".env", "pnpm-lock.yaml"] }),
+      ROOT,
+    );
+    expect(damaged.problems.some((problem) => problem.reason === "malformed")).toBe(true);
+    expect(damaged.entries.map((entry) => entry.path)).not.toContain(".env");
+    expect(damaged.setup).toEqual([]);
+
+    const unresolved = await readProvisioning(
+      fs({ native: '{ "extends": "orca.yaml", "copy": ["README.md"] }', root: [".env", "pnpm-lock.yaml"] }),
+      ROOT,
+    );
+    expect(unresolved.problems.some((problem) => problem.reason === "missingExtends")).toBe(true);
+    expect(unresolved.entries.map((entry) => entry.path)).not.toContain(".env");
+    expect(unresolved.setup).toEqual([]);
+  });
+
+  it("does not supplement malformed framework answers", async () => {
+    const cases: Repo[] = [
+      { asimov: "copy: [unclosed", root: [".env", "pnpm-lock.yaml"] },
+      { orcaYaml: "worktree: [unclosed", root: [".env", "pnpm-lock.yaml"] },
+      { tasks: '{ "tasks": [', root: [".env", "pnpm-lock.yaml"] },
+    ];
+    for (const one of cases) {
+      const model = await readProvisioning(fs(one), ROOT);
+      expect(
+        model.problems.some((problem) => problem.reason === "malformed"),
+        JSON.stringify(one),
+      ).toBe(true);
+      expect(
+        model.entries.map((entry) => entry.path),
+        JSON.stringify(one),
+      ).not.toContain(".env");
+      expect(
+        model.setup.map((step) => step.script),
+        JSON.stringify(one),
+      ).not.toContain("pnpm install");
+    }
+  });
+
+  it("recomputes missing suggestions against the newly preferred source", async () => {
+    const deps = fs({
+      asimov: `copy:
+  - .env
+`,
+      orcaYaml: `worktree:
+  sharedDirectories: [node_modules]
+`,
+      root: [".env", ".env.local"],
+    });
+    const asimov = await readProvisioning(deps, ROOT);
+    const orca = await readProvisioning(deps, ROOT, "orca");
+
+    expect(asimov.entries.map((entry) => [entry.path, entry.suggestion !== undefined])).toEqual([
+      [".env", false],
+      [".env.local", true],
+    ]);
+    expect(orca.entries.map((entry) => [entry.path, entry.suggestion !== undefined])).toEqual([
+      ["node_modules", false],
+      [".env", true],
+      [".env.local", true],
+    ]);
+  });
+
+  it("refunds charged rows dropped by native merge, but never spends past the final allowance", async () => {
+    const duplicate = Array.from({ length: 80 }, (_, i) => `same-${i}`);
+    const model = await readProvisioning(
+      fs({
+        native: JSON.stringify({ extends: ASIMOV_PROVIDER_FILE, copy: duplicate }),
+        asimov: `copy:
+${duplicate.map((name) => `  - ${name}`).join("\n")}
+`,
+        root: [".env"],
+      }),
+      ROOT,
+    );
+    expect(model.entries.map((entry) => entry.path)).toContain(".env");
+
+    const full = Array.from({ length: MAX_READ_ROWS }, (_, i) => `configured-${i}`);
+    const capped = await readProvisioning(
+      fs({
+        asimov: `copy:
+${full.map((name) => `  - ${name}`).join("\n")}
+`,
+        root: [".env"],
+      }),
+      ROOT,
+    );
+    expect(capped.entries.map((entry) => entry.path)).not.toContain(".env");
+    expect(rowsOf(capped)).toBeLessThanOrEqual(MAX_READ_ROWS + 1);
+    expect(capped.problems.some((problem) => problem.detail.includes("are not offered"))).toBe(true);
   });
 });
 

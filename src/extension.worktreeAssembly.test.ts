@@ -1783,57 +1783,63 @@ describe("the invariants that span the host and the webview", () => {
     fs.mkdirSync(path.join(REPO, "asimov"), { recursive: true });
     fs.writeFileSync(path.join(REPO, ".env"), "TOKEN=1\n");
     fs.writeFileSync(path.join(REPO, "asimov", "worktree.yaml"), "copy:\n  - .env\n");
-    const { surface } = await assemble();
+    try {
+      const { surface } = await assemble();
 
-    // The first form's offer is intercepted on the wire rather than delayed by
-    // slowing the read: what this asserts is what the panel does with an answer
-    // that arrives late, and racing a real filesystem read for that would make
-    // the test's meaning depend on how fast the disk is.
-    const late: ExtensionToWebViewMessage[] = [];
-    const deliver = surface.post;
-    surface.post = (msg: ExtensionToWebViewMessage) => {
-      if (msg.type === "worktreeProvisionOffer" && late.length === 0) {
-        late.push(msg);
-        return;
+      // The first form's offer is intercepted on the wire rather than delayed by
+      // slowing the read: what this asserts is what the panel does with an answer
+      // that arrives late, and racing a real filesystem read for that would make
+      // the test's meaning depend on how fast the disk is.
+      const late: ExtensionToWebViewMessage[] = [];
+      const deliver = surface.post;
+      surface.post = (msg: ExtensionToWebViewMessage) => {
+        if (msg.type === "worktreeProvisionOffer" && late.length === 0) {
+          late.push(msg);
+          return;
+        }
+        return deliver(msg);
+      };
+
+      clickItem(openMenu("feature"), /new worktree/i);
+      await settle();
+      expect(late, "the first opening's read never produced an offer to hold").toHaveLength(1);
+
+      // The provider file moves between the two forms, so the two reads are
+      // telling the user different things. Without that, a section redrawn from
+      // the predecessor's model would be indistinguishable from the right one.
+      fs.writeFileSync(path.join(REPO, ".env.second"), "TOKEN=2\n");
+      fs.writeFileSync(path.join(REPO, "asimov", "worktree.yaml"), "copy:\n  - .env.second\n");
+
+      // A second form. Superseding is the host's job and 2_1 owns it; what this
+      // walk adds is that the panel refuses the first one even so.
+      clickItem(openMenu("feature"), /new worktree/i);
+      await settleUntil(
+        () => document.querySelectorAll(".wt-bring-box .wt-brow-code").length > 0,
+        "the live opening's provisioning rows",
+      );
+      expect(
+        [...document.querySelectorAll(".wt-bring-box .wt-brow-code")].map((e) => e.textContent),
+        "the live opening was never answered, so the replay below proves nothing",
+      ).toEqual([".env.second", ".env"]);
+
+      surface.post = deliver;
+      const held = late[0];
+      if (held === undefined) {
+        throw new Error("nothing was held");
       }
-      return deliver(msg);
-    };
+      surface.post(held);
+      await settle();
 
-    clickItem(openMenu("feature"), /new worktree/i);
-    await settle();
-    expect(late, "the first opening's read never produced an offer to hold").toHaveLength(1);
-
-    // The provider file moves between the two forms, so the two reads are
-    // telling the user different things. Without that, a section redrawn from
-    // the predecessor's model would be indistinguishable from the right one.
-    fs.writeFileSync(path.join(REPO, ".env.second"), "TOKEN=2\n");
-    fs.writeFileSync(path.join(REPO, "asimov", "worktree.yaml"), "copy:\n  - .env.second\n");
-
-    // A second form. Superseding is the host's job and 2_1 owns it; what this
-    // walk adds is that the panel refuses the first one even so.
-    clickItem(openMenu("feature"), /new worktree/i);
-    await settleUntil(
-      () => document.querySelectorAll(".wt-bring-box .wt-brow-code").length > 0,
-      "the live opening's provisioning rows",
-    );
-    expect(
-      [...document.querySelectorAll(".wt-bring-box .wt-brow-code")].map((e) => e.textContent),
-      "the live opening was never answered, so the replay below proves nothing",
-    ).toEqual([".env.second"]);
-
-    surface.post = deliver;
-    const held = late[0];
-    if (held === undefined) {
-      throw new Error("nothing was held");
+      // Still the live opening's own model. The predecessor's arrived, was routed
+      // by the shipped table, and the panel declined to draw it.
+      expect([...document.querySelectorAll(".wt-bring-box .wt-brow-code")].map((e) => e.textContent)).toEqual([
+        ".env.second",
+        ".env",
+      ]);
+    } finally {
+      fs.rmSync(path.join(REPO, ".env"), { force: true });
+      fs.rmSync(path.join(REPO, ".env.second"), { force: true });
     }
-    surface.post(held);
-    await settle();
-
-    // Still the live opening's own model. The predecessor's arrived, was routed
-    // by the shipped table, and the panel declined to draw it.
-    expect([...document.querySelectorAll(".wt-bring-box .wt-brow-code")].map((e) => e.textContent)).toEqual([
-      ".env.second",
-    ]);
   });
 
   it("fails selected provisioning when production observes a changed checkout identity", async () => {
@@ -2440,35 +2446,40 @@ describe("the invariants that span the host and the webview", () => {
   "exclude": [".cache"],
 }`,
     );
-    await assemble();
+    try {
+      await assemble();
 
-    clickItem(openMenu("feature"), /new worktree/i);
-    await settleUntil(
-      () => document.querySelectorAll(".wt-bring-box .wt-brow").length > 0,
-      "the create form to offer the merged section",
-    );
+      clickItem(openMenu("feature"), /new worktree/i);
+      await settleUntil(
+        () => document.querySelectorAll(".wt-bring-box .wt-brow").length > 0,
+        "the create form to offer the merged section",
+      );
 
-    const rows = [...document.querySelectorAll(".wt-bring-box .wt-brow")];
-    const row = (subject: string) =>
-      rows.find((r) => (r.querySelector(".wt-brow-code")?.textContent ?? "") === subject);
+      const rows = [...document.querySelectorAll(".wt-bring-box .wt-brow")];
+      const row = (subject: string) =>
+        rows.find((r) => (r.querySelector(".wt-brow-code")?.textContent ?? "") === subject);
 
-    // The shared path: one row, the repository's own mode, its own file.
-    const shared = row("node_modules");
-    expect(rows.filter((r) => r.querySelector(".wt-brow-code")?.textContent === "node_modules")).toHaveLength(1);
-    expect(shared?.querySelector("b")?.textContent).toBe("Copy");
-    expect(shared?.querySelector(".wt-brow-src")?.textContent).toBe(".vscode/worktree.json");
-    // The native file's own addition.
-    expect(row(".env.local")?.querySelector(".wt-brow-src")?.textContent).toBe(".vscode/worktree.json");
-    // The removal, drawn as deliberate and still naming the file that declared
-    // it — not the file that removed it.
-    const dropped = row(".cache");
-    expect(dropped?.classList.contains("wt-brow--excluded")).toBe(true);
-    expect(dropped?.querySelector(".wt-brow-src")?.textContent).toBe("orca.yaml");
-    expect(dropped?.querySelector("input")).toBeNull();
-    expect(rows).toHaveLength(3);
-    // Both providers contributed, so neither offers to switch to itself.
-    expect(document.querySelectorAll(".wt-bring-switch")).toHaveLength(0);
-    expect(document.querySelector(".wt-bring-sum")?.textContent).toBe("2 copied");
+      // The shared path: one row, the repository's own mode, its own file.
+      const shared = row("node_modules");
+      expect(rows.filter((r) => r.querySelector(".wt-brow-code")?.textContent === "node_modules")).toHaveLength(1);
+      expect(shared?.querySelector("b")?.textContent).toBe("Copy");
+      expect(shared?.querySelector(".wt-brow-src")?.textContent).toBe(".vscode/worktree.json");
+      // The native file's own addition.
+      expect(row(".env.local")?.querySelector(".wt-brow-src")?.textContent).toBe(".vscode/worktree.json");
+      // The removal, drawn as deliberate and still naming the file that declared
+      // it — not the file that removed it.
+      const dropped = row(".cache");
+      expect(dropped?.classList.contains("wt-brow--excluded")).toBe(true);
+      expect(dropped?.querySelector(".wt-brow-src")?.textContent).toBe("orca.yaml");
+      expect(dropped?.querySelector("input")).toBeNull();
+      const configuredRows = rows.filter((candidate) => candidate.querySelector(".wt-brow-suggested") === null);
+      expect(configuredRows).toHaveLength(3);
+      // Both providers contributed, so neither offers to switch to itself.
+      expect(document.querySelectorAll(".wt-bring-switch")).toHaveLength(0);
+      expect(document.querySelector(".wt-bring-sum")?.textContent).toBe("2 copied");
+    } finally {
+      fs.rmSync(path.join(REPO, ".env.local"), { force: true });
+    }
   });
 
   it("[3_4] takes a switch and redraws the section from the other source, creating nothing", async () => {
@@ -2504,9 +2515,21 @@ describe("the invariants that span the host and the webview", () => {
 
     // Replaced, not merged: the asimov row is gone, and the row that offers to
     // switch is now the source that just lost.
-    const after = [...document.querySelectorAll(".wt-bring-box .wt-brow-meta")].map((m) => m.textContent ?? "");
-    expect(after.some((t) => t.includes("node_modules"))).toBe(true);
-    expect(after.some((t) => t.includes(".env"))).toBe(false);
+    const afterRows = [...document.querySelectorAll<HTMLElement>(".wt-bring-box .wt-brow")];
+    const configuredAfter = afterRows
+      .filter((row) => row.querySelector(".wt-brow-suggested") === null)
+      .map((row) => row.querySelector(".wt-brow-code")?.textContent ?? "");
+    expect(configuredAfter).toEqual(["node_modules"]);
+    const environmentSuggestions = afterRows.filter((row) =>
+      (row.querySelector(".wt-brow-code")?.textContent ?? "").includes(".env"),
+    );
+    expect(
+      environmentSuggestions.every(
+        (row) =>
+          row.querySelector(".wt-brow-suggested") !== null &&
+          row.querySelector<HTMLInputElement>(".wt-brow-cb")?.checked === false,
+      ),
+    ).toBe(true);
     expect(document.querySelector(".wt-bring-switch-files")?.textContent).toBe("asimov/worktree.yaml");
     // Taking a switch submits nothing and creates nothing.
     expect(document.querySelectorAll(".wt-notice")).toHaveLength(noticesBefore);

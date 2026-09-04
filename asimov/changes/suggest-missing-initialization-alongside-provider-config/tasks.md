@@ -13,14 +13,15 @@
 
 ## 2. Supplement every provider read
 
-- [ ] 2_1 Compose suggestions after each successful provider answer
+- [x] 2_1 Compose suggestions after each successful provider answer — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/readProvisioning.test.ts src/providers/WorktreeHost.actions.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 1_1
   - **Refs**: specs/worktree-panel/spec.md#{missing-initialization-material-is-suggested-without-overriding-configuration, an-incomplete-provider-answer-is-not-supplemented, saved-configuration-suppresses-only-the-suggestions-it-now-expresses}; design.md D3
   - **Acceptance**:
     - Outcome: every readable provider offer includes only its own missing unchecked suggestions
     - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/readProvisioning.test.ts src/providers/WorktreeHost.actions.test.ts
   - **Plan**:
-    1. Add required `AdapterRead.suggestible` in src/worktree/provisioning/providerKit.ts and set it in src/worktree/provisioning/asimovProvider.ts, nativeProvider.ts, orcaProvider.ts and vscodeTasksProvider.ts per design.md D4.
+    1. Add required `AdapterRead.suggestible` in src/worktree/provisioning/providerKit.ts and set it per design.md D4 in src/worktree/provisioning/asimovProvider.ts, src/worktree/provisioning/nativeProvider.ts, src/worktree/provisioning/orcaProvider.ts and src/worktree/provisioning/vscodeTasksProvider.ts; update src/worktree/provisioning/providerKit.test.ts where the answer shape is asserted.
     2. In src/worktree/provisioning/readProvisioning.ts propagate completeness through native assembly and pass every complete finished model through `suggestProvisioning`.
     3. In src/worktree/provisioning/readProvisioning.test.ts cover complete answers with and without rows, malformed partial and unresolved-extends suppression, duplicate merge capacity, source switching and the cap branches.
     4. In src/providers/WorktreeHost.actions.test.ts and src/worktree/provisioning/writeNativeConfig.test.ts cover the non-native save followed by reread: selected file becomes configured, setup remains an unchecked suggestion, warning text preserved.
+    5. In src/extension.worktreeAssembly.test.ts keep the late-offer integration witness isolated now that existing environment files can supplement complete provider answers.

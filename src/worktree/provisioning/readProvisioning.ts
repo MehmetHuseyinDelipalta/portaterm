@@ -341,7 +341,7 @@ async function assemble(
   repoRoot: string,
   budget: ProviderBudget,
   native: AdapterRead,
-): Promise<{ model: ProvisionModel; base: ProviderAdapter | null }> {
+): Promise<{ model: ProvisionModel; base: ProviderAdapter | null; suggestible: boolean }> {
   const draft = newDraft(NATIVE, budget);
   const target = native.extends;
   const resolved = target === undefined ? null : await baseFor(deps, repoRoot, target);
@@ -391,6 +391,12 @@ async function assemble(
       problems: [...baseModel.problems, ...native.model.problems, ...draft.problems],
     },
     base: inherited === null ? null : base,
+    // A complete native answer plus, when named, a complete resolved base. Any
+    // assembly problem is a declaration the detector must not fill around.
+    suggestible:
+      native.suggestible &&
+      draft.problems.length === 0 &&
+      (target === undefined || (resolved?.ok === true && inherited?.suggestible === true)),
   };
 }
 
@@ -466,16 +472,18 @@ export async function readProvisioning(
     // so the section that needed the relation most — one file declaring two
     // foldable spellings — was the one branch that never computed it
     // (round-1 F002).
-    return { ...chosen.answer.model, providers: await publish(deps, repoRoot, detected, root, opens) };
+    const model = { ...chosen.answer.model, providers: await publish(deps, repoRoot, detected, root, opens) };
+    return chosen.answer.suggestible ? suggestProvisioning(deps, repoRoot, budget, model) : model;
   }
 
-  const { model, base } = await assemble(deps, repoRoot, budget, chosen.answer);
+  const { model, base, suggestible } = await assemble(deps, repoRoot, budget, chosen.answer);
   const providers = await publish(deps, repoRoot, detected, root, opens);
-  return {
+  const finished = {
     ...model,
     // `active: false` is what makes a row offer to switch, and offering to
     // switch to the provider you are already building on would be an offer to
     // do what is already done (design.md D4).
     providers: providers.map((p) => (base !== null && p.id === base.id ? { ...p, active: true } : p)),
   };
+  return suggestible ? suggestProvisioning(deps, repoRoot, budget, finished) : finished;
 }

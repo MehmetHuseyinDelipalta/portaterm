@@ -98,7 +98,7 @@ export const nativeAdapter: ProviderAdapter = {
 
     if (opened.kind === "problem") {
       report(draft, `\`${NATIVE_PROVIDER_FILE}\``, opened.problem);
-      return { model: modelFromDraft(draft) };
+      return { model: modelFromDraft(draft), suggestible: false };
     }
 
     const errors: ParseError[] = [];
@@ -118,7 +118,7 @@ export const nativeAdapter: ProviderAdapter = {
       );
     }
     if (parsed === undefined) {
-      return { model: modelFromDraft(draft) };
+      return { model: modelFromDraft(draft), suggestible: !damaged };
     }
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       // One reason per file, not two: a damaged file that recovered no mapping
@@ -130,7 +130,7 @@ export const nativeAdapter: ProviderAdapter = {
           problem(NATIVE, "malformed", "The file is not a mapping of keys."),
         );
       }
-      return { model: modelFromDraft(draft) };
+      return { model: modelFromDraft(draft), suggestible: false };
     }
 
     const record = parsed as Record<string, unknown>;
@@ -138,6 +138,7 @@ export const nativeAdapter: ProviderAdapter = {
     const dropped = excludeOf(record, draft);
     await readInlineKeys(record, KNOWN_KEYS, repoRoot, opened.root, deps, draft.budget.nextId, draft);
 
-    return { model: modelFromDraft(draft), extends: base, exclude: dropped };
+    const model = modelFromDraft(draft);
+    return { model, extends: base, exclude: dropped, suggestible: !damaged && model.problems.length === 0 };
   },
 };

@@ -95,7 +95,8 @@ export const asimovAdapter: ProviderAdapter = {
     if (opened.kind === "absent" || (opened.kind === "problem" && opened.at === "root")) {
       return null;
     }
-    return { model: await fromOpened(opened, deps, repoRoot, budget) };
+    const model = await fromOpened(opened, deps, repoRoot, budget);
+    return { model, suggestible: opened.kind === "text" && model.problems.length === 0 };
   },
 };
 
