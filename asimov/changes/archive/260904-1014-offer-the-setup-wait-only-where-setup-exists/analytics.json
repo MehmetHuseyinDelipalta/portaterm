@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "target": {
+    "kind": "change",
+    "id": "offer-the-setup-wait-only-where-setup-exists"
+  },
+  "sessions": [
+    {
+      "sessionId": "649500f6-d2af-47ae-ba3d-6351c690ebca",
+      "runtime": "claude",
+      "author": "huybuidac@gmail.com",
+      "attachedAt": 1788516714560,
+      "accounting": 2,
+      "windows": [
+        {
+          "from": 1788516714560,
+          "to": 1788516849025
+        }
+      ],
+      "phases": [
+        {
+          "phase": "plan",
+          "from": 1788516714560
+        }
+      ],
+      "firstAt": 1788516714560,
+      "lastAt": 1788516714560,
+      "buckets": []
+    }
+  ]
+}
