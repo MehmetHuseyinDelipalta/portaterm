@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "target": {
+    "kind": "change",
+    "id": "add-a-setup-step-for-this-create-only"
+  },
+  "sessions": [
+    {
+      "sessionId": "649500f6-d2af-47ae-ba3d-6351c690ebca",
+      "runtime": "claude",
+      "author": "huybuidac@gmail.com",
+      "attachedAt": 1788518214025,
+      "accounting": 2,
+      "windows": [
+        {
+          "from": 1788518214025,
+          "to": null
+        }
+      ],
+      "phases": [
+        {
+          "phase": "plan",
+          "from": 1788518214025
+        }
+      ],
+      "firstAt": 1788518214025,
+      "lastAt": 1788521837511,
+      "buckets": [
+        {
+          "runtime": "claude",
+          "phase": "plan",
+          "agent": "asm-oracle",
+          "model": "gpt-5.6-sol",
+          "messages": 37,
+          "inputTokens": 158211,
+          "outputTokens": 31361,
+          "reasoningTokens": 0,
+          "cacheWriteTokens": 0,
+          "cacheReadTokens": 2363264,
+          "extra": {
+            "cacheWrite5mTokens": 0,
+            "cacheWrite1hTokens": 0,
+            "webSearchRequests": 0,
+            "webFetchRequests": 0
+          }
+        }
+      ]
+    }
+  ]
+}
