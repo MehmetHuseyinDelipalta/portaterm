@@ -2,47 +2,45 @@
 
 ## Why
 
-The create dialog can select copy rows a provider or detector already offered, and it can add a
-setup step for this create. It cannot add one missing file. A user who notices an unlisted `.env`
-must leave the create flow, edit a provider file, reopen the form, then remember whether that edit
-was meant to be permanent.
-
-The file picker can follow the setup-step precedent: the webview asks for an operation, VS Code owns
-the picker, the host converts the chosen path to a repository-relative entry in its current offer,
-and Create spends only that offer's opaque id.
-
-## Scope
-
-- Add `Add file to copy…` beside the setup-step action whenever a provisioning offer is shown.
-- Use VS Code's system file picker rooted at the main checkout; admit only a file syntactically
-  inside that checkout.
-- Add the chosen file as a selected Copy row for this opening only.
-- Keep added files across provider switches and save rereads in the same opening, including their
-  checkbox state; drop them when the opening retires.
-- Never write an added file into provisioning configuration through Save defaults.
-
-## Non-goals
-
-- Reading the selected file's contents before Create, guessing whether it is secret, or adding a
-  directory/glob picker.
-- Editing/removing the row through another picker; unticking it is the removal from this create.
-- Changing the existing apply-time source/destination containment and no-follow checks.
-- Making the choice persistent.
-
-## Must not
-
-- No path supplied by the webview may become copy authority.
-- A file outside the repository, an empty relative path, a duplicate, or a possible destination
-  contender must not enter the offer.
-- No picker cancellation/refusal may leave the form held.
-- The existing setup-step record, row cap, switch ordering and save semantics must not weaken.
+The create dialog can select only files a provider or detector already offered. A user who notices one
+missing file must leave the flow and make a permanent configuration change even when the need applies
+to this create only.
 
 ## Appetite
 
-Large but narrow: one new operation follows existing picker and host-held-record patterns.
+L (≤2w)
 
-## Risk
+## Scope
 
-This touches the same `withAdded` compositor whose bound took three review cycles to settle. The
-copy record therefore composes at that single owner, shares the generic source marker and row budget,
-and is reviewed as a security/privacy and API-contract change.
+### In scope
+
+- Add `Add file to copy…` wherever a provisioning offer is shown.
+- Let the extension-owned system picker safely hold one ordinary in-repository file without reading
+  its contents, then show it selected as a current-create Copy row.
+- Preserve the bounded holder record and checkbox state across source switches and save rereads in the
+  same opening; dispose it on every retirement or failed answer.
+- Spend the exact held source only through the current host offer's private opaque-id sidecar.
+- Keep added files out of Save defaults and let explicit current source configuration or exclusion win
+  over a duplicate ad-hoc row.
+
+### Out of scope
+
+- Directories, globs, editing an added path, Windows fallback where safe no-follow hold is unavailable,
+  or persistence across openings.
+- Reading or snapshotting file bytes before Create.
+- Overriding a configured/excluded path or a possible destination contender.
+- Moving the existing visible secret warning; a later webview change may move it to an icon hint but
+  may not remove its accessible description.
+
+### Must not
+
+- No path, handle, source marker, or command supplied by the webview may become authority.
+- No source path may be reopened after the picker has safely held its exact regular object.
+- Cancellation, stale answers, duplicate/contending rows, cap refusal, failed claim, Save, Create, close,
+  supersede, detach, or extension teardown must request holder cleanup and release the form; live or closing handles remain under the prerequisite cap.
+- Existing setup-step ordering, row capacity, provider precedence, and destructive confirmations may
+  not weaken.
+
+## Risk Level
+
+HIGH — this combines secret-file selection, a live filesystem handle, private offer provenance, and asynchronous form lifecycle across extension and webview boundaries.
