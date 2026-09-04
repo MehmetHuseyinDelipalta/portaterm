@@ -1,6 +1,6 @@
 ## 1. Wire contract
 
-- [ ] 1_1 Declare the setup-step ask on the worktree wire and refuse anything carrying text
+- [x] 1_1 Declare the setup-step ask on the worktree wire and refuse anything carrying text — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/types/messages.contract.test.ts src/providers/TerminalViewProvider.worktree.test.ts src/providers/WorktreeHost.actions.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: none
   - **Refs**: specs/worktree-panel/spec.md#a-typed-setup-step-is-spent-only-through-the-host-held-offer; design.md D2, D3
   - **Acceptance**:

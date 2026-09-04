@@ -1298,6 +1298,46 @@ export interface WorktreeProvisionSwitchMessage {
  * asked again (offer-every-ref-in-one-box/design.md D1).
  */
 /**
+ * The `source` a setup step carries when the user typed it into THIS create
+ * form rather than a provider file declaring it.
+ *
+ * A host constant, never webview text: the host writes it onto the step when it
+ * appends the step to an offer, and the dialog recognises an added row by this
+ * exact string — never by position, and never by anything the form itself
+ * composed (add-a-setup-step-for-this-create-only/design.md D3).
+ */
+export const SETUP_STEP_ADDED_SOURCE = "added for this create";
+
+/**
+ * WebView → Extension: open the host's own input for a setup step that applies
+ * to this create only, or edit or remove one the host already holds.
+ *
+ * There is deliberately no field capable of carrying command text. `add` opens
+ * an input the HOST owns; `edit` and `remove` name an item id the host itself
+ * put in the offer it last issued for this form, and only a row the host marked
+ * as added (`SETUP_STEP_ADDED_SOURCE`) is reachable. What the user typed exists
+ * first in the extension host and reaches the webview only as display material
+ * inside the re-issued offer — the same direction every provider-file script
+ * already travels (worktree-provisioning.md § 4.0).
+ *
+ * `switch` comes from the SAME sequence `worktreeProvisionSwitch` and
+ * `worktreeProvisionSave` mint, so an ask, a source change and a save order
+ * against each other (design.md D2).
+ */
+export interface WorktreeSetupStepAskMessage {
+  type: "worktreeSetupStepAsk";
+  repoId: string;
+  /** The opening the form was composed in. A retired one is not honoured. */
+  opening: number;
+  /** Monotonic per dialog, shared with switch and save. The highest seen wins. */
+  switch: number;
+  op:
+    | { kind: "add" }
+    | { kind: "edit"; offerId: string; itemId: string }
+    | { kind: "remove"; offerId: string; itemId: string };
+}
+
+/**
  * WebView → Extension: record what the user has chosen in the repository's own
  * provisioning configuration (worktree-provisioning.md § 6).
  *
@@ -1790,6 +1830,7 @@ export type WebViewToExtensionMessage =
   | WorktreeCreateClosedMessage
   | WorktreeProvisionSwitchMessage
   | WorktreeProvisionSaveMessage
+  | WorktreeSetupStepAskMessage
   | WorktreeSetupRetryMessage
   | WorktreeSetupViewOutputMessage
   | WorktreeRefsRequestMessage
@@ -1833,6 +1874,7 @@ export const WORKTREE_MESSAGE_TYPES = [
   "worktreeCreateClosed",
   "worktreeProvisionSwitch",
   "worktreeProvisionSave",
+  "worktreeSetupStepAsk",
   "worktreeSetupRetry",
   "worktreeSetupViewOutput",
   "requestWorktreeRefs",
