@@ -75,7 +75,10 @@ const addedSteps = new Map<string, string[]>();            // slot → scripts, 
   dropped a charged row (`readProvisioning.ts:270-278`, plan attack 7). **The issued bound is
   `rowsOf(offer.model) ≤ MAX_MODEL_ROWS`**: a capped read already emits `MAX_MODEL_ROWS - 1` rows
   plus its own cap problem, so `MAX_MODEL_ROWS` is what the reader can hand the host and exactly
-  what `isKnownSave` admits back (plan attack 1). `withAdded` first strips the marker rows AND the
+  what `isKnownSave` admits back (plan attack 1). **The room for the host's own rows is reserved by
+  the reader**, in `reserve-the-host-s-rows-in-the-model-budget`, which this change DEPENDS ON: at
+  199 reader rows two save reports alone pass the bound, so no ordering of host-composed rows can
+  hold it from here (review round 3 F003). `withAdded` first strips the marker rows AND the
   host's own withholding problem (below), then appends the record's longest prefix that fits, with
   one slot held back for a problem row whenever any script does not fit: a `malformed` problem
   whose `file` is `SETUP_STEP_ADDED_SOURCE` — the same recognition rule as a marker row, so a
