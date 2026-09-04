@@ -101,16 +101,16 @@
     - Outcome: every issued offer stays inside the row bound and its full selection saves
     - Verify: unit src/providers/WorktreeHost.actions.test.ts
   - **Plan**:
-    1. In src/worktree/provisioning/providerKit.ts export `rowsOf(model)` counting entries, ports, setup, excluded and problems; test in src/worktree/provisioning/providerKit.test.ts that it equals `emitted` for a draft the budget filled, problems included.
-    2. In src/providers/WorktreeHost.ts move the bound into `withAdded`: append the longest fitting prefix, add one `malformed` problem row when any script is withheld, and rewrite `roomFor` over `rowsOf`; an edit or remove ordinal resolves among the marker rows shown.
-    3. Host tests: 32 steps then a switch to a `MAX_MODEL_ROWS - 1`-row source; `MAX_MODEL_ROWS - 2` entries plus one problem refuses an add; the withheld count is restored by a switch back.
+    1. In src/worktree/provisioning/providerKit.ts export `rowsOf(model)` counting entries, ports, setup, excluded and problems; test in src/worktree/provisioning/providerKit.test.ts that it equals `emitted` for `modelFromDraft` of a draft the budget filled, problems included.
+    2. In src/providers/WorktreeHost.ts move the bound into `withAdded` per design.md D3: strip markers and the tagged withholding problem, append the longest fitting prefix, add the tagged problem when any script is withheld, and rewrite the add refusal over `rowsOf`.
+    3. Host tests: 32 steps then a switch to a `MAX_MODEL_ROWS - 1`-row source, then a cancelled ask, then a switch back; `MAX_MODEL_ROWS - 1` entries plus one problem refuses an add; a capped `MAX_MODEL_ROWS`-row base withholds everything and adds no problem.
 
 - [ ] 5_2 Bound the action names and restore focus after an answer
   - **Deps**: 4_2
   - **Refs**: specs/worktree-panel/spec.md#only-a-step-the-form-added-can-be-edited-or-removed-in-it; design.md D5
   - **Acceptance**:
-    - Outcome: added-row action names are bounded and focus survives an answer
+    - Outcome: added-row names are bounded, ticks survive a denser switch, focus survives an answer
     - Verify: unit src/webview/worktree/WorktreeCreateDialog.test.ts
   - **Plan**:
-    1. In src/webview/worktree/WorktreeCreateDialog.ts name the buttons `Edit setup step N: <clipped>` / `Remove setup step N: <clipped>` with `STEP_NAME_CHARS`; record the pressed action and ordinal on the pending record; after the answering redraw focus per design.md D5 when the pressed control was active.
-    2. Dialog tests: a 4096-character script yields a name under 80 characters carrying the ordinal; focus after edit, after remove of the first of two, after remove of the last, and after add; no focus move when the user had moved to the branch field.
+    1. In src/webview/worktree/WorktreeCreateDialog.ts name the buttons `Edit setup step N: <clipped>` / `Remove setup step N: <clipped>` with `STEP_NAME_CHARS`; replace the tick snapshots with `addedTickRecord` per design.md D5; record the pressed action, ordinal and focus eligibility on the pending record and restore focus after the answering redraw.
+    2. Dialog tests: a 4096-character script yields a name under 80 characters carrying the ordinal; an unticked second step survives a denser switch that shows one marker and a switch back; focus after edit, after remove of the first of two, after remove of the last, and after add; no focus move when the user had moved to the branch field.

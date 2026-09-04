@@ -8,7 +8,7 @@
 
 - [-] Gate 1: direction approved — the fork (edit the provider file vs a step for this create only) was answered by the user before scaffolding: "Thêm step ad-hoc cho create này"
 - [x] `asm change validate` passes
-- [ ] Gate 2: plan approved
+- [x] Gate 2: plan approved
 
 ## Implement
 
@@ -42,3 +42,5 @@ Handback (review round 1, cycle 1): F001–F003 each need a D# change — D5's s
 Replan (fastlane, after round 1): D3 bound and D5 carry/gate amended; 4_1 and 4_2 added. Planned at: d3c3df42
 Handback (review round 2, cycle 2): F003 persists — the bound lived at one of four `withAdded` sites and omitted problem rows; the insufficient-room outcome of a reissue was unspecified, so D3 is amended (bound at `withAdded`, providerKit-owned row count, fitting prefix offered and the remainder stated). F004 rebuttal sustained. F006/F007 accepted as fixes under D5 (bounded accessible names, focus restored after an answer). Gate 2, All tasks done and Verify gate unticked; 1_1–4_2 stay `[x]`. Round 3 is cycle 3's discovery round — no thrash trigger has fired (3 → 1 gating blockers), so the cycle cap does not apply.
 Replan (fastlane, after round 2): D3 bound moved into `withAdded` over providerKit's `rowsOf`, D5 gains bounded names and focus restore; 5_1 and 5_2 added.
+Plan attack (round 2 replan): the oracle refuted the 199 bound (a capped read already hands the host 200 rows → issued bound is `rowsOf ≤ MAX_MODEL_ROWS`), the shown-row tick snapshots (a denser switch hides a suffix → one per-repository tick vector by record ordinal), the reissue idempotence (the withholding problem is tagged with the marker string and stripped like a marker row), the focus guard (eligibility captured at the press, withdrawn on `focusin`), and `rowsOf` as budget spend (it counts the final model; the merge can drop a charged row). Excluded rows stay counted and unselectable. All repaired in D3/D5 before build.
+Replan (fastlane, after round 2, oracle-repaired): Gate 2 re-earned. Planned at: ddc5fd08
