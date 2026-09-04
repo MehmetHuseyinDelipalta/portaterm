@@ -899,7 +899,26 @@ function switchRow(provider: WorktreeProvisionOffer["model"]["providers"][number
  * with `textContent`. None of it is interpreted as markup, which is the rule the
  * whole untrusted-provider-file model rests on.
  */
-function stepButton(icon: string, name: string, className: string, click: () => void): HTMLButtonElement {
+/** Characters of the script an action's accessible name carries. */
+const STEP_NAME_CHARS = 48;
+
+/**
+ * The accessible name of an added row's action: the action, the row's ordinal
+ * among added steps and a clipped script. The full command interpolated here
+ * made a 4096-character name, announced twice per row (round 2 F006); the code
+ * cell still carries all of it.
+ */
+function stepName(action: "Edit" | "Remove", ordinal: number, script: string): string {
+  const clipped = script.length > STEP_NAME_CHARS ? `${script.slice(0, STEP_NAME_CHARS - 1)}…` : script;
+  return `${action} setup step ${ordinal + 1}: ${clipped}`;
+}
+
+function stepButton(
+  icon: string,
+  name: string,
+  className: string,
+  click: (button: HTMLButtonElement) => void,
+): HTMLButtonElement {
   const b = document.createElement("button");
   // Explicitly a button: a default-type button inside the form SUBMITS.
   b.type = "button";
@@ -907,14 +926,15 @@ function stepButton(icon: string, name: string, className: string, click: () => 
   b.innerHTML = icon;
   b.setAttribute("aria-label", name);
   b.title = name;
-  b.addEventListener("click", click);
+  b.addEventListener("click", () => click(b));
   return b;
 }
 
 function bringRow(
   row: BringRow,
   index: number,
-  onStep?: (kind: "edit" | "remove", itemId: string) => void,
+  onStep?: (kind: "edit" | "remove", itemId: string, control?: HTMLElement) => void,
+  addedOrdinal = 0,
 ): HTMLElement {
   const el = document.createElement("div");
   el.className = row.excluded === true ? "wt-brow wt-brow--excluded" : "wt-brow";
@@ -952,10 +972,14 @@ function bringRow(
     // Only a row the host marked. A provider-declared step is not the form's
     // to edit, and the host would refuse the ask anyway (design.md D3).
     src.append(
-      stepButton(ICON_RENAME, `Edit setup step ${row.subject}`, "wt-brow-step-edit", () => onStep("edit", row.id)),
+      stepButton(ICON_RENAME, stepName("Edit", addedOrdinal, row.subject), "wt-brow-step-edit", (b) =>
+        onStep("edit", row.id, b),
+      ),
     );
     src.append(
-      stepButton(ICON_CLOSE, `Remove setup step ${row.subject}`, "wt-brow-step-remove", () => onStep("remove", row.id)),
+      stepButton(ICON_CLOSE, stepName("Remove", addedOrdinal, row.subject), "wt-brow-step-remove", (b) =>
+        onStep("remove", row.id, b),
+      ),
     );
   }
   const meta = document.createElement("div");
@@ -1658,7 +1682,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   addStepButton.textContent = "Add setup step…";
   addStepButton.title = "Run a command in the new worktree after files are brought over. Applies to this create only.";
   addStepRow.appendChild(addStepButton);
-  const askStep = (op: WorktreeSetupStepAskMessage["op"]): void => {
+  const askStep = (op: WorktreeSetupStepAskMessage["op"], pressed?: HTMLElement): void => {
     if (
       drawnOfferId === null ||
       drawnModel === null ||
@@ -1673,10 +1697,9 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       return;
     }
     let removing: number | undefined;
+    let ordinal = addedOf(drawnModel).length;
     if (op.kind !== "add") {
-      const ordinal = drawnModel.setup
-        .filter((step) => step.source === SETUP_STEP_ADDED_SOURCE)
-        .findIndex((step) => step.id === op.itemId);
+      ordinal = addedOf(drawnModel).findIndex((step) => step.id === op.itemId);
       if (ordinal < 0) {
         return;
       }
@@ -1685,11 +1708,13 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       }
     }
     switchSeq += 1;
+    const pressedControl = pressed ?? addStepButton;
     pendingStep.set(draft.repoId, {
       offerId: drawnOfferId,
       model: drawnModel,
       kept: new Set(ticked),
-      addedTicks: addedTicks(drawnModel, ticked),
+      pressed: { kind: op.kind, ordinal },
+      restoreFocus: document.activeElement === pressedControl,
       ...(removing === undefined ? {} : { removing }),
     });
     deps.onSetupStepAsk?.({ repoId: draft.repoId, switch: switchSeq, op });
@@ -1697,7 +1722,14 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     syncStepControls();
     syncDerived();
   };
-  addStepButton.addEventListener("click", () => askStep({ kind: "add" }));
+  addStepButton.addEventListener("click", () => askStep({ kind: "add" }, addStepButton));
+  // A user who moved on while the input was open is not pulled back (D5).
+  shell.dialog.addEventListener("focusin", (ev) => {
+    const asking = pendingStep.get(draft.repoId);
+    if (asking !== undefined && ev.target instanceof HTMLElement && ev.target !== document.body) {
+      asking.restoreFocus = false;
+    }
+  });
   /** Enablement of every control an in-flight ask must hold, derived, never toggled. */
   function syncStepControls(): void {
     const asking = anyAsking();
@@ -1803,8 +1835,14 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     offerId: string;
     model: WorktreeProvisionOffer["model"];
     kept: ReadonlySet<string>;
-    /** Every added row's tick, by ordinal, at the press (design.md D5). */
-    addedTicks: readonly boolean[];
+    /** What was pressed, so the answer can put focus back where it was (D5). */
+    pressed: { kind: WorktreeSetupStepAskMessage["op"]["kind"]; ordinal: number };
+    /**
+     * Whether the pressed control held focus at the press. Read THEN, because
+     * the control is disabled a moment later and a disabled control cannot
+     * hold focus; withdrawn by a `focusin` elsewhere in the dialog.
+     */
+    restoreFocus: boolean;
     /** For a remove: which ordinal the answer will have spliced out. */
     removing?: number;
   }
@@ -1812,33 +1850,47 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   /** Any repository's ask still out: the input is the FORM's, so the hold is form-wide (round 1 F002). */
   const anyAsking = (): boolean => pendingStep.size > 0;
   /**
-   * The added rows' ticks at the moment a switch was taken, by ordinal.
+   * Every added step's tick, per repository, by RECORD ordinal.
    *
-   * A switch answer reseeds from defaults, and an added row's default is ON —
-   * so a step the user had unticked came back ticked (plan attack F3). Ordinal
-   * is safe here: a switch changes neither the added rows' count nor order.
+   * Written on each toggle and applied to every answering offer, whatever
+   * answered it. Ordinal, not descriptor: two added rows may carry the same
+   * script, and a descriptor moved the first one's tick onto the second on a
+   * remove (round 1 F001). One vector for the whole record, not a snapshot of
+   * the rows shown: a denser source shows only a prefix of the record
+   * (design.md D3), and a snapshot of that prefix forgot every hidden step's
+   * tick, which came back at its default on the switch back (round 2 plan
+   * attack 3). The shown rows are a prefix, so the shown ordinal IS the record
+   * ordinal. A step past the vector's end is new and takes its default, ON.
    */
-  const addedTicksAtSwitch = new Map<string, readonly boolean[]>();
-  const addedTicks = (model: WorktreeProvisionOffer["model"], kept: ReadonlySet<string>): boolean[] =>
-    model.setup.filter((step) => step.source === SETUP_STEP_ADDED_SOURCE).map((step) => kept.has(step.id));
-  const applyAddedTicks = (
-    model: WorktreeProvisionOffer["model"],
-    ticks: readonly boolean[],
-    into: Set<string>,
-  ): void => {
-    model.setup
-      .filter((step) => step.source === SETUP_STEP_ADDED_SOURCE)
-      .forEach((step, i) => {
-        const tick = ticks[i];
-        if (tick === undefined) {
-          return;
-        }
-        if (tick) {
-          into.add(step.id);
-        } else {
-          into.delete(step.id);
-        }
-      });
+  const addedTickRecord = new Map<string, boolean[]>();
+  const addedOf = (model: WorktreeProvisionOffer["model"]) =>
+    model.setup.filter((step) => step.source === SETUP_STEP_ADDED_SOURCE);
+  const applyAddedTicksFor = (repoId: string, model: WorktreeProvisionOffer["model"], into: Set<string>): void => {
+    const ticks = addedTickRecord.get(repoId) ?? [];
+    addedOf(model).forEach((step, i) => {
+      if (ticks[i] ?? true) {
+        into.add(step.id);
+      } else {
+        into.delete(step.id);
+      }
+    });
+  };
+  const applyAddedTicks = (model: WorktreeProvisionOffer["model"], into: Set<string>): void =>
+    applyAddedTicksFor(draft.repoId, model, into);
+  const recordAddedTick = (itemId: string, on: boolean): void => {
+    if (drawnModel === null) {
+      return;
+    }
+    const ordinal = addedOf(drawnModel).findIndex((step) => step.id === itemId);
+    if (ordinal < 0) {
+      return;
+    }
+    const ticks = addedTickRecord.get(draft.repoId) ?? [];
+    while (ticks.length <= ordinal) {
+      ticks.push(true);
+    }
+    ticks[ordinal] = on;
+    addedTickRecord.set(draft.repoId, ticks);
   };
   // The model behind `drawnOfferId`, so the toggle handler can restate the
   // summary without a redraw — redrawing on a tick is what W2 forbids.
@@ -1869,6 +1921,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     } else {
       ticked?.delete(cb.value);
     }
+    recordAddedTick(cb.value, cb.checked);
     // The counts and the yielding notes are claims about what this create will
     // bring over, so they are restated from the selection that just changed
     // rather than left at whatever the first render computed (round-1 F001).
@@ -1943,11 +1996,35 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
    * its default; an edit changes neither count nor order; a remove splices
    * its ordinal out.
    */
-  function settleStep(stepped: PendingStep, model: WorktreeProvisionOffer["model"]): Set<string> {
+  /**
+   * Where focus goes once the answer has redrawn the section: the same row's
+   * same action, the successor row's after a remove, the Add control when no
+   * row is left or after an add. `replaceChildren` otherwise dropped the
+   * focused button and left focus nowhere (round 2 F007).
+   */
+  function restoreStepFocus(stepped: PendingStep, model: WorktreeProvisionOffer["model"]): void {
+    const { kind, ordinal } = stepped.pressed;
+    const rows = Array.from(bringBox.querySelectorAll<HTMLElement>(".wt-brow")).filter((row) =>
+      (row.querySelector(".wt-brow-src")?.textContent ?? "").includes(SETUP_STEP_ADDED_SOURCE),
+    );
+    const count = addedOf(model).length;
+    const at = kind === "add" ? -1 : Math.min(ordinal, count - 1);
+    const row = at < 0 ? undefined : rows[at];
+    const target = row?.querySelector<HTMLButtonElement>(
+      kind === "edit" ? ".wt-brow-step-edit" : ".wt-brow-step-remove",
+    );
+    (target ?? addStepButton).focus();
+  }
+
+  function settleStep(stepped: PendingStep, model: WorktreeProvisionOffer["model"], repoId: string): Set<string> {
     const ticked = carryForward(stepped.model, stepped.kept, bringRows(model), model);
-    const ticks =
-      stepped.removing === undefined ? stepped.addedTicks : stepped.addedTicks.filter((_, i) => i !== stepped.removing);
-    applyAddedTicks(model, ticks, ticked);
+    if (stepped.removing !== undefined) {
+      const ticks = addedTickRecord.get(repoId);
+      if (ticks !== undefined && stepped.removing < ticks.length) {
+        ticks.splice(stepped.removing, 1);
+      }
+    }
+    applyAddedTicksFor(repoId, model, ticked);
     return ticked;
   }
 
@@ -2027,23 +2104,17 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     if (ticked === undefined) {
       const fresh = bringRows(offer.model);
       if (stepAnswered && stepped !== undefined) {
-        ticked = settleStep(stepped, offer.model);
+        ticked = settleStep(stepped, offer.model, draft.repoId);
       } else {
         ticked =
           answering && saved !== undefined
             ? carryForward(saved.model, saved.kept, fresh, offer.model)
             : new Set(fresh.filter((r) => r.checked).map((r) => r.id));
-        // A switch answer reseeds from defaults; the added rows' ticks were
-        // recorded when the switch was taken and are restored here (F3).
-        const atSwitch = addedTicksAtSwitch.get(draft.repoId);
-        if (switched !== undefined && switched !== offer.offerId && atSwitch !== undefined) {
-          applyAddedTicks(offer.model, atSwitch, ticked);
-        }
+        // Whatever answered — a switch reseeding from defaults, a save carrying
+        // by descriptor — the added rows take the record's ticks (D5).
+        applyAddedTicks(offer.model, ticked);
       }
       checkedByOffer.set(offer.offerId, ticked);
-    }
-    if (switched !== offer.offerId) {
-      addedTicksAtSwitch.delete(draft.repoId);
     }
     // After the selection exists, never before: the counts are read off it.
     bringSum.textContent = bringSummary(offer.model, ticked);
@@ -2060,9 +2131,11 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     const onStep =
       deps.onSetupStepAsk === undefined
         ? undefined
-        : (kind: "edit" | "remove", itemId: string) => askStep({ kind, offerId: offer.offerId, itemId });
+        : (kind: "edit" | "remove", itemId: string, control?: HTMLElement) =>
+            askStep({ kind, offerId: offer.offerId, itemId }, control);
+    let addedSeen = 0;
     bringBox.replaceChildren(
-      ...rows.map((row, i) => bringRow(row, i, onStep)),
+      ...rows.map((row, i) => bringRow(row, i, onStep, row.added === true ? addedSeen++ : 0)),
       ...offer.model.problems.map((problem) => bringProblem(problem)),
       ...inactive.map((provider) =>
         switchRow(provider, () => {
@@ -2071,8 +2144,6 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
           }
           switchSeq += 1;
           pendingSwitch.set(draft.repoId, offer.offerId);
-          // What the answer must not re-tick (design.md D5, F3).
-          addedTicksAtSwitch.set(draft.repoId, addedTicks(offer.model, held));
           saveRow.remove();
           deps.onProvisionSwitch?.({ repoId: draft.repoId, switch: switchSeq, provider: provider.id });
           syncStepControls();
@@ -2081,6 +2152,9 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       ...(deps.onSetupStepAsk === undefined ? [] : [addStepRow]),
     );
     syncStepControls();
+    if (stepAnswered && stepped !== undefined && stepped.restoreFocus) {
+      restoreStepFocus(stepped, offer.model);
+    }
     syncYieldNotes(held);
     bringBox.hidden = bringBox.childElementCount === 0;
     bringBox.classList.toggle(
@@ -3362,7 +3436,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     pendingStep.delete(repoId);
     checkedByOffer.delete(stepped.offerId);
     if (!checkedByOffer.has(offer.offerId)) {
-      checkedByOffer.set(offer.offerId, settleStep(stepped, offer.model));
+      checkedByOffer.set(offer.offerId, settleStep(stepped, offer.model, repoId));
     }
     syncStepControls();
     if (!anyAsking()) {

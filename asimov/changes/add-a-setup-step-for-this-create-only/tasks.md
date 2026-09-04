@@ -105,7 +105,7 @@
     2. In src/providers/WorktreeHost.ts move the bound into `withAdded` per design.md D3: strip markers and the tagged withholding problem, append the longest fitting prefix, add the tagged problem when any script is withheld, and rewrite the add refusal over `rowsOf`.
     3. Host tests: 32 steps then a switch to a `MAX_MODEL_ROWS - 1`-row source, then a cancelled ask, then a switch back; `MAX_MODEL_ROWS - 1` entries plus one problem refuses an add; a capped `MAX_MODEL_ROWS`-row base withholds everything and adds no problem.
 
-- [ ] 5_2 Bound the action names and restore focus after an answer
+- [x] 5_2 Bound the action names and restore focus after an answer — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/webview/worktree/WorktreeCreateDialog.test.ts' && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 4_2
   - **Refs**: specs/worktree-panel/spec.md#only-a-step-the-form-added-can-be-edited-or-removed-in-it; design.md D5
   - **Acceptance**:

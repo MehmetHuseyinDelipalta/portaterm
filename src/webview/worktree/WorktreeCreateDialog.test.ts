@@ -6065,8 +6065,10 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
     expect(addButton().disabled).toBe(false);
     expect(ticks()).toEqual([true]);
     const row = addedRows()[0];
-    expect(row?.querySelector(".wt-brow-step-edit")?.getAttribute("aria-label")).toBe("Edit setup step pnpm build");
-    expect(row?.querySelector(".wt-brow-step-remove")?.getAttribute("aria-label")).toBe("Remove setup step pnpm build");
+    expect(row?.querySelector(".wt-brow-step-edit")?.getAttribute("aria-label")).toBe("Edit setup step 1: pnpm build");
+    expect(row?.querySelector(".wt-brow-step-remove")?.getAttribute("aria-label")).toBe(
+      "Remove setup step 1: pnpm build",
+    );
     // The provider row got neither.
     expect(q<HTMLElement>(".wt-brow").querySelectorAll(".wt-brow-step")).toHaveLength(0);
   });
@@ -6154,8 +6156,10 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
     answer("o5", { setup: [provider("p5"), added("same", "s7")] });
     expect(ticks()).toEqual([false]);
 
-    // An edit of the first, with the second unticked, moves nothing.
+    // An edit of the first, with the second unticked, moves nothing. The
+    // record persists per repository (D5), so the first is re-ticked here.
     answer("o6", { setup: [provider("p6"), added("same", "s8"), added("same", "s9")] });
+    tickAt(0, true);
     tickAt(1, false);
     addedRows()[0]?.querySelector<HTMLButtonElement>(".wt-brow-step-edit")?.click();
     answer("o7", { setup: [provider("p7"), added("SAME", "s10"), added("same", "s11")] });
@@ -6196,6 +6200,104 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
     applyOffer?.(REPO_ID, provisionOffer({ offerId: "a2", model: provisionModel() }));
     expect(select.disabled).toBe(false);
     expect(host.querySelector<HTMLButtonElement>(".wt-bring-add-step")?.disabled).toBe(false);
+  });
+
+  it("names each action within bounds, by ordinal, whatever the script's length", () => {
+    const { addedRows } = withAsk({
+      setup: [provider(), added("x".repeat(4096), "s2"), added("pnpm build", "s3")],
+    });
+    const names = addedRows().map((row) => [
+      row.querySelector(".wt-brow-step-edit")?.getAttribute("aria-label"),
+      row.querySelector(".wt-brow-step-remove")?.getAttribute("aria-label"),
+    ]);
+    for (const name of names.flat()) {
+      expect(name?.length ?? Number.POSITIVE_INFINITY).toBeLessThan(80);
+    }
+    expect(names[0]?.[0]).toMatch(/^Edit setup step 1: x+…$/);
+    expect(names[0]?.[1]).toMatch(/^Remove setup step 1: x+…$/);
+    expect(names[1]).toEqual(["Edit setup step 2: pnpm build", "Remove setup step 2: pnpm build"]);
+    // The full command is still in the row itself.
+    expect(addedRows()[0]?.textContent).toContain("x".repeat(4096));
+  });
+
+  it("keeps a hidden step's tick through a denser source that shows only a prefix, and the switch back", () => {
+    const sparse: ProvisionModel["providers"] = [
+      { id: "asimov", files: [YAML], present: [YAML], active: true },
+      { id: "orca", files: ["orca.yaml"], present: ["orca.yaml"], active: false },
+    ];
+    const dense: ProvisionModel["providers"] = [
+      { id: "orca", files: ["orca.yaml"], present: ["orca.yaml"], active: true },
+      { id: "asimov", files: [YAML], present: [YAML], active: false },
+    ];
+    const { q, answer, addedRows, ticks } = withAsk({ providers: sparse });
+    answer("o2", { providers: sparse, setup: [provider(), added("one", "s2"), added("two", "s3")] });
+    const box = addedRows()[1]?.querySelector<HTMLInputElement>(".wt-brow-cb");
+    if (box == null) {
+      throw new Error("no second added row");
+    }
+    box.checked = false;
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(ticks()).toEqual([true, false]);
+
+    // The denser source has room for one marker row (design.md D3).
+    q<HTMLButtonElement>(".wt-bring-switch-take").click();
+    answer("o3", { providers: dense, setup: [added("one", "s4")] });
+    expect(ticks()).toEqual([true]);
+
+    q<HTMLButtonElement>(".wt-bring-switch-take").click();
+    answer("o4", { providers: sparse, setup: [provider("p4"), added("one", "s5"), added("two", "s6")] });
+    expect(ticks()).toEqual([true, false]);
+  });
+
+  it("puts focus back after an answer: the same action, the successor after a remove, Add when none is left", () => {
+    const { answer, addedRows, addButton } = withAsk();
+    answer("o2", { setup: [provider(), added("one", "s2"), added("two", "s3")] });
+    const action = (i: number, kind: "edit" | "remove") =>
+      addedRows()[i]?.querySelector<HTMLButtonElement>(`.wt-brow-step-${kind}`) ?? null;
+
+    // Edit the second: focus returns to the second row's edit.
+    action(1, "edit")?.focus();
+    action(1, "edit")?.click();
+    answer("o3", { setup: [provider("p3"), added("one", "s4"), added("TWO", "s5")] });
+    expect(document.activeElement).toBe(action(1, "edit"));
+
+    // Remove the first of two: focus lands on the successor's remove.
+    action(0, "remove")?.focus();
+    action(0, "remove")?.click();
+    answer("o4", { setup: [provider("p4"), added("TWO", "s6")] });
+    expect(document.activeElement).toBe(action(0, "remove"));
+
+    // Remove the last: nothing succeeds it, so the Add control takes focus.
+    action(0, "remove")?.focus();
+    action(0, "remove")?.click();
+    answer("o5", { setup: [provider("p5")] });
+    expect(document.activeElement).toBe(addButton());
+
+    // An add: back on the Add control.
+    addButton().focus();
+    addButton().click();
+    answer("o6", { setup: [provider("p6"), added("three", "s7")] });
+    expect(document.activeElement).toBe(addButton());
+  });
+
+  it("does not pull focus back to an action the user had left before the answer", () => {
+    const { q, answer, addedRows } = withAsk();
+    answer("o2", { setup: [provider(), added("one", "s2")] });
+    const edit = addedRows()[0]?.querySelector<HTMLButtonElement>(".wt-brow-step-edit");
+    edit?.focus();
+    edit?.click();
+    const branch = q<HTMLInputElement>("#wt-branch");
+    branch.focus();
+    branch.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    answer("o3", { setup: [provider("p3"), added("ONE", "s3")] });
+    expect(document.activeElement).toBe(branch);
+
+    // And a press made without focus — a pointer on an unfocused control in
+    // some browsers — restores nothing either.
+    q<HTMLInputElement>("#wt-branch").blur();
+    addedRows()[0]?.querySelector<HTMLButtonElement>(".wt-brow-step-edit")?.click();
+    answer("o4", { setup: [provider("p4"), added("one", "s4")] });
+    expect(document.activeElement).not.toBe(addedRows()[0]?.querySelector(".wt-brow-step-edit"));
   });
 
   it("does not re-tick an unticked added step when a source switch answers", () => {
