@@ -28,7 +28,7 @@ import type { MigrationOfferEvidence } from "../worktree/migrateChanges";
 import type { OrphanProofs } from "../worktree/orphanProofs";
 import type { PresenceProjector } from "../worktree/presenceProjector";
 import type { WorktreeAgentRow, WorktreePresence } from "../worktree/presenceTypes";
-import { MAX_MODEL_ROWS, rowsOf } from "../worktree/provisioning/providerKit";
+import { MAX_MODEL_ROWS, MAX_READ_ROWS, rowsOf } from "../worktree/provisioning/providerKit";
 import type { NativeConfigDivergence, NativeConfigWrite } from "../worktree/provisioning/writeNativeConfig";
 import type { ReattachVerdict } from "../worktree/reattachProbe";
 import type { RebuildGateClock } from "../worktree/rebuildGate";
@@ -8328,6 +8328,110 @@ describe("a setup step typed into the host's own input, for this create only", (
     expect(rowsOf(offer.model)).toBe(MAX_MODEL_ROWS);
     expect(added(h.view)).toHaveLength(0);
     expect(offer.model.problems).toHaveLength(1);
+    h.dispose();
+  });
+
+  it("keeps a capped read inside the row bound with every row the host composes onto it", async () => {
+    // The reservation's reason (reserve-the-host-s-rows-in-the-model-budget):
+    // a read that spent its whole allowance, two added steps of which one does
+    // not fit, and a save that was refused AND left a lock. Every one of those
+    // rows is something the user acts on, so none may be dropped — and the
+    // whole thing still has to fit in what `isKnownSave` admits back.
+    const capped: ProvisionModel = {
+      ...OFFERED,
+      setup: [],
+      entries: Array.from({ length: MAX_READ_ROWS }, (_, i) => ({
+        id: `e${i}`,
+        path: `file-${i}`,
+        mode: "copy" as const,
+        source: "asimov/worktree.yaml",
+      })),
+      problems: [
+        {
+          file: "asimov/worktree.yaml",
+          reason: "malformed",
+          detail: `More than ${MAX_READ_ROWS} rows; \`file-x\` and after are not offered.`,
+        },
+      ],
+    };
+    let n = 0;
+    const h = await opened({
+      prompt: async () => `step ${(n += 1)}`,
+      read: async () => capped,
+      write: async () => ({ ok: false, reason: "unwritable", mayStillBeLocked: true }),
+    });
+    // Two steps recorded: the model has room for neither, so the second proves
+    // the withholding row is really composed rather than assumed.
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSave",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      offerId: last(h.view).offerId,
+      kept: [],
+    });
+    await settle();
+
+    const model = last(h.view).model;
+    expect(rowsOf(model)).toBeLessThanOrEqual(MAX_MODEL_ROWS);
+    // The save said both things, and the reader's own statement still stands.
+    expect(model.problems.map((p) => p.reason)).toContain("unsaved");
+    expect(model.problems.map((p) => p.reason)).toContain("locked");
+    expect(model.problems.some((p) => p.detail.includes("and after are not offered"))).toBe(true);
+    // And the third reserved row is really composed: the save's two reports
+    // leave the record no room, so the form says so rather than dropping a
+    // step in silence.
+    expect(model.problems.filter((p) => p.file === SETUP_STEP_ADDED_SOURCE)).toHaveLength(1);
+    expect(model.setup.filter((step) => step.source === SETUP_STEP_ADDED_SOURCE)).toHaveLength(0);
+    expect(rowsOf(model)).toBe(MAX_MODEL_ROWS);
+    h.dispose();
+  });
+
+  it("stays inside the bound for a single save report, and when the reread throws", async () => {
+    const capped: ProvisionModel = {
+      ...OFFERED,
+      setup: [],
+      entries: Array.from({ length: MAX_READ_ROWS }, (_, i) => ({
+        id: `e${i}`,
+        path: `file-${i}`,
+        mode: "copy" as const,
+        source: "asimov/worktree.yaml",
+      })),
+      problems: [{ file: "asimov/worktree.yaml", reason: "malformed", detail: "and after are not offered." }],
+    };
+    let reads = 0;
+    const h = await opened({
+      prompt: async () => "pnpm build",
+      // The reread AFTER the save throws, so the save publishes the model the
+      // form was already looking at — itself host-composed.
+      read: async () => {
+        reads += 1;
+        return reads === 1 ? capped : Promise.reject(new Error("gone"));
+      },
+      write: async () => ({ ok: true, wrote: true, mayStillBeLocked: true }),
+    });
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSave",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      offerId: last(h.view).offerId,
+      kept: [],
+    });
+    await settle();
+
+    const model = last(h.view).model;
+    expect(rowsOf(model)).toBeLessThanOrEqual(MAX_MODEL_ROWS);
+    expect(model.problems.map((p) => p.reason)).toContain("locked");
+    expect(model.problems.filter((p) => p.reason === "locked")).toHaveLength(1);
     h.dispose();
   });
 

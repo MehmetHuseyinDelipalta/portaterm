@@ -2157,10 +2157,6 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     }
     syncYieldNotes(held);
     bringBox.hidden = bringBox.childElementCount === 0;
-    bringBox.classList.toggle(
-      "wt-bring-box--only-add",
-      bringBox.childElementCount === 1 && bringBox.contains(addStepRow),
-    );
     // The sentence stands in only where there is genuinely nothing to list. A
     // file that failed to parse has a problem row, which is a different answer,
     // and a switch row is an offer rather than something this worktree gets —

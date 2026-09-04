@@ -16,7 +16,7 @@
 
 ## 2. The witness at the seam
 
-- [ ] 2_1 Witness a capped read carrying every row the host composes
+- [x] 2_1 Witness a capped read carrying every row the host composes — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/providers/WorktreeHost.actions.test.ts' && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 1_1
   - **Refs**: design.md D1, D2
   - **Acceptance**:
