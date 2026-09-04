@@ -14,14 +14,14 @@
 
 - [x] All tasks done (`tasks.md`)
 - [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
-- [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
-- [ ] Gate: implementation approved
-- [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
+- [x] Review done _(user-initiated; `[-]` + reason if skipped)_
+- [x] Gate: implementation approved
+- [-] Blueprint sync complete — no blueprint for this change
 
 ## Archive
 
-- [ ] Apply deltas: `bun run asm change apply`
-- [ ] Archive change: `bun run asm change archive`
+- [x] Apply deltas: `bun run asm change apply`
+- [x] Archive change: `bun run asm change archive`
 
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
 
@@ -48,3 +48,4 @@ Verify gate (cycle 3, after 5_1/5_2): observed at 7c97f98e on a clean tree — 7
 Thrash stop (round 3, cycle 3): F003's invariant survived two fix attempts (4_1, 5_1) and rounds 2 and 3 both closed with one gating blocker, so the stop fired and the cycle cap makes option 1 mandatory. The round-3 witness is a defect of the SAVE path at this change's base — `withSaveReports(base, posts)` reached `offers.issue` unbounded at `edc455a7`, shipping up to 202 rows with no added step involved — and holding the bound needs the reader to reserve the host's slots, which no composition order inside this change can do. Handed back as its own change `reserve-the-host-s-rows-in-the-model-budget` (asimov-build § Review Fix Loop option 1); this change depends on it and its next discovery round scopes the integration seam. F008 (inert `wt-bring-box--only-add` toggle) travels with it. Gate 2 unticked for the D3 amendment that names the dependency; All tasks done and Verify gate stay ticked — the child change invalidates neither, and 7757/7757 stands at 4db569c4.
 Dependency satisfied: `reserve-the-host-s-rows-in-the-model-budget` is archived (reviewed APPROVE, 0 findings), so D3's reserved room exists and the bound this change enforces at `withAdded` is provable rather than aspirational. Gate 2 re-earned. Planned at: 6b36a22d
 Verify gate (re-observed on the dependency's base): at 5ab4baf5 on a clean tree — 7759/7759, type check clean, I10, fs-deletion and bundle gates green; Biome carries the same two pre-existing errors and 14 warnings in files this change does not touch; `verify-status` exits 0.
+Review: round 4 (cycle 3, verification) APPROVE, 0 findings — F003 closed at the reader/host seam by the dependency, F008 removed, F001/F002/F005/F006/F007 still fixed and F004 still rejected; an arithmetic probe over 19,602 read/report/record combinations peaked at exactly 200 rows.
