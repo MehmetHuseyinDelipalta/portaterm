@@ -3932,6 +3932,26 @@ describe("the unbranched-repository state", () => {
     expect(rule).toMatch(/\bbackground:/);
   });
 
+  it("[1_1] starts the inline empty state on the row label column, at the row's scale", () => {
+    // Read from source like the rule above: jsdom lays nothing out. The inset
+    // is the sum the `.wt-row` grid produces before its label — margin 4px,
+    // padding 8px, glyph column 16px, gap 6px — and the block sits under those
+    // rows, so its text has to start where theirs does or it reads as a
+    // paragraph dropped into the tree rather than a line of it.
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const css = fs.readFileSync(path.join(here, "worktreePanel.css"), "utf8");
+    const block = /\.wt-empty-inline\s*\{([^}]*)\}/.exec(css)?.[1];
+    expect(block, "no inline empty-state rule").toBeTruthy();
+    expect(block).toMatch(/padding-left:\s*34px/);
+    // And the body at the tree's secondary size, uncapped: the atom's 240px
+    // body cap and 12px are a panel's, and under a row the block should be no
+    // wider or louder than the disclosure rows beside it.
+    const body = /\.wt-empty-inline \.vault-empty-body\s*\{([^}]*)\}/.exec(css)?.[1];
+    expect(body, "no inline empty-body rule").toBeTruthy();
+    expect(body).toMatch(/font-size:\s*11px/);
+    expect(body).toMatch(/max-width:\s*none/);
+  });
+
   it("[1_3] a repository with a second worktree is not unbranched", () => {
     const { host } = show(
       repoTree({

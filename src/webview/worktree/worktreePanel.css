@@ -1525,12 +1525,33 @@
 
 /* An empty state that sits inside the tree rather than instead of it. A
    multi-repo workspace can hold several at once, so it carries a row's rhythm
-   and not a panel's. */
+   and not a panel's.
+
+   The left inset is the row label column: `.wt-row` margin 4px + padding 8px +
+   its 16px glyph column + the 6px grid gap = 34px. The right inset is the same
+   row's 10px padding + 4px margin. Change `.wt-row` and change these with it —
+   a block under those rows whose text starts anywhere else reads as a
+   paragraph dropped into the tree, not a line of it. */
 .wt-empty-inline {
-  padding: 8px 12px 12px;
+  padding: 4px 14px 8px;
+  padding-left: 34px;
   align-items: flex-start;
   text-align: left;
-  gap: 4px;
+  gap: 2px;
+}
+
+/* At the row's scale, not the panel's. The atom sets its own title size and a
+   240px body cap for a panel with nothing in it; restated here because only a
+   scoped rule naming the property outranks the atom's. */
+.wt-empty-inline .vault-empty-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.wt-empty-inline .vault-empty-body {
+  font-size: 11px;
+  line-height: 1.4;
+  max-width: none;
 }
 
 .wt-empty-inline .vault-empty-icon {

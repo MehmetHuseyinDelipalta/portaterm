@@ -1,0 +1,1 @@
+Presentation only: the unbranched empty state's copy, its create offer, and when it is shown are all owned by `asimov/specs/worktree-panel/spec.md` already and none of them moves — only where its text starts and how large it reads inside the tree.
