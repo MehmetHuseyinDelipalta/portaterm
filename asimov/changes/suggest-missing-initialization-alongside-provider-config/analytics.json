@@ -14,7 +14,7 @@
       "windows": [
         {
           "from": 1788537745930,
-          "to": null
+          "to": 1788539415518
         }
       ],
       "phases": [
@@ -24,19 +24,19 @@
         }
       ],
       "firstAt": 1788537745930,
-      "lastAt": 1788537873997,
+      "lastAt": 1788539379601,
       "buckets": [
         {
           "runtime": "claude",
           "phase": "plan",
           "agent": "asm-finder",
           "model": "gpt-5.6-luna",
-          "messages": 6,
-          "inputTokens": 56336,
-          "outputTokens": 2542,
+          "messages": 19,
+          "inputTokens": 123746,
+          "outputTokens": 7127,
           "reasoningTokens": 0,
           "cacheWriteTokens": 0,
-          "cacheReadTokens": 57856,
+          "cacheReadTokens": 1154048,
           "extra": {
             "cacheWrite5mTokens": 0,
             "cacheWrite1hTokens": 0,
@@ -49,12 +49,12 @@
           "phase": "plan",
           "agent": "asm-oracle",
           "model": "gpt-5.6-sol",
-          "messages": 3,
-          "inputTokens": 49418,
-          "outputTokens": 955,
+          "messages": 4,
+          "inputTokens": 52510,
+          "outputTokens": 1201,
           "reasoningTokens": 0,
           "cacheWriteTokens": 0,
-          "cacheReadTokens": 69760,
+          "cacheReadTokens": 132608,
           "extra": {
             "cacheWrite5mTokens": 0,
             "cacheWrite1hTokens": 0,

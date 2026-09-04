@@ -2,11 +2,9 @@
 
 ### Requirement: Missing initialization material is suggested without overriding configuration
 
-WHETHER OR NOT a readable provisioning source is present, the create form SHALL inspect the fixed
-set of supported environment filenames at the repository root and one level inside each workspace
-directory the repository itself declares, together with repository-root package-manager lockfiles.
-It SHALL append only material the source does not already express, as unchecked suggestions. A
-source that could not be read at all SHALL remain the answer and SHALL suppress suggestions.
+WHETHER OR NOT a complete provisioning source is present, the create form SHALL inspect the existing
+fixed environment filenames and root package-manager lockfiles. It SHALL append only material the
+source does not already express, as unchecked suggestions.
 
 #### Scenario: A readable provider omits an existing environment file and setup
 
@@ -21,10 +19,22 @@ source that could not be read at all SHALL remain the answer and SHALL suppress 
 - **WHEN** the chosen source declares or excludes `.env.local` and declares `pnpm install`
 - **THEN** neither candidate is suggested a second time
 
-#### Scenario: A provisioning source cannot be read
+#### Scenario: Setup command identity is exact
 
-- **WHEN** a supported provisioning source is present but unreadable
-- **THEN** its problem remains the source's answer and no initialization suggestion is appended
+- **WHEN** the source declares `pnpm install ` with trailing whitespace and `pnpm-lock.yaml` exists
+- **THEN** `pnpm install` remains a separate unchecked suggestion
+- **AND** neither shell command is normalized or discarded
+
+### Requirement: An incomplete provider answer is not supplemented
+
+A provider answer marked incomplete — unreadable, malformed, or depending on an unresolved source —
+SHALL remain the answer and SHALL suppress initialization suggestions.
+
+#### Scenario: A provisioning answer is incomplete
+
+- **WHEN** a supported source is unreadable, malformed, or names an unresolved source
+- **THEN** its problem and any material safely recovered remain the source's answer
+- **AND** no initialization suggestion is appended
 
 ### Requirement: Saved configuration suppresses only the suggestions it now expresses
 

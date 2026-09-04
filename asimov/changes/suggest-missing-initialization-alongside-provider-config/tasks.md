@@ -7,18 +7,20 @@
     - Outcome: a base model gains only nonduplicate, noncontending unchecked suggestions
     - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/suggestProvisioning.test.ts
   - **Plan**:
-    1. In src/worktree/provisioning/suggestProvisioning.ts accept an optional base model, suppress candidates per design.md D2, preserve every base field, and return unreadable bases unchanged.
-    2. In src/worktree/provisioning/suggestProvisioning.test.ts add base-model cases for configured, excluded, fold-contending and exact-setup candidates; rerun the secret-boundary dependency spy against a base.
+    1. In src/worktree/provisioning/suggestProvisioning.ts add required no-follow `readManifest`, accept an optional base model, synchronize the budget per design.md D3, mint disjoint candidate ids, suppress candidates per D2, and preserve every base field.
+    2. In src/worktree/provisioning/provisioningDeps.ts supply a bounded no-follow manifest reader; update src/worktree/provisioning/provisioningDeps.test.ts.
+    3. In src/worktree/provisioning/suggestProvisioning.test.ts add a fully populated base fixture, cases covering configured rows, excluded rows, possible folds, id collisions, exact scripts, the cap and refunded merge capacity, and dependency spies proving manifest symlinks and candidate bytes are refused.
 
 ## 2. Supplement every provider read
 
 - [ ] 2_1 Compose suggestions after each successful provider answer
   - **Deps**: 1_1
-  - **Refs**: specs/worktree-panel/spec.md#{missing-initialization-material-is-suggested-without-overriding-configuration, saved-configuration-suppresses-only-the-suggestions-it-now-expresses}; design.md D3
+  - **Refs**: specs/worktree-panel/spec.md#{missing-initialization-material-is-suggested-without-overriding-configuration, an-incomplete-provider-answer-is-not-supplemented, saved-configuration-suppresses-only-the-suggestions-it-now-expresses}; design.md D3
   - **Acceptance**:
     - Outcome: every readable provider offer includes only its own missing unchecked suggestions
     - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/readProvisioning.test.ts src/providers/WorktreeHost.actions.test.ts
   - **Plan**:
-    1. In src/worktree/provisioning/readProvisioning.ts pass the finished framework or native model through `suggestProvisioning`; leave the absent-provider fallback and unreadable suppression intact.
-    2. In src/worktree/provisioning/readProvisioning.test.ts cover readable sources with and without rows, duplicate suppression, source switching, a saved native copy plus a recurring setup suggestion, and the shared row cap.
-    3. In src/providers/WorktreeHost.actions.test.ts assert a provider offer can show configured rows plus unchecked environment-file and setup suggestions and save only positive file consent.
+    1. Add required `AdapterRead.suggestible` in src/worktree/provisioning/providerKit.ts and set it in src/worktree/provisioning/asimovProvider.ts, nativeProvider.ts, orcaProvider.ts and vscodeTasksProvider.ts per design.md D4.
+    2. In src/worktree/provisioning/readProvisioning.ts propagate completeness through native assembly and pass every complete finished model through `suggestProvisioning`.
+    3. In src/worktree/provisioning/readProvisioning.test.ts cover complete answers with and without rows, malformed partial and unresolved-extends suppression, duplicate merge capacity, source switching and the cap branches.
+    4. In src/providers/WorktreeHost.actions.test.ts and src/worktree/provisioning/writeNativeConfig.test.ts cover the non-native save followed by reread: selected file becomes configured, setup remains an unchecked suggestion, warning text preserved.

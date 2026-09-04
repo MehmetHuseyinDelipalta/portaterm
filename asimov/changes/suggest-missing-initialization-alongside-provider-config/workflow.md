@@ -6,9 +6,9 @@
 
 ## Plan
 
-- [-] Gate 1: direction approved — no fork: provider rows remain authoritative and missing rows append unchecked
-- [ ] `asm change validate` passes
-- [ ] Gate 2: plan approved
+- [-] Gate 1: direction approved — fail-closed policy: only provider answers explicitly marked complete receive missing unchecked suggestions
+- [x] `asm change validate` passes
+- [x] Gate 2: plan approved
 
 ## Implement
 
@@ -33,3 +33,4 @@ Blueprint: none
 Lane: full (standard) — changes initialization suggestion behavior and saved-config rereads | flags: security-privacy
 Planned at: 2098e711
 Baseline: current `readProvisioning` calls suggestions only when `chosen === null`; the archived fallback design explicitly suppresses them over every present source. This change reverses only that condition for readable answers.
+Plan attack: refuted and repaired four boundaries — workspace manifests now use a bounded no-follow reader; candidate ids are minted disjoint before contender membership; capacity synchronizes to `rowsOf(base)` but never refunds a capped read; completeness is required on `AdapterRead` and propagated through native assembly rather than guessed from problem reasons. Supported: exact setup script identity, non-native save/reread semantics, and fresh source-switch reads. The warning remains present; its icon move stays a separate webview change.
