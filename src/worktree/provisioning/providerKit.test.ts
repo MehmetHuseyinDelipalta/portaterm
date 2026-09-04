@@ -9,8 +9,10 @@ import {
   emitted,
   emptyModel,
   entriesFor,
+  HOST_COMPOSED_ROWS,
   ids,
   MAX_MODEL_ROWS,
+  MAX_READ_ROWS,
   MAX_SCAN,
   modelFromDraft,
   newBudget,
@@ -369,9 +371,12 @@ describe("[round-1 F002] the cap lives where rows are appended", () => {
       }
     }
 
-    expect(taken).toBeLessThan(MAX_MODEL_ROWS);
-    expect(draft.setup.length).toBeLessThan(MAX_MODEL_ROWS);
-    expect(emitted(draft)).toBeLessThanOrEqual(MAX_MODEL_ROWS);
+    // Exactly the read's allowance, and not one row more: the slot the
+    // refusal itself costs is on top of it.
+    expect(taken).toBe(MAX_READ_ROWS);
+    expect(draft.setup.length).toBe(MAX_READ_ROWS);
+    // The read's own allowance, plus the one row its refusal states.
+    expect(emitted(draft)).toBeLessThanOrEqual(MAX_READ_ROWS + 1);
     // Refused, and said so — a shorter list than the repository asked for is
     // never allowed to be a silent one.
     expect(draft.problems.map((x) => x.reason)).toContain("malformed");
@@ -379,7 +384,13 @@ describe("[round-1 F002] the cap lives where rows are appended", () => {
     // charged, problem rows included — a formula that skipped them let a
     // capped model take one more row (add-a-setup-step round 2 F003).
     expect(rowsOf(modelFromDraft(draft))).toBe(emitted(draft));
-    expect(rowsOf(modelFromDraft(draft))).toBe(MAX_MODEL_ROWS);
+    expect(rowsOf(modelFromDraft(draft))).toBe(MAX_READ_ROWS + 1);
+    // And the room the host is owed is still there: everything it can compose
+    // onto a FULL read still fits under the bound the webview receives
+    // (round 3 F003 of add-a-setup-step-for-this-create-only).
+    expect(rowsOf(modelFromDraft(draft)) + HOST_COMPOSED_ROWS).toBeLessThanOrEqual(MAX_MODEL_ROWS);
+    // The statement names the allowance it enforces, not the bound it protects.
+    expect(draft.problems.some((x) => x.detail.startsWith(`More than ${MAX_READ_ROWS} rows`))).toBe(true);
   });
 
   it("would not pass if the append merely counted", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NATIVE_PROVIDER_FILE, nativeAdapter } from "./nativeProvider";
-import { MAX_MODEL_ROWS, newBudget, type ProviderDeps } from "./providerKit";
+import { MAX_MODEL_ROWS, MAX_READ_ROWS, newBudget, type ProviderDeps } from "./providerKit";
 
 const ROOT = "/repo";
 
@@ -231,8 +231,9 @@ describe("the shared budget", () => {
     const budget = newBudget();
     const answer = await nativeAdapter.read(withJson(`{${keys}}`), ROOT, budget);
 
-    expect(budget.rows).toBe(MAX_MODEL_ROWS);
-    expect(answer?.model.problems.length).toBe(MAX_MODEL_ROWS);
+    // The read's allowance, plus the row saying the rest is not offered.
+    expect(budget.rows).toBe(MAX_READ_ROWS + 1);
+    expect(answer?.model.problems.length).toBe(MAX_READ_ROWS + 1);
   });
 });
 

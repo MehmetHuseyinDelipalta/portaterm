@@ -80,6 +80,26 @@ export function bounded(text: string): string {
 export const MAX_MODEL_ROWS = 200;
 
 /**
+ * Rows the HOST may compose onto a read before it publishes it.
+ *
+ * Three, and a closed set: the save's refusal, the save's lock report
+ * (`WorktreeHost.ts` `refusedSave`/`leftLocked`) and the one statement a form
+ * makes when a setup step it added does not fit. Marker rows themselves are not
+ * counted here — the host fits those into the room a model actually leaves.
+ *
+ * It is reserved rather than checked afterwards because there is nothing to
+ * drop: a read may legitimately fill the model with rows that say what the
+ * create will do, and both a refusal and the reader's own cap statement are
+ * things the user acts on. Composing after a full read published 202 rows,
+ * whose full selection `isKnownSave` then refused
+ * (add-a-setup-step-for-this-create-only review round 3 F003).
+ */
+export const HOST_COMPOSED_ROWS = 3;
+
+/** What one READ may emit: the message's own slot and the host's reserved. */
+export const MAX_READ_ROWS = MAX_MODEL_ROWS - HOST_COMPOSED_ROWS - 1;
+
+/**
  * The most directory entries one glob may look at.
  *
  * Separate from the row budget because they bound different costs: a directory
@@ -269,9 +289,10 @@ export function emitted(draft: Draft): number {
 
 /** True once the offer is full. Records the reason exactly once. */
 export function full(draft: Draft, what: string): boolean {
-  // One slot reserved for the message itself, so the budget bounds the rows the
-  // webview actually receives rather than that number plus one.
-  if (emitted(draft) < MAX_MODEL_ROWS - 1) {
+  // One slot for the message itself and `HOST_COMPOSED_ROWS` for what the host
+  // adds after the read, so the budget bounds the rows the webview actually
+  // receives rather than the rows this module happened to charge.
+  if (emitted(draft) < MAX_READ_ROWS) {
     return false;
   }
   if (!draft.budget.capped) {
@@ -281,7 +302,9 @@ export function full(draft: Draft, what: string): boolean {
     // module exists to prevent.
     addProblem(
       draft,
-      problem(draft.ctx, "malformed", `More than ${MAX_MODEL_ROWS} rows; ${what} and after are not offered.`),
+      // The number it enforces, not the number it protects: refusing row 197
+      // while claiming a limit of 200 is a false statement about the file.
+      problem(draft.ctx, "malformed", `More than ${MAX_READ_ROWS} rows; ${what} and after are not offered.`),
     );
   }
   return true;

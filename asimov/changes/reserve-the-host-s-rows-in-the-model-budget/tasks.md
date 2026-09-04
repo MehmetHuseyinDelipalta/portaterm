@@ -2,7 +2,7 @@
 
 ## 1. The reservation
 
-- [ ] 1_1 Reserve the host's slots in the read budget
+- [x] 1_1 Reserve the host's slots in the read budget — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/worktree/provisioning/providerKit.test.ts' && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: none
   - **Refs**: design.md D1
   - **Acceptance**:
