@@ -64,13 +64,24 @@ const addedSteps = new Map<string, string[]>();            // slot → scripts, 
   carried it, not resurrected into a source they moved on from.
 - `edit`/`remove` locate the row by `itemId` in the CURRENT offer's `setup`, require the marker, and
   map to the record by ordinal among marker rows — the record needs no id of its own.
-- Bounds: at most 32 recorded scripts per slot, and never past the model budget — an add is refused
-  when the combined model (entries, ports, the provider's own setup, excluded rows and the record)
-  would exceed `MAX_MODEL_ROWS - 1`, the same bound every provider read obeys, so every offer the
-  host issues stays inside what `isKnownSave` admits back (review round 1 F003). A script is refused
-  when empty, whitespace-only, or longer than `MAX_SETUP_STEP_CHARS` (4096, exported once from
-  `messages.ts` and read by both the host's refusal and the input's `validateInput` — round 1 F005). `showInputBox.validateInput` states the bound; the host enforces it
-  regardless of what the input said. A refused add/edit answers with the offer unchanged.
+- Bounds: at most 32 recorded scripts per slot, and never past the model budget. **The bound is
+  enforced inside `withAdded`, so every issue site obeys it** — initial read, switch, save reread
+  and the ask handler alike; enforcing it at the add handler alone left a switch to a denser source
+  free to reissue the whole record past the cap (review round 1 F003, round 2 F003). The rows a
+  model already holds are counted by one exported `providerKit` function, `rowsOf(model)`, that
+  charges exactly what the read budget charged — entries, ports, setup, excluded and **problems** —
+  so the host cannot keep a second formula that drifts from the reader's. `withAdded` appends the
+  record's longest prefix that keeps `rowsOf` within `MAX_MODEL_ROWS - 1`, the same reserved slot
+  `full()` keeps; when any script does not fit, the model gains one `malformed` problem row (its
+  own slot already counted) stating how many added steps are not offered on this source. The record
+  itself is never truncated: a switch back to the sparser source offers every step again, and
+  edit/remove still address the record by ordinal among the marker rows actually shown, which is a
+  prefix of it. An add is refused up front when the record is already at 32 or the current model
+  leaves no room for one more marker row plus its own slot; the refusal answers with the offer
+  unchanged. A script is refused when empty, whitespace-only, or longer than
+  `MAX_SETUP_STEP_CHARS` (4096, exported once from `messages.ts` and read by both the host's refusal
+  and the input's `validateInput` — round 1 F005). `showInputBox.validateInput` states the bound;
+  the host enforces it regardless of what the input said.
 
 `divergenceOf` (`writeNativeConfig.ts:125`) already leaves `setup` untouched, so a save cannot write
 the step; that is witnessed rather than assumed (ledger).
@@ -110,8 +121,17 @@ the arms where nothing is waiting.
 - A brand-new added row has no prior tick and takes its default, which is **checked**
   (`bringRows`, `:534`).
 - The add control is the last child `bringBox` renders, after switch rows, and only while an offer is
-  drawn. Edit and remove are icon buttons (`ICON_RENAME`, `ICON_CLOSE`, each with an `aria-label`
-  naming the step) in the source cell of added rows only; provider rows keep the plain badge.
+  drawn. Edit and remove are icon buttons (`ICON_RENAME`, `ICON_CLOSE`) in the source cell of added
+  rows only; provider rows keep the plain badge. **Their accessible name is bounded**: the action,
+  the row's ordinal among added steps (1-based) and the script clipped to `STEP_NAME_CHARS` (48)
+  with an ellipsis — a 4096-character command made a 4096-character name, twice per row (round 2
+  F006). The full script stays in the row's code cell.
+- **An answer restores focus.** The pending record remembers which action was pressed and on which
+  ordinal; when the answering offer redraws the section, focus goes to the same ordinal's same
+  action, to the successor ordinal's action after a remove (or the Add control when none remains),
+  and to the Add control after an add. `replaceChildren` otherwise dropped the focused button and
+  the trap left focus nowhere (round 2 F007). Focus is restored only when the pressed control was
+  the active element when the answer lands, so a user who moved on is not pulled back.
 - `WorktreeController` forwards the ask with the opening snapshotted at compose time, as it does for
   `onPickDestination` (`WorktreeController.ts:628`).
 
@@ -144,6 +164,7 @@ sequenceDiagram
   the host's route list (`WorktreeHost.ts:4478`) and `handleAction`.
 - `WorktreeCreateDialogDeps.onSetupStepAsk?(request: { repoId: string; switch: number; op: WorktreeSetupStepAskMessage["op"] }): void`
 - `SETUP_STEP_ADDED_SOURCE` exported from `src/types/messages.ts`.
+- `rowsOf(model: ProvisionModel): number` exported from `src/worktree/provisioning/providerKit.ts` — the rows a model holds against `MAX_MODEL_ROWS`, the same count the read budget charged (D3).
 
 ## Risk Map
 
@@ -154,7 +175,7 @@ sequenceDiagram
 | `withAdded` | duplicates marker rows when built from the current offer | strips marker rows before appending (D3); add → add → cancel test asserts two rows |
 | Create gate | submits the pre-ask offer during the prompt | `pendingStep` withholds Create (D5); dialog test asserts Create disabled while an ask is out |
 | offer re-issue on every answer | selection lost or moved on cancel, edit, remove or switch | added-row ticks snapshotted by ordinal on the pending record and applied per operation (D5); dialog tests for each answer kind, including two added rows with the SAME script, assert every tick stays on its row |
-| `withAdded` past the budget | a 232-row offer whose full selection `isKnownSave` refuses, stalling a valid save | an add past `MAX_MODEL_ROWS - 1` is refused and answered unchanged (D3); host test fills the model to the bound, asks once more, asserts the offer unchanged and a full-selection save answered |
+| `withAdded` past the budget | a 232-row offer whose full selection `isKnownSave` refuses, stalling a valid save; or a problem-bearing model admitting a step past the cap | the bound lives in `withAdded` and counts rows through providerKit's `rowsOf`, problems included (D3); host tests: add at the bound refused and answered; 32 steps then a switch to a 199-row source → offer within the bound, its full selection saved and answered, one problem row stating the count withheld; a model of `MAX_MODEL_ROWS - 2` rows plus one problem refuses the add |
 | `showInputBox` that never settles | form gate held | same environmental unknown the picker accepted (its round-4 F007); no timeout added, same reasoning |
 | save path | writes the step | `divergenceOf` ignores `setup`; host test asserts the written divergence carries none |
 
@@ -168,6 +189,6 @@ sequenceDiagram
 | Edit and remove reach only rows the host marked | `op.itemId` must resolve to a `setup` row of the CURRENT offer with `source === SETUP_STEP_ADDED_SOURCE`; provider rows are untouchable through this message | An `edit` naming a provider-declared step's id changes or removes it | Host test: edit naming the provider step's id → offer re-issued with the provider step byte-identical, `promptSetupStep` never called | unresolved — until 2_1 lands |
 | An ask orders against switch and save | Same `provisionSwitch` slot; an ask whose `switch` is outranked after the prompt returns neither mutates `addedSteps` nor publishes | A slow ask answer lands after a later switch and shows the pre-switch source, or its text appears in the switched offer | Host test: add A → ask B (prompt held open) → switch → release prompt with "B" → exactly one offer published, it is the switched source, its marker rows are `[A]` only, `addedSteps` is `[A]` | unresolved — until 2_1 lands |
 | A save never records the step | The divergence handed to `writeNativeConfig` carries no setup, marker or otherwise | The native file gains a `setup:` key | Host test asserting the divergence object has no setup; assembly test reading the written file after save | unresolved — until 2_1 / 3_1 land |
-| The record is bounded | ≤ 32 scripts per slot, ≤ `MAX_SETUP_STEP_CHARS` each, the combined model ≤ `MAX_MODEL_ROWS - 1`, all enforced host-side; and the offer carries exactly one marker row per record entry | An input answering a 1 MiB string is offered; or repeated asks grow the offer by duplicated marker rows (F1) | Host unit test on the 33rd add and on a 4097-char answer: offer unchanged; and add → add → cancel → offer has exactly two marker rows | unresolved — until 2_1 lands |
+| The record is bounded | ≤ 32 scripts per slot, ≤ `MAX_SETUP_STEP_CHARS` each, and EVERY issued offer's `rowsOf` ≤ `MAX_MODEL_ROWS - 1` whatever site issued it, all enforced host-side; the offer carries one marker row per record entry that fits and one problem row when any does not | An input answering a 1 MiB string is offered; or repeated asks grow the offer by duplicated marker rows (F1) | Host unit test on the 33rd add and on a 4097-char answer: offer unchanged; and add → add → cancel → offer has exactly two marker rows | unresolved — until 2_1 lands |
 | Every admitted ask releases the form | For every ask the host admits (live opening, highest switch, live surface) exactly one `worktreeProvisionOffer` is posted | Cancel, a rejected prompt, or a stale `itemId` posts nothing and Create stays withheld | Host tests over cancel, a `promptSetupStep` that rejects, empty answer, over-bound answer, stale `itemId`, unknown `kind` on a live form, each asserting one offer; dialog test cancel → controls and Create re-enabled | unresolved — until 2_1 / 2_2 land |
 | A prompt that never settles | `showInputBox` that neither resolves nor rejects holds the form's gate | Stuck form | n/a — the identical environmental unknown the picker change recorded as its residual (its design D3 / round-4 F007); no new mechanism here, and a timeout would introduce the late-answer race that residual explains | n/a — inherited residual, stated |
