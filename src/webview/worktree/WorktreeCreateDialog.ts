@@ -1906,13 +1906,14 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   agentBox.setVisible(afterChoice === "agent");
   shell.dialog.appendChild(agentBox.element);
 
-  // ── Wait-for-setup — beside the agent controls, never inside them ───────
+  // ── Wait-for-setup — under the setup rows it gates, never in the agent box ─
   // Its own control, not a field on `agentBox`: it is about SETUP sequencing,
   // not about the agent's own posture, and the two must stay two facts
-  // (design.md D6). Visible only while an agent launch is chosen; disabled
-  // whenever the current offer selection has no setup step ticked (spec
-  // `agent-startup-honours-the-setup-wait-choice`). Off by default and never
-  // pre-ticked — this never touches a setup row's own default-unchecked state.
+  // (design.md D6). Shown only while an agent launch is chosen AND the offer
+  // carries a setup step; disabled while it carries one that is not ticked
+  // (spec `agent-startup-honours-the-setup-wait-choice`). Off by default and
+  // never pre-ticked — this never touches a setup row's own default-unchecked
+  // state.
   const waitField = document.createElement("div");
   waitField.className = "wt-wait-setup";
   waitField.hidden = true;
@@ -1931,7 +1932,9 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   const waitNote = document.createElement("span");
   waitNote.className = "wt-fhint wt-wait-note";
   waitField.appendChild(waitNote);
-  shell.dialog.appendChild(waitField);
+  // The last line of the bring-over section: what it gates is the rows above
+  // it. `saveRow` is attached after it whenever an offer is drawn.
+  bringField.appendChild(waitField);
 
   /**
    * What the user set the wait to themselves, or `undefined` while untouched.
@@ -1968,7 +1971,10 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
    * control cannot be seen to be armed for must not silently keep armed.
    */
   function syncWaitForSetup(): void {
-    waitField.hidden = afterChoice !== "agent";
+    // Hidden where there is nothing it could ever gate; disabled where there
+    // is something and it is not ticked — that absence is a consequence of the
+    // row above it, and hiding it there would read as a layout change.
+    waitField.hidden = afterChoice !== "agent" || drawnModel === null || drawnModel.setup.length === 0;
     const selected = hasSelectedSetup();
     waitBox.disabled = !selected;
     if (!selected) {
@@ -1982,8 +1988,9 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       // then on, in both directions.
       waitBox.checked = waitChoice ?? true;
     }
+    // Nothing while nothing is selected: the disabled box already says it.
     waitNote.textContent = !selected
-      ? "Select a setup step to gate the agent on it."
+      ? ""
       : waitBox.checked
         ? "The agent starts after the selected setup finishes."
         : "The agent starts while the selected setup is still running.";

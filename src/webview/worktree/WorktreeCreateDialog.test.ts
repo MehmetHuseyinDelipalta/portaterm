@@ -1221,11 +1221,33 @@ describe("wait for setup — the agent-launch checkbox (design.md D6)", () => {
     expect(q<HTMLElement>(".wt-wait-setup").hidden).toBe(true);
   });
 
-  it("is visible but disabled while the selection has no setup step", () => {
+  it("[1_1] is visible but disabled while the offer's setup step is not selected", () => {
+    // Disabled, not hidden, HERE: the absence is a consequence of the unticked
+    // row above it, and hiding it would read as a layout change.
     const { q } = withOffer();
     chooseAgent(q);
     expect(q<HTMLElement>(".wt-wait-setup").hidden).toBe(false);
     expect(q<HTMLInputElement>("#wt-wait-setup").disabled).toBe(true);
+  });
+
+  it("[1_1] is not shown at all when the offer carries no setup step", () => {
+    // There is no row above it for the absence to be a consequence of — a
+    // permanently grey box telling the user to select a step that does not
+    // exist is what this replaces.
+    const { q } = withOffer({ model: provisionModel({ setup: [] }) });
+    chooseAgent(q);
+    expect(q<HTMLElement>(".wt-wait-setup").hidden).toBe(true);
+  });
+
+  it("[1_1] says nothing about selecting a step", () => {
+    const { q } = withOffer();
+    chooseAgent(q);
+    expect(q<HTMLElement>(".wt-wait-note").textContent).toBe("");
+  });
+
+  it("[1_1] sits inside the bring-over section it gates", () => {
+    const { q } = withOffer();
+    expect(q<HTMLElement>(".wt-wait-setup").closest(".wt-bring")).not.toBeNull();
   });
 
   it("enables once a setup step is selected", () => {

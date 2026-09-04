@@ -996,11 +996,13 @@
 }
 /* The gate and the order it produces are two facts, so the note is its own line
    rather than a span running straight on from the checkbox's label. */
+/* The last line of the bring-over section, set off from the box above it. */
 .wt-wait-setup {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
+  margin-top: 6px;
 }
 .wt-wait-note {
   display: block;

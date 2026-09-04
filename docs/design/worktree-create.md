@@ -560,10 +560,13 @@ agent"* is an offered choice, meaningful only when setup will actually run:
 - **On**: the agent waits for every selected step and starts only when all of them succeed. A failed,
   skipped, cancelled, or timed-out run starts no agent and reports on the worktree row.
 
-The control is visible only for an agent create and is disabled, not hidden, when no setup step is
-selected: hiding it would make its absence look like a layout change rather than a consequence of
-the checkbox above it. Without selected setup, the ordinary agent launch path applies regardless
-of the carried boolean.
+The control sits under the setup rows it gates, not among the agent's own settings, and is shown
+only for an agent create whose offer carries a setup step. It is **disabled, not hidden**, when that
+step is not selected: there the absence is a consequence of the checkbox above it, and hiding it
+would read as a layout change. It is **hidden** when the offer carries no setup step at all: there
+is no checkbox above it for the absence to be a consequence of, and a permanently disabled box
+telling the user to select a step that does not exist describes a state they cannot reach. Without
+selected setup, the ordinary agent launch path applies regardless of the carried boolean.
 
 **Moving uncommitted changes**, when the user asked for it, happens after Git creates a fresh,
 detached, or reused checkout and before provisioning or `openAfter`, so setup sees the moved work.
