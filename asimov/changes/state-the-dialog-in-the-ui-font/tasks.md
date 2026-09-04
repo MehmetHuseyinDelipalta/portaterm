@@ -1,6 +1,6 @@
 ## 1. Prose in the UI font, values in the editor font
 
-- [ ] 1_1 Set every passive sentence in the create dialog in the proportional UI font
+- [x] 1_1 Set every passive sentence in the create dialog in the proportional UI font — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/webview/worktree/WorktreeCreateDialog.test.ts' && pnpm exec tsc --noEmit -p tsconfig.json && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: none
   - **Refs**: docs/design/worktree-create.md#4-form-presentation
   - **Acceptance**:
