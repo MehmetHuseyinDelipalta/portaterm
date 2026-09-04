@@ -8225,7 +8225,7 @@ describe("a setup step typed into the host's own input, for this create only", (
     let n = 0;
     // The save's reread names no provider; it finds the source the switch
     // left active, as a real read would.
-    let active: string = "asimov";
+    let active = "asimov";
     const h = await opened({
       prompt: async () => `step ${(n += 1)}`,
       read: async (_main, prefer) => {
