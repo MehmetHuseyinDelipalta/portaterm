@@ -1006,11 +1006,13 @@
   display: block;
 }
 
+/* Prose, in the UI font: a sentence set in the editor font reads as a value the
+   user is meant to copy. The editor font is for paths, commands, keys and shas
+   — `.wt-dest`, `.wt-input--mono`, `.wt-brow-code`, `.wt-kbd`. */
 .wt-fhint {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.4;
   color: var(--vscode-descriptionForeground);
-  font-family: var(--vscode-editor-font-family, monospace);
   overflow-wrap: anywhere;
 }
 .wt-fhint b {
@@ -1183,11 +1185,11 @@
 .wt-dest--pending {
   color: var(--vscode-descriptionForeground);
 }
+/* Prose too — the path segments inside it are the `b` below, not the line. */
 .wt-dest-note {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.4;
   color: var(--vscode-descriptionForeground);
-  font-family: var(--vscode-editor-font-family, monospace);
   overflow-wrap: anywhere;
 }
 .wt-dest-note b {

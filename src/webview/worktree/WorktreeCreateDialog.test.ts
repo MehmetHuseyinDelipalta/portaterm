@@ -5391,6 +5391,17 @@ describe("provisioning save action weight", () => {
   const ruleOf = (sheet: string, selector: string): string | undefined =>
     new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`).exec(sheet)?.[1];
 
+  it("[1_1] sets hints and notes in the UI font, and keeps the editor font for the path", () => {
+    // Prose is not a value: a sentence in the editor font reads as output the
+    // user is meant to copy. The destination line IS a value, and stays.
+    for (const selector of [".wt-fhint", ".wt-dest-note"]) {
+      const rule = ruleOf(css(), selector);
+      expect(rule, `no ${selector} rule`).toBeTruthy();
+      expect(rule).not.toContain("vscode-editor-font-family");
+    }
+    expect(ruleOf(css(), ".wt-dest")).toContain("vscode-editor-font-family");
+  });
+
   it("[1_1] paints the save as a secondary button", () => {
     const rule = ruleOf(css(), ".wt-bring-save");
     expect(rule, "no save button rule").toBeTruthy();

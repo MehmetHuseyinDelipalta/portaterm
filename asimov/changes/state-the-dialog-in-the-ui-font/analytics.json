@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "target": {
+    "kind": "change",
+    "id": "state-the-dialog-in-the-ui-font"
+  },
+  "sessions": [
+    {
+      "sessionId": "649500f6-d2af-47ae-ba3d-6351c690ebca",
+      "runtime": "claude",
+      "author": "huybuidac@gmail.com",
+      "attachedAt": 1788515630157,
+      "accounting": 2,
+      "windows": [
+        {
+          "from": 1788515630157,
+          "to": 1788515980512
+        }
+      ],
+      "phases": [
+        {
+          "phase": "build",
+          "from": 1788515630157
+        }
+      ],
+      "firstAt": 1788515630157,
+      "lastAt": 1788515630157,
+      "buckets": []
+    }
+  ]
+}

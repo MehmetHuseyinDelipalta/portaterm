@@ -12,16 +12,16 @@
 
 ## Implement
 
-- [ ] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
-- [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
-- [ ] Gate: implementation approved
-- [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
+- [x] All tasks done (`tasks.md`)
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [-] Review done — one test-file constant; the invariant's floor is untouched and the suite ran green at 6 threads
+- [x] Gate: implementation approved
+- [-] Blueprint sync complete — no blueprint for this change
 
 ## Archive
 
-- [ ] Apply deltas: `bun run asm change apply`
-- [ ] Archive change: `bun run asm change archive`
+- [x] Apply deltas: `bun run asm change apply`
+- [x] Archive change: `bun run asm change archive`
 
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
 
@@ -34,3 +34,4 @@ Lane: light
 Planned at: baf7ca11
 - Why now: this one assertion took six `verify-task` strikes today across three changes (`prove-entry-reconstruction-on-windows` 1_4 → locked; `align-the-inline-empty-state-with-its-rows` 1_1 strike 3; `state-the-dialog-in-the-ui-font` 1_1 strikes 1-2, parked). Measured: 2012, 2146, 2229, 2015 ms against 2000, and 3/3 green standalone. Fixing the harness is cheaper than waiting for load before every gate.
 - Must-not: the command's own `--max-time 1.5` and the test's ≥1400 ms floor are the invariant; neither moves. No retry, fake timers, or skip.
+- Verify Gate: type check 0, 7717/7717 at VITEST_MAX_THREADS=6, `biome check src` exits 1 on the same pre-existing `src/webview/worktree/worktreeFormat.ts:30:27` error and 14 warnings — none in the one file this change touched.
