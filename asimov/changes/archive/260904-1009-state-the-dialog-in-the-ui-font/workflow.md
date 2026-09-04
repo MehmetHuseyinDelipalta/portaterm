@@ -12,16 +12,16 @@
 
 ## Implement
 
-- [ ] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
-- [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
-- [ ] Gate: implementation approved
-- [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
+- [x] All tasks done (`tasks.md`)
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [-] Review done — presentation only: CSS rules, one DOM reorder that keeps the checkbox's `aria-labelledby` contract, an icon with its name kept; every message contract and gate untouched, no escalation flags
+- [x] Gate: implementation approved
+- [-] Blueprint sync complete — no blueprint for this change
 
 ## Archive
 
-- [ ] Apply deltas: `bun run asm change apply`
-- [ ] Archive change: `bun run asm change archive`
+- [x] Apply deltas: `bun run asm change apply`
+- [x] Archive change: `bun run asm change archive`
 
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
 
@@ -36,3 +36,5 @@ Planned at: baf7ca11
 - Tasks are chained 1_1 → 2_1 → 3_1 → 3_2 → 3_3 because all five edit `worktreePanel.css`; the chain is a lease decision, not a semantic dependency.
 - Left for their own changes, as the user agreed: wait-for-setup relocation and hint removal (c); ad-hoc setup steps for one create (d).
 - 1_1 PARKED with its code and RED→GREEN witness done (347/347 in the file, 7716/7717 in the suite twice): both strikes were `src/agentHooks/install/ClaudeHookInstaller.test.ts:526` at 2146 ms and 2015 ms against a 2000 ms wall-clock bound, while the same test passes 3/3 standalone. Sixth strike on that one assertion today across three changes. Parked rather than spending the third attempt — that test is fixed in its own change (`bound-the-hook-drain-by-what-curl-owns`) first, then this resumes at 1_1.
+- Verify Gate: type check 0 and 7721/7721 at VITEST_MAX_THREADS=6 on every one of the five ticks; `biome check src` exits 1 on the same pre-existing `src/webview/worktree/worktreeFormat.ts:30:27` error and 14 warnings — the only diagnostic in a touched file is the pre-existing `worktreePanel.css:635`.
+- After `bound-the-hook-drain-by-what-curl-owns` landed, five consecutive full-suite verifies passed first time at 6 threads; before it, the same suite needed load < 3 and two threads.
