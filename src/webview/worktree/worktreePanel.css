@@ -1649,20 +1649,35 @@
   gap: 6px;
   min-width: 0;
 }
+/* The segment that matters is the last one, so the END of an overlong path
+   is what stays visible: `direction: rtl` scrolls the field to its end, and
+   `unicode-bidi: plaintext` keeps the characters in reading order while it
+   does. The alignment is what a reader sees; the direction is only the scroll. */
 .wt-path-row .wt-input {
   flex: 1 1 auto;
   min-width: 0;
+  text-align: right;
+  direction: rtl;
+  unicode-bidi: plaintext;
 }
+/* A square icon button on the input's line. */
 .wt-path-pick {
   flex: 0 0 auto;
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   border: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
   border-radius: 2px;
   background: var(--vscode-button-secondaryBackground, transparent);
   color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-  font-family: inherit;
-  font-size: 11px;
   cursor: pointer;
+}
+.wt-path-pick svg {
+  width: 14px;
+  height: 14px;
 }
 .wt-path-pick:disabled {
   opacity: 0.5;

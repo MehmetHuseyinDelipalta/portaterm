@@ -5657,6 +5657,22 @@ describe("create worktree — choosing the folder the worktree is created in", (
     };
   }
 
+  it("[3_3] offers the picker as a folder icon that is still named Choose…", () => {
+    // The word was the widest thing on the override's line and said nothing
+    // the icon does not; the name stays for every reader that names it.
+    const h = withPicker();
+    const btn = h.pick();
+    expect(btn?.querySelector("svg")).not.toBeNull();
+    expect(btn?.getAttribute("aria-label")).toBe("Choose…");
+    expect(btn?.textContent?.trim()).toBe("");
+    // The override ends in the segment that matters, so it is the end that stays
+    // visible when a path is longer than the field.
+    const css = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "worktreePanel.css"), "utf8");
+    const input = /\.wt-path-row \.wt-input\s*\{([^}]*)\}/.exec(css)?.[1];
+    expect(input).toMatch(/text-align:\s*right/);
+    h.dispose();
+  });
+
   it("[2_2] asks the host, carrying the repository and nothing else", () => {
     const h = withPicker();
 

@@ -50,7 +50,7 @@
     3. `src/webview/worktree/WorktreeCreateDialog.test.ts` — add a `[3_2]` test asserting `.wt-advanced-toggle` contains a `.wt-chev` with an `svg`, its text still reads "Branch source, base ref, and location", and the existing click-to-expand tests at ~708, ~872, ~887 keep passing.
   - **Boundary**: `aria-expanded`/`aria-controls`/`refreshFocusTrap` wiring and the collapsed-by-default rule are untouched.
 
-- [ ] 3_3 Right-align the destination override and give the picker its folder icon
+- [x] 3_3 Right-align the destination override and give the picker its folder icon — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/webview/worktree/WorktreeCreateDialog.test.ts' && pnpm exec tsc --noEmit -p tsconfig.json && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 3_2
   - **Refs**: asimov/specs/worktree-panel/spec.md#a-destination-can-be-chosen-with-the-system-folder-picker
   - **Acceptance**:

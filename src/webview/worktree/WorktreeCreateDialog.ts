@@ -24,7 +24,7 @@ import type {
 } from "../../types/messages";
 import { sanitizeBranchForPath } from "../../worktree/branchSlug";
 import { attachTooltip } from "../ui/Tooltip";
-import { ICON_CHEVRON_DOWN } from "../vault/icons";
+import { ICON_CHEVRON_DOWN, ICON_FOLDER } from "../vault/icons";
 import { createWorktreeAgentBox, initialSafeAgentId } from "./worktreeAgentBox";
 import { dialogTitle, field, keyHint, openDialogShell, selectControl, textButton } from "./worktreeDialogShell";
 import type {
@@ -1465,7 +1465,10 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   if (pickDestination !== undefined) {
     pickDestination.type = "button";
     pickDestination.className = "wt-path-pick";
-    pickDestination.textContent = "Choose…";
+    // An icon on the line, a name for everything that reads one: the word was
+    // the widest thing beside the field and said nothing the folder does not.
+    pickDestination.innerHTML = ICON_FOLDER;
+    pickDestination.setAttribute("aria-label", "Choose…");
     pickDestination.title = "Pick the folder this worktree is created in.";
     pickDestination.addEventListener("click", () => {
       // Minted here, like `recoverAsks` above: `token` separates two openings
