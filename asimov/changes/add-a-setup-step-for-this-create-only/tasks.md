@@ -25,7 +25,7 @@
     3. Implement the `worktreeSetupStepAsk` arm: live opening, `provisionSwitch` slot latest-wins checked again after the prompt returns and before the record is touched, `op` resolved against `offers.current`, marker-only for the edit and remove kinds, a rejected prompt treated as cancel, bounds 32 × 4096, then `previewProvisioning` and `offers.issue` on every admitted arm; `withAdded` strips marker rows before appending.
     4. Add the `promptSetupStep` override to `builtHost` in src/providers/WorktreeHost.actions.test.ts and the tests the design ledger names.
 
-- [ ] 2_2 Offer add, edit and remove in the Bring over section, gated like a switch
+- [x] 2_2 Offer add, edit and remove in the Bring over section, gated like a switch — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/webview/worktree/WorktreeCreateDialog.test.ts' && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 1_1
   - **Refs**: specs/worktree-panel/spec.md#{a-setup-step-can-be-added-for-this-create-only, an-opened-setup-input-holds-the-form-until-it-is-answered, only-a-step-the-form-added-can-be-edited-or-removed-in-it, only-setup-the-user-selected-runs}; design.md D5
   - **Acceptance**:
@@ -37,7 +37,7 @@
     3. Record the edit ordinal and tick on `pendingStep` and the marker rows' ticks on `pendingSwitch`, apply both in `syncBringOver` on the answering offer per design.md D5; clear `pendingStep` on a new offer id; disable the add, edit, remove and save controls and withhold Create while an ask is pending.
     4. Style the controls in src/webview/worktree/worktreePanel.css next to `.wt-bring-save`.
 
-- [ ] 2_3 Forward the ask with the opening the form was composed in
+- [x] 2_3 Forward the ask with the opening the form was composed in — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/webview/worktree/WorktreeController.test.ts' && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 1_1
   - **Refs**: design.md D5
   - **Acceptance**:

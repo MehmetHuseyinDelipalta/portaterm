@@ -21,10 +21,12 @@ import type {
   WorktreeCreateResolutionMessage,
   WorktreeDebrisAuthorizedMessage,
   WorktreeDestinationPickedMessage,
+  WorktreeSetupStepAskMessage,
 } from "../../types/messages";
+import { SETUP_STEP_ADDED_SOURCE } from "../../types/messages";
 import { sanitizeBranchForPath } from "../../worktree/branchSlug";
 import { attachTooltip } from "../ui/Tooltip";
-import { ICON_CHEVRON_DOWN, ICON_FOLDER } from "../vault/icons";
+import { ICON_CHEVRON_DOWN, ICON_CLOSE, ICON_FOLDER, ICON_RENAME } from "../vault/icons";
 import { createWorktreeAgentBox, initialSafeAgentId } from "./worktreeAgentBox";
 import { dialogTitle, field, keyHint, openDialogShell, selectControl, textButton } from "./worktreeDialogShell";
 import type {
@@ -269,6 +271,20 @@ export interface WorktreeCreateDialogDeps {
    * source change order against each other rather than racing (design.md D8).
    */
   onProvisionSave?: (request: { repoId: string; switch: number; offerId: string; kept: readonly string[] }) => void;
+  /**
+   * Ask the host to open ITS input for a setup step that applies to this
+   * create only, or to edit or remove one it already holds.
+   *
+   * Carries an operation and, for edit and remove, the host's own ids — never
+   * the text. What the user types exists first in the extension host and comes
+   * back as display material inside a fresh offer through `bindProvisioning`,
+   * the same way every provider-declared script already arrives
+   * (add-a-setup-step-for-this-create-only/design.md D1, D2).
+   *
+   * `switch` comes from the same sequence the switch and the save mint, so the
+   * three order against each other.
+   */
+  onSetupStepAsk?: (request: { repoId: string; switch: number; op: WorktreeSetupStepAskMessage["op"] }) => void;
   /** The forge's answer, on its own channel — it must never gate `bindRefs`. */
   bindPullRequests?: (apply: (repoId: string, offer: WorktreePullRequestOffer) => void) => void;
   /**
@@ -337,6 +353,8 @@ interface BringRow {
   subject: string;
   source: string;
   checked: boolean;
+  /** A setup step the user typed into this form: the host marked it, and the form may edit or remove it. */
+  added?: boolean;
   /** Linked rows only: writing through the link changes the main checkout. */
   warn?: string;
   /**
@@ -574,14 +592,18 @@ function bringRows(model: WorktreeProvisionOffer["model"]): BringRow[] {
     });
   }
   for (const step of model.setup) {
+    // Recognised by the host's marker string, never by position.
+    const added = step.source === SETUP_STEP_ADDED_SOURCE;
     rows.push({
       id: step.id,
       verb: "Run setup",
       subject: step.script,
       source: step.source,
-      // OFF. A command a provider file supplied is not consent because a
-      // checkbox arrived pre-ticked (worktree-provisioning.md § 7).
-      checked: false,
+      // OFF for a command a provider file supplied: a checkbox that arrived
+      // pre-ticked is not consent (worktree-provisioning.md § 7). ON for one
+      // the user typed into this form — typing it is the consent.
+      checked: added,
+      ...(added ? { added: true } : {}),
       ...(step.suggestion === undefined ? {} : { suggestion: step.suggestion }),
     });
   }
@@ -877,7 +899,23 @@ function switchRow(provider: WorktreeProvisionOffer["model"]["providers"][number
  * with `textContent`. None of it is interpreted as markup, which is the rule the
  * whole untrusted-provider-file model rests on.
  */
-function bringRow(row: BringRow, index: number): HTMLElement {
+function stepButton(icon: string, name: string, className: string, click: () => void): HTMLButtonElement {
+  const b = document.createElement("button");
+  // Explicitly a button: a default-type button inside the form SUBMITS.
+  b.type = "button";
+  b.className = `wt-brow-step ${className}`;
+  b.innerHTML = icon;
+  b.setAttribute("aria-label", name);
+  b.title = name;
+  b.addEventListener("click", click);
+  return b;
+}
+
+function bringRow(
+  row: BringRow,
+  index: number,
+  onStep?: (kind: "edit" | "remove", itemId: string) => void,
+): HTMLElement {
   const el = document.createElement("div");
   el.className = row.excluded === true ? "wt-brow wt-brow--excluded" : "wt-brow";
   const topId = `wt-brow-top-${index}`;
@@ -910,6 +948,16 @@ function bringRow(row: BringRow, index: number): HTMLElement {
   const src = document.createElement("span");
   src.className = "wt-brow-src";
   src.textContent = row.source;
+  if (row.added === true && onStep !== undefined) {
+    // Only a row the host marked. A provider-declared step is not the form's
+    // to edit, and the host would refuse the ask anyway (design.md D3).
+    src.append(
+      stepButton(ICON_RENAME, `Edit setup step ${row.subject}`, "wt-brow-step-edit", () => onStep("edit", row.id)),
+    );
+    src.append(
+      stepButton(ICON_CLOSE, `Remove setup step ${row.subject}`, "wt-brow-step-remove", () => onStep("remove", row.id)),
+    );
+  }
   const meta = document.createElement("div");
   meta.className = "wt-brow-meta";
   meta.id = metaId;
@@ -1575,7 +1623,8 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       drawnOfferId === null ||
       drawnModel === null ||
       pendingSwitch.has(draft.repoId) ||
-      pendingSave.has(draft.repoId)
+      pendingSave.has(draft.repoId) ||
+      pendingStep.has(draft.repoId)
     ) {
       return;
     }
@@ -1595,6 +1644,71 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       kept: [...ticked],
     });
   });
+
+  // ── Add a setup step for this create ────────────────────────────────────
+  // Rendered last inside the box, only while an offer is drawn, and only where
+  // an ask can be posted. The text is typed into the HOST's input, not here.
+  const addStepRow = document.createElement("div");
+  addStepRow.className = "wt-bring-add";
+  const addStepButton = document.createElement("button");
+  addStepButton.type = "button";
+  addStepButton.className = "wt-bring-add-step";
+  addStepButton.textContent = "Add setup step…";
+  addStepButton.title = "Run a command in the new worktree after files are brought over. Applies to this create only.";
+  addStepRow.appendChild(addStepButton);
+  const askStep = (op: WorktreeSetupStepAskMessage["op"]): void => {
+    if (
+      drawnOfferId === null ||
+      drawnModel === null ||
+      pendingSwitch.has(draft.repoId) ||
+      pendingSave.has(draft.repoId) ||
+      pendingStep.has(draft.repoId)
+    ) {
+      return;
+    }
+    const ticked = checkedByOffer.get(drawnOfferId);
+    if (ticked === undefined) {
+      return;
+    }
+    let editing: { ordinal: number; checked: boolean } | undefined;
+    if (op.kind === "edit") {
+      const ordinal = drawnModel.setup
+        .filter((step) => step.source === SETUP_STEP_ADDED_SOURCE)
+        .findIndex((step) => step.id === op.itemId);
+      if (ordinal < 0) {
+        return;
+      }
+      editing = { ordinal, checked: ticked.has(op.itemId) };
+    }
+    switchSeq += 1;
+    pendingStep.set(draft.repoId, {
+      offerId: drawnOfferId,
+      model: drawnModel,
+      kept: new Set(ticked),
+      ...(editing === undefined ? {} : { editing }),
+    });
+    deps.onSetupStepAsk?.({ repoId: draft.repoId, switch: switchSeq, op });
+    // Create is withheld from this moment; the gate is only read on a derive.
+    syncStepControls();
+    syncDerived();
+  };
+  addStepButton.addEventListener("click", () => askStep({ kind: "add" }));
+  /** Enablement of every control an in-flight ask must hold, derived, never toggled. */
+  function syncStepControls(): void {
+    const asking = pendingStep.has(draft.repoId);
+    const busy = asking || pendingSwitch.has(draft.repoId) || pendingSave.has(draft.repoId);
+    addStepButton.disabled = busy;
+    for (const b of bringBox.querySelectorAll<HTMLButtonElement>(".wt-brow-step")) {
+      b.disabled = busy;
+    }
+    // A switch is latest-wins and may be taken over an in-flight switch or
+    // save; only an open input holds it, since its answer would land in a
+    // source the user had moved on from (design.md D5).
+    for (const b of bringBox.querySelectorAll<HTMLButtonElement>(".wt-bring-switch-take")) {
+      b.disabled = asking;
+    }
+    saveButton.disabled = pendingSave.has(draft.repoId) || asking;
+  }
 
   let drawnMigrationOfferId: string | null = null;
 
@@ -1666,6 +1780,53 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     string,
     { offerId: string; model: WorktreeProvisionOffer["model"]; kept: ReadonlySet<string> }
   >();
+  /**
+   * Per repository, a setup-step ask this form posted and has not been
+   * answered for, keyed like `pendingSwitch` and `pendingSave` and for the same
+   * reasons. Holds what the answer must be reconciled against: the offer it
+   * went out against and its model, the selection at the press, and — for an
+   * edit — which added row (by ordinal among added rows) was being edited, so
+   * its tick can follow it onto the answering offer, where its script has
+   * changed and no descriptor matches (design.md D5).
+   */
+  const pendingStep = new Map<
+    string,
+    {
+      offerId: string;
+      model: WorktreeProvisionOffer["model"];
+      kept: ReadonlySet<string>;
+      editing?: { ordinal: number; checked: boolean };
+    }
+  >();
+  /**
+   * The added rows' ticks at the moment a switch was taken, by ordinal.
+   *
+   * A switch answer reseeds from defaults, and an added row's default is ON —
+   * so a step the user had unticked came back ticked (plan attack F3). Ordinal
+   * is safe here: a switch changes neither the added rows' count nor order.
+   */
+  const addedTicksAtSwitch = new Map<string, readonly boolean[]>();
+  const addedTicks = (model: WorktreeProvisionOffer["model"], kept: ReadonlySet<string>): boolean[] =>
+    model.setup.filter((step) => step.source === SETUP_STEP_ADDED_SOURCE).map((step) => kept.has(step.id));
+  const applyAddedTicks = (
+    model: WorktreeProvisionOffer["model"],
+    ticks: readonly boolean[],
+    into: Set<string>,
+  ): void => {
+    model.setup
+      .filter((step) => step.source === SETUP_STEP_ADDED_SOURCE)
+      .forEach((step, i) => {
+        const tick = ticks[i];
+        if (tick === undefined) {
+          return;
+        }
+        if (tick) {
+          into.add(step.id);
+        } else {
+          into.delete(step.id);
+        }
+      });
+  };
   // The model behind `drawnOfferId`, so the toggle handler can restate the
   // summary without a redraw — redrawing on a tick is what W2 forbids.
   let drawnModel: WorktreeProvisionOffer["model"] | null = null;
@@ -1789,8 +1950,17 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // most of all — and a redraw is not an answer.
     const switched = pendingSwitch.get(draft.repoId);
     const saved = pendingSave.get(draft.repoId);
+    const stepped = pendingStep.get(draft.repoId);
     if (switched !== offer.offerId) {
       pendingSwitch.delete(draft.repoId);
+    }
+    // A DIFFERENT id answers the ask; the same id is a redraw, exactly as for
+    // a switch. The answer reconciles below through `carryForward`, so the
+    // superseded offer's selection is dead state once that has run.
+    const stepAnswered = stepped !== undefined && stepped.offerId !== offer.offerId;
+    if (stepAnswered) {
+      pendingStep.delete(draft.repoId);
+      checkedByOffer.delete(stepped.offerId);
     }
     // The switched-FROM offer's selection, dropped the same way a save answer
     // drops its own. Only save answers were evicting, so repeated switches left
@@ -1826,11 +1996,32 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     let ticked = checkedByOffer.get(offer.offerId);
     if (ticked === undefined) {
       const fresh = bringRows(offer.model);
-      ticked =
-        answering && saved !== undefined
-          ? carryForward(saved.model, saved.kept, fresh, offer.model)
-          : new Set(fresh.filter((r) => r.checked).map((r) => r.id));
+      if (stepAnswered && stepped !== undefined) {
+        // An add or a remove changes no surviving row's script, so the script
+        // descriptors carry every tick; an edit changes exactly one, and that
+        // row's tick follows its ordinal instead (design.md D5).
+        ticked = carryForward(stepped.model, stepped.kept, fresh, offer.model);
+        if (stepped.editing !== undefined) {
+          const ticks = addedTicks(offer.model, ticked);
+          ticks[stepped.editing.ordinal] = stepped.editing.checked;
+          applyAddedTicks(offer.model, ticks, ticked);
+        }
+      } else {
+        ticked =
+          answering && saved !== undefined
+            ? carryForward(saved.model, saved.kept, fresh, offer.model)
+            : new Set(fresh.filter((r) => r.checked).map((r) => r.id));
+        // A switch answer reseeds from defaults; the added rows' ticks were
+        // recorded when the switch was taken and are restored here (F3).
+        const atSwitch = addedTicksAtSwitch.get(draft.repoId);
+        if (switched !== undefined && switched !== offer.offerId && atSwitch !== undefined) {
+          applyAddedTicks(offer.model, atSwitch, ticked);
+        }
+      }
       checkedByOffer.set(offer.offerId, ticked);
+    }
+    if (switched !== offer.offerId) {
+      addedTicksAtSwitch.delete(draft.repoId);
     }
     // After the selection exists, never before: the counts are read off it.
     bringSum.textContent = bringSummary(offer.model, ticked);
@@ -1844,20 +2035,36 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // problem would understate what the create is about to do.
     // Replaced, never appended: a redrawn offer that added its switch rows to
     // the previous offer's would grow a row per switch taken.
+    const onStep =
+      deps.onSetupStepAsk === undefined
+        ? undefined
+        : (kind: "edit" | "remove", itemId: string) => askStep({ kind, offerId: offer.offerId, itemId });
     bringBox.replaceChildren(
-      ...rows.map((row, i) => bringRow(row, i)),
+      ...rows.map((row, i) => bringRow(row, i, onStep)),
       ...offer.model.problems.map((problem) => bringProblem(problem)),
       ...inactive.map((provider) =>
         switchRow(provider, () => {
+          if (pendingStep.has(draft.repoId)) {
+            return;
+          }
           switchSeq += 1;
           pendingSwitch.set(draft.repoId, offer.offerId);
+          // What the answer must not re-tick (design.md D5, F3).
+          addedTicksAtSwitch.set(draft.repoId, addedTicks(offer.model, held));
           saveRow.remove();
           deps.onProvisionSwitch?.({ repoId: draft.repoId, switch: switchSeq, provider: provider.id });
+          syncStepControls();
         }),
       ),
+      ...(deps.onSetupStepAsk === undefined ? [] : [addStepRow]),
     );
+    syncStepControls();
     syncYieldNotes(held);
     bringBox.hidden = bringBox.childElementCount === 0;
+    bringBox.classList.toggle(
+      "wt-bring-box--only-add",
+      bringBox.childElementCount === 1 && bringBox.contains(addStepRow),
+    );
     // The sentence stands in only where there is genuinely nothing to list. A
     // file that failed to parse has a problem row, which is a different answer,
     // and a switch row is an offer rather than something this worktree gets —
@@ -2978,13 +3185,15 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
               ? "Waiting for a destination."
               : outstanding || pickAsked !== null
                 ? "Checking the destination."
-                : recoverAsked !== null
-                  ? "Reading the existing folder before it can be cleared."
-                  : baseUnresolvable
-                    ? (verdict as { ok: false; reason: string }).reason
-                    : postureMissing
-                      ? "Choose a permission mode before starting the agent."
-                      : undefined);
+                : pendingStep.has(draft.repoId)
+                  ? "Waiting for the setup step."
+                  : recoverAsked !== null
+                    ? "Reading the existing folder before it can be cleared."
+                    : baseUnresolvable
+                      ? (verdict as { ok: false; reason: string }).reason
+                      : postureMissing
+                        ? "Choose a permission mode before starting the agent."
+                        : undefined);
     createBtn.disabled = blockedBy !== undefined;
     disabledReason.hidden = blockedBy === undefined;
     disabledReason.textContent = blockedBy ?? "";
@@ -3111,7 +3320,13 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     }
     repos[at] = { ...opened, provisioning: offer };
     if (repoId === draft.repoId) {
+      const wasPending = pendingStep.has(draft.repoId);
       syncBringOver(offer);
+      // The gate is only read on a derive, and an answered ask is what
+      // re-arms Create — the same reason the pick re-derives on its answer.
+      if (wasPending && !pendingStep.has(draft.repoId)) {
+        syncDerived();
+      }
     }
   });
 

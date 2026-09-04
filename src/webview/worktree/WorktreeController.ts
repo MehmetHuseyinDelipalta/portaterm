@@ -587,6 +587,21 @@ export class WorktreeController {
               provider: request.provider as WorktreeProvisionOffer["model"]["providers"][number]["id"],
             });
           },
+          // An operation and the host's own ids, never text: the command is
+          // typed into the host's input and comes back inside a fresh offer
+          // through `bindProvisioning` (add-a-setup-step-for-this-create-only D1).
+          onSetupStepAsk: (request) => {
+            deps.postMessage({
+              type: "worktreeSetupStepAsk",
+              repoId: request.repoId,
+              // The compose-time opening, like every other request from this
+              // form; a predecessor reading the current token would name its
+              // successor (design.md D5).
+              opening,
+              switch: request.switch,
+              op: request.op,
+            });
+          },
           // The user's selection, named by the host's own ids against the offer
           // that issued them. No path and no key: the host derives the file it
           // writes and the root it writes under from its own cache, and the

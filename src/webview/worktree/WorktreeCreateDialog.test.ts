@@ -13,6 +13,7 @@ import type {
   WorktreeDebrisAuthorizedMessage,
   WorktreeDestinationPickedMessage,
 } from "../../types/messages";
+import { SETUP_STEP_ADDED_SOURCE } from "../../types/messages";
 import type { CreateSelection } from "./WorktreeCreateDialog";
 import { openWorktreeCreateDialog, sanitizeBranchForPath } from "./WorktreeCreateDialog";
 import {
@@ -5976,5 +5977,191 @@ describe("create worktree — choosing the folder the worktree is created in", (
 
     expect(h.host.querySelector(".wt-path-pick")).toBeNull();
     h.dispose();
+  });
+});
+
+describe("a setup step added for this create only (add-a-setup-step-for-this-create-only D5)", () => {
+  const YAML = "asimov/worktree.yaml";
+  const added = (script: string, id: string) => ({
+    id,
+    kind: "shell" as const,
+    script,
+    source: SETUP_STEP_ADDED_SOURCE,
+  });
+  const provider = (id = "s-provider") => ({ id, kind: "shell" as const, script: "pnpm install", source: YAML });
+
+  function withAsk(model: Parameters<typeof provisionModel>[0] = {}, over: Record<string, unknown> = {}) {
+    const asks: Array<{ repoId: string; switch: number; op: unknown }> = [];
+    let applyOffer: ((repoId: string, offer: WorktreeProvisionOffer) => void) | undefined;
+    const h = open({
+      bindProvisioning: (apply) => {
+        applyOffer = apply;
+      },
+      onSetupStepAsk: (r) => asks.push(r),
+      onProvisionSwitch: () => {},
+      onProvisionSave: () => {},
+      ...over,
+    });
+    applyOffer?.(REPO_ID, provisionOffer({ offerId: "o1", model: provisionModel({ setup: [provider()], ...model }) }));
+    const answer = (offerId: string, next: Parameters<typeof provisionModel>[0]) =>
+      applyOffer?.(REPO_ID, provisionOffer({ offerId, model: provisionModel({ setup: [provider()], ...next }) }));
+    const rows = () => Array.from(h.host.querySelectorAll<HTMLElement>(".wt-brow"));
+    const addedRows = () =>
+      rows().filter((r) => (r.querySelector(".wt-brow-src")?.textContent ?? "").includes(SETUP_STEP_ADDED_SOURCE));
+    const ticks = () => addedRows().map((r) => r.querySelector<HTMLInputElement>(".wt-brow-cb")?.checked);
+    const addButton = () => h.q<HTMLButtonElement>(".wt-bring-add-step");
+    return { ...h, asks, answer, rows, addedRows, ticks, addButton };
+  }
+
+  it("offers the add action last in the section, and posts an add with the shared sequence and no text", () => {
+    const { q, asks, addButton } = withAsk();
+    type(q<HTMLInputElement>("#wt-branch"), "feat/x");
+
+    expect(q<HTMLElement>(".wt-bring-box").lastElementChild?.classList.contains("wt-bring-add")).toBe(true);
+    addButton().click();
+
+    expect(asks).toEqual([{ repoId: REPO_ID, switch: 1, op: { kind: "add" } }]);
+    expect(JSON.stringify(asks)).not.toMatch(/script|text|command/);
+  });
+
+  it("does not offer the action at all when no ask can be posted", () => {
+    const { host } = withAsk({}, { onSetupStepAsk: undefined });
+    expect(host.querySelector(".wt-bring-add-step")).toBeNull();
+    expect(host.querySelectorAll(".wt-brow-step")).toHaveLength(0);
+  });
+
+  it("withholds Create, the add, save and switch controls while an ask is out, and says why", () => {
+    const { q, host, addButton } = withAsk({
+      providers: [
+        { id: "asimov", files: [YAML], present: [YAML], active: true },
+        { id: "orca", files: ["orca.yaml"], present: ["orca.yaml"], active: false },
+      ],
+    });
+    type(q<HTMLInputElement>("#wt-branch"), "feat/x");
+    expect(q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(false);
+
+    addButton().click();
+
+    expect(q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(true);
+    expect(
+      host.querySelector(".wt-create-disabled-reason, [id$=disabled-reason]")?.textContent ?? host.textContent,
+    ).toContain("Waiting for the setup step.");
+    expect(addButton().disabled).toBe(true);
+    expect(q<HTMLButtonElement>(".wt-bring-save").disabled).toBe(true);
+    expect(q<HTMLButtonElement>(".wt-bring-switch-take").disabled).toBe(true);
+  });
+
+  it("is released only by a different offer id, and an added row arrives ticked with edit and remove", () => {
+    const { q, addButton, answer, addedRows, ticks } = withAsk();
+    type(q<HTMLInputElement>("#wt-branch"), "feat/x");
+    addButton().click();
+
+    // The same id again is a redraw, not an answer.
+    answer("o1", {});
+    expect(q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(true);
+
+    answer("o2", { setup: [provider(), added("pnpm build", "s2")] });
+    expect(q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(false);
+    expect(addButton().disabled).toBe(false);
+    expect(ticks()).toEqual([true]);
+    const row = addedRows()[0];
+    expect(row?.querySelector(".wt-brow-step-edit")?.getAttribute("aria-label")).toBe("Edit setup step pnpm build");
+    expect(row?.querySelector(".wt-brow-step-remove")?.getAttribute("aria-label")).toBe("Remove setup step pnpm build");
+    // The provider row got neither.
+    expect(q<HTMLElement>(".wt-brow").querySelectorAll(".wt-brow-step")).toHaveLength(0);
+  });
+
+  it("re-enables everything on a cancel answered with the offer unchanged, keeping every tick", () => {
+    const { q, host, addButton, answer, ticks } = withAsk();
+    answer("o2", { setup: [provider(), added("one", "s2")] });
+    const providerBox = host.querySelector<HTMLInputElement>(".wt-brow-cb");
+    if (providerBox === null) {
+      throw new Error("no provider row");
+    }
+    providerBox.checked = true;
+    providerBox.dispatchEvent(new Event("change", { bubbles: true }));
+    type(q<HTMLInputElement>("#wt-branch"), "feat/x");
+
+    addButton().click();
+    answer("o3", { setup: [provider("p3"), added("one", "s3")] });
+
+    expect(q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(false);
+    expect(host.querySelector<HTMLInputElement>(".wt-brow-cb")?.checked).toBe(true);
+    expect(ticks()).toEqual([true]);
+  });
+
+  it("posts edit and remove naming the drawn offer and the host's item id, nothing else", () => {
+    const { asks, answer, addedRows } = withAsk();
+    answer("o2", { setup: [provider(), added("one", "s2"), added("two", "s3")] });
+
+    addedRows()[1]?.querySelector<HTMLButtonElement>(".wt-brow-step-edit")?.click();
+    expect(asks.at(-1)).toEqual({ repoId: REPO_ID, switch: 1, op: { kind: "edit", offerId: "o2", itemId: "s3" } });
+
+    answer("o3", { setup: [provider("p3"), added("one", "s4"), added("TWO", "s5")] });
+    addedRows()[0]?.querySelector<HTMLButtonElement>(".wt-brow-step-remove")?.click();
+    expect(asks.at(-1)).toEqual({ repoId: REPO_ID, switch: 2, op: { kind: "remove", offerId: "o3", itemId: "s4" } });
+  });
+
+  it("keeps an edited row's tick by its place, and a removed row's neighbour by its script", () => {
+    const { answer, addedRows, ticks } = withAsk();
+    answer("o2", { setup: [provider(), added("one", "s2"), added("two", "s3")] });
+    // Untick the first added, keep the second.
+    const first = addedRows()[0]?.querySelector<HTMLInputElement>(".wt-brow-cb");
+    if (first == null) {
+      throw new Error("no added row");
+    }
+    first.checked = false;
+    first.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(ticks()).toEqual([false, true]);
+
+    // Edit the first: its script changes, so no descriptor matches — the tick
+    // follows the ordinal. The second keeps its own by script.
+    addedRows()[0]?.querySelector<HTMLButtonElement>(".wt-brow-step-edit")?.click();
+    answer("o3", { setup: [provider("p3"), added("ONE", "s4"), added("two", "s5")] });
+    expect(ticks()).toEqual([false, true]);
+
+    // Remove the first: the survivor keeps ITS tick, not the removed row's.
+    addedRows()[0]?.querySelector<HTMLButtonElement>(".wt-brow-step-remove")?.click();
+    answer("o4", { setup: [provider("p4"), added("two", "s6")] });
+    expect(ticks()).toEqual([true]);
+  });
+
+  it("does not re-tick an unticked added step when a source switch answers", () => {
+    const providers: ProvisionModel["providers"] = [
+      { id: "asimov", files: [YAML], present: [YAML], active: true },
+      { id: "orca", files: ["orca.yaml"], present: ["orca.yaml"], active: false },
+    ];
+    const { q, answer, addedRows, ticks } = withAsk({ providers });
+    answer("o2", { providers, setup: [provider(), added("one", "s2")] });
+    const box = addedRows()[0]?.querySelector<HTMLInputElement>(".wt-brow-cb");
+    if (box == null) {
+      throw new Error("no added row");
+    }
+    box.checked = false;
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+
+    q<HTMLButtonElement>(".wt-bring-switch-take").click();
+    answer("o3", {
+      entries: [],
+      setup: [added("one", "s3")],
+      providers: [
+        { id: "orca", files: ["orca.yaml"], present: ["orca.yaml"], active: true },
+        { id: "asimov", files: [YAML], present: [YAML], active: false },
+      ],
+    });
+
+    expect(ticks()).toEqual([false]);
+  });
+
+  it("submits the added step by the host's id, inside the offer it was shown in", () => {
+    const { q, submitted, answer } = withAsk();
+    answer("o2", { setup: [provider(), added("pnpm build", "s2")] });
+    type(q<HTMLInputElement>("#wt-branch"), "feat/x");
+    q<HTMLButtonElement>(".wt-btn--primary").click();
+
+    const provision = submitted[0]?.provision;
+    expect(provision?.offerId).toBe("o2");
+    expect(provision?.itemIds).toContain("s2");
+    expect(JSON.stringify(submitted[0])).not.toContain("pnpm build");
   });
 });

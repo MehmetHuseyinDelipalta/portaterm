@@ -2128,6 +2128,35 @@ describe("the create a toolbar with no repository opens", () => {
     });
   });
 
+  it("[2_3] forwards a setup-step ask with the compose-time opening and the form's own sequence", () => {
+    const h = ready(twoRepoResponse());
+    h.controller.openCreate();
+    const deps = (
+      h.controller as unknown as {
+        view: {
+          deps: {
+            createDialogDeps(): {
+              onSetupStepAsk(r: { repoId: string; switch: number; op: { kind: "add" } }): void;
+            };
+          };
+        };
+      }
+    ).view.deps.createDialogDeps();
+
+    // A second opening moves the token to 2; the form composed under 1 still
+    // names 1, the way the picker's request does.
+    h.controller.openCreate();
+    deps.onSetupStepAsk({ repoId: REPO_A, switch: 7, op: { kind: "add" } });
+
+    expect(h.posts.find((m) => m.type === "worktreeSetupStepAsk")).toEqual({
+      type: "worktreeSetupStepAsk",
+      repoId: REPO_A,
+      opening: 1,
+      switch: 7,
+      op: { kind: "add" },
+    });
+  });
+
   it("[2_2] drops a folder picked for a PREVIOUS opening", () => {
     const h = ready(twoRepoResponse());
     h.controller.openCreate();
