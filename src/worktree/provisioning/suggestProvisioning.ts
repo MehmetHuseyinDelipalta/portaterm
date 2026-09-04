@@ -11,17 +11,24 @@
 import * as path from "node:path";
 import type { ParseError } from "jsonc-parser";
 import { parse as parseYaml } from "yaml";
-import type { ProvisionModel } from "../../types/messages";
+import type { ProvisionEntry, ProvisionModel } from "../../types/messages";
 import { type PreparedRoot, prepareResolvedRoot } from "../../utils/resolvedPathBoundary";
 import {
   addEntry,
   addSetup,
   contained,
+  contendersOf,
+  emptyModel,
+  identityOf,
+  MAX_MODEL_ROWS,
+  MAX_READ_ROWS,
   modelFromDraft,
   newDraft,
   openProviderFile,
   type ProviderBudget,
+  type ProviderDeps,
   readJsonc,
+  rowsOf,
   scanExhausted,
   scanNames,
   splitGlob,
@@ -40,13 +47,23 @@ export interface SuggestStats {
 export interface SuggestDeps {
   lstat(p: string): Promise<SuggestStats>;
   /**
-   * Manifests only. The detector opens `package.json` and `pnpm-workspace.yaml`
-   * and nothing else — an environment file is decided by `lstat` at every
-   * depth, so no candidate secret is ever read to justify suggesting it.
+   * Manifests only, bounded and no-follow. Provider files may legitimately be
+   * symlinks, so their `readFile` cannot be reused here: an in-repository
+   * `package.json -> .env` would read secret bytes while deciding suggestions.
    */
-  readFile(p: string): Promise<string>;
+  readManifest(p: string): Promise<string>;
   readdir(p: string): Promise<readonly string[]> | AsyncIterable<string>;
   realpath(p: string): Promise<string>;
+}
+
+/** The provider-shaped view used only for containment and manifest opening. */
+function manifestProviderDeps(deps: SuggestDeps): ProviderDeps {
+  return {
+    readFile: deps.readManifest,
+    readdir: deps.readdir,
+    realpath: deps.realpath,
+    lstat: deps.lstat,
+  };
 }
 
 export const SUGGESTED_ENV_FILES: readonly string[] = [
@@ -151,12 +168,11 @@ function patternsOf(value: unknown): Declaration {
 }
 
 /**
- * A manifest's bytes, through the same seam every provider file uses.
- *
- * `openProviderFile` prepares the resolved root and checks containment BEFORE
- * it reads, which is the whole reason to go through it: reading `package.json`
- * with a bare `deps.readFile` followed a symlink out of the checkout and let an
- * arbitrary external file declare this repository's workspaces (round-1 F001).
+ * A manifest's bytes, through the provider open's containment and failure
+ * classification, but with the suggestion-only no-follow reader. Provider
+ * files may be links; manifests used only to discover suggestions may not,
+ * because `package.json -> .env` would otherwise read secret bytes (plan
+ * attack of suggest-missing-initialization-alongside-provider-config).
  */
 async function manifestBytes(
   deps: SuggestDeps,
@@ -164,7 +180,7 @@ async function manifestBytes(
   root: PreparedRoot,
   file: string,
 ): Promise<{ kind: "text"; text: string } | { kind: "absent" } | { kind: "refused" }> {
-  const opened = await openProviderFile(deps, repoRoot, { id: "native", file }, root);
+  const opened = await openProviderFile(manifestProviderDeps(deps), repoRoot, { id: "native", file }, root);
   if (opened.kind === "text") {
     return { kind: "text", text: opened.text };
   }
@@ -271,6 +287,7 @@ async function workspaceDirs(deps: SuggestDeps, repoRoot: string, budget: Provid
     return [];
   }
   const declared = await declaredWorkspaces(deps, repoRoot, prepared);
+  const filesystem = manifestProviderDeps(deps);
   const out: string[] = [];
   /**
    * One unit of the shared budget per declaration examined, spent BEFORE the
@@ -287,7 +304,7 @@ async function workspaceDirs(deps: SuggestDeps, repoRoot: string, budget: Provid
       return false;
     }
     budget.scanned += 1;
-    if ((await contained(rel, repoRoot, prepared, deps)) !== "inside") {
+    if ((await contained(rel, repoRoot, prepared, filesystem)) !== "inside") {
       return false;
     }
     out.push(rel);
@@ -326,7 +343,7 @@ async function workspaceDirs(deps: SuggestDeps, repoRoot: string, budget: Provid
     // every top-level package (round-1 F005).
     if (glob.dir !== "") {
       budget.scanned += 1;
-      if ((await contained(glob.dir, repoRoot, prepared, deps)) !== "inside") {
+      if ((await contained(glob.dir, repoRoot, prepared, filesystem)) !== "inside") {
         continue;
       }
     }
@@ -360,57 +377,125 @@ async function workspaceDirs(deps: SuggestDeps, repoRoot: string, budget: Provid
   return out;
 }
 
+/** Every selectable id a base model may already carry before offer remint. */
+function selectableIds(model: ProvisionModel): Set<string> {
+  return new Set([...model.entries, ...model.setup, ...model.ports, ...model.excluded].map((row) => row.id));
+}
+
+/**
+ * Mint from the read's sequence, but never assume a pre-offer base is already
+ * collision-free. `contendersOf` names rows by id, so a colliding probe id can
+ * suppress an unrelated candidate before the offer store gets to remint it.
+ */
+function freshSuggestionId(budget: ProviderBudget, held: Set<string>): string | undefined {
+  for (let i = 0; i <= MAX_MODEL_ROWS; i += 1) {
+    const id = budget.nextId();
+    if (!held.has(id)) {
+      held.add(id);
+      return id;
+    }
+  }
+  return undefined;
+}
+
+/** Whether this candidate could share a destination with any occupied row. */
+function conflictsWith(occupied: readonly ProvisionEntry[], candidate: ProvisionEntry): boolean {
+  const key = identityOf(candidate.path);
+  return (
+    occupied.some((entry) => identityOf(entry.path) === key) ||
+    contendersOf([...occupied, candidate]).some((group) => group.members.includes(candidate.id))
+  );
+}
+
 export async function suggestProvisioning(
   deps: SuggestDeps,
   repoRoot: string,
   budget: ProviderBudget,
+  base: ProvisionModel = emptyModel(),
 ): Promise<ProvisionModel> {
-  const nextId = budget.nextId;
-  // Through the kit's draft and its one assembly point, like every adapter: a
-  // field added to `ProvisionModel` must not reach the three adapters and miss
-  // this detector. There is no provider file behind these rows, so the context
-  // names the root file each row's own evidence is.
-  const draft = newDraft({ id: "native", file: "" }, budget);
-  for (const name of SUGGESTED_ENV_FILES) {
-    if (await ordinaryFile(deps, path.join(repoRoot, name))) {
-      addEntry(draft, {
-        id: nextId(),
-        path: name,
-        mode: "copy",
-        source: name,
-        suggestion: "May contain secrets.",
-      });
-    }
+  // A capped read already omitted configured material. Suggestions never buy
+  // its place. `rowsOf` is the finished model's cost; native merge can discard
+  // rows the historical budget charged, so a complete uncapped answer refunds
+  // only those dead charges before suggestions are considered.
+  const baseRows = rowsOf(base);
+  if (budget.capped || baseRows > MAX_READ_ROWS + 1) {
+    return base;
   }
-  // Root first and unchanged, so the common case reads exactly as before (D4).
+  budget.rows = baseRows;
+
+  const heldIds = selectableIds(base);
+  const occupied: ProvisionEntry[] = [...base.entries, ...base.excluded];
+  const scripts = new Set(base.setup.map((step) => step.script));
+  const draft = newDraft({ id: "native", file: "" }, budget);
+
+  const offerEnvironment = async (rel: string): Promise<void> => {
+    // Existing/excluded rows answer first and avoid even the metadata probe.
+    if (occupied.some((entry) => identityOf(entry.path) === identityOf(rel))) {
+      return;
+    }
+    if (!(await ordinaryFile(deps, path.join(repoRoot, rel)))) {
+      return;
+    }
+    const id = freshSuggestionId(budget, heldIds);
+    if (id === undefined) {
+      return;
+    }
+    const candidate: ProvisionEntry = {
+      id,
+      path: rel,
+      mode: "copy",
+      source: rel,
+      suggestion: "May contain secrets.",
+    };
+    if (conflictsWith(occupied, candidate)) {
+      return;
+    }
+    if (addEntry(draft, candidate)) {
+      occupied.push(candidate);
+    }
+  };
+
+  for (const name of SUGGESTED_ENV_FILES) {
+    await offerEnvironment(name);
+  }
   for (const dir of await workspaceDirs(deps, repoRoot, budget)) {
     for (const name of SUGGESTED_ENV_FILES) {
-      const rel = `${dir}/${name}`;
-      if (await ordinaryFile(deps, path.join(repoRoot, dir, name))) {
-        addEntry(draft, {
-          id: nextId(),
-          path: rel,
-          mode: "copy",
-          source: rel,
-          suggestion: "May contain secrets.",
-        });
-      }
+      await offerEnvironment(`${dir}/${name}`);
     }
   }
-  // Setup stays a root question: a workspace install runs once at the root (D5).
+  // Setup stays a root question: a workspace install runs once at the root.
   for (const manager of SUGGESTED_MANAGERS) {
+    if (scripts.has(manager.command)) {
+      continue;
+    }
     for (const lockfile of manager.lockfiles) {
       if (await ordinaryFile(deps, path.join(repoRoot, lockfile))) {
-        addSetup(draft, {
-          id: nextId(),
-          kind: "shell",
-          script: manager.command,
-          source: lockfile,
-          suggestion: "Runs after files are copied.",
-        });
+        const id = freshSuggestionId(budget, heldIds);
+        if (id !== undefined) {
+          const step = {
+            id,
+            kind: "shell" as const,
+            script: manager.command,
+            source: lockfile,
+            suggestion: "Runs after files are copied.",
+          };
+          if (addSetup(draft, step)) {
+            scripts.add(manager.command);
+          }
+        }
         break;
       }
     }
   }
-  return modelFromDraft(draft);
+
+  const added = modelFromDraft(draft);
+  if (added.entries.length === 0 && added.setup.length === 0 && added.problems.length === 0) {
+    return base;
+  }
+  return {
+    ...base,
+    entries: [...base.entries, ...added.entries],
+    setup: [...base.setup, ...added.setup],
+    problems: [...base.problems, ...added.problems],
+  };
 }

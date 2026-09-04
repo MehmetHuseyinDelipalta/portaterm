@@ -52,6 +52,13 @@ function fs(spec: Repo, dirs: Record<string, string[]> = {}): ReadDeps {
       }
       return held;
     },
+    readManifest: async (p) => {
+      const held = files[p];
+      if (held === undefined) {
+        throw missing(p);
+      }
+      return held;
+    },
     readdir: async (p) => {
       const held = dirs[p];
       if (held === undefined) {

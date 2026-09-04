@@ -4,7 +4,8 @@
 
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { MAX_SCAN, newBudget, type ProviderBudget } from "./providerKit";
+import type { ProvisionModel } from "../../types/messages";
+import { MAX_READ_ROWS, MAX_SCAN, newBudget, type ProviderBudget, rowsOf } from "./providerKit";
 import { SUGGESTED_ENV_FILES, SUGGESTED_MANAGERS, type SuggestDeps, suggestProvisioning } from "./suggestProvisioning";
 
 const ROOT = "/repo";
@@ -26,7 +27,7 @@ function root(
   const deps: SuggestDeps = {
     // Manifests only. Every test asserts against `read`, so a detector that
     // opened an environment file to decide anything would be caught by name.
-    readFile: async (p) => {
+    readManifest: async (p) => {
       read.push(rel(p));
       const text = files[rel(p)];
       if (text === undefined) {
@@ -602,5 +603,142 @@ describe("suggestProvisioning — every declaration state, named once", () => {
 
       expect((await suggestProvisioning(deps, ROOT, seq())).entries.map((e) => e.path)).toEqual(["apps/web/.env"]);
     });
+  });
+});
+
+describe("suggestProvisioning — supplementing a complete provider model", () => {
+  const base = (over: Partial<ProvisionModel> = {}): ProvisionModel => ({
+    entries: [{ id: "i1", path: ".env.local", mode: "copy", source: "asimov/worktree.yaml" }],
+    setup: [{ id: "i2", kind: "shell", script: "pnpm install", source: "asimov/worktree.yaml" }],
+    ports: [{ id: "i3", name: "web", source: "asimov/worktree.yaml" }],
+    providers: [{ id: "asimov", files: ["asimov/worktree.yaml"], present: ["asimov/worktree.yaml"], active: true }],
+    excluded: [{ id: "i4", path: ".env", mode: "copy", source: "orca.yaml" }],
+    contenders: [{ members: ["i1", "i4"], natives: ["i1"] }],
+    problems: [{ file: "asimov/worktree.yaml", reason: "unknownKey", detail: "kept" }],
+    ...over,
+  });
+
+  it("preserves every base field and appends only missing noncontending suggestions", async () => {
+    const { deps } = root({
+      ".env": "file",
+      ".env.local": "file",
+      ".env.development": "file",
+      "pnpm-lock.yaml": "file",
+      "yarn.lock": "file",
+    });
+    const held = base();
+
+    const model = await suggestProvisioning(deps, ROOT, seq(), held);
+
+    expect(model.entries.slice(0, held.entries.length)).toEqual(held.entries);
+    expect(model.setup.slice(0, held.setup.length)).toEqual(held.setup);
+    expect(model.entries.slice(held.entries.length).map((e) => e.path)).toEqual([".env.development"]);
+    expect(model.setup.slice(held.setup.length).map((step) => step.script)).toEqual(["yarn install"]);
+    expect(model.ports).toBe(held.ports);
+    expect(model.providers).toBe(held.providers);
+    expect(model.excluded).toBe(held.excluded);
+    expect(model.contenders).toBe(held.contenders);
+    expect(model.problems[0]).toBe(held.problems[0]);
+    expect(
+      [...model.entries.slice(held.entries.length), ...model.setup.slice(held.setup.length)].every(
+        (row) => row.suggestion !== undefined,
+      ),
+    ).toBe(true);
+  });
+
+  it("suppresses a possible fold contender without adding a new contender group", async () => {
+    const { deps } = root({ ".env": "file" });
+    const held = base({
+      entries: [{ id: "i1", path: ".ENV", mode: "copy", source: "asimov/worktree.yaml" }],
+      excluded: [],
+      contenders: [],
+      setup: [],
+      ports: [],
+      problems: [],
+    });
+
+    const model = await suggestProvisioning(deps, ROOT, seq(), held);
+
+    expect(model.entries).toEqual(held.entries);
+    expect(model.contenders).toBe(held.contenders);
+  });
+
+  it("mints a probe id disjoint from every pre-offer base id", async () => {
+    const { deps } = root({ ".env": "file" });
+    // `seq()` starts at s1. A contender membership check under that colliding
+    // id would treat the candidate as the existing row and suppress it.
+    const held = base({
+      entries: [{ id: "s1", path: "README.md", mode: "copy", source: "asimov/worktree.yaml" }],
+      excluded: [],
+      contenders: [],
+      setup: [],
+      ports: [],
+      problems: [],
+    });
+
+    const model = await suggestProvisioning(deps, ROOT, seq(), held);
+
+    expect(model.entries.map((entry) => [entry.id, entry.path])).toEqual([
+      ["s1", "README.md"],
+      ["s2", ".env"],
+    ]);
+  });
+
+  it("uses exact setup script identity and never normalizes shell programs", async () => {
+    const { deps } = root({ "pnpm-lock.yaml": "file" });
+    const held = base({
+      entries: [],
+      excluded: [],
+      contenders: [],
+      setup: [{ id: "i1", kind: "shell", script: "pnpm install ", source: "asimov/worktree.yaml" }],
+      ports: [],
+      problems: [],
+    });
+
+    const model = await suggestProvisioning(deps, ROOT, seq(), held);
+
+    expect(model.setup.map((step) => step.script)).toEqual(["pnpm install ", "pnpm install"]);
+  });
+
+  it("synchronizes capacity to the finished base, but never refunds a capped read", async () => {
+    const { deps } = root({ ".env": "file" });
+    const small = base({
+      entries: [{ id: "i1", path: "README.md", mode: "copy", source: "native" }],
+      setup: [],
+      ports: [],
+      providers: [],
+      excluded: [],
+      contenders: [],
+      problems: [],
+    });
+    const inflated = seq();
+    inflated.rows = MAX_READ_ROWS;
+    expect((await suggestProvisioning(deps, ROOT, inflated, small)).entries.map((e) => e.path)).toEqual([
+      "README.md",
+      ".env",
+    ]);
+
+    const cappedBudget = seq();
+    cappedBudget.capped = true;
+    expect(await suggestProvisioning(deps, ROOT, cappedBudget, small)).toBe(small);
+
+    const full = base({
+      entries: Array.from({ length: MAX_READ_ROWS }, (_, i) => ({
+        id: `i${i}`,
+        path: `file-${i}`,
+        mode: "copy" as const,
+        source: "native",
+      })),
+      setup: [],
+      ports: [],
+      providers: [],
+      excluded: [],
+      contenders: [],
+      problems: [],
+    });
+    const bounded = await suggestProvisioning(deps, ROOT, seq(), full);
+    expect(rowsOf(bounded)).toBeLessThanOrEqual(MAX_READ_ROWS + 1);
+    expect(bounded.entries).toEqual(full.entries);
+    expect(bounded.problems.some((problem) => problem.detail.includes("are not offered"))).toBe(true);
   });
 });

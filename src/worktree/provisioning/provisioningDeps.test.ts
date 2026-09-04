@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readAsimovProvisioning } from "./asimovProvider";
+import { newBudget } from "./providerKit";
 import { createProvisioningDeps, MAX_PROVIDER_BYTES } from "./provisioningDeps";
+import { suggestProvisioning } from "./suggestProvisioning";
 
 /**
  * The production dependencies against a real checkout.
@@ -48,6 +50,21 @@ describe("createProvisioningDeps", () => {
 
     expect(model.problems).toEqual([]);
     expect(model.providers).toEqual([]);
+  });
+
+  it("refuses an in-repository manifest symlink before it can read secret bytes", async () => {
+    // Provider files may legitimately be links; suggestion manifests may not.
+    // Point package.json at an environment file containing valid workspace JSON:
+    // following it would discover apps/web and prove the secret was read.
+    await write(".env", JSON.stringify({ workspaces: ["apps/*"] }));
+    await mkdir(path.join(root, "apps", "web"), { recursive: true });
+    await write("apps/web/.env", "SECRET=1");
+    await symlink(path.join(root, ".env"), path.join(root, "package.json"));
+
+    const model = await suggestProvisioning(createProvisioningDeps(), root, newBudget());
+
+    expect(model.entries.map((entry) => entry.path)).toEqual([".env"]);
+    expect(model.entries.map((entry) => entry.path)).not.toContain("apps/web/.env");
   });
 
   it("[W1] refuses an oversized provider file instead of parsing it", async () => {

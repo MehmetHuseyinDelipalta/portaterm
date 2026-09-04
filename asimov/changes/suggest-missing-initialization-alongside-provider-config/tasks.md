@@ -1,6 +1,6 @@
 ## 1. Compose missing suggestions
 
-- [ ] 1_1 Make the detector supplement a base model without duplicates
+- [x] 1_1 Make the detector supplement a base model without duplicates — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/suggestProvisioning.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: none
   - **Refs**: specs/worktree-panel/spec.md#missing-initialization-material-is-suggested-without-overriding-configuration; design.md D1, D2
   - **Acceptance**:
@@ -8,7 +8,7 @@
     - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/suggestProvisioning.test.ts
   - **Plan**:
     1. In src/worktree/provisioning/suggestProvisioning.ts add required no-follow `readManifest`, accept an optional base model, synchronize the budget per design.md D3, mint disjoint candidate ids, suppress candidates per D2, and preserve every base field.
-    2. In src/worktree/provisioning/provisioningDeps.ts supply a bounded no-follow manifest reader; update src/worktree/provisioning/provisioningDeps.test.ts.
+    2. In src/worktree/provisioning/provisioningDeps.ts supply a bounded no-follow manifest reader; update src/worktree/provisioning/provisioningDeps.test.ts and the shared fake in src/worktree/provisioning/readProvisioning.test.ts.
     3. In src/worktree/provisioning/suggestProvisioning.test.ts add a fully populated base fixture, cases covering configured rows, excluded rows, possible folds, id collisions, exact scripts, the cap and refunded merge capacity, and dependency spies proving manifest symlinks and candidate bytes are refused.
 
 ## 2. Supplement every provider read

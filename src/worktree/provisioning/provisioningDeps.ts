@@ -34,12 +34,12 @@ export const MAX_PROVIDER_BYTES = 256 * 1024;
  * defeat it (round-1 B8). Oversize is reported as `EFBIG`, which is a failure
  * to read rather than a failure to find.
  */
-async function readBounded(filePath: string, maxBytes: number): Promise<string> {
+async function readBounded(filePath: string, maxBytes: number, noFollow = false): Promise<string> {
   // Not `open(filePath, "r")`: that call never returns for a writerless pipe,
   // so the cap below would never get to apply and a caller holding a lock across
   // this read would never release it (design.md D1 of
   // `open-a-provider-file-without-waiting-on-it`).
-  const handle = await openRegularFile(filePath);
+  const handle = await openRegularFile(filePath, undefined, { noFollow });
   try {
     const buf = Buffer.alloc(maxBytes + 1);
     let total = 0;
@@ -69,6 +69,9 @@ async function readBounded(filePath: string, maxBytes: number): Promise<string> 
 export function createProvisioningDeps(): ProviderDeps & SuggestDeps {
   return {
     readFile: (p) => readBounded(p, MAX_PROVIDER_BYTES),
+    // Suggestion manifests are not provider configuration: following one can
+    // read `.env` or a lockfile merely to decide what to suggest.
+    readManifest: (p) => readBounded(p, MAX_PROVIDER_BYTES, true),
     // `opendir` rather than `readdir`: the kit scans under a budget, and a
     // whole-directory read would materialize a hostile directory before any
     // budget could apply (.reviews/round-2.md B7).
