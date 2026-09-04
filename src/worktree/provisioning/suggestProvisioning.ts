@@ -418,7 +418,7 @@ export async function suggestProvisioning(
   // rows the historical budget charged, so a complete uncapped answer refunds
   // only those dead charges before suggestions are considered.
   const baseRows = rowsOf(base);
-  if (budget.capped || baseRows > MAX_READ_ROWS + 1) {
+  if (budget.capped || baseRows >= MAX_READ_ROWS + 1) {
     return base;
   }
   budget.rows = baseRows;

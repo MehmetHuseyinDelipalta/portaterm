@@ -25,3 +25,15 @@
     3. In src/worktree/provisioning/readProvisioning.test.ts cover complete answers with and without rows, malformed partial and unresolved-extends suppression, duplicate merge capacity, source switching and the cap branches.
     4. In src/providers/WorktreeHost.actions.test.ts and src/worktree/provisioning/writeNativeConfig.test.ts cover the non-native save followed by reread: selected file becomes configured, setup remains an unchecked suggestion, warning text preserved.
     5. In src/extension.worktreeAssembly.test.ts keep the late-offer integration witness isolated now that existing environment files can supplement complete provider answers.
+
+## 3. Close review blockers
+
+- [x] 3_1 Enforce the exact row ceiling and reject incomplete task members — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/suggestProvisioning.test.ts src/worktree/provisioning/vscodeTasksProvider.test.ts src/worktree/provisioning/readProvisioning.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
+  - **Deps**: 2_1
+  - **Refs**: specs/worktree-panel/spec.md#{missing-initialization-material-is-suggested-without-overriding-configuration, an-incomplete-provider-answer-is-not-supplemented}; design.md D3, D4
+  - **Acceptance**:
+    - Outcome: supplementation stays within reserved capacity and never follows malformed VS Code task material
+    - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/suggestProvisioning.test.ts src/worktree/provisioning/vscodeTasksProvider.test.ts src/worktree/provisioning/readProvisioning.test.ts
+  - **Plan**:
+    1. In src/worktree/provisioning/suggestProvisioning.ts refuse an optional base already at the exact read ceiling; add its fresh-budget boundary witness in src/worktree/provisioning/suggestProvisioning.test.ts.
+    2. In src/worktree/provisioning/vscodeTasksProvider.ts mark non-object task members and malformed `runOptions` incomplete without inventing setup; cover both shapes in src/worktree/provisioning/vscodeTasksProvider.test.ts and src/worktree/provisioning/readProvisioning.test.ts.

@@ -26,9 +26,9 @@ function fs(spec: { files?: Record<string, string>; links?: Record<string, strin
 
 // `read()` answers a record now (design.md D1); every assertion below is about
 // the model inside it, so it is unwrapped here rather than at ~30 call sites.
-const read = async (text: string) =>
-  (await vscodeTasksAdapter.read(fs({ files: { [`${ROOT}/${VSCODE_TASKS_FILE}`]: text } }), ROOT, newBudget()))
-    ?.model ?? null;
+const answer = (text: string) =>
+  vscodeTasksAdapter.read(fs({ files: { [`${ROOT}/${VSCODE_TASKS_FILE}`]: text } }), ROOT, newBudget());
+const read = async (text: string) => (await answer(text))?.model ?? null;
 
 /** A task declared to run on worktree creation, plus whatever else. */
 function tasksFile(...entries: string[]): string {
@@ -97,6 +97,16 @@ describe("only what the repository declared as worktree setup", () => {
     );
 
     expect(model?.setup.map((s) => s.script)).toEqual(["pnpm install"]);
+  });
+
+  it.each([
+    ["a non-object task member", tasksFile("42")],
+    ["a non-mapping runOptions", tasksFile(`{ "label": "bad", "command": "pnpm install", "runOptions": [] }`)],
+  ])("marks %s incomplete", async (_label, text) => {
+    const result = await answer(text);
+
+    expect(result?.model.setup).toEqual([]);
+    expect(result?.suggestible).toBe(false);
   });
 
   it("keeps file order", async () => {

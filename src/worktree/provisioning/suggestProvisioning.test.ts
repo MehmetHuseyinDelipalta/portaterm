@@ -741,4 +741,28 @@ describe("suggestProvisioning — supplementing a complete provider model", () =
     expect(bounded.entries).toEqual(full.entries);
     expect(bounded.problems.some((problem) => problem.detail.includes("are not offered"))).toBe(true);
   });
+
+  it("leaves an exact full-base boundary unchanged", async () => {
+    const { deps } = root({ ".env": "file" });
+    const full = base({
+      entries: Array.from({ length: MAX_READ_ROWS + 1 }, (_, i) => ({
+        id: `i${i}`,
+        path: `file-${i}`,
+        mode: "copy" as const,
+        source: "native",
+      })),
+      setup: [],
+      ports: [],
+      providers: [],
+      excluded: [],
+      contenders: [],
+      problems: [],
+    });
+    const budget = seq();
+
+    expect(await suggestProvisioning(deps, ROOT, budget, full)).toBe(full);
+    expect(rowsOf(full)).toBe(MAX_READ_ROWS + 1);
+    expect(budget.rows).toBe(0);
+    expect(budget.capped).toBe(false);
+  });
 });

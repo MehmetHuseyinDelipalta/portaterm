@@ -213,6 +213,11 @@ setup:
       { asimov: "copy: [unclosed", root: [".env", "pnpm-lock.yaml"] },
       { orcaYaml: "worktree: [unclosed", root: [".env", "pnpm-lock.yaml"] },
       { tasks: '{ "tasks": [', root: [".env", "pnpm-lock.yaml"] },
+      { tasks: '{ "tasks": [42] }', root: [".env", "pnpm-lock.yaml"] },
+      {
+        tasks: '{ "tasks": [{ "command": "pnpm ignored", "runOptions": [] }] }',
+        root: [".env", "pnpm-lock.yaml"],
+      },
     ];
     for (const one of cases) {
       const model = await readProvisioning(fs(one), ROOT);

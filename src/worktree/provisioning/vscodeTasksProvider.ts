@@ -170,22 +170,35 @@ export const vscodeTasksAdapter: ProviderAdapter = {
 
     // File order, so the section lists the steps in the order the repository
     // wrote them rather than one this module invented.
-    for (const raw of declared) {
+    let complete = true;
+    for (const [index, raw] of declared.entries()) {
       if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+        complete = false;
+        report(draft, `task ${index + 1}`, problem(TASKS, "malformed", "A task must be a mapping of keys."));
         continue;
       }
       const entry = raw as Record<string, unknown>;
+      const label = typeof entry.label === "string" && entry.label.trim() !== "" ? `\`${entry.label}\`` : "a task";
       const runOptions = entry.runOptions;
-      const runOn =
-        typeof runOptions === "object" && runOptions !== null && !Array.isArray(runOptions)
-          ? (runOptions as Record<string, unknown>).runOn
-          : undefined;
+      if (
+        runOptions !== undefined &&
+        (typeof runOptions !== "object" || runOptions === null || Array.isArray(runOptions))
+      ) {
+        complete = false;
+        report(draft, label, problem(TASKS, "malformed", "`runOptions` must be a mapping of keys."));
+        continue;
+      }
+      const runOn = (runOptions as Record<string, unknown> | undefined)?.runOn;
+      if (runOn !== undefined && typeof runOn !== "string") {
+        complete = false;
+        report(draft, label, problem(TASKS, "malformed", "`runOptions.runOn` must be text."));
+        continue;
+      }
       // Only what the repository declared as worktree setup. Every other task
       // is something the user runs when they choose to.
       if (runOn !== RUN_ON_CREATE) {
         continue;
       }
-      const label = typeof entry.label === "string" && entry.label.trim() !== "" ? `\`${entry.label}\`` : "a task";
       const script = scriptFor(entry, label, draft);
       if (script === null) {
         continue;
@@ -198,6 +211,6 @@ export const vscodeTasksAdapter: ProviderAdapter = {
       }
     }
     const model = modelFromDraft(draft);
-    return { model, suggestible: model.problems.length === 0 };
+    return { model, suggestible: complete && model.problems.length === 0 };
   },
 };
