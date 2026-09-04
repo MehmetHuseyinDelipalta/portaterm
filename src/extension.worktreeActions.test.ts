@@ -33,6 +33,7 @@ function harness(over: Partial<WorktreeActionDeps> = {}) {
       clipboard.push(text);
     },
     pickFolder: async () => undefined,
+    promptSetupStep: async () => undefined,
     // Identity, so an assertion reads the path rather than a Uri stand-in.
     fileUri: (path) => path,
     workspaceFolderCount: () => 2,

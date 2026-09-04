@@ -48,7 +48,7 @@
 
 ## 3. Wiring and record
 
-- [ ] 3_1 Wire the input box and prove the path from typed text to the shell
+- [x] 3_1 Wire the input box and prove the path from typed text to the shell — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/extension.worktreeAssembly.test.ts' && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 2_1, 2_2, 2_3
   - **Refs**: specs/worktree-panel/spec.md#{a-setup-step-can-be-added-for-this-create-only, a-typed-setup-step-is-spent-only-through-the-host-held-offer}; design.md D1
   - **Acceptance**:

@@ -129,6 +129,8 @@ export interface WorktreeActionDeps {
   sessionCwd(entryId: string): Promise<string | undefined>;
   /** The folder the user chose, or `undefined` for a cancelled picker. */
   pickFolder(): Promise<string | undefined>;
+  /** The setup command the user typed, or `undefined` for a dismissed input. */
+  promptSetupStep(current?: string): Promise<string | undefined>;
 }
 
 /**
@@ -176,6 +178,7 @@ export function createWorktreeActions(deps: WorktreeActionDeps): WorktreeActions
       await deps.executeCommand("revealFileInOS", deps.fileUri(path));
     },
     pickFolder: () => deps.pickFolder(),
+    promptSetupStep: (current) => deps.promptSetupStep(current),
     copyText: async (text) => {
       await deps.writeClipboard(text);
     },
@@ -559,6 +562,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         title: "Choose where the worktree is created",
       });
       return picked?.[0]?.fsPath;
+    },
+    // The host's own input, like the folder picker above: the command exists
+    // here first and reaches the webview only inside the offer the host then
+    // issues, so nothing the form sends is ever the text that runs
+    // (worktree-provisioning.md § 4.0). The bounds are the host's — this
+    // validation is a courtesy to the typist, and the host refuses regardless.
+    promptSetupStep: async (current) => {
+      const typed = await vscode.window.showInputBox({
+        title: current === undefined ? "Add a setup step for this create" : "Edit this setup step",
+        prompt: "Runs in the new worktree after files are brought over. Applies to this create only.",
+        placeHolder: "pnpm install",
+        ...(current === undefined ? {} : { value: current }),
+        ignoreFocusOut: true,
+        validateInput: (value) =>
+          value.trim().length === 0
+            ? "Enter a command."
+            : value.length > 4096
+              ? "A setup step is at most 4096 characters."
+              : undefined,
+      });
+      return typed === undefined || typed.trim().length === 0 ? undefined : typed;
     },
     fileUri: (path) => vscode.Uri.file(path),
     workspaceFolderCount: () => (vscode.workspace.workspaceFolders ?? []).length,

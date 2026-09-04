@@ -3378,3 +3378,114 @@ describe("the invariants that span the host and the webview", () => {
 function agentRowFixture(): WorktreeAgentRow {
   return agentRow({ rowId: "row-1", paneId: "pane-1", viewId: "view-1", title: "worktree walk", agent: "claude" });
 }
+
+describe("a setup step typed into the host's own input runs for this create and is never saved", () => {
+  async function openWithSetupOffer(): Promise<void> {
+    clickItem(openMenu("feature"), /new worktree/i);
+    await settleUntil(
+      () => document.querySelector(".wt-bring-add-step") !== null,
+      "the create form to offer adding a setup step",
+    );
+  }
+
+  function addedRow(): HTMLElement | undefined {
+    return [...document.querySelectorAll<HTMLElement>(".wt-brow")].find((row) =>
+      (row.querySelector(".wt-brow-src")?.textContent ?? "").includes("added for this create"),
+    );
+  }
+
+  it("[3_1] runs the typed command in the created worktree, by the host's id, with the marker as its source", async () => {
+    // A provider file with no setup, so the only setup that can run is the
+    // one typed here — and the whole path from the input box to the runner is
+    // walked in the shipped wiring, not a fake of any layer of it.
+    fs.mkdirSync(path.join(REPO, "asimov"), { recursive: true });
+    fs.writeFileSync(path.join(REPO, "asimov", "worktree.yaml"), "copy:\n  - .env\n");
+    fs.writeFileSync(path.join(REPO, ".env"), "TOKEN=1\n");
+    await assemble();
+    const vscode = await import("./test/__mocks__/vscode");
+    const asked: unknown[] = [];
+    (vscode.window as Record<string, unknown>).showInputBox = (options: unknown) => {
+      asked.push(options);
+      return Promise.resolve("pnpm install --offline");
+    };
+
+    await openWithSetupOffer();
+    const branch = document.querySelector<HTMLInputElement>("#wt-branch");
+    if (branch === null) {
+      throw new Error("the create form has no branch field");
+    }
+    branch.value = "feat/typed-setup";
+    branch.dispatchEvent(new Event("input", { bubbles: true }));
+    branch.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle();
+
+    document.querySelector<HTMLButtonElement>(".wt-bring-add-step")?.click();
+    await settleUntil(() => addedRow() !== undefined, "the typed step to be offered back");
+    expect(asked).toHaveLength(1);
+    const row = addedRow();
+    expect(row?.textContent).toContain("pnpm install --offline");
+    expect(row?.querySelector<HTMLInputElement>(".wt-brow-cb")?.checked).toBe(true);
+    // Nothing the webview posted carried the text.
+    expect(JSON.stringify(outbound)).not.toContain("pnpm install --offline");
+
+    const destination = document.querySelector<HTMLInputElement>("#wt-path")?.value;
+    if (destination === undefined || destination === "") {
+      throw new Error("the host resolved no destination");
+    }
+    fs.mkdirSync(destination, { recursive: true });
+    [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => /create worktree/i.test(button.textContent ?? ""))
+      ?.click();
+    await settleUntil(() => setupHarness.runs.length === 1, "setup to start");
+
+    expect(setupHarness.runs[0]?.steps.map((step) => [step.source, step.script])).toEqual([
+      ["added for this create", "pnpm install --offline"],
+    ]);
+    const create = outbound.find((message) => message.type === "worktreeCreate") as
+      | { provision?: { itemIds: string[] } }
+      | undefined;
+    expect(create?.provision?.itemIds).toEqual([expect.any(String), expect.any(String)]);
+  });
+
+  it("[3_1] leaves the native configuration without any setup key when the choices are saved", async () => {
+    fs.mkdirSync(path.join(REPO, "asimov"), { recursive: true });
+    fs.writeFileSync(path.join(REPO, "asimov", "worktree.yaml"), "copy:\n  - .env\n");
+    fs.writeFileSync(path.join(REPO, ".env"), "TOKEN=1\n");
+    await assemble();
+    const vscode = await import("./test/__mocks__/vscode");
+    (vscode.window as Record<string, unknown>).showInputBox = () => Promise.resolve("pnpm build");
+
+    await openWithSetupOffer();
+    document.querySelector<HTMLButtonElement>(".wt-bring-add-step")?.click();
+    await settleUntil(() => addedRow() !== undefined, "the typed step to be offered back");
+    // Something the file CAN record, so the save writes at all: a save with
+    // nothing to record writes nothing, and an absent file proves nothing about
+    // what a written one would carry.
+    const envBox = [...document.querySelectorAll<HTMLElement>(".wt-brow")]
+      .find((row) => (row.textContent ?? "").includes(".env"))
+      ?.querySelector<HTMLInputElement>(".wt-brow-cb");
+    if (envBox == null) {
+      throw new Error("the form offered no .env row to untick");
+    }
+    envBox.checked = false;
+    envBox.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const save = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
+      /save current choices/i.test(b.textContent ?? ""),
+    );
+    if (save === undefined) {
+      throw new Error("the form offered no save");
+    }
+    save.click();
+    const native = path.join(REPO, ".vscode", "worktree.json");
+    await settleUntil(() => fs.existsSync(native), "the native configuration to be written");
+    await settle();
+
+    const written = fs.readFileSync(native, "utf8");
+    expect(written).toContain(".env");
+    expect(written).not.toContain("setup");
+    expect(written).not.toContain("pnpm build");
+    // And the form still offers the step, selected, after the save's re-read.
+    expect(addedRow()?.querySelector<HTMLInputElement>(".wt-brow-cb")?.checked).toBe(true);
+  });
+});
