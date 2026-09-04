@@ -422,9 +422,15 @@ The section renders the provision model from
 
 - **The section appears even when the model is empty.** Silence is what ships a worktree with no
   `.env` and no `node_modules`; an empty state says so and offers to set it up.
-- **Every row names its source file.** The badge slot answers *which file said so* and nothing
-  else. Consequences of the mode — `writes to main` for a link, `copied on Windows` for a
-  degraded one — are a separate warning affordance. A linked row carries both.
+- **Every row names its source.** The badge slot answers *which file said so* and nothing else —
+  or, for a step the user typed into this form, says `added for this create` in place of a file.
+  Consequences of the mode — `writes to main` for a link, `copied on Windows` for a degraded one —
+  are a separate warning affordance. A linked row carries both.
+- **A setup step can be added for this create only.** The text is typed into the host's own input,
+  never into the form; the form asks by operation and item id and receives the step back inside a
+  fresh offer ([worktree-provisioning.md](worktree-provisioning.md) § 4.0). Only a row carrying the
+  marker offers edit and remove, and while an input is open the form withholds Create, save and a
+  source change, exactly as it holds itself for an open folder picker.
 - **One row per item, each naming its own source.** Superseded the earlier click-to-expand rule,
   which described one row per KIND that collapsed a mixed-provenance section behind a source
   count. The shipped list is one row per entry and every row already carries its own file, so

@@ -59,7 +59,7 @@
     2. Add `showInputBox` to `window` in src/test/__mocks__/vscode.ts and the fake dep in src/extension.worktreeActions.test.ts.
     3. Add the assembly tests: add → create → the setup terminal receives the typed script with the marker source; add → save → the native file has no `setup` key.
 
-- [ ] 3_2 Record the added-step boundary in the design docs
+- [x] 3_2 Record the added-step boundary in the design docs — verified: manual — docs-only: § 4.0 gains the typed-step paragraph, § 4.3 gains the add bullet and its source-badge bullet now admits the marker
   - **Deps**: 3_1
   - **Refs**: design.md D1, D3
   - **Acceptance**:

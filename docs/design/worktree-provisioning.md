@@ -295,6 +295,15 @@ Without this, "the user saw the command" is not a property the system has — on
 momentarily. Re-reading the file at execution time is exactly the window an untrusted checked-in
 file needs.
 
+**A step the user types is held to the same rule from the first keystroke.** The create form can
+add a setup step for the create being composed, but the text is typed into an input the extension
+host owns (`showInputBox`), never into the form: the webview asks for the input by an operation and,
+for edit or remove, by the host's own item id, and the host appends the step to the offer it holds
+for that opening and re-issues the offer. The step carries the marker source `added for this
+create` in place of a file, starts selected because typing it is the consent a pre-ticked box
+cannot give, is spent by offer id plus item id like every other row, dies with the opening, and is
+never written to any configuration file.
+
 ### 4.1 Detection order
 
 `.vscode/worktree.json` → `asimov/worktree.yaml` → `orca.yaml` / `.worktreeinclude` →
