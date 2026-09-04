@@ -1,0 +1,1 @@
+Test-only: the frozen hook command and its `--connect-timeout 0.5 --max-time 1.5` do not change; only the test that judges "bounds network work when the observer is unavailable" stops asserting the host's process-scheduling latency as part of that bound.
