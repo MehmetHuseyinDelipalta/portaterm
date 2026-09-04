@@ -12,8 +12,8 @@
 
 ## Implement
 
-- [ ] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [x] All tasks done (`tasks.md`)
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
@@ -35,3 +35,5 @@ Planned at: edc455a7
 Plan attack: the oracle refuted the ledger's universal "no extra key crosses the wire" claim (`worktreeCreate` is not `onlyKeys`-checked at the top level; extra keys reach the host and are ignored) — narrowed to "no inbound string is ever read as a command". Six findings, all accepted and repaired in design: F1 `withAdded` strips marker rows before appending; F2 marker ticks carry by script descriptor, edit by ordinal on the pending record; F3 switch records marker ticks; F4 Create withheld while an ask is pending (spec clause added); F5 runtime `kind` membership; F6 the accepted "setup command the user chose to run" scenario narrowed to provider/suggestion steps, and § 4.3's "every row names its source file" to be amended in 3_2.
 Auto-decision (fastlane): the marker source text is a host constant shared through `messages.ts`, so the dialog recognises an added row by the same string the host wrote and never by position.
 Residual (inherited): a `showInputBox` that never settles holds the form, exactly as the picker's round-4 F007; no timeout added for the same reason.
+Verify gate: observed at cc32327a on a clean tree — 7747/7747, type check clean, I10 gate green, bundle gate green against a fresh `node esbuild.js --production` (the `compile`/`package` scripts wrap `pnpm run lint`, the auto-fix form, so the bundle was built directly). Biome in check mode: 1 error (`src/webview/worktree/worktreeFormat.ts:30` noUselessEscapeInRegex, untouched, present at the plan's base) and 14 noDescendingSpecificity warnings in CSS files this change does not touch; every file this change edits lints clean, and `worktreePanel.css` carries the same single warning it did at the base. `verify-status` exits 0.
+Deviation (2_2): the switch rows are held only while an INPUT is open, not while a save or switch is in flight — the shipped latest-wins ordering already lets a switch outrank those, and holding them broke the accepted "increasing sequence" test.
