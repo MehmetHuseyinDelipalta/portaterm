@@ -28,7 +28,7 @@ import type { MigrationOfferEvidence } from "../worktree/migrateChanges";
 import type { OrphanProofs } from "../worktree/orphanProofs";
 import type { PresenceProjector } from "../worktree/presenceProjector";
 import type { WorktreeAgentRow, WorktreePresence } from "../worktree/presenceTypes";
-import { MAX_MODEL_ROWS } from "../worktree/provisioning/providerKit";
+import { MAX_MODEL_ROWS, rowsOf } from "../worktree/provisioning/providerKit";
 import type { NativeConfigDivergence, NativeConfigWrite } from "../worktree/provisioning/writeNativeConfig";
 import type { ReattachVerdict } from "../worktree/reattachProbe";
 import type { RebuildGateClock } from "../worktree/rebuildGate";
@@ -8143,13 +8143,13 @@ describe("a setup step typed into the host's own input, for this create only", (
   });
 
   it("refuses an add that would take the offer past the model budget, and a full selection still saves", async () => {
-    // A read at the budget: `MAX_MODEL_ROWS - 1` rows, exactly what `full()`
-    // lets a provider emit. One more added row would put the offer past what
-    // `isKnownSave` admits back (round 1 F003).
+    // A read one under the bound. One added row reaches `MAX_MODEL_ROWS`,
+    // exactly what `isKnownSave` admits back; the next would pass it
+    // (round 1 F003, bound settled at `MAX_MODEL_ROWS` in round 2).
     const atBudget: ProvisionModel = {
       ...OFFERED,
       setup: [],
-      entries: Array.from({ length: MAX_MODEL_ROWS - 2 }, (_, i) => ({
+      entries: Array.from({ length: MAX_MODEL_ROWS - 1 }, (_, i) => ({
         id: `e${i}`,
         path: `file-${i}`,
         mode: "copy" as const,
@@ -8170,7 +8170,7 @@ describe("a setup step typed into the host's own input, for this create only", (
 
     const offer = last(h.view);
     const everything = [...offer.model.entries, ...offer.model.setup].map((row) => row.id);
-    expect(everything).toHaveLength(MAX_MODEL_ROWS - 1);
+    expect(everything).toHaveLength(MAX_MODEL_ROWS);
     h.host.handleMessage(h.view, {
       type: "worktreeProvisionSave",
       repoId: REPO,
@@ -8182,6 +8182,152 @@ describe("a setup step typed into the host's own input, for this create only", (
     await settle();
     expect(h.seen).toHaveLength(1);
     expect(offersIn(h.view)).toHaveLength(before + 2);
+    h.dispose();
+  });
+
+  it("refuses an add against a model whose problem rows fill the budget, and answers", async () => {
+    // Problem rows cost the reader what an entry row does; a formula that
+    // skipped them admitted one step past the cap (round 2 F003).
+    const withProblem: ProvisionModel = {
+      ...OFFERED,
+      setup: [],
+      entries: Array.from({ length: MAX_MODEL_ROWS - 1 }, (_, i) => ({
+        id: `e${i}`,
+        path: `file-${i}`,
+        mode: "copy" as const,
+        source: "asimov/worktree.yaml",
+      })),
+      problems: [{ file: "asimov/worktree.yaml", reason: "unknownKey", detail: "`colour`" }],
+    };
+    const h = await opened({ prompt: async () => "pnpm build", read: async () => withProblem });
+    const before = offersIn(h.view).length;
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    expect(h.prompts).toHaveLength(0);
+    expect(added(h.view)).toHaveLength(0);
+    expect(offersIn(h.view)).toHaveLength(before + 1);
+    h.dispose();
+  });
+
+  it("offers as many recorded steps as a denser source leaves room for, says how many it withheld, and shows them all again", async () => {
+    // Thirty-two steps recorded under a sparse source, then a switch to a
+    // source whose read is at the cap. The bound has to hold at the switch,
+    // not only at the add (round 2 F003).
+    const dense: ProvisionModel = {
+      ...SWITCHED,
+      entries: Array.from({ length: MAX_MODEL_ROWS - 4 }, (_, i) => ({
+        id: `d${i}`,
+        path: `dense-${i}`,
+        mode: "copy" as const,
+        source: "orca.yaml",
+      })),
+    };
+    let n = 0;
+    // The save's reread names no provider; it finds the source the switch
+    // left active, as a real read would.
+    let active: string = "asimov";
+    const h = await opened({
+      prompt: async () => `step ${(n += 1)}`,
+      read: async (_main, prefer) => {
+        active = prefer ?? active;
+        return active === "orca" ? dense : OFFERED;
+      },
+    });
+    for (let i = 0; i < 32; i += 1) {
+      h.host.handleMessage(h.view, ask({ kind: "add" }));
+      await settle();
+    }
+    expect(added(h.view)).toHaveLength(32);
+
+    const take = (provider: "orca" | "asimov") =>
+      h.host.handleMessage(h.view, {
+        type: "worktreeProvisionSwitch",
+        repoId: REPO,
+        opening: 1,
+        switch: ++seq,
+        provider,
+      });
+    take("orca");
+    await settle();
+    let offer = last(h.view);
+    expect(rowsOf(offer.model)).toBeLessThanOrEqual(MAX_MODEL_ROWS);
+    // MAX - 4 entries and one slot for the statement leave three.
+    expect(added(h.view).map((s) => s.script)).toEqual(["step 1", "step 2", "step 3"]);
+    const statements = () => last(h.view).model.problems.filter((p) => p.file === SETUP_STEP_ADDED_SOURCE);
+    expect(statements()).toHaveLength(1);
+    expect(statements()[0]?.detail).toContain("29 added setup steps not offered");
+
+    // A full selection of what was offered still saves and is answered.
+    const everything = [...offer.model.entries, ...offer.model.setup].map((row) => row.id);
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSave",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      offerId: offer.offerId,
+      kept: everything,
+    });
+    await settle();
+    expect(h.seen).toHaveLength(1);
+    expect(statements()).toHaveLength(1);
+
+    // A cancelled ask reissues from the current offer: still one statement.
+    const cancelled = await opened({ prompt: async () => undefined });
+    cancelled.dispose();
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    expect(statements()).toHaveLength(1);
+    expect(added(h.view)).toHaveLength(3);
+
+    // The record was never cut: the sparse source shows all thirty-two.
+    take("asimov");
+    await settle();
+    offer = last(h.view);
+    expect(added(h.view)).toHaveLength(32);
+    expect(statements()).toHaveLength(0);
+    h.dispose();
+  });
+
+  it("withholds every step behind a capped read and lets the reader's own cap problem stand as the statement", async () => {
+    const capped: ProvisionModel = {
+      ...OFFERED,
+      setup: [],
+      entries: Array.from({ length: MAX_MODEL_ROWS - 1 }, (_, i) => ({
+        id: `e${i}`,
+        path: `file-${i}`,
+        mode: "copy" as const,
+        source: "asimov/worktree.yaml",
+      })),
+      problems: [{ file: "asimov/worktree.yaml", reason: "malformed", detail: `More than ${MAX_MODEL_ROWS} rows` }],
+    };
+    const h = await opened({
+      prompt: async () => "pnpm build",
+      read: async (_main, prefer) => (prefer === "orca" ? SWITCHED : capped),
+    });
+    // Recorded under the sparse source, then back to the capped one.
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSwitch",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      provider: "orca",
+    });
+    await settle();
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    expect(added(h.view)).toHaveLength(1);
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSwitch",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      provider: "asimov",
+    });
+    await settle();
+    const offer = last(h.view);
+    expect(rowsOf(offer.model)).toBe(MAX_MODEL_ROWS);
+    expect(added(h.view)).toHaveLength(0);
+    expect(offer.model.problems).toHaveLength(1);
     h.dispose();
   });
 

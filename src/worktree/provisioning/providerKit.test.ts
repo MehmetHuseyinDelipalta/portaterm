@@ -12,6 +12,7 @@ import {
   ids,
   MAX_MODEL_ROWS,
   MAX_SCAN,
+  modelFromDraft,
   newBudget,
   newDraft,
   openProviderFile,
@@ -20,6 +21,7 @@ import {
   problem,
   readInlineKeys,
   refusal,
+  rowsOf,
   scanNames,
 } from "./providerKit";
 import { vscodeTasksAdapter } from "./vscodeTasksProvider";
@@ -373,6 +375,11 @@ describe("[round-1 F002] the cap lives where rows are appended", () => {
     // Refused, and said so — a shorter list than the repository asked for is
     // never allowed to be a silent one.
     expect(draft.problems.map((x) => x.reason)).toContain("malformed");
+    // The count the host reads off the final model is the count the budget
+    // charged, problem rows included — a formula that skipped them let a
+    // capped model take one more row (add-a-setup-step round 2 F003).
+    expect(rowsOf(modelFromDraft(draft))).toBe(emitted(draft));
+    expect(rowsOf(modelFromDraft(draft))).toBe(MAX_MODEL_ROWS);
   });
 
   it("would not pass if the append merely counted", () => {

@@ -456,6 +456,23 @@ export function contendersOf(entries: readonly ProvisionEntry[], favouredSource?
  * somewhere to live (.reviews/round-1.md F007). `providers` stays empty here:
  * which sources were detected is the dispatcher's answer, never an adapter's.
  */
+/**
+ * The rows a model carries against `MAX_MODEL_ROWS`: every kind the budget
+ * charges, counted on the FINAL model rather than read off the budget's spend.
+ *
+ * The two differ: the merge can drop a row the budget already charged
+ * (`readProvisioning.ts` `mergeEntries`), so the spend overstates what the
+ * webview receives. The host appends its own rows after the read and needs one
+ * count that agrees with this module's, not a second formula of its own — the
+ * one it kept omitted problems (add-a-setup-step-for-this-create-only round 2
+ * F003).
+ */
+export function rowsOf(model: ProvisionModel): number {
+  return (
+    model.entries.length + model.ports.length + model.setup.length + model.excluded.length + model.problems.length
+  );
+}
+
 export function modelFromDraft(draft: Draft): ProvisionModel {
   return {
     entries: draft.entries,

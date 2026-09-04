@@ -70,7 +70,7 @@ import type {
 import { ACTIVITY_EVIDENCE } from "../worktree/presenceTypes";
 import { NATIVE_PROVIDER_FILE } from "../worktree/provisioning/nativeProvider";
 import { createProvisionOfferStore } from "../worktree/provisioning/offerStore";
-import { MAX_MODEL_ROWS } from "../worktree/provisioning/providerKit";
+import { MAX_MODEL_ROWS, rowsOf } from "../worktree/provisioning/providerKit";
 import {
   divergenceOf,
   type NativeConfigDivergence,
@@ -973,37 +973,64 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   const addedSteps = new Map<string, readonly string[]>();
   const MAX_ADDED_STEPS = 32;
   /**
-   * Rows the combined offer may carry, counting the record.
+   * The model as the provider read gave it: marker rows and the host's own
+   * withholding problem stripped.
    *
-   * The provider budget bounds what a READ emits; the record is appended after
-   * it, so without this an offer could carry up to 32 rows past the bound —
-   * and a full selection of it would then be refused by `isKnownSave`, which
-   * admits at most `MAX_MODEL_ROWS` kept ids, stalling a valid save with no
-   * answer (review round 1 F003). Same bound, same reserved slot as `full()`.
+   * The ask handler builds from `offers.current`, which already carries the
+   * previous answer's rows, and appending onto that duplicated the record on
+   * every ask (plan attack F1) — and would have stacked the withholding problem
+   * on every cancel (round 2 plan attack 6). Both are recognised by the marker
+   * string: no provider file can collide with it — a `source` or a problem's
+   * `file` is a repo-relative path the adapter read, and none of the adapters
+   * reads a file spelled like a sentence.
    */
-  const roomFor = (model: ProvisionModel, added: number): boolean =>
-    model.entries.length + model.ports.length + model.setup.length + model.excluded.length + added <=
-    MAX_MODEL_ROWS - 1;
+  const withoutAdded = (model: ProvisionModel): ProvisionModel => ({
+    ...model,
+    setup: model.setup.filter((step) => step.source !== SETUP_STEP_ADDED_SOURCE),
+    problems: model.problems.filter((problem) => problem.file !== SETUP_STEP_ADDED_SOURCE),
+  });
   /**
-   * The model with this form's added steps, and only them, after its own.
+   * Whether one more step fits, before the input is opened.
    *
-   * Strips marker rows FIRST: the ask handler builds from `offers.current`,
-   * which already carries the previous answer's marker rows, and appending onto
-   * that duplicated the record on every ask (plan attack F1). No provider file
-   * can collide with the marker — a `source` is a repo-relative file the adapter
-   * read, and none of the adapters reads a file spelled like a sentence.
+   * An accepted add is reissued with the whole record, so it must fit whole —
+   * then it emits no withholding problem and needs no slot for one.
+   */
+  const roomForOneMore = (model: ProvisionModel, record: readonly string[]): boolean =>
+    rowsOf(withoutAdded(model)) + record.length + 1 <= MAX_MODEL_ROWS;
+  /**
+   * The model with this form's added steps, and only them, after its own —
+   * as many as fit, and a statement of the rest.
+   *
+   * Bounded HERE, at the one place every issue site passes through: the
+   * provider budget bounds what a READ emits, and the record is appended after
+   * it, so a bound checked only when a step was added let a switch to a denser
+   * source reissue the whole record past `MAX_MODEL_ROWS` — whose full
+   * selection `isKnownSave` then refused, stalling a valid save with no answer
+   * (review rounds 1 and 2, F003). The bound is `MAX_MODEL_ROWS` itself, what
+   * a capped read already hands over and exactly what `isKnownSave` admits back.
+   * The record is never cut: a source with room shows every step again.
    */
   const withAdded = (slot: string, model: ProvisionModel): ProvisionModel => {
-    const own = model.setup.filter((step) => step.source !== SETUP_STEP_ADDED_SOURCE);
-    const added = addedSteps.get(slot) ?? [];
-    if (added.length === 0 && own.length === model.setup.length) {
+    const base = withoutAdded(model);
+    const record = addedSteps.get(slot) ?? [];
+    if (
+      record.length === 0 &&
+      base.setup.length === model.setup.length &&
+      base.problems.length === model.problems.length
+    ) {
       return model;
     }
+    const room = MAX_MODEL_ROWS - rowsOf(base);
+    // One slot held back for the statement whenever something is withheld. A
+    // base with no room at all is a capped read carrying the reader's own cap
+    // problem, which is already the statement — there is no slot for another.
+    const shown = record.length <= room ? record.length : Math.max(0, room - 1);
+    const withheld = record.length - shown;
     return {
-      ...model,
+      ...base,
       setup: [
-        ...own,
-        ...added.map((script, i) => ({
+        ...base.setup,
+        ...record.slice(0, shown).map((script, i) => ({
           // Reminted by the store on issue, like every other row.
           id: `added-${i}`,
           kind: "shell" as const,
@@ -1011,6 +1038,17 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
           source: SETUP_STEP_ADDED_SOURCE,
         })),
       ],
+      problems:
+        withheld === 0 || room <= 0
+          ? base.problems
+          : [
+              ...base.problems,
+              {
+                file: SETUP_STEP_ADDED_SOURCE,
+                reason: "malformed" as const,
+                detail: `${withheld} added setup step${withheld === 1 ? "" : "s"} not offered: this source leaves no room.`,
+              },
+            ],
     };
   };
   const retireOpening = (key: string): void => {
@@ -3274,11 +3312,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
             }
           } else if (
             op.kind === "add"
-              ? record.length < MAX_ADDED_STEPS &&
-                roomFor(
-                  { ...shown.model, setup: shown.model.setup.filter((s) => s.source !== SETUP_STEP_ADDED_SOURCE) },
-                  record.length + 1,
-                )
+              ? record.length < MAX_ADDED_STEPS && roomForOneMore(shown.model, record)
               : ordinal !== undefined
           ) {
             const prompt = options.actions?.promptSetupStep;

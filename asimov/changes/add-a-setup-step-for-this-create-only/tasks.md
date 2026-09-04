@@ -94,7 +94,7 @@
 
 ## 5. Review fixes (round 2)
 
-- [ ] 5_1 Bound every issued offer at withAdded through providerKit's row count
+- [x] 5_1 Bound every issued offer at withAdded through providerKit's row count — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/providers/WorktreeHost.actions.test.ts' && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 4_1
   - **Refs**: design.md D3
   - **Acceptance**:
