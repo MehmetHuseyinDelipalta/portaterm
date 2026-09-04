@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ProvisionModel } from "../../types/messages";
+import type { ProvisionEntry, ProvisionModel } from "../../types/messages";
+import type { HeldRegularFile } from "../../utils/heldRegularFile";
 import { createProvisionOfferStore, type ProvisionOfferKey } from "./offerStore";
+import type { HeldProvisionSource } from "./provisionMaterial";
 
 function model(path: string): ProvisionModel {
   return {
@@ -335,5 +337,84 @@ describe("[D14] a group's size is what a silent drop would change", () => {
     const live = new Set(offer.model.entries.map((e) => e.id));
     const named = offer.model.contenders.flatMap((g) => [...g.members, ...g.natives]);
     expect(named.filter((id) => !live.has(id))).toEqual([]);
+  });
+});
+
+describe("private held-file redemption", () => {
+  const held = (name: string): HeldProvisionSource => ({
+    canonicalPath: `/repo/${name}`,
+    file: { claim: () => undefined, dispose: () => undefined } satisfies HeldRegularFile,
+  });
+
+  it("remints an exact entry-object sidecar onto that row despite duplicate provisional ids", () => {
+    const first: ProvisionEntry = { id: "i1", path: "first", mode: "copy", source: "same-source" };
+    const second: ProvisionEntry = { id: "i1", path: "second", mode: "copy", source: "same-source" };
+    const source = held("second");
+    const store = createProvisionOfferStore();
+
+    const offer = store.issue(A, { ...model("unused"), entries: [first, second] }, new Map([[second, source]]));
+    const redeemed = store.redeem(A, offer.offerId);
+
+    expect(redeemed?.heldFiles.size).toBe(1);
+    expect(redeemed?.heldFiles.get(offer.model.entries[0]!.id)).toBeUndefined();
+    expect(redeemed?.heldFiles.get(offer.model.entries[1]!.id)).toBe(source);
+  });
+
+  it("does not infer private authority from matching path, source, or presentation-like fields", () => {
+    const authorized: ProvisionEntry = { id: "i1", path: ".env", mode: "copy", source: "marker" };
+    const lookalike: ProvisionEntry = {
+      id: "i2",
+      path: ".env",
+      mode: "copy",
+      source: "marker",
+      suggestion: "Added for this create",
+    };
+    const source = held(".env");
+    const store = createProvisionOfferStore();
+
+    const offer = store.issue(
+      A,
+      { ...model("unused"), entries: [authorized, lookalike] },
+      new Map([[authorized, source]]),
+    );
+    const redeemed = store.redeem(A, offer.offerId);
+
+    expect(redeemed?.heldFiles.get(offer.model.entries[0]!.id)).toBe(source);
+    expect(redeemed?.heldFiles.get(offer.model.entries[1]!.id)).toBeUndefined();
+  });
+
+  it("keeps the public offer and current view sidecar-free", () => {
+    const original = model(".env");
+    const source = held(".env");
+    const store = createProvisionOfferStore();
+
+    const offer = store.issue(A, original, new Map([[original.entries[0]!, source]]));
+
+    expect(Object.keys(offer).sort()).toEqual(["model", "offerId"]);
+    expect(Object.keys(store.current(A) ?? {}).sort()).toEqual(["model", "offerId"]);
+    expect(JSON.stringify(offer)).not.toContain("canonicalPath");
+    expect(JSON.stringify(offer)).not.toContain("heldFiles");
+  });
+
+  it("scopes and expires private redemption exactly like model lookup", () => {
+    const original = model(".env");
+    const source = held(".env");
+    const store = createProvisionOfferStore();
+    const first = store.issue(A, original, new Map([[original.entries[0]!, source]]));
+
+    expect(store.redeem(B, first.offerId)).toBeUndefined();
+    expect(store.redeem(A2, first.offerId)).toBeUndefined();
+    expect(store.redeem(A, first.offerId)?.model).toBe(first.model);
+
+    store.issue(A, model("later"));
+    expect(store.redeem(A, first.offerId)).toBeUndefined();
+  });
+
+  it("returns an empty private sidecar for ordinary offers while lookup stays model-only", () => {
+    const store = createProvisionOfferStore();
+    const offer = store.issue(A, model(".env"));
+
+    expect(store.redeem(A, offer.offerId)?.heldFiles.size).toBe(0);
+    expect(store.lookup(A, offer.offerId)).toBe(offer.model);
   });
 });

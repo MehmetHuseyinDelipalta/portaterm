@@ -7,14 +7,19 @@
 // exactly the window an untrusted checked-in file needs.
 //
 // So the webview gets display material plus an opaque id, and answers with the
-// id. This module owns the id → model map. Nothing here executes anything;
+// id. This module owns the id → host-held offer map. Nothing here executes anything;
 // WT-012.2 is the first redeemer.
 
-import type { ProvisionModel } from "../../types/messages";
+import type { ProvisionEntry, ProvisionModel } from "../../types/messages";
+import type { HeldProvisionSource } from "./provisionMaterial";
 
 export interface ProvisionOffer {
   readonly offerId: string;
   readonly model: ProvisionModel;
+}
+
+export interface RedeemedProvisionOffer extends ProvisionOffer {
+  readonly heldFiles: ReadonlyMap<string, HeldProvisionSource>;
 }
 
 /**
@@ -43,7 +48,11 @@ export interface ProvisionOfferStore {
    * means a submission can name the older, and the older is by definition the
    * model the user is no longer looking at.
    */
-  issue(key: ProvisionOfferKey, model: ProvisionModel): ProvisionOffer;
+  issue(
+    key: ProvisionOfferKey,
+    model: ProvisionModel,
+    heldFiles?: ReadonlyMap<ProvisionEntry, HeldProvisionSource>,
+  ): ProvisionOffer;
   /** The offer this key currently holds, or `undefined` before one is issued. */
   current(key: ProvisionOfferKey): ProvisionOffer | undefined;
   /**
@@ -61,6 +70,8 @@ export interface ProvisionOfferStore {
    * answer.
    */
   lookup(key: ProvisionOfferKey, offerId: string): ProvisionModel | undefined;
+  /** The current offer and its host-private reminted held-file associations. */
+  redeem(key: ProvisionOfferKey, offerId: string): RedeemedProvisionOffer | undefined;
   /** Drop what one form holds. Its offers can never be submitted again. */
   forget(key: ProvisionOfferKey): void;
   /**
@@ -88,47 +99,56 @@ export interface ProvisionOfferStore {
  * a superseded offer must resolve to nothing rather than name whatever now
  * occupies that slot (worktree-provisioning.md § 4.0).
  */
-function remint(model: ProvisionModel, seq: () => string): ProvisionModel {
+function remint(
+  model: ProvisionModel,
+  seq: () => string,
+  heldFiles: ReadonlyMap<ProvisionEntry, HeldProvisionSource>,
+): { readonly model: ProvisionModel; readonly heldFiles: ReadonlyMap<string, HeldProvisionSource> } {
   const reminted = new Map<string, string>();
+  const remintedHeldFiles = new Map<string, HeldProvisionSource>();
   const entries = model.entries.map((e) => {
     const id = seq();
     reminted.set(e.id, id);
+    const held = heldFiles.get(e);
+    if (held !== undefined) {
+      remintedHeldFiles.set(id, held);
+    }
     return { ...e, id };
   });
   return {
-    ...model,
-    entries,
-    ports: model.ports.map((p) => ({ ...p, id: seq() })),
-    setup: model.setup.map((s) => ({ ...s, id: seq() })),
-    // Groups name entry ids, and every entry id just changed. Carrying them
-    // through untranslated would leave each group pointing at ids nobody holds
-    // — silent, total, and invisible to any test that only counts rows.
-    contenders: model.contenders.map((group) => {
-      // Both lists through the SAME translation. Rebuilding a group key by key
-      // is how `priorityClaimedTwice` was silently dropped here — apply-time
-      // correctness hid it, because the apply recomputes its groups from the
-      // submitted entries, so only the dialog ever saw the loss
-      // (.reviews/round-7.md F015).
-      const translate = (ids: readonly string[]) =>
-        ids.flatMap((id) => {
-          const next = reminted.get(id);
-          return next === undefined ? [] : [next];
-        });
-      return { members: translate(group.members), natives: translate(group.natives) };
-    }),
-    // `excluded` rows are shown as deliberate omissions, never selected, so they
-    // are carried through untouched rather than given ids that mean nothing.
+    model: {
+      ...model,
+      entries,
+      ports: model.ports.map((p) => ({ ...p, id: seq() })),
+      setup: model.setup.map((s) => ({ ...s, id: seq() })),
+      // Groups name entry ids, and every entry id just changed. Carrying them
+      // through untranslated would leave each group pointing at ids nobody holds.
+      contenders: model.contenders.map((group) => {
+        const translate = (ids: readonly string[]) =>
+          ids.flatMap((id) => {
+            const next = reminted.get(id);
+            return next === undefined ? [] : [next];
+          });
+        return { members: translate(group.members), natives: translate(group.natives) };
+      }),
+    },
+    heldFiles: remintedHeldFiles,
   };
 }
 
+interface StoredProvisionOffer {
+  readonly public: ProvisionOffer;
+  readonly redeemed: RedeemedProvisionOffer;
+}
+
 export function createProvisionOfferStore(): ProvisionOfferStore {
-  const bySurface = new Map<string, Map<string, ProvisionOffer>>();
+  const bySurface = new Map<string, Map<string, StoredProvisionOffer>>();
   let sequence = 0;
   /** Never restarts, so no two offers from this store share an item id. */
   let itemSequence = 0;
 
   return {
-    issue(key, model) {
+    issue(key, model, heldFiles = new Map()) {
       let repos = bySurface.get(key.surface);
       if (repos === undefined) {
         repos = new Map();
@@ -138,24 +158,33 @@ export function createProvisionOfferStore(): ProvisionOfferStore {
       // Monotonic and never reused, so a resubmission of a superseded id cannot
       // land on a later offer that happens to occupy the same slot. The `set`
       // below evicts the previous offer for this form by construction.
-      const offer: ProvisionOffer = {
-        offerId: `provision-${sequence}`,
-        model: remint(model, () => {
+      const reminted = remint(
+        model,
+        () => {
           itemSequence += 1;
           return `item-${itemSequence}`;
-        }),
-      };
-      repos.set(key.repoId, offer);
+        },
+        heldFiles,
+      );
+      const offer: ProvisionOffer = { offerId: `provision-${sequence}`, model: reminted.model };
+      repos.set(key.repoId, {
+        public: offer,
+        redeemed: { ...offer, heldFiles: reminted.heldFiles },
+      });
       return offer;
     },
     current(key) {
-      return bySurface.get(key.surface)?.get(key.repoId);
+      return bySurface.get(key.surface)?.get(key.repoId)?.public;
     },
     lookup(key, offerId) {
-      const held = bySurface.get(key.surface)?.get(key.repoId);
+      const held = bySurface.get(key.surface)?.get(key.repoId)?.public;
       // The id must be the one THIS form currently holds. An id that is merely
       // live somewhere resolves to nothing here, which is the safe answer.
       return held?.offerId === offerId ? held.model : undefined;
+    },
+    redeem(key, offerId) {
+      const held = bySurface.get(key.surface)?.get(key.repoId)?.redeemed;
+      return held?.offerId === offerId ? held : undefined;
     },
     forget(key) {
       const repos = bySurface.get(key.surface);

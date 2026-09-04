@@ -52,6 +52,7 @@ const NOT_READ_PATH = [
   "entryGate.ts",
   "offerStore.ts",
   "provisionManifest.ts",
+  "provisionMaterial.ts",
   "provisioningDeps.ts",
   "setupRunner.ts",
   "setupTerminal.ts",

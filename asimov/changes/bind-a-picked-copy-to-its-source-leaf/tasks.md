@@ -12,7 +12,7 @@
 
 ## 2. Preserve private provenance through offer reminting
 
-- [ ] 2_1 Add additive held-file sidecars and material redemption
+- [x] 2_1 Add additive held-file sidecars and material redemption — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/offerStore.test.ts src/worktree/provisioning/provisionMaterial.test.ts src/worktree/provisioning/readOnly.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 1_1
   - **Refs**: design.md D2, D3
   - **Acceptance**:
