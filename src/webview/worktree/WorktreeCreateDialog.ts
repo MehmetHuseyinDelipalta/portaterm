@@ -903,10 +903,12 @@ function bringRow(row: BringRow, index: number): HTMLElement {
     mark.textContent = "removed on purpose";
     top.appendChild(mark);
   }
+  // The source badge is the row's last cell, a sibling of both halves rather
+  // than inside the verb's label: the checkbox announces verb and subject, and
+  // the file that declared them is not part of the name.
   const src = document.createElement("span");
   src.className = "wt-brow-src";
   src.textContent = row.source;
-  top.appendChild(src);
   const meta = document.createElement("div");
   meta.className = "wt-brow-meta";
   meta.id = metaId;
@@ -967,7 +969,7 @@ function bringRow(row: BringRow, index: number): HTMLElement {
     // No checkbox at all, rather than a disabled one: a disabled input is still
     // an input, and the submit path collects `.wt-brow-cb` by class. An id that
     // never reaches the DOM cannot reach the draft.
-    el.append(top, meta);
+    el.append(top, meta, src);
     return el;
   }
   const cb = document.createElement("input");
@@ -979,12 +981,12 @@ function bringRow(row: BringRow, index: number): HTMLElement {
   cb.value = row.id;
   cb.checked = row.checked;
   // The subject is what distinguishes one row from another, and it sits outside
-  // the label to keep the mockup's two-line shape — so five rows from one
-  // provider announced as five identical "Copy asimov/worktree.yaml"
-  // (.reviews/round-1.md W3). Both halves are named explicitly instead.
+  // the label as its own cell — so five rows from one provider announced as five
+  // identical "Copy asimov/worktree.yaml" (.reviews/round-1.md W3). Both halves
+  // are named explicitly instead.
   cb.setAttribute("aria-labelledby", `${topId} ${metaId}`);
   top.htmlFor = cb.id;
-  el.append(cb, top, meta);
+  el.append(cb, top, meta, src);
   return el;
 }
 

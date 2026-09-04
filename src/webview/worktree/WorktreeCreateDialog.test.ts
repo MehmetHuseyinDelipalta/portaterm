@@ -1861,6 +1861,25 @@ describe("Bring over — what the new worktree will lack", () => {
     expect(sources).toEqual(Array(5).fill("asimov/worktree.yaml"));
   });
 
+  it("[2_1] lays each row on one line: verb, then subject, then the source at the end", () => {
+    // The verb never varies enough to earn a line of its own, so the subject
+    // sits beside it and the source badge closes the line. The badge is a
+    // sibling of both halves rather than inside the verb's label: what the
+    // checkbox announces is verb and subject, and the file that declared them
+    // is not part of the name.
+    const { host } = withOffer();
+    for (const row of rows(host)) {
+      const src = row.querySelector(".wt-brow-src");
+      expect(src?.parentElement).toBe(row);
+      const order = Array.from(row.children).map((c) => c.className.split(" ")[0]);
+      expect(order.indexOf("wt-brow-meta")).toBeGreaterThan(order.indexOf("wt-brow-top"));
+      expect(order.indexOf("wt-brow-src")).toBeGreaterThan(order.indexOf("wt-brow-meta"));
+    }
+    const css = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "worktreePanel.css"), "utf8");
+    const rule = /\.wt-brow\s*\{([^}]*)\}/.exec(css)?.[1];
+    expect(rule).toMatch(/grid-template-columns:\s*13px auto minmax\(0, 1fr\) auto/);
+  });
+
   it("names each row's own subject, not a count", () => {
     const { host } = withOffer();
     const subjects = rows(host).map((r) => r.querySelector(".wt-brow-code")?.textContent);

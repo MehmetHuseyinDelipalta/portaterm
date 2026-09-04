@@ -1199,8 +1199,9 @@
 /* ── Bring over — what the new worktree will NOT inherit ──────────────────
    Structure and proportions from docs/ui/create-worktree.html's `cw-` mockups,
    re-expressed here because that stylesheet is a mockup asset no shipped module
-   loads. One row per offered item, two lines each: the verb and its source file,
-   then the subject the provider file supplied. */
+   loads. One row per offered item, one line each: checkbox, verb, the subject
+   the provider file supplied, and the file that declared it at the end. The
+   verb never varies enough to earn a line of its own. */
 .wt-bring-sum {
   margin-left: 6px;
   color: var(--vscode-descriptionForeground);
@@ -1217,17 +1218,15 @@
 }
 .wt-brow {
   display: grid;
-  grid-template-columns: 13px minmax(0, 1fr);
-  gap: 3px 8px;
+  grid-template-columns: 13px auto minmax(0, 1fr) auto;
+  gap: 8px;
   align-items: center;
   min-width: 0;
 }
-/* An excluded row carries no checkbox, so nothing occupies the 13px column and
-   the auto-placed label landed in it — the "removed on purpose" marker and the
-   source badge crushed into 13px beside the subject (.reviews/round-1.md F004).
-   One column here, and both lines stack the way every other row's do. */
+/* An excluded row carries no checkbox, so the 13px column goes: the same
+   three cells, starting at the verb (.reviews/round-1.md F004). */
 .wt-brow--excluded {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 .wt-brow-cb {
   margin: 0;
@@ -1247,10 +1246,8 @@
   font-weight: 500;
   color: var(--vscode-foreground);
 }
-/* The source badge is pushed to the row's end, so the subject below it and the
-   file that declared it read as one column each. */
+/* The source badge is the row's last cell. */
 .wt-brow-src {
-  margin-left: auto;
   flex: 0 0 auto;
   font-size: 10px;
   white-space: nowrap;
@@ -1270,15 +1267,10 @@
   background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 14%, transparent);
 }
 .wt-brow-meta {
-  grid-column: 2;
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-}
-/* After the rule it overrides: an excluded row has only one column. */
-.wt-brow--excluded .wt-brow-meta {
-  grid-column: 1;
 }
 /* The host's short reason a row nobody configured is here. One line beside the
    subject, never a paragraph under it: the row already shows the path and the

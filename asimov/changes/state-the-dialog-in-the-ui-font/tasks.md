@@ -13,7 +13,7 @@
 
 ## 2. One bring-over row is one line
 
-- [ ] 2_1 Lay each bring-over row on one line: checkbox, verb, subject, then its source at the end
+- [x] 2_1 Lay each bring-over row on one line: checkbox, verb, subject, then its source at the end — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/webview/worktree/WorktreeCreateDialog.test.ts' && pnpm exec tsc --noEmit -p tsconfig.json && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 1_1
   - **Refs**: docs/design/worktree-create.md#43-bring-over
   - **Acceptance**:
