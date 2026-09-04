@@ -21,10 +21,14 @@
         {
           "phase": "plan",
           "from": 1788518214025
+        },
+        {
+          "phase": "build",
+          "from": 1788524436132
         }
       ],
       "firstAt": 1788518214025,
-      "lastAt": 1788524081327,
+      "lastAt": 1788524334371,
       "buckets": [
         {
           "runtime": "claude",
@@ -175,14 +179,14 @@
           "phase": "plan",
           "agent": "main",
           "model": "claude-fable-5-1",
-          "messages": 68,
-          "inputTokens": 8773,
-          "outputTokens": 120673,
-          "reasoningTokens": 40427,
-          "cacheWriteTokens": 523711,
-          "cacheReadTokens": 16570004,
+          "messages": 75,
+          "inputTokens": 9521,
+          "outputTokens": 139770,
+          "reasoningTokens": 45192,
+          "cacheWriteTokens": 870521,
+          "cacheReadTokens": 18573268,
           "extra": {
-            "cacheWrite5mTokens": 523711,
+            "cacheWrite5mTokens": 870521,
             "cacheWrite1hTokens": 0,
             "webSearchRequests": 0,
             "webFetchRequests": 0

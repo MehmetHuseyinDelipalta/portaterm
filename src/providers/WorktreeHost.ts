@@ -40,7 +40,7 @@ import type {
   WorktreeSetupStepAskMessage,
   WorktreeSubscriptionLevel,
 } from "../types/messages";
-import { SETUP_STEP_ADDED_SOURCE } from "../types/messages";
+import { MAX_SETUP_STEP_CHARS, SETUP_STEP_ADDED_SOURCE } from "../types/messages";
 import {
   isResolvedPathInside,
   type PreparedRoot,
@@ -972,7 +972,18 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    */
   const addedSteps = new Map<string, readonly string[]>();
   const MAX_ADDED_STEPS = 32;
-  const MAX_ADDED_STEP_CHARS = 4096;
+  /**
+   * Rows the combined offer may carry, counting the record.
+   *
+   * The provider budget bounds what a READ emits; the record is appended after
+   * it, so without this an offer could carry up to 32 rows past the bound —
+   * and a full selection of it would then be refused by `isKnownSave`, which
+   * admits at most `MAX_MODEL_ROWS` kept ids, stalling a valid save with no
+   * answer (review round 1 F003). Same bound, same reserved slot as `full()`.
+   */
+  const roomFor = (model: ProvisionModel, added: number): boolean =>
+    model.entries.length + model.ports.length + model.setup.length + model.excluded.length + added <=
+    MAX_MODEL_ROWS - 1;
   /**
    * The model with this form's added steps, and only them, after its own.
    *
@@ -3261,7 +3272,15 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
             if (ordinal !== undefined) {
               next = record.filter((_, i) => i !== ordinal);
             }
-          } else if (op.kind === "add" ? record.length < MAX_ADDED_STEPS : ordinal !== undefined) {
+          } else if (
+            op.kind === "add"
+              ? record.length < MAX_ADDED_STEPS &&
+                roomFor(
+                  { ...shown.model, setup: shown.model.setup.filter((s) => s.source !== SETUP_STEP_ADDED_SOURCE) },
+                  record.length + 1,
+                )
+              : ordinal !== undefined
+          ) {
             const prompt = options.actions?.promptSetupStep;
             let typed: string | undefined;
             if (prompt !== undefined) {
@@ -3274,7 +3293,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
               }
             }
             // Bounded by the host whatever the input said (design.md D3).
-            if (typed !== undefined && typed.trim().length > 0 && typed.length <= MAX_ADDED_STEP_CHARS) {
+            if (typed !== undefined && typed.trim().length > 0 && typed.length <= MAX_SETUP_STEP_CHARS) {
               const script = typed;
               next = op.kind === "add" ? [...record, script] : record.map((s, i) => (i === ordinal ? script : s));
             }

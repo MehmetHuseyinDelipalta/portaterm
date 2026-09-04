@@ -70,7 +70,7 @@
 
 ## 4. Review fixes (round 1)
 
-- [ ] 4_1 Bound the combined model and share the script limit
+- [x] 4_1 Bound the combined model and share the script limit — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/providers/WorktreeHost.actions.test.ts' && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 3_1
   - **Refs**: design.md D3
   - **Acceptance**:

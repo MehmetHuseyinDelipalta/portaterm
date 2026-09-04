@@ -50,6 +50,7 @@ import type {
   WorktreeMutationResultMessage,
   WorktreeRemoveAssessmentPayload,
 } from "./types/messages";
+import { MAX_SETUP_STEP_CHARS } from "./types/messages";
 import { type AuthorizedDirectory, authorizeDirectory, directoryStillAuthorized } from "./utils/authorizedDirectory";
 import { isPathInside } from "./utils/pathBoundary";
 import { createTrackedPathResolver, ResolvedPathMemo } from "./utils/resolvedPathMemo";
@@ -578,8 +579,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         validateInput: (value) =>
           value.trim().length === 0
             ? "Enter a command."
-            : value.length > 4096
-              ? "A setup step is at most 4096 characters."
+            : value.length > MAX_SETUP_STEP_CHARS
+              ? `A setup step is at most ${MAX_SETUP_STEP_CHARS} characters.`
               : undefined,
       });
       return typed === undefined || typed.trim().length === 0 ? undefined : typed;

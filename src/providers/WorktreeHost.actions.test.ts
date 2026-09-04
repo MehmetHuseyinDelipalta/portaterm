@@ -8142,6 +8142,49 @@ describe("a setup step typed into the host's own input, for this create only", (
     h.dispose();
   });
 
+  it("refuses an add that would take the offer past the model budget, and a full selection still saves", async () => {
+    // A read at the budget: `MAX_MODEL_ROWS - 1` rows, exactly what `full()`
+    // lets a provider emit. One more added row would put the offer past what
+    // `isKnownSave` admits back (round 1 F003).
+    const atBudget: ProvisionModel = {
+      ...OFFERED,
+      setup: [],
+      entries: Array.from({ length: MAX_MODEL_ROWS - 2 }, (_, i) => ({
+        id: `e${i}`,
+        path: `file-${i}`,
+        mode: "copy" as const,
+        source: "asimov/worktree.yaml",
+      })),
+    };
+    const h = await opened({ prompt: async () => "pnpm build", read: async () => atBudget });
+    // The one slot left takes a step; the next is refused and still answered.
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    expect(added(h.view)).toHaveLength(1);
+    const before = offersIn(h.view).length;
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    expect(offersIn(h.view)).toHaveLength(before + 1);
+    expect(added(h.view)).toHaveLength(1);
+    expect(h.prompts).toHaveLength(1);
+
+    const offer = last(h.view);
+    const everything = [...offer.model.entries, ...offer.model.setup].map((row) => row.id);
+    expect(everything).toHaveLength(MAX_MODEL_ROWS - 1);
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSave",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      offerId: offer.offerId,
+      kept: everything,
+    });
+    await settle();
+    expect(h.seen).toHaveLength(1);
+    expect(offersIn(h.view)).toHaveLength(before + 2);
+    h.dispose();
+  });
+
   it("refuses the thirty-third step, still answering", async () => {
     let n = 0;
     const h = await opened({ prompt: async () => `step ${(n += 1)}` });

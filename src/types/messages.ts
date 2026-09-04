@@ -1309,6 +1309,14 @@ export interface WorktreeProvisionSwitchMessage {
 export const SETUP_STEP_ADDED_SOURCE = "added for this create";
 
 /**
+ * The longest setup script the host records from its own input, in UTF-16
+ * code units. One owner: the host's refusal and the input's `validateInput`
+ * both read it, so the two can never drift apart (review round 1 F005). The
+ * host enforces it whatever the input said.
+ */
+export const MAX_SETUP_STEP_CHARS = 4096;
+
+/**
  * WebView → Extension: open the host's own input for a setup step that applies
  * to this create only, or edit or remove one the host already holds.
  *
