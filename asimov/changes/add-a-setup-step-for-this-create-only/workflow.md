@@ -8,7 +8,7 @@
 
 - [-] Gate 1: direction approved — the fork (edit the provider file vs a step for this create only) was answered by the user before scaffolding: "Thêm step ad-hoc cho create này"
 - [x] `asm change validate` passes
-- [ ] Gate 2: plan approved
+- [x] Gate 2: plan approved
 
 ## Implement
 
@@ -46,3 +46,4 @@ Plan attack (round 2 replan): the oracle refuted the 199 bound (a capped read al
 Replan (fastlane, after round 2, oracle-repaired): Gate 2 re-earned. Planned at: ddc5fd08
 Verify gate (cycle 3, after 5_1/5_2): observed at 7c97f98e on a clean tree — 7757/7757, type check clean, I10 and fs-deletion gates green, bundle gate green against a fresh `node esbuild.js --production`; Biome in check mode: the pre-existing `worktreeFormat.ts:30` error and `src/vault/VaultService.customName.test.ts:23` noCommaOperator, both in files this change does not touch and both present at the base, plus the same 14 CSS warnings; `verify-status` exits 0.
 Thrash stop (round 3, cycle 3): F003's invariant survived two fix attempts (4_1, 5_1) and rounds 2 and 3 both closed with one gating blocker, so the stop fired and the cycle cap makes option 1 mandatory. The round-3 witness is a defect of the SAVE path at this change's base — `withSaveReports(base, posts)` reached `offers.issue` unbounded at `edc455a7`, shipping up to 202 rows with no added step involved — and holding the bound needs the reader to reserve the host's slots, which no composition order inside this change can do. Handed back as its own change `reserve-the-host-s-rows-in-the-model-budget` (asimov-build § Review Fix Loop option 1); this change depends on it and its next discovery round scopes the integration seam. F008 (inert `wt-bring-box--only-add` toggle) travels with it. Gate 2 unticked for the D3 amendment that names the dependency; All tasks done and Verify gate stay ticked — the child change invalidates neither, and 7757/7757 stands at 4db569c4.
+Dependency satisfied: `reserve-the-host-s-rows-in-the-model-budget` is archived (reviewed APPROVE, 0 findings), so D3's reserved room exists and the bound this change enforces at `withAdded` is provable rather than aspirational. Gate 2 re-earned. Planned at: 6b36a22d
