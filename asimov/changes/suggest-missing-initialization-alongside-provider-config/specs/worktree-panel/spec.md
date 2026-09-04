@@ -38,6 +38,21 @@ an environment file's contents.
 - **THEN** `pnpm install` remains a separate unchecked suggestion
 - **AND** neither shell command is normalized or discarded
 
+### Requirement: A present source answers, even when its answer is nothing
+
+A source SHALL count as detected when any file it reads is present, whatever that file then yields.
+A complete present source declaring nothing SHALL remain the active provider and contribute no
+configured rows of its own; eligible host initialization suggestions MAY append after that answer. A
+source carrying any provider problem SHALL remain the active problem answer and receive no
+suggestions. Neither source SHALL be passed over for a later provider.
+
+#### Scenario: The first source declares nothing
+
+- **WHEN** a repository carries a complete first-order source whose file declares nothing, and a later source that declares rows
+- **THEN** the first source contributes no configured rows and remains active
+- **AND** eligible host initialization suggestions may appear unchecked
+- **AND** the later source appears as a row offering to switch, with none of its rows offered until that is taken
+
 ### Requirement: A saved configuration replaces fallback suggestions
 
 WHEN positive environment-file consent is saved into the native provisioning configuration, later
@@ -54,11 +69,18 @@ the configuration still does not express SHALL remain eligible for an unchecked 
 
 ### Requirement: An incomplete provider answer is not supplemented
 
-A provider answer marked incomplete — unreadable, malformed, or depending on an unresolved source —
-SHALL remain the answer and SHALL suppress initialization suggestions.
+A provider answer carrying any provider problem SHALL be incomplete, including an unreadable or
+malformed source, an unknown or damaged key, or a dependency on an unresolved source. The answer and
+its problem SHALL remain, and initialization suggestions SHALL be suppressed.
 
 #### Scenario: A provisioning answer is incomplete
 
 - **WHEN** a supported source is unreadable, malformed, or names an unresolved source
 - **THEN** its problem and any material safely recovered remain the source's answer
+- **AND** no initialization suggestion is appended
+
+#### Scenario: A readable answer carries a non-fatal provider problem
+
+- **WHEN** a supported source is readable and parsed but reports an unknown key
+- **THEN** the source's problem remains its answer
 - **AND** no initialization suggestion is appended

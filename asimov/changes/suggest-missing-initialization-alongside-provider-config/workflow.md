@@ -31,7 +31,7 @@
 
 Blueprint: none
 Lane: full (standard) — changes initialization suggestion behavior and saved-config rereads | flags: security-privacy
-Planned at: 4a4ebb3e
+Planned at: d168ad94
 Baseline: current `readProvisioning` calls suggestions only when `chosen === null`; the archived fallback design explicitly suppresses them over every present source. This change reverses only that condition for readable answers.
 Plan attack: refuted and repaired four boundaries — workspace manifests now use a bounded no-follow reader; candidate ids are minted disjoint before contender membership; capacity synchronizes to `rowsOf(base)` but never refunds a capped read; completeness is required on `AdapterRead` and propagated through native assembly rather than guessed from problem reasons. Supported: exact setup script identity, non-native save/reread semantics, and fresh source-switch reads. The warning remains present; its icon move stays a separate webview change.
 Biome exception: `pnpm exec biome check src` exits 1 only on untouched `src/agentHooks/AgentHookController.test.ts`; clean base `1206b059` has the same formatter error plus one more, while all other diagnostics match.

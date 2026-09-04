@@ -15,7 +15,7 @@
 
 - [x] 2_1 Compose suggestions after each successful provider answer — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/readProvisioning.test.ts src/providers/WorktreeHost.actions.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 1_1
-  - **Refs**: specs/worktree-panel/spec.md#{a-repository-without-provisioning-configuration-gets-bounded-initialization-suggestions, an-incomplete-provider-answer-is-not-supplemented, a-saved-configuration-replaces-fallback-suggestions}; design.md D3
+  - **Refs**: specs/worktree-panel/spec.md#{a-repository-without-provisioning-configuration-gets-bounded-initialization-suggestions, a-present-source-answers-even-when-its-answer-is-nothing, an-incomplete-provider-answer-is-not-supplemented, a-saved-configuration-replaces-fallback-suggestions}; design.md D3
   - **Acceptance**:
     - Outcome: every readable provider offer includes only its own missing unchecked suggestions
     - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/readProvisioning.test.ts src/providers/WorktreeHost.actions.test.ts
