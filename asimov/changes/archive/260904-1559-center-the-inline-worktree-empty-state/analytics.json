@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "target": {
+    "kind": "change",
+    "id": "center-the-inline-worktree-empty-state"
+  },
+  "sessions": [
+    {
+      "sessionId": "649500f6-d2af-47ae-ba3d-6351c690ebca",
+      "runtime": "claude",
+      "author": "huybuidac@gmail.com",
+      "attachedAt": 1788537317151,
+      "accounting": 2,
+      "windows": [
+        {
+          "from": 1788537317151,
+          "to": 1788537558550
+        }
+      ],
+      "phases": [
+        {
+          "phase": "plan",
+          "from": 1788537317151
+        }
+      ],
+      "firstAt": 1788537317151,
+      "lastAt": 1788537317151,
+      "buckets": []
+    }
+  ]
+}

@@ -1530,19 +1530,13 @@
 }
 
 /* An empty state that sits inside the tree rather than instead of it. A
-   multi-repo workspace can hold several at once, so it carries a row's rhythm
-   and not a panel's.
-
-   The left inset is the row label column: `.wt-row` margin 4px + padding 8px +
-   its 16px glyph column + the 6px grid gap = 34px. The right inset is the same
-   row's 10px padding + 4px margin. Change `.wt-row` and change these with it —
-   a block under those rows whose text starts anywhere else reads as a
-   paragraph dropped into the tree, not a line of it. */
+   multi-repo workspace can hold several at once, so it stays compact — but the
+   whole block centers in the tree's available measure. Aligning its first edge
+   to the row label column left the wrapped body visibly weighted to one side. */
 .wt-empty-inline {
-  padding: 4px 14px 8px;
-  padding-left: 34px;
-  align-items: flex-start;
-  text-align: left;
+  padding: 8px 24px 12px;
+  align-items: center;
+  text-align: center;
   gap: 2px;
 }
 
@@ -1557,7 +1551,7 @@
 .wt-empty-inline .vault-empty-body {
   font-size: 11px;
   line-height: 1.4;
-  max-width: none;
+  max-width: 420px;
 }
 
 .wt-empty-inline .vault-empty-icon {
