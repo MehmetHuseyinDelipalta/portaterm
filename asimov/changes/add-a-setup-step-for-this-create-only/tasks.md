@@ -13,7 +13,7 @@
 
 ## 2. Host and form
 
-- [ ] 2_1 Hold added steps per opening on the host and answer every ask with a re-issued offer
+- [x] 2_1 Hold added steps per opening on the host and answer every ask with a re-issued offer — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/providers/WorktreeHost.actions.test.ts' && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 1_1
   - **Refs**: specs/worktree-panel/spec.md#{a-typed-setup-step-is-spent-only-through-the-host-held-offer, an-opened-setup-input-holds-the-form-until-it-is-answered, only-setup-the-user-selected-runs, a-choice-that-configuration-cannot-express-is-stated-not-silently-dropped}; design.md D1, D3, D4
   - **Acceptance**:

@@ -40,6 +40,7 @@ import type {
   WorktreeSetupStepAskMessage,
   WorktreeSubscriptionLevel,
 } from "../types/messages";
+import { SETUP_STEP_ADDED_SOURCE } from "../types/messages";
 import {
   isResolvedPathInside,
   type PreparedRoot,
@@ -473,6 +474,17 @@ export interface WorktreeActions {
    * picker at all, rather than a control that resolves to nothing.
    */
   pickFolder?(): Promise<string | undefined>;
+  /**
+   * The setup command the user typed into the HOST's own input, or `undefined`
+   * for a dismissed or failed input. `current` seeds the input when an existing
+   * step is being edited.
+   *
+   * Optional like `pickFolder`, and for the same reason. The text it returns
+   * exists first here and reaches the webview only as display material inside
+   * a re-issued offer — never the other way round (worktree-provisioning.md
+   * § 4.0; add-a-setup-step-for-this-create-only/design.md D1).
+   */
+  promptSetupStep?(current?: string): Promise<string | undefined>;
   copyText(text: string): Promise<void>;
   focusPane(paneId: string, viewId: string): Promise<void>;
   copyResumeCommand(entryId: string): Promise<void>;
@@ -948,6 +960,48 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * other — a repository that had none and now has one took a source.
    */
   const provisionBaseline = new Map<string, string>();
+  /**
+   * Setup steps the user typed into THIS form, per opening, in the order added.
+   *
+   * Scripts only — no ids. Every offer the form is issued is built through
+   * `withAdded`, which appends one marker row per script and lets the store mint
+   * the ids, so an added step is spent exactly the way a provider-declared one
+   * is: by offer id plus item id, against the model the host holds (design.md
+   * D3). Same slot as `provisionBaseline`, swept with it by `retireOpening`, so
+   * a step dies with the form that typed it.
+   */
+  const addedSteps = new Map<string, readonly string[]>();
+  const MAX_ADDED_STEPS = 32;
+  const MAX_ADDED_STEP_CHARS = 4096;
+  /**
+   * The model with this form's added steps, and only them, after its own.
+   *
+   * Strips marker rows FIRST: the ask handler builds from `offers.current`,
+   * which already carries the previous answer's marker rows, and appending onto
+   * that duplicated the record on every ask (plan attack F1). No provider file
+   * can collide with the marker — a `source` is a repo-relative file the adapter
+   * read, and none of the adapters reads a file spelled like a sentence.
+   */
+  const withAdded = (slot: string, model: ProvisionModel): ProvisionModel => {
+    const own = model.setup.filter((step) => step.source !== SETUP_STEP_ADDED_SOURCE);
+    const added = addedSteps.get(slot) ?? [];
+    if (added.length === 0 && own.length === model.setup.length) {
+      return model;
+    }
+    return {
+      ...model,
+      setup: [
+        ...own,
+        ...added.map((script, i) => ({
+          // Reminted by the store on issue, like every other row.
+          id: `added-${i}`,
+          kind: "shell" as const,
+          script,
+          source: SETUP_STEP_ADDED_SOURCE,
+        })),
+      ],
+    };
+  };
   const retireOpening = (key: string): void => {
     liveOpening.delete(key);
     const reading = `${key} `;
@@ -964,6 +1018,11 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     for (const slot of [...provisionBaseline.keys()]) {
       if (slot.startsWith(reading)) {
         provisionBaseline.delete(slot);
+      }
+    }
+    for (const slot of [...addedSteps.keys()]) {
+      if (slot.startsWith(reading)) {
+        addedSteps.delete(slot);
       }
     }
     offers.forgetSurface(key);
@@ -3127,7 +3186,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
             // A fresh id, and the old one evicted with it: a submission naming
             // the superseded offer would name the model the user is no longer
             // looking at.
-            const offer = offers.issue(offerKey, previewed);
+            const offer = offers.issue(offerKey, withAdded(slot, previewed));
             deliver(surface, {
               type: "worktreeProvisionOffer",
               repoId: msg.repoId,
@@ -3152,12 +3211,98 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
         return;
       }
       case "worktreeSetupStepAsk": {
-        // Validated and, for now, answered with nothing: the record, the
-        // prompt and the re-issued offer land in task 2_1. A malformed payload
-        // must already fail closed here rather than reach that arm.
         if (!isKnownStepAsk(msg)) {
           return;
         }
+        const key = surfaceKey(surface);
+        // A retired or never-seen opening has no authority to spend: no input
+        // is opened and nothing is published for a form the user has closed.
+        if (liveOpening.get(key) !== msg.opening) {
+          return;
+        }
+        const offerKey = { surface: key, repoId: msg.repoId };
+        // No offer means no form has been told what it may add to. The ask is
+        // dropped, not answered — there is no offer id to release it with, and
+        // the dialog offers the control only while an offer is drawn.
+        const shown = offers.current(offerKey);
+        if (shown === undefined || cache.read().repos.every((r) => r.repoId !== msg.repoId)) {
+          return;
+        }
+        // THE SAME slot the switch and the save use, taken synchronously
+        // before the input opens, so the three order against each other and a
+        // later switch outranks this ask the moment it arrives (design.md D2).
+        const slot = `${key} ${msg.repoId} ${msg.opening}`;
+        if (msg.switch <= (provisionSwitch.get(slot) ?? 0)) {
+          return;
+        }
+        provisionSwitch.set(slot, msg.switch);
+        const mine = msg.switch;
+        const op = msg.op;
+        // The target is resolved against the offer the form was LOOKING at,
+        // before the input opens. Only a row this host marked as added is
+        // reachable; a provider row named here is answered with the offer
+        // unchanged and no input is opened (design.md D3).
+        let ordinal: number | undefined;
+        if (op.kind !== "add" && op.offerId === shown.offerId) {
+          const at = shown.model.setup
+            .filter((step) => step.source === SETUP_STEP_ADDED_SOURCE)
+            .findIndex((step) => step.id === op.itemId);
+          ordinal = at < 0 ? undefined : at;
+        }
+        const stillMine = (): boolean =>
+          !disposed &&
+          surfaces.has(surface) &&
+          provisionSwitch.get(slot) === mine &&
+          liveOpening.get(key) === msg.opening;
+        void (async () => {
+          const record = addedSteps.get(slot) ?? [];
+          let next = record;
+          if (op.kind === "remove") {
+            if (ordinal !== undefined) {
+              next = record.filter((_, i) => i !== ordinal);
+            }
+          } else if (op.kind === "add" ? record.length < MAX_ADDED_STEPS : ordinal !== undefined) {
+            const prompt = options.actions?.promptSetupStep;
+            let typed: string | undefined;
+            if (prompt !== undefined) {
+              // A rejection is a dismissal. Caught HERE so the form is still
+              // answered below; `perform`'s wrapper only logs (design.md D4).
+              try {
+                typed = await prompt(op.kind === "edit" ? record[ordinal ?? -1] : undefined);
+              } catch {
+                typed = undefined;
+              }
+            }
+            // Bounded by the host whatever the input said (design.md D3).
+            if (typed !== undefined && typed.trim().length > 0 && typed.length <= MAX_ADDED_STEP_CHARS) {
+              const script = typed;
+              next = op.kind === "add" ? [...record, script] : record.map((s, i) => (i === ordinal ? script : s));
+            }
+          }
+          // Re-checked AFTER the input and BEFORE the record is touched. An
+          // ask a later switch outranked commits nothing and publishes
+          // nothing: the step the user was typing goes with the ask that
+          // carried it, rather than resurfacing in a source they moved on
+          // from (design.md D3).
+          if (!stillMine()) {
+            return;
+          }
+          if (next !== record) {
+            addedSteps.set(slot, next);
+          }
+          // Every admitted ask is answered, changed or not: the offer id is
+          // what releases the form (design.md D4). The model is the one the
+          // host holds now — already previewed when it was issued.
+          const current = offers.current(offerKey)?.model ?? shown.model;
+          const offer = offers.issue(offerKey, withAdded(slot, current));
+          deliver(surface, {
+            type: "worktreeProvisionOffer",
+            repoId: msg.repoId,
+            opening: msg.opening,
+            offerId: offer.offerId,
+            model: offer.model,
+          });
+        })();
         return;
       }
       case "worktreeProvisionSave": {
@@ -3210,7 +3355,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
           ) {
             return;
           }
-          const offer = offers.issue(offerKey, previewed);
+          const offer = offers.issue(offerKey, withAdded(slot, previewed));
           deliver(surface, {
             type: "worktreeProvisionOffer",
             repoId: msg.repoId,
@@ -3504,7 +3649,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
               ) {
                 return;
               }
-              const offer = offers.issue(offerKey, previewed);
+              const offer = offers.issue(offerKey, withAdded(start, previewed));
               deliver(surface, {
                 type: "worktreeProvisionOffer",
                 repoId: msg.repoId,
