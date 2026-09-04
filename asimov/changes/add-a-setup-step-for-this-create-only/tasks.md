@@ -81,7 +81,7 @@
     2. In src/providers/WorktreeHost.ts refuse an add when entries, ports, provider setup, excluded rows and the record would exceed `MAX_MODEL_ROWS - 1`, still answering with the offer unchanged.
     3. Add the near-bound host test: fill to the bound, ask once more, assert the offer unchanged and a full-selection save answered.
 
-- [ ] 4_2 Carry added-row ticks by ordinal and hold the whole form while an input is open
+- [x] 4_2 Carry added-row ticks by ordinal and hold the whole form while an input is open — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/webview/worktree/WorktreeCreateDialog.test.ts' && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 3_1
   - **Refs**: specs/worktree-panel/spec.md#{an-opened-setup-input-holds-the-form-until-it-is-answered, only-setup-the-user-selected-runs}; design.md D5
   - **Acceptance**:

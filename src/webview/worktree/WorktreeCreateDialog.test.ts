@@ -6126,6 +6126,78 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
     expect(ticks()).toEqual([true]);
   });
 
+  it("keeps each duplicate-script row's own tick through a remove and an edit, in both directions", () => {
+    const { answer, addedRows, ticks } = withAsk();
+    const tickAt = (i: number, on: boolean) => {
+      const box = addedRows()[i]?.querySelector<HTMLInputElement>(".wt-brow-cb");
+      if (box == null) {
+        throw new Error(`no added row ${i}`);
+      }
+      box.checked = on;
+      box.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    // Two rows, the SAME script: a descriptor cannot tell them apart.
+    answer("o2", { setup: [provider(), added("same", "s2"), added("same", "s3")] });
+    tickAt(0, false);
+    expect(ticks()).toEqual([false, true]);
+
+    // Remove the unticked first: the survivor keeps ITS tick (on).
+    addedRows()[0]?.querySelector<HTMLButtonElement>(".wt-brow-step-remove")?.click();
+    answer("o3", { setup: [provider("p3"), added("same", "s4")] });
+    expect(ticks()).toEqual([true]);
+
+    // The other direction: first on, second off, remove the first → off survives.
+    answer("o4", { setup: [provider("p4"), added("same", "s5"), added("same", "s6")] });
+    tickAt(1, false);
+    expect(ticks()).toEqual([true, false]);
+    addedRows()[0]?.querySelector<HTMLButtonElement>(".wt-brow-step-remove")?.click();
+    answer("o5", { setup: [provider("p5"), added("same", "s7")] });
+    expect(ticks()).toEqual([false]);
+
+    // An edit of the first, with the second unticked, moves nothing.
+    answer("o6", { setup: [provider("p6"), added("same", "s8"), added("same", "s9")] });
+    tickAt(1, false);
+    addedRows()[0]?.querySelector<HTMLButtonElement>(".wt-brow-step-edit")?.click();
+    answer("o7", { setup: [provider("p7"), added("SAME", "s10"), added("same", "s11")] });
+    expect(ticks()).toEqual([true, false]);
+  });
+
+  it("holds the repository selector and every gate while another repository's input is open", () => {
+    const asks: unknown[] = [];
+    let applyOffer: ((repoId: string, offer: WorktreeProvisionOffer) => void) | undefined;
+    const second = { ...createDefaults(), repoId: "/other/.git", repoLabel: "other" };
+    const { q, host } = open({
+      repos: [createDefaults(), second],
+      bindProvisioning: (apply) => {
+        applyOffer = apply;
+      },
+      onSetupStepAsk: (r) => asks.push(r),
+      onProvisionSave: () => {},
+    });
+    applyOffer?.(REPO_ID, provisionOffer({ offerId: "a1", model: provisionModel() }));
+    applyOffer?.("/other/.git", provisionOffer({ offerId: "b1", model: provisionModel() }));
+    type(q<HTMLInputElement>("#wt-branch"), "feat/x");
+
+    q<HTMLButtonElement>(".wt-bring-add-step").click();
+    expect(asks).toHaveLength(1);
+    const select = q<HTMLSelectElement>("#wt-repo-select");
+    expect(select.disabled).toBe(true);
+
+    // Even if the selector were forced, the second repository's form stays held.
+    select.value = "/other/.git";
+    select.dispatchEvent(new Event("change"));
+    expect(q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(true);
+    expect(q<HTMLButtonElement>(".wt-bring-add-step").disabled).toBe(true);
+    expect(q<HTMLButtonElement>(".wt-bring-save").disabled).toBe(true);
+    q<HTMLButtonElement>(".wt-bring-add-step").click();
+    expect(asks).toHaveLength(1);
+
+    // The first repository's answer releases the whole form.
+    applyOffer?.(REPO_ID, provisionOffer({ offerId: "a2", model: provisionModel() }));
+    expect(select.disabled).toBe(false);
+    expect(host.querySelector<HTMLButtonElement>(".wt-bring-add-step")?.disabled).toBe(false);
+  });
+
   it("does not re-tick an unticked added step when a source switch answers", () => {
     const providers: ProvisionModel["providers"] = [
       { id: "asimov", files: [YAML], present: [YAML], active: true },

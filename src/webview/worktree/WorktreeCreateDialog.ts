@@ -1326,15 +1326,17 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   // Below the destination it derives, never above the lead input.
   const repoHint = document.createElement("span");
   repoHint.className = "wt-fhint";
+  let repoSelect: HTMLSelectElement | undefined;
   if (repos.length > 1) {
     const repoField = field("Repository", "wt-repo-select");
-    const repoSelect = selectControl(
+    const select = selectControl(
       "wt-repo-select",
       repos.map((r) => ({ value: r.repoId, label: r.repoLabel })),
       draft.repoId,
     );
-    repoSelect.addEventListener("change", () => {
-      draft.repoId = repoSelect.value;
+    repoSelect = select;
+    select.addEventListener("change", () => {
+      draft.repoId = select.value;
       agentBox.setAgents(currentRepo().agents, initialSafeAgentId(currentRepo().agents));
       rebuildAfterOptions();
       // The branch list belongs to a repository. The same typed name can be an
@@ -1346,7 +1348,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       }
       stateDestination({ kind: "repoChanged" });
     });
-    repoField.append(repoSelect, repoHint);
+    repoField.append(select, repoHint);
     shell.dialog.appendChild(repoField);
   }
 
@@ -1624,7 +1626,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       drawnModel === null ||
       pendingSwitch.has(draft.repoId) ||
       pendingSave.has(draft.repoId) ||
-      pendingStep.has(draft.repoId)
+      anyAsking()
     ) {
       return;
     }
@@ -1662,7 +1664,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       drawnModel === null ||
       pendingSwitch.has(draft.repoId) ||
       pendingSave.has(draft.repoId) ||
-      pendingStep.has(draft.repoId)
+      anyAsking()
     ) {
       return;
     }
@@ -1670,22 +1672,25 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     if (ticked === undefined) {
       return;
     }
-    let editing: { ordinal: number; checked: boolean } | undefined;
-    if (op.kind === "edit") {
+    let removing: number | undefined;
+    if (op.kind !== "add") {
       const ordinal = drawnModel.setup
         .filter((step) => step.source === SETUP_STEP_ADDED_SOURCE)
         .findIndex((step) => step.id === op.itemId);
       if (ordinal < 0) {
         return;
       }
-      editing = { ordinal, checked: ticked.has(op.itemId) };
+      if (op.kind === "remove") {
+        removing = ordinal;
+      }
     }
     switchSeq += 1;
     pendingStep.set(draft.repoId, {
       offerId: drawnOfferId,
       model: drawnModel,
       kept: new Set(ticked),
-      ...(editing === undefined ? {} : { editing }),
+      addedTicks: addedTicks(drawnModel, ticked),
+      ...(removing === undefined ? {} : { removing }),
     });
     deps.onSetupStepAsk?.({ repoId: draft.repoId, switch: switchSeq, op });
     // Create is withheld from this moment; the gate is only read on a derive.
@@ -1695,8 +1700,13 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   addStepButton.addEventListener("click", () => askStep({ kind: "add" }));
   /** Enablement of every control an in-flight ask must hold, derived, never toggled. */
   function syncStepControls(): void {
-    const asking = pendingStep.has(draft.repoId);
+    const asking = anyAsking();
     const busy = asking || pendingSwitch.has(draft.repoId) || pendingSave.has(draft.repoId);
+    if (repoSelect !== undefined) {
+      // The input belongs to the form, and changing repository would let
+      // every gate below read a repository that never asked (round 1 F002).
+      repoSelect.disabled = asking;
+    }
     addStepButton.disabled = busy;
     for (const b of bringBox.querySelectorAll<HTMLButtonElement>(".wt-brow-step")) {
       b.disabled = busy;
@@ -1789,15 +1799,18 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
    * its tick can follow it onto the answering offer, where its script has
    * changed and no descriptor matches (design.md D5).
    */
-  const pendingStep = new Map<
-    string,
-    {
-      offerId: string;
-      model: WorktreeProvisionOffer["model"];
-      kept: ReadonlySet<string>;
-      editing?: { ordinal: number; checked: boolean };
-    }
-  >();
+  interface PendingStep {
+    offerId: string;
+    model: WorktreeProvisionOffer["model"];
+    kept: ReadonlySet<string>;
+    /** Every added row's tick, by ordinal, at the press (design.md D5). */
+    addedTicks: readonly boolean[];
+    /** For a remove: which ordinal the answer will have spliced out. */
+    removing?: number;
+  }
+  const pendingStep = new Map<string, PendingStep>();
+  /** Any repository's ask still out: the input is the FORM's, so the hold is form-wide (round 1 F002). */
+  const anyAsking = (): boolean => pendingStep.size > 0;
   /**
    * The added rows' ticks at the moment a switch was taken, by ordinal.
    *
@@ -1921,6 +1934,23 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   let switchSeq = 0;
 
   /** Redraw the section from the repo's offer. Called on every derive. */
+  /**
+   * The selection an answered ask leaves behind. Provider rows carry by
+   * script descriptor. Added rows carry by ORDINAL, for every operation: two
+   * of them may carry the same script, and a descriptor cannot tell those
+   * apart — removing the first moved its tick onto the second (round 1 F001,
+   * design.md D5). An add leaves the snapshot as is and the new last row takes
+   * its default; an edit changes neither count nor order; a remove splices
+   * its ordinal out.
+   */
+  function settleStep(stepped: PendingStep, model: WorktreeProvisionOffer["model"]): Set<string> {
+    const ticked = carryForward(stepped.model, stepped.kept, bringRows(model), model);
+    const ticks =
+      stepped.removing === undefined ? stepped.addedTicks : stepped.addedTicks.filter((_, i) => i !== stepped.removing);
+    applyAddedTicks(model, ticks, ticked);
+    return ticked;
+  }
+
   function syncBringOver(offer: WorktreeProvisionOffer | undefined): void {
     if (offer === undefined) {
       // No offer has arrived. Saying nothing is right here and only here: the
@@ -1997,15 +2027,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     if (ticked === undefined) {
       const fresh = bringRows(offer.model);
       if (stepAnswered && stepped !== undefined) {
-        // An add or a remove changes no surviving row's script, so the script
-        // descriptors carry every tick; an edit changes exactly one, and that
-        // row's tick follows its ordinal instead (design.md D5).
-        ticked = carryForward(stepped.model, stepped.kept, fresh, offer.model);
-        if (stepped.editing !== undefined) {
-          const ticks = addedTicks(offer.model, ticked);
-          ticks[stepped.editing.ordinal] = stepped.editing.checked;
-          applyAddedTicks(offer.model, ticks, ticked);
-        }
+        ticked = settleStep(stepped, offer.model);
       } else {
         ticked =
           answering && saved !== undefined
@@ -2044,7 +2066,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       ...offer.model.problems.map((problem) => bringProblem(problem)),
       ...inactive.map((provider) =>
         switchRow(provider, () => {
-          if (pendingStep.has(draft.repoId)) {
+          if (anyAsking()) {
             return;
           }
           switchSeq += 1;
@@ -3185,7 +3207,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
               ? "Waiting for a destination."
               : outstanding || pickAsked !== null
                 ? "Checking the destination."
-                : pendingStep.has(draft.repoId)
+                : anyAsking()
                   ? "Waiting for the setup step."
                   : recoverAsked !== null
                     ? "Reading the existing folder before it can be cleared."
@@ -3320,13 +3342,31 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     }
     repos[at] = { ...opened, provisioning: offer };
     if (repoId === draft.repoId) {
-      const wasPending = pendingStep.has(draft.repoId);
+      const wasPending = anyAsking();
       syncBringOver(offer);
       // The gate is only read on a derive, and an answered ask is what
       // re-arms Create — the same reason the pick re-derives on its answer.
-      if (wasPending && !pendingStep.has(draft.repoId)) {
+      if (wasPending && !anyAsking()) {
         syncDerived();
       }
+      return;
+    }
+    // The hold is form-wide, so an answer for a repository the picker has
+    // since left must still release it (round 1 F002) — and still settle that
+    // repository's selection, so returning to it finds the ticks it left
+    // rather than the model's defaults.
+    const stepped = pendingStep.get(repoId);
+    if (stepped === undefined || stepped.offerId === offer.offerId) {
+      return;
+    }
+    pendingStep.delete(repoId);
+    checkedByOffer.delete(stepped.offerId);
+    if (!checkedByOffer.has(offer.offerId)) {
+      checkedByOffer.set(offer.offerId, settleStep(stepped, offer.model));
+    }
+    syncStepControls();
+    if (!anyAsking()) {
+      syncDerived();
     }
   });
 
