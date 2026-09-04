@@ -10,8 +10,9 @@
     - Verify: unit src/worktree/provisioning/providerKit.test.ts
   - **Plan**:
     1. In src/worktree/provisioning/providerKit.ts export `HOST_COMPOSED_ROWS` and `MAX_READ_ROWS` per design.md D1 and compare `full()` against `MAX_READ_ROWS`.
-    2. In src/worktree/provisioning/providerKit.test.ts assert `rowsOf(modelFromDraft(draft)) + HOST_COMPOSED_ROWS <= MAX_MODEL_ROWS` for a draft filled past the cap, and that its cap problem is still recorded.
-    3. Move the exact-count assertions in src/worktree/provisioning/nativeProvider.test.ts, src/worktree/provisioning/orcaProvider.test.ts, src/worktree/provisioning/asimovProvider.test.ts, src/worktree/provisioning/vscodeTasksProvider.test.ts and src/worktree/provisioning/readProvisioning.test.ts onto the constant each one is really asserting.
+    2. Make `full()`'s problem name `MAX_READ_ROWS` rather than `MAX_MODEL_ROWS` (design.md D1), keeping the "and after are not offered" wording.
+    3. In src/worktree/provisioning/providerKit.test.ts assert `rowsOf(modelFromDraft(draft)) + HOST_COMPOSED_ROWS <= MAX_MODEL_ROWS` for a draft filled past the cap, and that its cap problem is still recorded.
+    4. Move the exact-count assertions in src/worktree/provisioning/nativeProvider.test.ts, src/worktree/provisioning/orcaProvider.test.ts, src/worktree/provisioning/asimovProvider.test.ts, src/worktree/provisioning/vscodeTasksProvider.test.ts and src/worktree/provisioning/readProvisioning.test.ts onto the constant each one is really asserting — accepted rows to `MAX_READ_ROWS`, a capped model's total to `MAX_READ_ROWS + 1`.
 
 ## 2. The witness at the seam
 
@@ -22,6 +23,6 @@
     - Outcome: a capped read plus every host-composed row publishes inside the row bound
     - Verify: unit src/providers/WorktreeHost.actions.test.ts
   - **Plan**:
-    1. In src/providers/WorktreeHost.actions.test.ts add a test whose read returns a model at the cap with its own "are not offered" problem, whose write answers `{ ok: false, reason: "unwritable", mayStillBeLocked: true }`, and which then saves: assert `rowsOf` of the published offer is at most `MAX_MODEL_ROWS`, and that the refusal, the lock report and the reader's statement are all present.
-    2. Add the single-report case (`{ ok: true, wrote: true, mayStillBeLocked: true }`) against the same capped read.
+    1. In src/providers/WorktreeHost.actions.test.ts add a test whose read returns a model at the cap with its own "are not offered" problem, which records TWO added steps so one is withheld and the withholding row is really composed (plan attack 6), whose write answers `{ ok: false, reason: "unwritable", mayStillBeLocked: true }`, and which then saves: assert `rowsOf` of the published offer is at most `MAX_MODEL_ROWS`, and that the refusal, the lock report, the withholding statement and the reader's statement are all present.
+    2. Add the single-report case (`{ ok: true, wrote: true, mayStillBeLocked: true }`) and the thrown-reread case, which publishes the already-composed `shown` model, against the same capped read.
     3. Remove the inert `wt-bring-box--only-add` toggle in src/webview/worktree/WorktreeCreateDialog.ts (round 3 F008) and its `bringBox.classList.toggle` call.

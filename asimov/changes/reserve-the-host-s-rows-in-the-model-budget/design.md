@@ -17,6 +17,11 @@ export const MAX_READ_ROWS = MAX_MODEL_ROWS - HOST_COMPOSED_ROWS - 1; // 196
 the cap is unchanged: the refusal still happens at the append, and the cap still records its own
 problem row exactly once, so a shortened list still says it was shortened.
 
+**The statement names the number it enforces.** `full()`'s problem says
+`More than ${MAX_MODEL_ROWS} rows; …`, which would refuse row 197 while claiming a limit of 200
+(plan attack 4). It becomes `More than ${MAX_READ_ROWS} rows; <what> and after are not offered.`
+— same shape, same "are not offered" wording every suite matches on, and true.
+
 Three is the count of rows the host can add to one model, and it is a closed set:
 
 | Row | Where | When |
@@ -28,7 +33,13 @@ Three is the count of rows the host can add to one model, and it is a closed set
 The marker rows themselves are NOT in the reservation: `withAdded` already fits them into the
 room the model leaves, and reserving for 32 of them would cost every repository 32 rows it can
 see. The reservation covers only what the host adds unconditionally-on-event, which is why it is
-a constant rather than a function of the record.
+a constant rather than a function of the record — the same function slices the record to the room
+actually left, so sizing the reservation by the record would reserve twice (plan attack 6).
+
+Nothing else the host publishes carries model rows: the port preview replaces each port with a
+previewed one and preserves cardinality (`worktreePorts.ts:401-457`), and a migration offer is a
+message of its own rather than a provisioning model (`WorktreeHost.ts:3637-3644`) — both checked
+by the plan attack (1).
 
 ### D2: The reader spends it, so no composition order is load-bearing
 
