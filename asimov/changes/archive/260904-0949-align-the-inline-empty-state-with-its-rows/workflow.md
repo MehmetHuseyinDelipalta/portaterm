@@ -12,16 +12,16 @@
 
 ## Implement
 
-- [ ] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
-- [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
-- [ ] Gate: implementation approved
-- [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
+- [x] All tasks done (`tasks.md`)
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [-] Review done — one CSS rule set and one source-read test, no product logic, no escalation flags
+- [x] Gate: implementation approved
+- [-] Blueprint sync complete — no blueprint for this change
 
 ## Archive
 
-- [ ] Apply deltas: `bun run asm change apply`
-- [ ] Archive change: `bun run asm change archive`
+- [x] Apply deltas: `bun run asm change apply`
+- [x] Archive change: `bun run asm change archive`
 
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
 
@@ -37,3 +37,4 @@ Planned at: be07ff8d
 - Three sibling changes the user approved in the same turn are NOT here: dialog typography and affordances, wait-for-setup relocation, ad-hoc setup steps for one create.
 - 1_1 verify strike 1 was mine: `unit` Verify defaults to `bun test`, which has no jsdom, so 224/224 failed on `document is not defined` — this repo's runner is vitest and needs `--runner 'VITEST_MAX_THREADS=3 pnpm exec vitest run'`. Strike 2 was the suite rule refusing the new RED witness until `--test-change` declared it. Strike 3 was `src/agentHooks/install/ClaudeHookInstaller.test.ts:526` at 2229 ms against its 2000 ms wall-clock bound under load 6.4 — the same flake that locked `prove-entry-reconstruction-on-windows` 1_4 earlier today. Waited for load < 3 before the last attempt.
 - Follow-up, NOT taken here: that test bounds the whole `spawn /bin/sh → close` round-trip at 2000 ms while the command it runs already carries `--connect-timeout 0.5 --max-time 1.5`, leaving 500 ms for shell, awk and curl startup and teardown under a 295-file parallel run. Its neighbour at :505 has the same 2000 ms bound with no lower bound at all. The invariant worth keeping is the LOWER bound (≥1400: the black hole really was waited out to max-time, not short-circuited) and exit 0; the upper bound is asserting the machine's scheduling, not the command. Four verify strikes across two changes today.
+- Verify Gate: type check 0, 7716/7716 (VITEST_MAX_THREADS=2), `biome check src` exits 1 on the same one pre-existing error at `src/webview/worktree/worktreeFormat.ts:30:27` and 14 `noDescendingSpecificity` warnings — none in a file this change touched (`git diff --stat` at the change's base: worktreePanel.css and WorktreeView.test.ts only; the css file's only diagnostic is the pre-existing :635).
