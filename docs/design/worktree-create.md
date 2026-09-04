@@ -204,6 +204,28 @@ The administrative entry is therefore **reconstructed**, then handed to git's ow
 | `git -C <path> reset --mixed` | Rebuilds the per-worktree index from HEAD |
 | Unlink `worktrees/<id>/locked` | **Last of all**, and only while the entry is still provably this adoption's: the entry becomes an ordinary registration |
 
+**Where the recipe is verified, and where it fails.** Executed on both platforms by
+`scripts/verify-windows-worktree-entry.mjs`, whose RESULT blocks are the evidence:
+
+| Platform | git | Verdict |
+|---|---|---|
+| darwin | 2.50.1 | **RECIPE WORKS** — all eleven checks pass, and all four files are byte-identical to the ones git writes itself AND unchanged by `git worktree repair` |
+| windows-2022 | 2.55.0.windows.5 | **RECIPE FAILS — 3 of 11** |
+
+The Windows failure is one cause, and it is a **separator** bug in the recipe rather than a platform
+limitation. git writes `<wt>/.git` and `worktrees/<id>/gitdir` with FORWARD slashes on Windows too
+(`gitdir: C:/Users/.../worktrees/<id>`); the recipe wrote the platform separator
+(`C:\Users\...\worktrees\<id>`). `git worktree repair` then dies with
+`error: not a directory: C:\Users\...\.git` and normalises nothing — so the entry never lists and
+never survives a prune, which are the other two failures. Everything the table's own reasoning rests
+on held: repair still refuses to create a missing entry, `add --force --force` still refuses a
+non-empty destination, the branch-claim check still answers, and `reset --mixed` still rebuilt the
+index.
+
+So the five writes above must spell every recorded path with `/` on **every** platform, not with
+`path.sep`. Until that lands and the harness re-runs green on Windows, **adoption is not offered on
+Windows** — refused for a fixable defect that is named here, not for an untested guess.
+
 `reset --mixed` is **not optional and not cosmetic**. The index lived in the deleted directory, so
 until it is rebuilt every tracked file reports as both deleted and untracked — a working tree that
 looks destroyed. `reset --mixed` writes the index and does not touch a single file. The index is

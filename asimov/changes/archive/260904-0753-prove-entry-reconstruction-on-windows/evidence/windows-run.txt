@@ -1,0 +1,40 @@
+════════ RESULT — paste this block back verbatim ════════
+platform:        win32 (win32) sep="\\"
+git:             git version 2.55.0.windows.5
+node:            v22.23.2
+verdict:         RECIPE FAILS (3 of 11)
+
+checks:
+  [x] the checkout is unregistered once its entry is gone — git lists 1 worktree(s)
+  [x] `worktree repair` still refuses to create a missing entry — exit 1: error: unable to locate repository; .git file broken: C:/Users/runneradmin/AppData/Local/Temp/wt-012-14-UHK2gF/surviving-checkout/.git
+  [x] `worktree add --force --force` still refuses a non-empty destination — exit 128: Preparing worktree (checking out 'adopt-me')
+  [x] no live worktree claims the branch — 0 claim(s)
+  [ ] `worktree repair` accepts the reconstructed entry — exit 1: error: not a directory: C:\Users\runneradmin\AppData\Local\Temp\wt-012-14-UHK2gF\surviving-checkout\.git
+  [x] `reset --mixed` rebuilds the per-worktree index — exit 0
+  [ ] it lists — C:/Users/runneradmin/AppData/Local/Temp/wt-012-14-UHK2gF/repo | C:\Users\runneradmin\AppData\Local\Temp\wt-012-14-UHK2gF\surviving-checkout\.git
+  [x] it keeps its branch tip — f786c993 → f786c993
+  [x] the working tree reports clean (the index was really rebuilt) — clean
+  [ ] it survives a prune — C:/Users/runneradmin/AppData/Local/Temp/wt-012-14-UHK2gF/repo | C:\Users\runneradmin\AppData\Local\Temp\wt-012-14-UHK2gF\surviving-checkout\.git
+  [x] it commits back, and the repository sees the commit — branch 617921e2 / worktree 617921e2
+
+the four files, as git wrote them itself:
+  <wt>/.git                 "gitdir: C:/Users/runneradmin/AppData/Local/Temp/wt-012-14-UHK2gF/repo/.git/worktrees/surviving-checkout"
+  worktrees/<id>/gitdir     "C:/Users/runneradmin/AppData/Local/Temp/wt-012-14-UHK2gF/surviving-checkout/.git"
+  worktrees/<id>/commondir  "../.."
+  worktrees/<id>/HEAD       "ref: refs/heads/adopt-me"
+
+the four files, as this recipe wrote them:
+  <wt>/.git                 "gitdir: C:\\Users\\runneradmin\\AppData\\Local\\Temp\\wt-012-14-UHK2gF\\repo\\.git\\worktrees\\surviving-checkout"
+  worktrees/<id>/gitdir     "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\wt-012-14-UHK2gF\\surviving-checkout\\.git"
+  worktrees/<id>/commondir  "../.."
+  worktrees/<id>/HEAD       "ref: refs/heads/adopt-me"
+
+the four files, after `git worktree repair` normalised them:
+  <wt>/.git                 "gitdir: C:\\Users\\runneradmin\\AppData\\Local\\Temp\\wt-012-14-UHK2gF\\repo\\.git\\worktrees\\surviving-checkout"
+  worktrees/<id>/gitdir     "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\wt-012-14-UHK2gF\\surviving-checkout\\.git"
+  worktrees/<id>/commondir  "../.."
+  worktrees/<id>/HEAD       "ref: refs/heads/adopt-me"
+═════════════════════════════════════════════════════════
+
+run: https://github.com/Asimov-Syntax/anywhere-terminal/actions/runs/33848956772
+runner: github windows-2022, workflow_dispatch on 9ef8c750

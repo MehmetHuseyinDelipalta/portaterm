@@ -427,10 +427,17 @@ export interface WorktreeHostOptions {
    * `readFlags` uses in `src/utils/regularFileRead.ts`.
    *
    * Default `process.platform !== "win32"`: the recipe writes into git's own
-   * administrative directory and has been run only on darwin, and WT-012.14
-   * owns the Windows answer. Until it lands, adopt is WITHHELD there as
-   * unverified — never refused as failing, which is a claim nobody has
-   * established (design.md D7).
+   * administrative directory, and WT-012.14 ran it on both platforms. It works
+   * on darwin (git 2.50.1, 11 of 11) and FAILS on Windows (git 2.55.0.windows.5,
+   * 3 of 11) — so adopt is withheld there as failing, which is now a claim
+   * somebody has established, and no longer merely as unverified (design.md D7).
+   *
+   * The cause is a defect in the recipe, not a limit of the platform: git spells
+   * the administrative paths with `/` on Windows too, the recipe spelled them
+   * with `path.sep`, and `git worktree repair` neither accepts that form nor
+   * normalises it. Spelling every recorded path with `/` on every platform is
+   * what has to land — and the harness has to re-run green there — before this
+   * default can flip. See `docs/design/worktree-create.md` § 2.4.
    */
   adoptSupported?: boolean;
   /**
@@ -2291,9 +2298,10 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     // commit, and the form must not have to invent one.
     const named = refs.find((ref) => ref.name === msg.query)?.oid;
     const tip = named !== undefined && named.length > 0 ? named : undefined;
-    // WT-012.14 owns the value; this is the predicate it sets. Withholding an
-    // unverified mode is what that spike's acceptance asks for — claiming it
-    // FAILS here is what it forbids (design.md D7).
+    // WT-012.14 owns the value; this is the predicate it sets. Its answer is in:
+    // the recipe fails on Windows, so the default withholds a mode that would be
+    // offered and left to fail. Withholding is still not the same as reporting a
+    // failure the user did not ask for, which is what D7 forbids here.
     const adoptable = options.adoptSupported ?? process.platform !== "win32";
 
     let mode: ResolvedMode;
