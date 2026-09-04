@@ -5410,6 +5410,17 @@ describe("provisioning save action weight", () => {
   const ruleOf = (sheet: string, selector: string): string | undefined =>
     new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`).exec(sheet)?.[1];
 
+  it("[3_1] cues that the shortened destination has a full value a hover or focus away", () => {
+    // The tooltip and the focusable line already exist; nothing on screen said
+    // so. `cursor: help` is the cue `.wt-confidence` already uses for the same
+    // promise, and a pending shape is not a value to reveal, so it opts out.
+    const rule = ruleOf(css(), ".wt-dest");
+    expect(rule).toContain("cursor: help");
+    // Not `ruleOf`: it escapes only the leading dot, and `:not(...)` is a group.
+    const resolved = /\.wt-dest:not\(\.wt-dest--pending\)\s*\{([^}]*)\}/.exec(css())?.[1];
+    expect(resolved).toMatch(/text-decoration:\s*underline dotted/);
+  });
+
   it("[1_1] sets hints and notes in the UI font, and keeps the editor font for the path", () => {
     // Prose is not a value: a sentence in the editor font reads as output the
     // user is meant to copy. The destination line IS a value, and stays.

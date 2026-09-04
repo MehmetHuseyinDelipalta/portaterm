@@ -1176,6 +1176,15 @@
   overflow-wrap: anywhere;
   border-radius: 3px;
   outline: none;
+  /* The exact value is a hover or a focus away, and this is the only thing on
+     screen that says so — the same cue `.wt-confidence` carries. */
+  cursor: help;
+}
+/* A pending shape is not a value to reveal, so only a resolved line is marked. */
+.wt-dest:not(.wt-dest--pending) {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--vscode-descriptionForeground) 60%, transparent);
 }
 .wt-dest:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);

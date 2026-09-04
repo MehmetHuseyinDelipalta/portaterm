@@ -27,7 +27,7 @@
 
 ## 3. What can be hovered and opened looks like it
 
-- [ ] 3_1 Mark the destination line as one whose exact value is a hover or focus away
+- [x] 3_1 Mark the destination line as one whose exact value is a hover or focus away — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/webview/worktree/WorktreeCreateDialog.test.ts' && pnpm exec tsc --noEmit -p tsconfig.json && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 2_1
   - **Refs**: docs/design/worktree-create.md#4-form-presentation
   - **Acceptance**:
