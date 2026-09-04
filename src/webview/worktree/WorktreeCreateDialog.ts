@@ -24,6 +24,7 @@ import type {
 } from "../../types/messages";
 import { sanitizeBranchForPath } from "../../worktree/branchSlug";
 import { attachTooltip } from "../ui/Tooltip";
+import { ICON_CHEVRON_DOWN } from "../vault/icons";
 import { createWorktreeAgentBox, initialSafeAgentId } from "./worktreeAgentBox";
 import { dialogTitle, field, keyHint, openDialogShell, selectControl, textButton } from "./worktreeDialogShell";
 import type {
@@ -2000,8 +2001,16 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   advToggle.setAttribute("aria-controls", "wt-advanced-body");
   // "Advanced" says who the contents are for, not what they are, so a user has
   // to open it to find out whether it holds anything they wanted. Naming the
-  // three inputs lets them decide without opening it.
-  advToggle.textContent = "Branch source, base ref, and location";
+  // three inputs lets them decide without opening it. The chevron is the
+  // tree's own (`worktreeTreeView.ts`), turned by `aria-expanded` below, so the
+  // line reads as something that opens and not as a heading.
+  const advChev = document.createElement("span");
+  advChev.className = "wt-chev";
+  advChev.innerHTML = ICON_CHEVRON_DOWN;
+  advChev.setAttribute("aria-hidden", "true");
+  const advLabel = document.createElement("span");
+  advLabel.textContent = "Branch source, base ref, and location";
+  advToggle.append(advChev, advLabel);
   const advBody = document.createElement("div");
   advBody.className = "wt-advanced-body";
   advBody.id = "wt-advanced-body";

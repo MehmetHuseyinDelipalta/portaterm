@@ -1351,9 +1351,14 @@
   flex-direction: column;
   gap: 8px;
 }
+/* Reads as a control: the tree's chevron, turned by `aria-expanded` the way
+   `.wt-idle` turns it, and the hover every clickable row in the panel carries. */
 .wt-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   align-self: flex-start;
-  padding: 2px 4px;
+  padding: 3px 6px;
   border: none;
   border-radius: 3px;
   background: none;
@@ -1363,15 +1368,11 @@
   cursor: pointer;
   outline: none;
 }
-.wt-advanced-toggle::before {
-  content: "▸";
-  margin-right: 5px;
-  font-size: 9px;
-}
-.wt-advanced-toggle[aria-expanded="true"]::before {
-  content: "▾";
+.wt-advanced-toggle[aria-expanded="false"] .wt-chev {
+  transform: rotate(-90deg);
 }
 .wt-advanced-toggle:hover {
+  background: var(--vscode-list-hoverBackground);
   color: var(--vscode-foreground);
 }
 .wt-advanced-toggle:focus-visible {

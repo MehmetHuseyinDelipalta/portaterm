@@ -38,7 +38,7 @@
     2. `src/webview/worktree/WorktreeCreateDialog.test.ts` — add a `[3_1]` source-read test asserting the `.wt-dest` rule carries `cursor: help`.
   - **Boundary**: `attachTooltip`, `tabIndex`, the visually-hidden exact span and the `aria-label` stay exactly as they are — the mechanism already works; only the cue is missing.
 
-- [ ] 3_2 Give the advanced disclosure a real chevron and a control's hover
+- [x] 3_2 Give the advanced disclosure a real chevron and a control's hover — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run 'src/webview/worktree/WorktreeCreateDialog.test.ts' && pnpm exec tsc --noEmit -p tsconfig.json && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 3_1
   - **Refs**: docs/design/worktree-create.md#4-form-presentation
   - **Acceptance**:

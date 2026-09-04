@@ -882,6 +882,20 @@ describe("the form is a worktree form (§ 3.2.1)", () => {
     expect(submitted[0]?.path).toBe("/custom/place");
   });
 
+  it("[3_2] draws the advanced disclosure with the tree's own chevron", () => {
+    // "Branch source, base ref, and location" names what is inside, and the
+    // only thing that said it could be opened was a 9px `▸` drawn by a
+    // pseudo-element. The tree's disclosures carry a real chevron that turns
+    // on `aria-expanded`; this one does the same.
+    const { q } = open();
+    const toggle = q<HTMLButtonElement>(".wt-advanced-toggle");
+    expect(toggle.querySelector(".wt-chev svg")).not.toBeNull();
+    expect(toggle.textContent?.trim()).toBe("Branch source, base ref, and location");
+    toggle.click();
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.querySelector(".wt-chev svg")).not.toBeNull();
+  });
+
   it("keeps the advanced inputs out of the focus order until they are opened", () => {
     const { host, q } = open();
     const toggle = q<HTMLButtonElement>(".wt-advanced-toggle");
