@@ -2,7 +2,7 @@
 
 - [x] 1_1 Make the detector supplement a base model without duplicates — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/suggestProvisioning.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: none
-  - **Refs**: specs/worktree-panel/spec.md#missing-initialization-material-is-suggested-without-overriding-configuration; design.md D1, D2
+  - **Refs**: specs/worktree-panel/spec.md#a-repository-without-provisioning-configuration-gets-bounded-initialization-suggestions; design.md D1, D2
   - **Acceptance**:
     - Outcome: a base model gains only nonduplicate, noncontending unchecked suggestions
     - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/suggestProvisioning.test.ts
@@ -15,7 +15,7 @@
 
 - [x] 2_1 Compose suggestions after each successful provider answer — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/readProvisioning.test.ts src/providers/WorktreeHost.actions.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 1_1
-  - **Refs**: specs/worktree-panel/spec.md#{missing-initialization-material-is-suggested-without-overriding-configuration, an-incomplete-provider-answer-is-not-supplemented, saved-configuration-suppresses-only-the-suggestions-it-now-expresses}; design.md D3
+  - **Refs**: specs/worktree-panel/spec.md#{a-repository-without-provisioning-configuration-gets-bounded-initialization-suggestions, an-incomplete-provider-answer-is-not-supplemented, a-saved-configuration-replaces-fallback-suggestions}; design.md D3
   - **Acceptance**:
     - Outcome: every readable provider offer includes only its own missing unchecked suggestions
     - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/readProvisioning.test.ts src/providers/WorktreeHost.actions.test.ts
@@ -30,7 +30,7 @@
 
 - [x] 3_1 Enforce the exact row ceiling and reject incomplete task members — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/suggestProvisioning.test.ts src/worktree/provisioning/vscodeTasksProvider.test.ts src/worktree/provisioning/readProvisioning.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 2_1
-  - **Refs**: specs/worktree-panel/spec.md#{missing-initialization-material-is-suggested-without-overriding-configuration, an-incomplete-provider-answer-is-not-supplemented}; design.md D3, D4
+  - **Refs**: specs/worktree-panel/spec.md#{a-repository-without-provisioning-configuration-gets-bounded-initialization-suggestions, an-incomplete-provider-answer-is-not-supplemented}; design.md D3, D4
   - **Acceptance**:
     - Outcome: supplementation stays within reserved capacity and never follows malformed VS Code task material
     - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/suggestProvisioning.test.ts src/worktree/provisioning/vscodeTasksProvider.test.ts src/worktree/provisioning/readProvisioning.test.ts
