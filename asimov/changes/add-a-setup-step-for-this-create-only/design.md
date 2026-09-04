@@ -64,8 +64,12 @@ const addedSteps = new Map<string, string[]>();            // slot → scripts, 
   carried it, not resurrected into a source they moved on from.
 - `edit`/`remove` locate the row by `itemId` in the CURRENT offer's `setup`, require the marker, and
   map to the record by ordinal among marker rows — the record needs no id of its own.
-- Bounds: at most 32 recorded scripts per slot; a script is refused when empty, whitespace-only, or
-  longer than 4096 characters. `showInputBox.validateInput` states the bound; the host enforces it
+- Bounds: at most 32 recorded scripts per slot, and never past the model budget — an add is refused
+  when the combined model (entries, ports, the provider's own setup, excluded rows and the record)
+  would exceed `MAX_MODEL_ROWS - 1`, the same bound every provider read obeys, so every offer the
+  host issues stays inside what `isKnownSave` admits back (review round 1 F003). A script is refused
+  when empty, whitespace-only, or longer than `MAX_SETUP_STEP_CHARS` (4096, exported once from
+  `messages.ts` and read by both the host's refusal and the input's `validateInput` — round 1 F005). `showInputBox.validateInput` states the bound; the host enforces it
   regardless of what the input said. A refused add/edit answers with the offer unchanged.
 
 `divergenceOf` (`writeNativeConfig.ts:125`) already leaves `setup` untouched, so a save cannot write
@@ -80,31 +84,34 @@ has not seen. The rejection arm is caught inside the handler, not left to `perfo
 without answer only when the opening is not live, the `switch` is outranked, or the surface is gone —
 the arms where nothing is waiting.
 
-### D5: The dialog gates itself the way it gates a switch, and carries selection like a save answer
+### D5: The dialog gates itself the way it gates a switch, and carries selection by ordinal
 
 - A `pendingStep` record per repository, set when an ask is posted, cleared by the next new offer
-  id. While any of `pendingSwitch`, `pendingSave`, `pendingStep` is set the add/edit/remove controls
-  and the save button are disabled; the existing switch rows are disabled while `pendingStep` is set.
-- **Create is withheld while an ask is pending**, with the same kind of reason the picker gives
-  (`pickAsked`, `WorktreeCreateDialog.ts:2979`). Without it the form could submit the previous offer
-  in the window between the host confirming the text and the re-issued offer landing, creating
-  without the command the user just typed (plan attack F4).
-- Selection carries through `carryForward` (`WorktreeCreateDialog.ts:653`) with its existing
-  script-based descriptors — marker rows need no special key for add or remove, because their script
-  does not change. An **edit** is the one answer that changes a marker row's script, so
-  `pendingStep` for an edit records the edited row's ordinal among marker rows and its tick, and the
-  answering offer applies that tick to the marker row at the same ordinal (an edit changes neither
-  count nor order). The ordinal-only scheme first proposed moved step 2's tick onto step 1 after a
-  remove (plan attack F2).
+  id for that repository. **The gate is form-wide**: while ANY ask is out the add/edit/remove
+  controls, the save button, the switch rows and the repository selector are held, and Create is
+  withheld with the same kind of reason the picker gives (`pickAsked`,
+  `WorktreeCreateDialog.ts:2979`). Per-repository gating let a change of repository re-arm every
+  control while the first repository's input was still open (review round 1 F002); holding the
+  selector is what makes "the current repository" and "the repository that asked" the same thing.
+  Without the Create hold the form could submit the previous offer in the window between the host
+  confirming the text and the re-issued offer landing (plan attack F4).
+- **Added rows carry their ticks by ordinal, for every operation.** Two added rows may carry the
+  same script, so the script descriptor `carryForward` uses cannot tell them apart, and removing
+  the first moved its tick onto the second (review round 1 F001). The pending record therefore
+  snapshots every added row's tick, in order, at ask time, and the answering offer applies them:
+  unchanged for an add (the new last row takes its default, checked) and for an edit (count and
+  order are unchanged), spliced at the removed ordinal for a remove. Provider rows still carry by
+  script descriptor through `carryForward` (`WorktreeCreateDialog.ts:653`).
 - A **switch** answer reseeds from defaults today (`:1802-1807`, `:1826-1833`), which would re-tick
-  an added step the user had unticked. `pendingSwitch` therefore also records the marker rows'
-  descriptors-with-tick at switch time, and `syncBringOver` applies those to the answering offer's
-  marker rows before the defaults fill the rest (plan attack F3).
-- A brand-new marker row has no prior descriptor and takes its default, which is **checked**
+  an added step the user had unticked. `pendingSwitch` therefore also records the added rows' ticks
+  by ordinal at switch time, and `syncBringOver` applies those to the answering offer's added rows
+  before the defaults fill the rest (plan attack F3). A switch changes neither their count nor
+  order.
+- A brand-new added row has no prior tick and takes its default, which is **checked**
   (`bringRows`, `:534`).
 - The add control is the last child `bringBox` renders, after switch rows, and only while an offer is
   drawn. Edit and remove are icon buttons (`ICON_RENAME`, `ICON_CLOSE`, each with an `aria-label`
-  naming the step) in the source cell of marker rows only; provider rows keep the plain badge.
+  naming the step) in the source cell of added rows only; provider rows keep the plain badge.
 - `WorktreeController` forwards the ask with the opening snapshotted at compose time, as it does for
   `onPickDestination` (`WorktreeController.ts:628`).
 
@@ -146,7 +153,8 @@ sequenceDiagram
 | `addedSteps` | grows per ask, or outlives the form | bounded at 32 per slot; swept by `retireOpening`; sweep test |
 | `withAdded` | duplicates marker rows when built from the current offer | strips marker rows before appending (D3); add → add → cancel test asserts two rows |
 | Create gate | submits the pre-ask offer during the prompt | `pendingStep` withholds Create (D5); dialog test asserts Create disabled while an ask is out |
-| offer re-issue on every answer | selection lost on cancel, edit, remove or switch | `carryForward` by script descriptor; edit ordinal and switch-time marker ticks recorded on the pending record (D5); dialog tests for each answer kind assert ticks kept |
+| offer re-issue on every answer | selection lost or moved on cancel, edit, remove or switch | added-row ticks snapshotted by ordinal on the pending record and applied per operation (D5); dialog tests for each answer kind, including two added rows with the SAME script, assert every tick stays on its row |
+| `withAdded` past the budget | a 232-row offer whose full selection `isKnownSave` refuses, stalling a valid save | an add past `MAX_MODEL_ROWS - 1` is refused and answered unchanged (D3); host test fills the model to the bound, asks once more, asserts the offer unchanged and a full-selection save answered |
 | `showInputBox` that never settles | form gate held | same environmental unknown the picker accepted (its round-4 F007); no timeout added, same reasoning |
 | save path | writes the step | `divergenceOf` ignores `setup`; host test asserts the written divergence carries none |
 
@@ -160,6 +168,6 @@ sequenceDiagram
 | Edit and remove reach only rows the host marked | `op.itemId` must resolve to a `setup` row of the CURRENT offer with `source === SETUP_STEP_ADDED_SOURCE`; provider rows are untouchable through this message | An `edit` naming a provider-declared step's id changes or removes it | Host test: edit naming the provider step's id → offer re-issued with the provider step byte-identical, `promptSetupStep` never called | unresolved — until 2_1 lands |
 | An ask orders against switch and save | Same `provisionSwitch` slot; an ask whose `switch` is outranked after the prompt returns neither mutates `addedSteps` nor publishes | A slow ask answer lands after a later switch and shows the pre-switch source, or its text appears in the switched offer | Host test: add A → ask B (prompt held open) → switch → release prompt with "B" → exactly one offer published, it is the switched source, its marker rows are `[A]` only, `addedSteps` is `[A]` | unresolved — until 2_1 lands |
 | A save never records the step | The divergence handed to `writeNativeConfig` carries no setup, marker or otherwise | The native file gains a `setup:` key | Host test asserting the divergence object has no setup; assembly test reading the written file after save | unresolved — until 2_1 / 3_1 land |
-| The record is bounded | ≤ 32 scripts per slot, ≤ 4096 chars each, enforced host-side; and the offer carries exactly one marker row per record entry | An input answering a 1 MiB string is offered; or repeated asks grow the offer by duplicated marker rows (F1) | Host unit test on the 33rd add and on a 4097-char answer: offer unchanged; and add → add → cancel → offer has exactly two marker rows | unresolved — until 2_1 lands |
+| The record is bounded | ≤ 32 scripts per slot, ≤ `MAX_SETUP_STEP_CHARS` each, the combined model ≤ `MAX_MODEL_ROWS - 1`, all enforced host-side; and the offer carries exactly one marker row per record entry | An input answering a 1 MiB string is offered; or repeated asks grow the offer by duplicated marker rows (F1) | Host unit test on the 33rd add and on a 4097-char answer: offer unchanged; and add → add → cancel → offer has exactly two marker rows | unresolved — until 2_1 lands |
 | Every admitted ask releases the form | For every ask the host admits (live opening, highest switch, live surface) exactly one `worktreeProvisionOffer` is posted | Cancel, a rejected prompt, or a stale `itemId` posts nothing and Create stays withheld | Host tests over cancel, a `promptSetupStep` that rejects, empty answer, over-bound answer, stale `itemId`, unknown `kind` on a live form, each asserting one offer; dialog test cancel → controls and Create re-enabled | unresolved — until 2_1 / 2_2 land |
 | A prompt that never settles | `showInputBox` that neither resolves nor rejects holds the form's gate | Stuck form | n/a — the identical environmental unknown the picker change recorded as its residual (its design D3 / round-4 F007); no new mechanism here, and a timeout would introduce the late-answer race that residual explains | n/a — inherited residual, stated |

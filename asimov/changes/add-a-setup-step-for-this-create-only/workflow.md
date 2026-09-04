@@ -12,8 +12,8 @@
 
 ## Implement
 
-- [x] All tasks done (`tasks.md`)
-- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [ ] All tasks done (`tasks.md`)
+- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
@@ -37,3 +37,5 @@ Auto-decision (fastlane): the marker source text is a host constant shared throu
 Residual (inherited): a `showInputBox` that never settles holds the form, exactly as the picker's round-4 F007; no timeout added for the same reason.
 Verify gate: observed at cc32327a on a clean tree — 7747/7747, type check clean, I10 gate green, bundle gate green against a fresh `node esbuild.js --production` (the `compile`/`package` scripts wrap `pnpm run lint`, the auto-fix form, so the bundle was built directly). Biome in check mode: 1 error (`src/webview/worktree/worktreeFormat.ts:30` noUselessEscapeInRegex, untouched, present at the plan's base) and 14 noDescendingSpecificity warnings in CSS files this change does not touch; every file this change edits lints clean, and `worktreePanel.css` carries the same single warning it did at the base. `verify-status` exits 0.
 Deviation (2_2): the switch rows are held only while an INPUT is open, not while a save or switch is in flight — the shipped latest-wins ordering already lets a switch outrank those, and holding them broke the accepted "increasing sequence" test.
+Handback (review round 1, cycle 1): F001–F003 each need a D# change — D5's selection carry (ordinal snapshot for every op, not script descriptors) and its gate (form-wide, repository selector held), D3's bound (combined model inside `MAX_MODEL_ROWS - 1`). Gate 2, All tasks done and Verify gate unticked; tasks 1_1–3_2 stay `[x]` — the wire, the record, the input and the docs are unchanged by the amendments, only how the form carries ticks and how far the host lets the record grow. F004 rebutted (the picker's optional-capability contract), F005 accepted as trivial. Round 2 is cycle 2's discovery round.
+Replan (fastlane, after round 1): D3 bound and D5 carry/gate amended; 4_1 and 4_2 added. Planned at: d3c3df42

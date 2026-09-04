@@ -67,3 +67,27 @@
     - Verify: none — docs-only
   - **Plan**:
     1. Add one paragraph to docs/design/worktree-provisioning.md § 4.0, and in docs/design/worktree-create.md § 4.3 add one bullet and amend "Every row names its source file" so the badge names a file OR the added-for-this-create marker.
+
+## 4. Review fixes (round 1)
+
+- [ ] 4_1 Bound the combined model and share the script limit
+  - **Deps**: 3_1
+  - **Refs**: design.md D3
+  - **Acceptance**:
+    - Outcome: an add past the model budget is refused and answered, and one exported constant bounds the script text
+    - Verify: unit src/providers/WorktreeHost.actions.test.ts
+  - **Plan**:
+    1. In src/types/messages.ts export `MAX_SETUP_STEP_CHARS = 4096`; read it in src/providers/WorktreeHost.ts and in the `validateInput` of src/extension.ts.
+    2. In src/providers/WorktreeHost.ts refuse an add when entries, ports, provider setup, excluded rows and the record would exceed `MAX_MODEL_ROWS - 1`, still answering with the offer unchanged.
+    3. Add the near-bound host test: fill to the bound, ask once more, assert the offer unchanged and a full-selection save answered.
+
+- [ ] 4_2 Carry added-row ticks by ordinal and hold the whole form while an input is open
+  - **Deps**: 3_1
+  - **Refs**: specs/worktree-panel/spec.md#{an-opened-setup-input-holds-the-form-until-it-is-answered, only-setup-the-user-selected-runs}; design.md D5
+  - **Acceptance**:
+    - Outcome: duplicate-script rows keep their own ticks through edit and remove, and no control escapes an open input
+    - Verify: unit src/webview/worktree/WorktreeCreateDialog.test.ts
+  - **Plan**:
+    1. In src/webview/worktree/WorktreeCreateDialog.ts snapshot every added row's tick on the `pendingStep` record and apply per operation on the answer (splice on remove) per design.md D5.
+    2. Gate the add, edit, remove, save, switch and repository controls and the Create button on ANY pending ask; disable the repository selector while one is out.
+    3. Add dialog tests: two added rows with the same script, remove the first and edit the first, each in both tick directions; a two-repository form whose selector is held while an ask is out.
