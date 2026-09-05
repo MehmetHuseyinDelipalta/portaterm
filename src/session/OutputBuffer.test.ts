@@ -986,3 +986,142 @@ describe("OutputBuffer flush notification", () => {
     buffer.dispose();
   });
 });
+
+// ─── Paused-tail coalescing ─────────────────────────────────────────
+//
+// A hidden view accumulates output without flushing. The paused array is
+// bounded by merging its tail (binary-counter style), with the old whole join
+// as a backstop. Every case here compares the delivered bytes against the
+// appended bytes after the 1 MiB FIFO cap is applied — the merge must never
+// duplicate, drop, or reorder a fragment, and the array must stay short.
+
+const PAUSED_CAP = 1_048_576;
+
+function chunksOf(buffer: OutputBuffer): readonly string[] {
+  return (buffer as unknown as { _chunks: readonly string[] })._chunks;
+}
+
+/** What FIFO eviction leaves of `appended` once it exceeds the cap. */
+function expectedTail(appended: readonly string[]): string {
+  const all = appended.join("");
+  return all.length > PAUSED_CAP ? all.slice(all.length - PAUSED_CAP) : all;
+}
+
+/** Deterministic pseudo-random chunk lengths so a failure reproduces. */
+function lcg(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1_664_525) + 1_013_904_223) >>> 0;
+    return s / 0x1_0000_0000;
+  };
+}
+
+describe("OutputBuffer paused-tail coalescing", () => {
+  function paused() {
+    const sender = createMockSender();
+    const buffer = new OutputBuffer("tab-1", sender, createMockPty());
+    buffer.pauseOutput();
+    return { sender, buffer };
+  }
+
+  function delivered(sender: { messages: unknown[] }): string {
+    return sender.messages.map((m) => (m as { data: string }).data).join("");
+  }
+
+  it("delivers 100k tiny appends intact through many merge levels, keeping the array short", () => {
+    const { sender, buffer } = paused();
+    const appended: string[] = [];
+    let maxChunks = 0;
+    for (let i = 0; i < 100_000; i++) {
+      const chunk = `${i % 10}`;
+      appended.push(chunk);
+      buffer.append(chunk);
+      maxChunks = Math.max(maxChunks, chunksOf(buffer).length);
+    }
+    expect(maxChunks).toBeLessThan(100);
+    buffer.resumeOutput();
+    expect(sender.messages).toHaveLength(1);
+    expect(delivered(sender)).toBe(expectedTail(appended));
+    buffer.dispose();
+  });
+
+  it("delivers randomized chunk sizes intact under partial FIFO eviction of merged fragments", () => {
+    for (const seed of [1, 2, 3]) {
+      const { sender, buffer } = paused();
+      const rand = lcg(seed);
+      const appended: string[] = [];
+      let total = 0;
+      let maxChunks = 0;
+      let counter = 0;
+      // Push ~3x the cap so eviction slices through fragments the merge built.
+      while (total < 3 * PAUSED_CAP) {
+        const len = 1 + Math.floor(rand() * 4_000);
+        const chunk = `${counter++}:`.padEnd(len, "x").slice(0, len);
+        appended.push(chunk);
+        total += len;
+        buffer.append(chunk);
+        maxChunks = Math.max(maxChunks, chunksOf(buffer).length);
+      }
+      expect(maxChunks).toBeLessThan(100);
+      buffer.flush();
+      expect(delivered(sender)).toBe(expectedTail(appended));
+      expect(delivered(sender)).toHaveLength(PAUSED_CAP);
+      buffer.dispose();
+    }
+  });
+
+  it("replaces every merged fragment with the tail of an oversized chunk", () => {
+    const { sender, buffer } = paused();
+    for (let i = 0; i < 5_000; i++) {
+      buffer.append("old");
+    }
+    const huge = "y".repeat(PAUSED_CAP + 10);
+    buffer.append(huge);
+    expect(chunksOf(buffer)).toHaveLength(1);
+    buffer.dispose();
+    expect(delivered(sender)).toBe(huge.slice(10));
+  });
+
+  it("delivers the same bytes whether released by resume, flush or dispose", () => {
+    const appended = Array.from({ length: 3_000 }, (_, i) => `line ${i}\n`);
+    const results: string[] = [];
+    for (const release of ["resume", "flush", "dispose"] as const) {
+      const { sender, buffer } = paused();
+      for (const chunk of appended) {
+        buffer.append(chunk);
+      }
+      if (release === "resume") {
+        buffer.resumeOutput();
+      } else if (release === "flush") {
+        buffer.flush();
+      } else {
+        buffer.dispose();
+      }
+      results.push(delivered(sender));
+      buffer.dispose();
+    }
+    expect(results[0]).toBe(appended.join(""));
+    expect(results[1]).toBe(results[0]);
+    expect(results[2]).toBe(results[0]);
+  });
+
+  it("falls back to the whole join for a strictly decreasing size run, still delivering intact", () => {
+    // The merge rule cannot bound this shape on its own (see _coalescePaused);
+    // the backstop must keep the array under MAX_CHUNKS without losing bytes.
+    const { sender, buffer } = paused();
+    const appended: string[] = [];
+    let maxChunks = 0;
+    for (let wave = 0; wave < 30; wave++) {
+      for (let len = 100; len >= 2; len--) {
+        const chunk = String.fromCharCode(65 + (len % 26)).repeat(len);
+        appended.push(chunk);
+        buffer.append(chunk);
+        maxChunks = Math.max(maxChunks, chunksOf(buffer).length);
+      }
+    }
+    expect(maxChunks).toBeLessThan(100);
+    buffer.flush();
+    expect(delivered(sender)).toBe(expectedTail(appended));
+    buffer.dispose();
+  });
+});

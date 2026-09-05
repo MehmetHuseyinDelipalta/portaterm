@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createTrackedPathResolver, ResolvedPathMemo } from "../utils/resolvedPathMemo";
 import { createGitCapabilities } from "./gitCapabilities";
 import type { GitCommandResult, GitCommandRunner } from "./gitCommandRunner";
-import { type GitApiAccessor, resolveRepoOutcomes, resolveRepoRoots } from "./repoRoots";
+import { FOLDER_RESOLUTION_CONCURRENCY, type GitApiAccessor, resolveRepoOutcomes, resolveRepoRoots } from "./repoRoots";
 
 type Reply = { code?: number; stdout?: string; stderr?: string; timedOut?: boolean; failedToSpawn?: boolean };
 
@@ -437,5 +437,136 @@ describe("matching a repository through a symlink", () => {
     await paths.prepare(["/link/repo"]);
 
     expect(realpaths).toEqual(["/link/repo"]);
+  });
+});
+
+// Folder resolution runs at a bounded concurrency and reassembles by input
+// index. These cases hold git spawns open with deferred replies so the bound,
+// the order and the per-folder outcome mix are all observable.
+describe("resolveRepoOutcomes — bounded concurrency and input order", () => {
+  type Deferred = { resolve: (r: GitCommandResult) => void };
+
+  /** A runner whose replies are released by the test, tracking peak in-flight calls. */
+  function makeDeferredRunner() {
+    const pending = new Map<string, Deferred[]>();
+    const spawnOrder: string[] = [];
+    let inFlight = 0;
+    let peak = 0;
+    const run = vi.fn(
+      (args: readonly string[], cwd: string) =>
+        new Promise<GitCommandResult>((resolve) => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          const key = `${cwd}|${args.join(" ")}`;
+          spawnOrder.push(key);
+          const list = pending.get(key) ?? [];
+          list.push({
+            resolve: (r) => {
+              inFlight -= 1;
+              resolve(r);
+            },
+          });
+          pending.set(key, list);
+        }),
+    );
+    const release = (cwd: string, args: string, reply: Reply) => {
+      const d = pending.get(`${cwd}|${args}`)?.shift();
+      if (!d) {
+        throw new Error(`nothing pending for ${cwd}|${args}`);
+      }
+      d.resolve({
+        code: reply.code ?? 0,
+        stdout: Buffer.from(reply.stdout ?? ""),
+        stderr: reply.stderr ?? "",
+        timedOut: reply.timedOut ?? false,
+        failedToSpawn: reply.failedToSpawn ?? false,
+      });
+    };
+    const pendingCount = () => [...pending.values()].reduce((n, l) => n + l.length, 0);
+    const newestPending = (): [cwd: string, args: string] => {
+      const key = spawnOrder.filter((k) => (pending.get(k)?.length ?? 0) > 0).at(-1);
+      if (key === undefined) {
+        throw new Error("nothing pending");
+      }
+      const [cwd, args] = key.split("|");
+      return [cwd, args];
+    };
+    return {
+      runner: { run } as unknown as GitCommandRunner,
+      run,
+      release,
+      pendingCount,
+      newestPending,
+      peak: () => peak,
+    };
+  }
+
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 8; i++) {
+      await Promise.resolve();
+    }
+  }
+
+  it("keeps at most FOLDER_RESOLUTION_CONCURRENCY folders in flight and returns them in input order", async () => {
+    const folders = Array.from({ length: 20 }, (_, i) => `/f${i}`);
+    const r = makeDeferredRunner();
+    const promise = resolveRepoOutcomes(folders, deps(r.runner));
+    await settle();
+
+    // Only the first eight toplevel probes have been spawned.
+    expect(FOLDER_RESOLUTION_CONCURRENCY).toBe(8);
+    expect(r.pendingCount()).toBe(8);
+    expect(r.run.mock.calls.map((c) => c[1])).toEqual(folders.slice(0, 8));
+
+    // Drain LIFO: always answer the most recently spawned probe first, so
+    // completion order is the reverse of spawn order and never input order.
+    const replyFor = (args: string, cwd: string): Reply =>
+      args === TOPLEVEL ? { stdout: `${cwd}\n` } : { stdout: `${cwd}/.git\n` };
+    while (r.pendingCount() > 0) {
+      const [cwd, args] = r.newestPending();
+      r.release(cwd, args, replyFor(args, cwd));
+      await settle();
+    }
+    const outcomes = await promise;
+
+    expect(r.peak()).toBe(8);
+    expect(outcomes.map((o) => o.folder)).toEqual(folders);
+    for (const o of outcomes) {
+      expect(o.outcome).toEqual({
+        kind: "resolved",
+        repo: { repoId: `${o.folder}/.git`, rootPath: o.folder },
+      });
+    }
+    // Two spawns per folder: no extra probe was introduced by the parallelism.
+    expect(r.run).toHaveBeenCalledTimes(folders.length * 2);
+  });
+
+  it("keeps mixed resolved / absent / failed outcomes on their own folders when they finish out of order", async () => {
+    const { runner, run } = makeRunner({
+      [`/ok|${TOPLEVEL}`]: { stdout: "/ok\n" },
+      [`/ok|${PATH_FORMAT}`]: { stdout: "/ok/.git\n" },
+      [`/plain|${TOPLEVEL}`]: { code: 128, stderr: "fatal: not a git repository" },
+      [`/slow|${TOPLEVEL}`]: { code: -1, timedOut: true },
+      [`/ok2|${TOPLEVEL}`]: { stdout: "/ok2\n" },
+      [`/ok2|${PATH_FORMAT}`]: { stdout: "/ok2/.git\n" },
+    });
+    // Make each reply land in reverse input order so completion order differs
+    // from input order.
+    const original = run.getMockImplementation()!;
+    const delays: Record<string, number> = { "/slow": 0, "/plain": 1, "/ok2": 2, "/ok": 3 };
+    run.mockImplementation(async (args, cwd) => {
+      const result = await original(args, cwd);
+      for (let i = 0; i < (delays[cwd] ?? 0) * 4; i++) {
+        await Promise.resolve();
+      }
+      return result;
+    });
+    const outcomes = await resolveRepoOutcomes(["/ok", "/plain", "/slow", "/ok2"], deps(runner));
+    expect(outcomes.map((o) => [o.folder, o.outcome.kind])).toEqual([
+      ["/ok", "resolved"],
+      ["/plain", "absent"],
+      ["/slow", "failed"],
+      ["/ok2", "resolved"],
+    ]);
   });
 });

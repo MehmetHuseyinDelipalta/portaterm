@@ -318,7 +318,10 @@ export class OutputBuffer {
    * by construction, and copying 64 KB chunks around would cost more than the
    * array length it saves. The full join stays as the backstop for the one
    * shape the merge rule cannot bound on its own — a strictly decreasing size
-   * sequence, which FIFO eviction of `_chunks[0]` can produce.
+   * sequence, which FIFO eviction of `_chunks[0]` can produce. A sawtooth
+   * stream that repeats such a run therefore pays roughly the old cost, one
+   * whole join per MAX_CHUNKS appends; accepted, since real PTY output does not
+   * arrive that way and correctness does not depend on the merge firing.
    */
   private _coalescePaused(): void {
     let n = this._chunks.length;
