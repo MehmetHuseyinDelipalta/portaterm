@@ -948,3 +948,317 @@ describe("createGitDecorationProvider — a workspace folder reached through a s
     }
   });
 });
+
+// A folder path may reach `getDescendantBuckets` spelled with or without its
+// trailing separator — the scan this lookup replaced accepted both, and a
+// filesystem root can only be spelled WITH one. See the `bucketKey` note in
+// gitDecorationProvider.ts.
+describe("createGitDecorationProvider — getDescendantBuckets path spellings", () => {
+  async function withRepo(root: string, files: Array<{ path: string; status: Status }>) {
+    const { repo } = makeRepo(root, files);
+    const { api } = makeApi({ repos: [repo] });
+    const { extObj } = makeExtension({ api });
+    const provider = createGitDecorationProvider({
+      getExtension: () => extObj as never,
+      getWorkspaceFolders: () => [],
+    });
+    await new Promise((r) => setImmediate(r));
+    return provider;
+  }
+
+  it("answers a POSIX folder the same with and without a trailing separator", async () => {
+    const provider = await withRepo("/work/repo", [
+      { path: "/work/repo/src/a.ts", status: Status.MODIFIED },
+      { path: "/work/repo/src/deep/b.ts", status: Status.UNTRACKED },
+    ]);
+    const bare = provider.getDescendantBuckets("/work/repo/src");
+    expect(bare).toEqual({ modified: 1, untracked: 1 });
+    expect(provider.getDescendantBuckets("/work/repo/src/")).toEqual(bare);
+    expect(provider.getDescendantBuckets("/work/repo/")).toEqual(bare);
+    provider.dispose();
+  });
+
+  it("answers the POSIX filesystem root, whose only spelling carries the separator", async () => {
+    const provider = await withRepo("/work/repo", [{ path: "/work/repo/a.ts", status: Status.MODIFIED }]);
+    expect(provider.getDescendantBuckets("/")).toEqual({ modified: 1 });
+    // `//` is a boundary no real path starts with — the scan returned nothing for
+    // it, so stripping must not turn it into the root.
+    expect(provider.getDescendantBuckets("//")).toBeUndefined();
+    provider.dispose();
+  });
+
+  it("answers a Windows folder across separator and case spellings", async () => {
+    const provider = await withRepo("C:\\work\\repo", [
+      { path: "C:\\work\\repo\\src\\a.ts", status: Status.MODIFIED },
+      { path: "C:\\work\\repo\\src\\b.ts", status: Status.INDEX_ADDED },
+    ]);
+    const bare = provider.getDescendantBuckets("C:\\work\\repo\\src");
+    expect(bare).toEqual({ modified: 1, added: 1 });
+    expect(provider.getDescendantBuckets("C:\\work\\repo\\src\\")).toEqual(bare);
+    expect(provider.getDescendantBuckets("c:/work/repo/src/")).toEqual(bare);
+    // The drive root keeps its separator — stripping it would miss the bucket.
+    expect(provider.getDescendantBuckets("C:\\")).toEqual(bare);
+    expect(provider.getDescendantBuckets("C:\\\\")).toBeUndefined();
+    provider.dispose();
+  });
+
+  it("still returns undefined for a folder with no dirty descendants", async () => {
+    const provider = await withRepo("/work/repo", [{ path: "/work/repo/a.ts", status: Status.MODIFIED }]);
+    expect(provider.getDescendantBuckets("/work/other")).toBeUndefined();
+    expect(provider.getDescendantBuckets("/work/other/")).toBeUndefined();
+    provider.dispose();
+  });
+});
+
+// The descendant index is maintained on the mutation side, so every path that
+// mutates the merged status must keep the ancestor counts in step. Each case
+// here asserts `getDescendantBuckets` AFTER a mutation; the spelling cases
+// above only ever read a freshly attached repo (review F002).
+describe("createGitDecorationProvider — getDescendantBuckets across mutations", () => {
+  async function setup(
+    repos: Array<{ root: string; files: Array<{ path: string; status: Status }> }>,
+    folders: () => string[] = () => [],
+  ) {
+    const made = repos.map((r) => makeRepo(r.root, r.files));
+    const apiBits = makeApi({ repos: made.map((m) => m.repo) });
+    const { extObj } = makeExtension({ api: apiBits.api });
+    const provider = createGitDecorationProvider({
+      getExtension: () => extObj as never,
+      getWorkspaceFolders: folders,
+    });
+    await vi.runAllTimersAsync();
+    vi.advanceTimersByTime(100);
+    return { provider, made, ...apiBits };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("moves a path between buckets when its propagating status changes", async () => {
+    vi.useFakeTimers();
+    const { provider, made } = await setup([
+      { root: "/w/repo", files: [{ path: "/w/repo/src/a.ts", status: Status.UNTRACKED }] },
+    ]);
+    expect(provider.getDescendantBuckets("/w/repo/src")).toEqual({ untracked: 1 });
+    made[0].setChanges([{ path: "/w/repo/src/a.ts", status: Status.MODIFIED }]);
+    made[0].fire();
+    vi.advanceTimersByTime(100);
+    expect(provider.getDescendantBuckets("/w/repo/src")).toEqual({ modified: 1 });
+    expect(provider.getDescendantBuckets("/w/repo")).toEqual({ modified: 1 });
+    expect(provider.getDescendantBuckets("/w")).toEqual({ modified: 1 });
+    provider.dispose();
+  });
+
+  it("drops a path from every ancestor when it goes clean, deleted or ignored", async () => {
+    vi.useFakeTimers();
+    const { provider, made } = await setup([
+      {
+        root: "/w/repo",
+        files: [
+          { path: "/w/repo/src/a.ts", status: Status.MODIFIED },
+          { path: "/w/repo/src/b.ts", status: Status.MODIFIED },
+          { path: "/w/repo/src/c.ts", status: Status.MODIFIED },
+          { path: "/w/repo/keep.ts", status: Status.INDEX_ADDED },
+        ],
+      },
+    ]);
+    expect(provider.getDescendantBuckets("/w/repo/src")).toEqual({ modified: 3 });
+    made[0].setChanges([
+      { path: "/w/repo/src/b.ts", status: Status.DELETED },
+      { path: "/w/repo/src/c.ts", status: Status.IGNORED },
+      { path: "/w/repo/keep.ts", status: Status.INDEX_ADDED },
+    ]);
+    made[0].fire();
+    vi.advanceTimersByTime(100);
+    // `deleted`/`ignored` do not propagate (D6) and a.ts is clean: src is empty.
+    expect(provider.getDescendantBuckets("/w/repo/src")).toBeUndefined();
+    expect(provider.getDescendantBuckets("/w/repo")).toEqual({ added: 1 });
+    provider.dispose();
+  });
+
+  it("recounts an overlapping path under the surviving severity when the winner changes", async () => {
+    vi.useFakeTimers();
+    const shared = "/w/shared/x.ts";
+    const { provider, made } = await setup([
+      { root: "/w/a", files: [{ path: shared, status: Status.MODIFIED }] },
+      { root: "/w/b", files: [{ path: shared, status: Status.UNTRACKED }] },
+    ]);
+    // One path, counted once under the higher severity.
+    expect(provider.getDescendantBuckets("/w/shared")).toEqual({ modified: 1 });
+    made[0].setChanges([{ path: shared, status: Status.INDEX_ADDED }]);
+    made[0].fire();
+    vi.advanceTimersByTime(100);
+    expect(provider.getDescendantBuckets("/w/shared")).toEqual({ added: 1 });
+    made[0].setChanges([]);
+    made[0].fire();
+    vi.advanceTimersByTime(100);
+    expect(provider.getDescendantBuckets("/w/shared")).toEqual({ untracked: 1 });
+    provider.dispose();
+  });
+
+  it("removes a closing repo's contribution and restores it on reopen", async () => {
+    vi.useFakeTimers();
+    const shared = "/w/shared/x.ts";
+    const { provider, made, closeRepo, openRepo } = await setup([
+      {
+        root: "/w/a",
+        files: [
+          { path: shared, status: Status.MODIFIED },
+          { path: "/w/a/only.ts", status: Status.MODIFIED },
+        ],
+      },
+      { root: "/w/b", files: [{ path: shared, status: Status.UNTRACKED }] },
+    ]);
+    expect(provider.getDescendantBuckets("/w")).toEqual({ modified: 2 });
+    closeRepo(made[0].repo);
+    vi.advanceTimersByTime(100);
+    expect(provider.getDescendantBuckets("/w/a")).toBeUndefined();
+    expect(provider.getDescendantBuckets("/w/shared")).toEqual({ untracked: 1 });
+    expect(provider.getDescendantBuckets("/w")).toEqual({ untracked: 1 });
+    openRepo(made[0].repo);
+    vi.advanceTimersByTime(100);
+    expect(provider.getDescendantBuckets("/w/a")).toEqual({ modified: 1 });
+    expect(provider.getDescendantBuckets("/w")).toEqual({ modified: 2 });
+    provider.dispose();
+  });
+
+  it("rebuilds the index from scratch on reset without double counting", async () => {
+    vi.useFakeTimers();
+    const { provider } = await setup([
+      { root: "/w/repo", files: [{ path: "/w/repo/src/a.ts", status: Status.MODIFIED }] },
+      { root: "/w/other", files: [{ path: "/w/other/b.ts", status: Status.UNTRACKED }] },
+    ]);
+    const before = provider.getDescendantBuckets("/w");
+    expect(before).toEqual({ modified: 1, untracked: 1 });
+    provider.reset();
+    vi.advanceTimersByTime(100);
+    expect(provider.getDescendantBuckets("/w")).toEqual(before);
+    expect(provider.getDescendantBuckets("/w/repo/src")).toEqual({ modified: 1 });
+    provider.dispose();
+  });
+
+  it("counts a nested repository's paths under the outer repository's folders", async () => {
+    vi.useFakeTimers();
+    const { provider, made } = await setup([
+      { root: "/w/outer", files: [{ path: "/w/outer/a.ts", status: Status.MODIFIED }] },
+      { root: "/w/outer/inner", files: [{ path: "/w/outer/inner/b.ts", status: Status.UNTRACKED }] },
+    ]);
+    expect(provider.getDescendantBuckets("/w/outer")).toEqual({ modified: 1, untracked: 1 });
+    expect(provider.getDescendantBuckets("/w/outer/inner")).toEqual({ untracked: 1 });
+    made[1].setChanges([]);
+    made[1].fire();
+    vi.advanceTimersByTime(100);
+    expect(provider.getDescendantBuckets("/w/outer")).toEqual({ modified: 1 });
+    expect(provider.getDescendantBuckets("/w/outer/inner")).toBeUndefined();
+    provider.dispose();
+  });
+});
+
+// A path's revision watermark must go when the path goes clean — even when the
+// clean delta never reaches the webview because the path's workspace folder is
+// gone. Observed through `getStatus`: an evicted path is stamped with the
+// CURRENT global revision, a retained one with its stale watermark (review F001).
+describe("createGitDecorationProvider — revision eviction under workspace filtering", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("evicts a path that goes clean after its workspace folder was removed", async () => {
+    vi.useFakeTimers();
+    let folders = ["/w/one", "/w/two"];
+    const one = makeRepo("/w/one", [{ path: "/w/one/a.ts", status: Status.MODIFIED }]);
+    const two = makeRepo("/w/two", [{ path: "/w/two/b.ts", status: Status.MODIFIED }]);
+    const { api } = makeApi({ repos: [one.repo, two.repo] });
+    const { extObj } = makeExtension({ api });
+    const provider = createGitDecorationProvider({
+      getExtension: () => extObj as never,
+      getWorkspaceFolders: () => folders,
+    });
+    await vi.runAllTimersAsync();
+    vi.advanceTimersByTime(100);
+    const stale = provider.getStatus("/w/one/a.ts").revision;
+
+    // The folder goes away without a reset; a.ts then goes clean. Its null
+    // delta is filtered out and never flushed.
+    folders = ["/w/two"];
+    one.setChanges([]);
+    one.fire();
+    vi.advanceTimersByTime(100);
+    // Bump the global revision with an in-scope change.
+    two.setChanges([{ path: "/w/two/b.ts", status: Status.INDEX_ADDED }]);
+    two.fire();
+    vi.advanceTimersByTime(100);
+
+    const now = provider.currentRevision();
+    expect(now).toBeGreaterThan(stale);
+    expect(provider.getStatus("/w/one/a.ts")).toEqual({ status: undefined, revision: now });
+    provider.dispose();
+  });
+
+  it("drops a queued dirty delta when the path goes clean out of scope before the flush", async () => {
+    vi.useFakeTimers();
+    let folders = ["/w/one", "/w/two"];
+    const one = makeRepo("/w/one", [{ path: "/w/one/a.ts", status: Status.MODIFIED }]);
+    const two = makeRepo("/w/two", [{ path: "/w/two/b.ts", status: Status.MODIFIED }]);
+    const { api } = makeApi({ repos: [one.repo, two.repo] });
+    const { extObj } = makeExtension({ api });
+    const provider = createGitDecorationProvider({
+      getExtension: () => extObj as never,
+      getWorkspaceFolders: () => folders,
+    });
+    await vi.runAllTimersAsync();
+    vi.advanceTimersByTime(100);
+    const stale = provider.getStatus("/w/one/a.ts").revision;
+    const seen: Array<{ path: string; status: GitStatus | null }> = [];
+    provider.onDidChange((d) => seen.push(...d.changes));
+
+    // A dirty transition is queued in scope; the folder then goes away and
+    // the path goes clean, all inside one debounce window.
+    one.setChanges([{ path: "/w/one/a.ts", status: Status.INDEX_ADDED }]);
+    one.fire();
+    folders = ["/w/two"];
+    one.setChanges([]);
+    one.fire();
+    vi.advanceTimersByTime(100);
+    // The obsolete `added` must not be flushed after the path is clean.
+    expect(seen.filter((c) => c.path === "/w/one/a.ts")).toEqual([]);
+
+    two.setChanges([{ path: "/w/two/b.ts", status: Status.INDEX_ADDED }]);
+    two.fire();
+    vi.advanceTimersByTime(100);
+    const now = provider.currentRevision();
+    expect(now).toBeGreaterThan(stale);
+    expect(provider.getStatus("/w/one/a.ts")).toEqual({ status: undefined, revision: now });
+    provider.dispose();
+  });
+
+  it("evicts every path on reset, including ones the new folder set filters out", async () => {
+    vi.useFakeTimers();
+    let folders = ["/w/one", "/w/two"];
+    const one = makeRepo("/w/one", [{ path: "/w/one/a.ts", status: Status.MODIFIED }]);
+    const two = makeRepo("/w/two", [{ path: "/w/two/b.ts", status: Status.MODIFIED }]);
+    const { api, closeRepo } = makeApi({ repos: [one.repo, two.repo] });
+    const { extObj } = makeExtension({ api });
+    const provider = createGitDecorationProvider({
+      getExtension: () => extObj as never,
+      getWorkspaceFolders: () => folders,
+    });
+    await vi.runAllTimersAsync();
+    vi.advanceTimersByTime(100);
+    const stale = provider.getStatus("/w/one/a.ts").revision;
+
+    folders = ["/w/two"];
+    closeRepo(one.repo);
+    provider.reset();
+    vi.advanceTimersByTime(100);
+    two.setChanges([{ path: "/w/two/b.ts", status: Status.INDEX_ADDED }]);
+    two.fire();
+    vi.advanceTimersByTime(100);
+
+    const now = provider.currentRevision();
+    expect(now).toBeGreaterThan(stale);
+    expect(provider.getStatus("/w/one/a.ts")).toEqual({ status: undefined, revision: now });
+    provider.dispose();
+  });
+});

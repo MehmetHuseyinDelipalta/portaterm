@@ -4,6 +4,7 @@
 
 import * as path from "node:path";
 import { type AuthorizedDirectory, sameFileIdentity } from "../utils/authorizedDirectory";
+import { mapBounded } from "../utils/mapBounded";
 import { isPathInside } from "../utils/pathBoundary";
 import { describeGitFailure } from "./describeGitFailure";
 import { type GitCapabilities, isUnsupportedZResult } from "./gitCapabilities";
@@ -31,27 +32,6 @@ export const REPO_LISTING_CONCURRENCY = 8;
  * `prunable` git already called it, which is the weaker and safer claim.
  */
 const ABSENCE_CODES = new Set(["ENOENT", "ENOTDIR"]);
-
-/** Run `task` over `items`, at most `limit` in flight, results by input index. */
-async function mapBounded<T, R>(
-  items: readonly T[],
-  limit: number,
-  task: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-
-  async function worker(): Promise<void> {
-    while (next < items.length) {
-      const index = next++;
-      results[index] = await task(items[index], index);
-    }
-  }
-
-  const workers = Math.min(limit, items.length);
-  await Promise.all(Array.from({ length: workers }, () => worker()));
-  return results;
-}
 
 export interface WorktreeListingDeps {
   runner: GitCommandRunner;
