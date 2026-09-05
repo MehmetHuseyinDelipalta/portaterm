@@ -420,6 +420,41 @@ site while three others keep the old one leaves the codebase less consistent, no
 Inventory, triage lines, and the decisions each one still owes:
 [worktree-subsystem-debts.md](design/worktree-subsystem-debts.md).
 
+### 8.8 Closing a terminal that is running an agent
+
+Destroying a pty costs nothing when a shell is sitting at a prompt, and costs a session when an
+agent is mid-turn. So the confirmation is asked on exactly that condition — the host's own
+`isAgentLaunch` fact, on a process that has not exited — and never otherwise. A dialog on every
+tab close would be trained away within a day and would then be worth nothing on the day it
+mattered.
+
+Every door the host controls is gated in `src/session/closeGates.ts`, and the four commands are
+built by `src/commands/closeCommands.ts` from a fixed id list, so a fifth cannot be registered
+without going through the gate or failing that inventory. Two invariants sit under the doors,
+both of them defects this cycle actually produced: the session that was WEIGHED is the session
+that is destroyed — nothing re-resolves "the active pane" after the modal, because focus moves
+while a modal is open — and the surface told about it is the one that HOLDS that session, not
+whichever surface is focused.
+
+**Closing the editor TAB is the one door that cannot be gated.** `WebviewPanel.onDidDispose`
+fires after the tab is gone, and VS Code exposes no close veto to extensions: there is no
+`onWillClose` for tabs or editors anywhere in `src/vscode-dts/`, stable or proposed, and the only
+`onWill*` hooks are about SAVING a document. `Tab.isDirty` — which is what makes core's own
+terminal editor able to prompt — is read-only and always false for a `TabInputWebview`. Reaching
+that prompt would mean becoming a `CustomEditorProvider` with a dirty `CustomDocument`, whose
+dialog says "Do you want to save changes to X?" with a "Don't Save" button that kills the agent.
+That is the wrong tool.
+
+So that door trades the question for an **undo**: a disposed view holding a live agent keeps its
+ptys for a longer but still bounded grace (30s rather than the 5s reload grace) and the user is
+offered the tab back, reopened under its original `panelId` through the same `revive` path the
+reload serializer takes. Ignoring the toast is a valid answer and means "yes, kill them".
+
+Deliberately NOT keeping the sessions alive indefinitely for later reattachment: sessions belong
+to `viewId = editor-<panelId>` and nothing can move them to another view, so a preserved pty
+would be a process an agent keeps driving with no surface, no owner, and no bound but its own
+exit — and it would make the one door that never asks also the one door that never kills.
+
 ## 9. Key Design Decisions — Worktree Subsystem
 
 | # | Decision | Alternative rejected | Rationale |

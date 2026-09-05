@@ -110,8 +110,9 @@ vi.mock("./previewFileLink", () => ({
 }));
 
 import type * as vscode from "vscode";
+import { createPaneEvidenceStore } from "../session/PaneEvidenceStore";
 import { SessionManager } from "../session/SessionManager";
-import { env as vscodeMockEnv } from "../test/__mocks__/vscode";
+import { env as vscodeMockEnv, window as vscodeMockWindow } from "../test/__mocks__/vscode";
 import { VaultLaunchError } from "../vault/LaunchBuilder";
 import type { VaultLauncher } from "../vault/VaultLauncher";
 import type { VaultService } from "../vault/VaultService";
@@ -526,6 +527,60 @@ describe("TerminalViewProvider: requestFilePreview dispatch", () => {
     }
     expect(previewFileLink).not.toHaveBeenCalled();
 
+    sm.dispose();
+  });
+
+  it("asks before closeTab kills a tab running an agent, and drops it on a decline", async () => {
+    // The provider door, not the gate: `closeGates.test.ts` proves the order,
+    // nothing proved this arm was wired to it (review round-3 F004).
+    const sm = new SessionManager();
+    const evidence = createPaneEvidenceStore();
+    evidence.create("target", { viewId: "sidebar", shell: "claude", isAgentLaunch: true });
+    const destroy = vi.spyOn(sm, "destroySession").mockImplementation(() => {});
+    vi.spyOn(sm, "panesOfTab").mockReturnValue(["target"]);
+    const asked: string[] = [];
+    // Restored below: the mock's `window` is a module-level object, and
+    // `__resetAll` does not put its function properties back.
+    const realWarn = vscodeMockWindow.showWarningMessage;
+    vscodeMockWindow.showWarningMessage = ((message: string) => {
+      asked.push(message);
+      return Promise.resolve(undefined);
+    }) as never;
+
+    const provider = new TerminalViewProvider(
+      { fsPath: "/mock/extension" } as vscode.Uri,
+      sm,
+      "sidebar",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      evidence,
+    );
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "closeTab", tabId: "target" });
+    }
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(asked).toEqual(["Close this terminal tab?"]);
+    expect(destroy).not.toHaveBeenCalled();
+
+    // Non-vacuous: the same message on an ordinary shell asks nothing and closes.
+    asked.length = 0;
+    evidence.create("plain", { viewId: "sidebar", shell: "zsh", isAgentLaunch: false });
+    vi.spyOn(sm, "panesOfTab").mockReturnValue(["plain"]);
+    for (const handler of messageHandlers) {
+      handler({ type: "closeTab", tabId: "plain" });
+    }
+    await new Promise((r) => setTimeout(r, 5));
+    expect(asked).toEqual([]);
+    expect(destroy).toHaveBeenCalledWith("plain");
+
+    vscodeMockWindow.showWarningMessage = realWarn;
     sm.dispose();
   });
 

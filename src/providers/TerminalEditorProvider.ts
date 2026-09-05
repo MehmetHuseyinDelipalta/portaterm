@@ -1,7 +1,8 @@
 import * as crypto from "node:crypto";
 import * as vscode from "vscode";
 import { descendantPids } from "../pty/processTree";
-import { confirmKill } from "../session/killConfirmation";
+import { disposalGrace } from "../session/closeGates";
+import { confirmKill, type RunningAgentPane } from "../session/killConfirmation";
 import type { PaneEvidenceStore } from "../session/PaneEvidenceStore";
 import { type ResolveClaudeSessionDeps, resolveClaudeSession } from "../session/resolveClaudeSession";
 import type { SessionManager } from "../session/SessionManager";
@@ -55,6 +56,14 @@ import { getTerminalHtml } from "./webviewHtml";
  * ~1s; we wait 5s to be safe. See: restore-terminal-sessions design.md D3.
  */
 const GRACE_PERIOD_MS = 5000;
+/**
+ * The grace a view holding a live agent gets instead.
+ *
+ * Long enough to read a toast and click it, bounded so a forgotten tab still
+ * releases its ptys. It is an undo window, not keepalive: nothing here keeps a
+ * pty past it (round-3 F007).
+ */
+const AGENT_GRACE_PERIOD_MS = 30_000;
 
 export class TerminalEditorProvider {
   public static readonly viewType = "anywhereTerminal.editor";
@@ -280,6 +289,74 @@ export class TerminalEditorProvider {
    * `WebviewPanel` instance (no createWebviewPanel call) and registers it in
    * the live-panels registry. See: restore-terminal-sessions design.md D2, D3, D7.
    */
+  /**
+   * Told when a disposed panel was holding live agents, so the host can offer
+   * the undo. A static hook rather than a constructor parameter: panels are
+   * built in three places (`createPanel`, `revive`, tests) and this is one
+   * window-wide policy, not per-panel state. Unset in tests → no toast.
+   */
+  private static _onDisposedWithAgents:
+    | ((info: { viewId: string; panelId: string; running: readonly RunningAgentPane[]; graceMs: number }) => void)
+    | null = null;
+
+  static setDisposalNotifier(
+    fn:
+      | ((info: { viewId: string; panelId: string; running: readonly RunningAgentPane[]; graceMs: number }) => void)
+      | null,
+  ): void {
+    TerminalEditorProvider._onDisposedWithAgents = fn;
+  }
+
+  /**
+   * Re-open a panel that was just disposed, under its ORIGINAL `panelId`.
+   *
+   * `createPanel` mints a fresh id, which would reattach to nothing; this is the
+   * same path `TerminalPanelSerializer` takes on a reload, so the surviving
+   * sessions rebind through `updateWebviewForView` exactly as they do there.
+   * The caller cancels the scheduled destroy first, for the same reason the
+   * serializer does: otherwise the prior instance's timer kills the ptys the
+   * new panel just adopted.
+   */
+  static reopen(
+    context: vscode.ExtensionContext,
+    sessionManager: SessionManager,
+    panelId: string,
+    gitDecorationProvider: GitDecorationProvider | null = null,
+    watcherPool: WatcherPool | null = null,
+    worktreeHost: WorktreeHost | null = null,
+    paneEvidence: PaneEvidenceStore | null = null,
+    vaultService: VaultService | null = null,
+    pathMemo: ResolvedPathMemo | null = null,
+  ): vscode.Disposable {
+    sessionManager.cancelScheduledDestroy(`editor-${panelId}`);
+    const panel = vscode.window.createWebviewPanel(
+      TerminalEditorProvider.viewType,
+      "Terminal",
+      vscode.ViewColumn.Active,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "media")],
+      },
+    );
+    TerminalEditorProvider.revive(
+      context,
+      sessionManager,
+      panel,
+      panelId,
+      [],
+      gitDecorationProvider,
+      watcherPool,
+      worktreeHost,
+      paneEvidence,
+      vaultService,
+      pathMemo,
+    );
+    // The panel itself, matching `createPanel` — the caller holds it so a
+    // deactivate tears the reopened tab down like any other.
+    return panel;
+  }
+
   static revive(
     context: vscode.ExtensionContext,
     sessionManager: SessionManager,
@@ -438,11 +515,24 @@ export class TerminalEditorProvider {
       this.fileTreeHost.dispose();
       TerminalEditorProvider._activePanels.delete(this._panel);
       TerminalEditorProvider._instances.delete(this._panel);
-      this.sessionManager.scheduleDestroyForView(this._viewId, GRACE_PERIOD_MS, () => {
+      const { graceMs, running } = disposalGrace(
+        this.sessionManager.getAllSessionsForView(this._viewId).map((s) => s.id),
+        this.paneEvidence,
+        { idle: GRACE_PERIOD_MS, agents: AGENT_GRACE_PERIOD_MS },
+      );
+      this.sessionManager.scheduleDestroyForView(this._viewId, graceMs, () => {
         // Live-panels registry is cleaned only on the REAL destroy (grace
         // window elapsed without revival). See: design.md D10.
         this.sessionManager.unregisterEditorPanel(this._panelId);
       });
+      if (running.length > 0) {
+        TerminalEditorProvider._onDisposedWithAgents?.({
+          viewId: this._viewId,
+          panelId: this._panelId,
+          running,
+          graceMs,
+        });
+      }
     });
   }
 

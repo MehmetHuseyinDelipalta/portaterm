@@ -12,7 +12,13 @@
 // modal — a modal is open for as long as the user looks at it, and focus can
 // move underneath it.
 
-import { confirmKill, type KillConfirmationUi, type KillEvidenceReader } from "./killConfirmation";
+import {
+  confirmKill,
+  type KillConfirmationUi,
+  type KillEvidenceReader,
+  type RunningAgentPane,
+  runningAgentPanes,
+} from "./killConfirmation";
 
 export interface CloseGateDeps {
   evidence: KillEvidenceReader | null;
@@ -64,4 +70,26 @@ export async function closePaneGated(sessionId: string, deps: CloseGateDeps): Pr
   // modal is open (round-1 F002).
   deps.postClosePane(sessionId);
   return true;
+}
+
+/**
+ * How long to hold a disposed view's ptys, and what is at stake if nobody acts.
+ *
+ * The editor-tab door is the one door that cannot be gated: `onDidDispose` fires
+ * after the tab is gone, and VS Code exposes no close veto to extensions —
+ * verified against the vscode-dts of the source tree, where the only `onWill*`
+ * hooks are about SAVING a document. So this door trades the question for an
+ * undo: a view with a live agent gets a longer window and something to click,
+ * instead of a silent kill after the ordinary reload grace.
+ *
+ * `running` empty means nothing is at stake and the ordinary grace stands —
+ * lengthening it for every closed tab would leave ptys around for no reason.
+ */
+export function disposalGrace(
+  sessionIds: readonly string[],
+  evidence: KillEvidenceReader | null,
+  ms: { idle: number; agents: number },
+): { graceMs: number; running: RunningAgentPane[] } {
+  const running = runningAgentPanes(sessionIds, evidence);
+  return { graceMs: running.length === 0 ? ms.idle : ms.agents, running };
 }

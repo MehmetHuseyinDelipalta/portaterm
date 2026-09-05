@@ -3,7 +3,7 @@
 // is destroyed, and a decline destroys nothing.
 
 import { describe, expect, it } from "vitest";
-import { type CloseGateDeps, closePaneGated, killTerminalGated } from "./closeGates";
+import { type CloseGateDeps, closePaneGated, disposalGrace, killTerminalGated } from "./closeGates";
 
 const AGENT = { exited: false, isAgentLaunch: true, shell: "claude" };
 const SHELL = { exited: false, isAgentLaunch: false, shell: "zsh" };
@@ -123,5 +123,30 @@ describe("closePaneGated", () => {
     await expect(closePaneGated("p2", g.deps)).resolves.toBe(true);
     expect(g.asked).toEqual([]);
     expect(g.paneClosed).toEqual(["p2"]);
+  });
+});
+
+describe("disposalGrace", () => {
+  const MS = { idle: 5_000, agents: 30_000 };
+
+  it("leaves the ordinary grace alone when nothing is running", () => {
+    // Lengthening it for every closed tab would hold ptys for no reason.
+    const g = disposalGrace(["t1"], { read: () => SHELL }, MS);
+    expect(g).toEqual({ graceMs: 5_000, running: [] });
+  });
+
+  it("lengthens it and names what is at stake when an agent is", () => {
+    const g = disposalGrace(["t1"], { read: () => AGENT }, MS);
+    expect(g.graceMs).toBe(30_000);
+    expect(g.running).toEqual([{ sessionId: "t1", name: "claude" }]);
+  });
+
+  it("weighs every session in the view, not just the first", () => {
+    // Closing the editor tab kills them all, so one live agent anywhere in it
+    // is enough to earn the undo window.
+    const panes: Record<string, typeof AGENT | typeof SHELL> = { a: SHELL, b: AGENT };
+    const g = disposalGrace(["a", "b"], { read: (id) => panes[id] }, MS);
+    expect(g.graceMs).toBe(30_000);
+    expect(g.running.map((p) => p.sessionId)).toEqual(["b"]);
   });
 });

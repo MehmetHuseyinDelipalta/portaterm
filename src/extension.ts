@@ -19,6 +19,7 @@ import {
 import { ClaudeHookInstaller } from "./agentHooks/install/ClaudeHookInstaller";
 import { installOpenCodePlugin } from "./agentHooks/opencodeConfigDir";
 import { ReportedSessions } from "./agentHooks/reportedSessions";
+import { CLOSE_COMMAND_IDS, createCloseCommands } from "./commands/closeCommands";
 import { exportBuffer, exportCommand, exportLastCommand, NO_FOCUS_TOAST } from "./commands/exportCommands";
 import { CursorHookInstaller } from "./cursor/CursorHookInstaller";
 import { createWatcherPool } from "./providers/fsWatcherPool";
@@ -35,7 +36,6 @@ import {
   type WorktreeSurface,
 } from "./providers/WorktreeHost";
 import { loadNodePty } from "./pty/PtyManager";
-import { type CloseGateDeps, closePaneGated, killTerminalGated } from "./session/closeGates";
 import type { MessageSender } from "./session/OutputBuffer";
 import { createPaneEvidenceStore } from "./session/PaneEvidenceStore";
 import { SessionManager } from "./session/SessionManager";
@@ -1701,6 +1701,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
 
+  // The one destructive door the confirmation cannot gate: closing the editor
+  // TAB disposes the panel, and `onDidDispose` fires after the fact — VS Code
+  // exposes no close veto to extensions (verified against the vscode-dts of the
+  // source tree; the only `onWill*` hooks are about saving a document). So this
+  // door trades the question for an undo: the view keeps its ptys for a longer,
+  // still-bounded grace and the user is offered the tab back (round-3 F007).
+  TerminalEditorProvider.setDisposalNotifier(({ panelId, running, graceMs }) => {
+    const names = running.map((p) => p.name).join(", ");
+    const subject = running.length === 1 ? `${names} is` : `${running.length} agents are`;
+    const seconds = Math.round(graceMs / 1000);
+    // Non-modal on purpose: closing the tab was a deliberate gesture, and a
+    // modal here would block the window over a decision the toast already
+    // carries. Ignoring it is a valid answer and means "yes, kill them".
+    void vscode.window
+      .showWarningMessage(
+        `${subject} still running in the terminal tab you closed. Reopening within ${seconds}s keeps ${running.length === 1 ? "it" : "them"} alive.`,
+        "Reopen Tab",
+      )
+      .then((choice) => {
+        if (choice !== "Reopen Tab") {
+          return;
+        }
+        context.subscriptions.push(
+          TerminalEditorProvider.reopen(
+            context,
+            sessionManager,
+            panelId,
+            gitDecorationProvider,
+            fsWatcherPool,
+            worktreeHost,
+            paneEvidence,
+            vaultService,
+            pathMemo,
+          ),
+        );
+      });
+  });
+  context.subscriptions.push({ dispose: () => TerminalEditorProvider.setDisposalNotifier(null) });
+
   // WebviewPanelSerializer — revives editor terminal panels on window reload.
   // Wired AFTER SessionManager construction so consumeSnapshotsForPanel sees the
   // hydrated pending snapshots. See: restore-terminal-sessions design.md D2, D7.
@@ -1839,45 +1878,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   };
 
-  /**
-   * The seams `closeGates` needs, bound to one provider. Every destructive door
-   * builds one of these and hands it the id IT names — the gate never asks the
-   * provider what is active a second time (round-1 F002).
-   */
-  const closeGatesTo = (webviewOf: (sessionId: string) => vscode.Webview | undefined): CloseGateDeps => ({
-    evidence: paneEvidence,
-    ui: vscode.window,
-    panesOfTab: (tabId) => sessionManager.panesOfTab(tabId),
-    // Live session first, then the pane registry — which outlives it. A pane
-    // whose pty exited naturally is still on screen and still closable, and its
-    // teardown protocol has not changed just because the session row is gone
-    // (round-3 F009).
-    isSplitPane: (sessionId) =>
-      (sessionManager.getSession(sessionId)?.isSplitPane ?? paneEvidence.read(sessionId)?.isSplitPane) === true,
-    destroySession: (sessionId) => sessionManager.destroySession(sessionId),
-    postTabRemoved: (sessionId) => {
-      const webview = webviewOf(sessionId);
-      if (webview) {
-        safePostMessage(webview, { type: "tabRemoved", tabId: sessionId });
-      }
-    },
-    postClosePane: (sessionId) => {
-      const webview = webviewOf(sessionId);
-      if (webview) {
-        safePostMessage(webview, { type: "closeSplitPaneById", sessionId });
-      }
-    },
-  });
-
-  const closeGatesFor = (provider: TerminalViewProvider): CloseGateDeps => closeGatesTo(() => provider.view?.webview);
-
-  const doKillTerminal = (provider: TerminalViewProvider): void => {
-    const activeSessionId = provider.getActiveSessionId();
-    if (activeSessionId) {
-      void killTerminalGated(activeSessionId, closeGatesFor(provider));
-    }
-  };
-
   const doClearTerminal = (provider: TerminalViewProvider): void => {
     const activeSessionId = provider.getActiveSessionId();
     if (!activeSessionId) {
@@ -1898,31 +1898,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     safePostMessage(view.webview, { type: "splitPane", direction });
   };
 
-  const doCloseSplitPane = (provider: TerminalViewProvider): void => {
-    const view = provider.view;
-    if (!view) {
-      return;
-    }
-    // Gated at the COMMAND rather than on the `requestCloseSplitPane` that comes
-    // back: the webview disposes the pane before it posts that, so by then there
-    // is nothing left to decline.
-    const target = provider.getActiveSessionId();
-    if (target) {
-      void closePaneGated(target, closeGatesFor(provider));
-    }
-  };
-
   // ─── Generic Commands (for keybindings — use getFocusedProvider) ──────
+
+  // The destructive four. Registration is a loop over the factory's own map, so
+  // a door cannot exist without going through the gate it declares.
+  const closeCommands = createCloseCommands({
+    evidence: paneEvidence,
+    ui: vscode.window,
+    panesOfTab: (tabId) => sessionManager.panesOfTab(tabId),
+    // Live session first, then the pane registry — which outlives it. A pane
+    // whose pty exited naturally is still on screen and still closable, and its
+    // teardown protocol has not changed because the session row is gone (F009).
+    isSplitPane: (sessionId) =>
+      (sessionManager.getSession(sessionId)?.isSplitPane ?? paneEvidence.read(sessionId)?.isSplitPane) === true,
+    destroySession: (sessionId) => sessionManager.destroySession(sessionId),
+    postToSession: (sessionId, message) => {
+      const webview = getWebviewForSession(sessionId);
+      if (webview) {
+        safePostMessage(webview, message as ExtensionToWebViewMessage);
+      }
+    },
+    focusedActiveSession: () => getFocusedProvider().getActiveSessionId(),
+    ctxActiveSession: (ctx) => getCtxProvider(ctx).getActiveSessionId(),
+  });
+  for (const id of CLOSE_COMMAND_IDS) {
+    context.subscriptions.push(vscode.commands.registerCommand(id, closeCommands.byId[id]));
+  }
 
   context.subscriptions.push(
     vscode.commands.registerCommand("anywhereTerminal.newTerminal", () => doNewTerminal(getFocusedProvider())),
-    vscode.commands.registerCommand("anywhereTerminal.killTerminal", () => doKillTerminal(getFocusedProvider())),
     vscode.commands.registerCommand("anywhereTerminal.clearTerminal", () => doClearTerminal(getFocusedProvider())),
     vscode.commands.registerCommand("anywhereTerminal.splitHorizontal", () =>
       doSplit(getFocusedProvider(), "horizontal"),
     ),
     vscode.commands.registerCommand("anywhereTerminal.splitVertical", () => doSplit(getFocusedProvider(), "vertical")),
-    vscode.commands.registerCommand("anywhereTerminal.closeSplitPane", () => doCloseSplitPane(getFocusedProvider())),
     // ─── Export Terminal Session ──────────────────────────────────
     // See: asimov/changes/export-terminal-session/specs/terminal-session-export/spec.md
     // The 3 commands are reachable from both Command Palette and the webview
@@ -1976,7 +1985,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const provider = providers[loc];
     context.subscriptions.push(
       vscode.commands.registerCommand(`anywhereTerminal.newTerminal.${loc}`, () => doNewTerminal(provider)),
-      vscode.commands.registerCommand(`anywhereTerminal.killTerminal.${loc}`, () => doKillTerminal(provider)),
+      vscode.commands.registerCommand(
+        `anywhereTerminal.killTerminal.${loc}`,
+        closeCommands.killTerminalFor(() => provider.getActiveSessionId()),
+      ),
       vscode.commands.registerCommand(`anywhereTerminal.splitHorizontal.${loc}`, () => doSplit(provider, "horizontal")),
       vscode.commands.registerCommand(`anywhereTerminal.splitVertical.${loc}`, () => doSplit(provider, "vertical")),
       // View-title "Export…" action — opens a quickpick of the
@@ -2104,17 +2116,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("anywhereTerminal.ctx.closePane", (ctx: { paneSessionId?: string }) => {
-      const paneSessionId = ctx?.paneSessionId;
-      if (!paneSessionId) {
-        return;
-      }
-      // Addressed BY SESSION, not by provider. `postToCtxWebview` resolves only
-      // sidebar and panel, so an editor-owned pane fell back to whichever of
-      // those was focused — confirming a close in an editor could then close an
-      // unrelated sidebar terminal and leave the named pane open (round-2 F006).
-      void closePaneGated(paneSessionId, closeGatesTo(getWebviewForSession));
-    }),
     vscode.commands.registerCommand("anywhereTerminal.ctx.splitVertical", (ctx: { paneSessionId?: string }) => {
       if (ctx?.paneSessionId) {
         postToCtxWebview(ctx, { type: "splitPaneAt", direction: "vertical", sourcePaneId: ctx.paneSessionId });
@@ -2140,16 +2141,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("anywhereTerminal.ctx.newTerminal", (ctx?: { paneSessionId?: string }) => {
       doNewTerminal(getCtxProvider(ctx));
-    }),
-    vscode.commands.registerCommand("anywhereTerminal.ctx.killTerminal", (ctx?: { paneSessionId?: string }) => {
-      const sessionId = ctx?.paneSessionId ?? getCtxProvider(ctx).getActiveSessionId();
-      if (!sessionId) {
-        return;
-      }
-      // The fifth door, and the one the round-1 sweep missed. It gates on the id
-      // it names, and — like its close-pane sibling — addresses the surface that
-      // actually holds that session rather than a focused provider (F001, F006).
-      void killTerminalGated(sessionId, closeGatesTo(getWebviewForSession));
     }),
     // Right-click → "Reveal Working Directory in File Explorer". The extension
     // resolves the pane's live cwd by querying the PTY shell process at the OS
