@@ -40,7 +40,6 @@ import { preloadSyntaxHighlighter } from "./links/syntaxRenderer";
 import { createMessageRouter } from "./messaging/MessageRouter";
 import { createScrollbackDumpHandler } from "./messaging/scrollbackDumpHandler";
 import { ResizeCoordinator } from "./resize/ResizeCoordinator";
-import { getAllSessionIds } from "./SplitModel";
 import { SplitTreeRenderer } from "./split/SplitTreeRenderer";
 import { resolveTabDisplayPane } from "./split/tabDisplay";
 import { WebviewStateStore } from "./state/WebviewStateStore";
@@ -382,10 +381,7 @@ function updateTabBar(): void {
     scope: tabBarScope?.chip(data.hiddenWaiting),
     activeTabId: store.activeTabId,
     onTabClick: (tabId) => switchTab(tabId),
-    // The layout travels with the request: closing a tab kills every pane in
-    // it, and the host's pane registry is flat, so only this side can say which
-    // panes those are.
-    onTabClose: (tabId) => vscode.postMessage({ type: "closeTab", tabId, paneSessionIds: panesOfTab(tabId) }),
+    onTabClose: (tabId) => vscode.postMessage({ type: "closeTab", tabId }),
     onAddClick: () => vscode.postMessage({ type: "createTab" }),
     onTabRename: (tabId, tabEl) => startInlineRename(tabId, tabEl, tabBarEl),
     onAfterRender: () => {
@@ -513,18 +509,6 @@ function activatePaneById(paneId: string): boolean {
     updateActivePaneVisual: (tabId) => splitRenderer.updateActivePaneVisual(tabId),
     focusPane: (id) => store.terminals.get(id)?.terminal.focus(),
   });
-}
-
-/**
- * Every pane session a tab holds, its own id first.
- *
- * A tab with no split layout is still one pane — the tab id IS the session id —
- * so this never returns empty for a live tab.
- */
-function panesOfTab(tabId: string): string[] {
-  const layout = store.tabLayouts.get(tabId);
-  const ids = layout ? getAllSessionIds(layout) : [];
-  return ids.includes(tabId) ? ids : [tabId, ...ids];
 }
 
 function removeTerminal(id: string): void {

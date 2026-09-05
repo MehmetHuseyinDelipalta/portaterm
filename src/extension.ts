@@ -35,7 +35,7 @@ import {
   type WorktreeSurface,
 } from "./providers/WorktreeHost";
 import { loadNodePty } from "./pty/PtyManager";
-import { confirmKill } from "./session/killConfirmation";
+import { type CloseGateDeps, closePaneGated, killTerminalGated } from "./session/closeGates";
 import type { MessageSender } from "./session/OutputBuffer";
 import { createPaneEvidenceStore } from "./session/PaneEvidenceStore";
 import { SessionManager } from "./session/SessionManager";
@@ -1839,26 +1839,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   };
 
+  /**
+   * The seams `closeGates` needs, bound to one provider. Every destructive door
+   * builds one of these and hands it the id IT names — the gate never asks the
+   * provider what is active a second time (round-1 F002).
+   */
+  const closeGatesFor = (provider: TerminalViewProvider): CloseGateDeps => ({
+    evidence: paneEvidence,
+    ui: vscode.window,
+    panesOfTab: (tabId) => sessionManager.panesOfTab(tabId),
+    destroySession: (sessionId) => sessionManager.destroySession(sessionId),
+    postTabRemoved: (sessionId) => {
+      const view = provider.view;
+      if (view) {
+        safePostMessage(view.webview, { type: "tabRemoved", tabId: sessionId });
+      }
+    },
+    postClosePane: (sessionId) => {
+      const view = provider.view;
+      if (view) {
+        safePostMessage(view.webview, { type: "closeSplitPaneById", sessionId });
+      }
+    },
+  });
+
   const doKillTerminal = (provider: TerminalViewProvider): void => {
     const activeSessionId = provider.getActiveSessionId();
-    if (!activeSessionId) {
-      return;
-    }
-    void confirmKill([activeSessionId], "terminal", paneEvidence, vscode.window).then((proceed) => {
-      if (proceed) {
-        killTerminalNow(provider, activeSessionId);
-      }
-    });
-  };
-
-  const killTerminalNow = (provider: TerminalViewProvider, activeSessionId: string): void => {
-    sessionManager.destroySession(activeSessionId);
-    const view = provider.view;
-    if (view) {
-      safePostMessage(view.webview, {
-        type: "tabRemoved",
-        tabId: activeSessionId,
-      });
+    if (activeSessionId) {
+      void killTerminalGated(activeSessionId, closeGatesFor(provider));
     }
   };
 
@@ -1887,17 +1895,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!view) {
       return;
     }
-    // Gated HERE rather than on the `requestCloseSplitPane` that comes back:
-    // the webview disposes the pane before it posts that, so by then there is
-    // nothing left to decline. Both of this command's siblings do the same.
-    // `getActiveSessionId` prefers the focused pane, which is the pane the
-    // webview will pick — the same rule on both sides.
+    // Gated at the COMMAND rather than on the `requestCloseSplitPane` that comes
+    // back: the webview disposes the pane before it posts that, so by then there
+    // is nothing left to decline.
     const target = provider.getActiveSessionId();
-    void confirmKill(target ? [target] : [], "pane", paneEvidence, vscode.window).then((proceed) => {
-      if (proceed) {
-        safePostMessage(view.webview, { type: "closeSplitPane" });
-      }
-    });
+    if (target) {
+      void closePaneGated(target, closeGatesFor(provider));
+    }
   };
 
   // ─── Generic Commands (for keybindings — use getFocusedProvider) ──────
@@ -2093,12 +2097,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!paneSessionId) {
         return;
       }
-      // This command names its pane outright, so the gate weighs exactly the
-      // one the webview will dispose.
-      void confirmKill([paneSessionId], "pane", paneEvidence, vscode.window).then((proceed) => {
-        if (proceed) {
-          postToCtxWebview(ctx, { type: "closeSplitPaneById", sessionId: paneSessionId });
-        }
+      // This command names its pane outright, so the gate weighs exactly the one
+      // the webview will dispose. It posts through `postToCtxWebview` rather
+      // than `closeGatesFor`, because the pane's own webview is the one the
+      // context menu was raised on and may be an editor panel.
+      void closePaneGated(paneSessionId, {
+        ...closeGatesFor(getCtxProvider(ctx)),
+        postClosePane: (sessionId) => postToCtxWebview(ctx, { type: "closeSplitPaneById", sessionId }),
       });
     }),
     vscode.commands.registerCommand("anywhereTerminal.ctx.splitVertical", (ctx: { paneSessionId?: string }) => {
@@ -2133,11 +2138,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!sessionId) {
         return;
       }
-      sessionManager.destroySession(sessionId);
-      const view = provider.view;
-      if (view) {
-        safePostMessage(view.webview, { type: "tabRemoved", tabId: sessionId });
-      }
+      // The fifth door, and the one the round-1 sweep missed. It names its own
+      // pane, so it gates on that id rather than on whatever the provider
+      // currently calls active.
+      void killTerminalGated(sessionId, closeGatesFor(provider));
     }),
     // Right-click → "Reveal Working Directory in File Explorer". The extension
     // resolves the pane's live cwd by querying the PTY shell process at the OS

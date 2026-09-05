@@ -122,15 +122,6 @@ export interface CloseTabMessage {
   type: "closeTab";
   /** Tab to close */
   tabId: string;
-  /**
-   * Every pane session this tab holds, the tab's own included.
-   *
-   * Closing a tab destroys all of them, and only the webview holds the split
-   * layout that says which they are — the host's pane registry is flat. It is
-   * what lets the host see a running agent in a split pane it is about to kill.
-   * Optional: without it the host weighs the tab id alone.
-   */
-  paneSessionIds?: readonly string[];
 }
 
 /**

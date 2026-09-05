@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  confirmKill,
-  type KillConfirmationUi,
-  type KillEvidenceReader,
-  paneSessionIdsOf,
-  runningAgentPanes,
-} from "./killConfirmation";
+import { confirmKill, type KillConfirmationUi, type KillEvidenceReader, runningAgentPanes } from "./killConfirmation";
 
 type Pane = { exited: boolean; isAgentLaunch?: boolean; shell?: string };
 
@@ -63,23 +57,6 @@ describe("runningAgentPanes", () => {
 
   it("asks about nothing when the host kept no evidence store", () => {
     expect(runningAgentPanes(["a"], null)).toEqual([]);
-  });
-});
-
-describe("paneSessionIdsOf", () => {
-  it("keeps the carried panes, which already include the tab", () => {
-    expect(paneSessionIdsOf({ tabId: "t", paneSessionIds: ["t", "p2"] })).toEqual(["t", "p2"]);
-  });
-
-  it("falls back to the tab id when the field is absent or malformed", () => {
-    expect(paneSessionIdsOf({ tabId: "t" })).toEqual(["t"]);
-    expect(paneSessionIdsOf({ tabId: "t", paneSessionIds: "p2" })).toEqual(["t"]);
-  });
-
-  it("drops non-string entries and still names the tab", () => {
-    // A malformed entry is no claim, not a lesser one; the tab id is the value
-    // the host already routes on.
-    expect(paneSessionIdsOf({ tabId: "t", paneSessionIds: [1, "", "p2", null] })).toEqual(["t", "p2"]);
   });
 });
 

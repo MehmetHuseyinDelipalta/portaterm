@@ -876,6 +876,29 @@ export class SessionManager {
     return this.sessions.get(sessionId);
   }
 
+  /**
+   * Every live session that closing `tabId` would destroy — the tab and its
+   * split panes.
+   *
+   * `rootTabId` is the tab unit this manager already groups by (it is what
+   * makes snapshot eviction atomic across a tab), so the host can answer this
+   * from its own state. The webview holds the same fact in its split layout,
+   * but that is untrusted input and cannot be checked for completeness; this
+   * cannot be short of a pane. Returns `[]` for an unknown tab.
+   */
+  panesOfTab(tabId: string): string[] {
+    if (!this.sessions.has(tabId)) {
+      return [];
+    }
+    const panes: string[] = [tabId];
+    for (const [id, session] of this.sessions) {
+      if (id !== tabId && session.rootTabId === tabId) {
+        panes.push(id);
+      }
+    }
+    return panes;
+  }
+
   /** Return the resolved cwd recorded at PTY spawn time, or undefined when the session is unknown. */
   getInitialCwd(sessionId: string): string | undefined {
     return this.sessions.get(sessionId)?.initialCwd;

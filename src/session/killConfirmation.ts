@@ -77,22 +77,6 @@ export function runningAgentPanes(
 }
 
 /**
- * The pane ids carried by an inbound close request, validated.
- *
- * Everything on a webview message is untrusted input, so a malformed
- * `paneSessionIds` is not a lesser claim than a missing one — both fall back to
- * the tab id, which the host already trusts because it routes on it.
- */
-export function paneSessionIdsOf(message: { tabId: string; paneSessionIds?: unknown }): string[] {
-  const carried = message.paneSessionIds;
-  if (!Array.isArray(carried)) {
-    return [message.tabId];
-  }
-  const ids = carried.filter((id): id is string => typeof id === "string" && id.length > 0);
-  return ids.includes(message.tabId) ? ids : [message.tabId, ...ids];
-}
-
-/**
  * Ask, but only when there is something to ask about.
  *
  * Resolves `true` when the close may proceed — which includes the common case

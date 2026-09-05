@@ -361,6 +361,11 @@
 .file-tree-header__root:hover {
   background: var(--vscode-list-hoverBackground);
 }
+/* The hover background was the last thing making a label with no role, no tab
+   stop and no action still read as a control (round-1 F005). */
+.file-tree-header__root.is-rootless:hover {
+  background: none;
+}
 .file-tree-header__root:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;

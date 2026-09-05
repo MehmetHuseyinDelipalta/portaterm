@@ -1,0 +1,101 @@
+// The order, not the rule — `killConfirmation.test.ts` owns the rule. What is
+// asserted here is what round 1 found: the id that was weighed is the id that
+// is destroyed, and a decline destroys nothing.
+
+import { describe, expect, it } from "vitest";
+import { type CloseGateDeps, closePaneGated, killTerminalGated } from "./closeGates";
+
+const AGENT = { exited: false, isAgentLaunch: true, shell: "claude" };
+const SHELL = { exited: false, isAgentLaunch: false, shell: "zsh" };
+
+function gates(
+  panes: Record<string, typeof AGENT | typeof SHELL>,
+  answer: string | undefined,
+  tabs: Record<string, string[]> = {},
+) {
+  const asked: string[] = [];
+  const destroyed: string[] = [];
+  const tabRemoved: string[] = [];
+  const paneClosed: string[] = [];
+  const deps: CloseGateDeps = {
+    evidence: { read: (id) => panes[id] },
+    ui: {
+      showWarningMessage: (message, options) => {
+        asked.push(`${message}${options.detail ?? ""}`);
+        return Promise.resolve(answer);
+      },
+    },
+    panesOfTab: (tabId) => tabs[tabId] ?? [tabId],
+    destroySession: (id) => destroyed.push(id),
+    postTabRemoved: (id) => tabRemoved.push(id),
+    postClosePane: (id) => paneClosed.push(id),
+  };
+  return { deps, asked, destroyed, tabRemoved, paneClosed };
+}
+
+describe("killTerminalGated", () => {
+  it("destroys and tears down the id it was given, once confirmed", async () => {
+    const g = gates({ t1: AGENT }, "Kill Terminal");
+    await expect(killTerminalGated("t1", g.deps)).resolves.toBe(true);
+    expect(g.destroyed).toEqual(["t1"]);
+    expect(g.tabRemoved).toEqual(["t1"]);
+  });
+
+  it("destroys nothing when the user declines", async () => {
+    const g = gates({ t1: AGENT }, undefined);
+    await expect(killTerminalGated("t1", g.deps)).resolves.toBe(false);
+    expect(g.destroyed).toEqual([]);
+    expect(g.tabRemoved).toEqual([]);
+  });
+
+  it("asks nothing for an ordinary shell", async () => {
+    const g = gates({ t1: SHELL }, undefined);
+    await expect(killTerminalGated("t1", g.deps)).resolves.toBe(true);
+    expect(g.asked).toEqual([]);
+    expect(g.destroyed).toEqual(["t1"]);
+  });
+
+  it("weighs the tab's split panes, not just the tab", async () => {
+    // The tab's own pane is idle; the agent is in the split beside it, which
+    // this kill takes down too.
+    const g = gates({ t1: SHELL, p2: AGENT }, undefined, { t1: ["t1", "p2"] });
+    await expect(killTerminalGated("t1", g.deps)).resolves.toBe(false);
+    expect(g.asked[0]).toContain("claude is still running here");
+    // Non-vacuous: weighing the tab id alone would have found nothing and let
+    // the kill through with no question at all.
+    const alone = gates({ t1: SHELL, p2: AGENT }, undefined);
+    await expect(killTerminalGated("t1", alone.deps)).resolves.toBe(true);
+    expect(alone.asked).toEqual([]);
+  });
+
+  it("falls back to the id itself when the host knows no such tab", async () => {
+    // `panesOfTab` answers `[]` for an unknown tab; weighing nothing would make
+    // every such kill silent.
+    const g = gates({ t1: AGENT }, undefined, { t1: [] });
+    await expect(killTerminalGated("t1", g.deps)).resolves.toBe(false);
+    expect(g.asked).toHaveLength(1);
+  });
+});
+
+describe("closePaneGated", () => {
+  it("closes the pane it weighed, by id", async () => {
+    const g = gates({ p2: AGENT }, "Close Pane");
+    await expect(closePaneGated("p2", g.deps)).resolves.toBe(true);
+    expect(g.paneClosed).toEqual(["p2"]);
+  });
+
+  it("closes nothing when the user declines", async () => {
+    const g = gates({ p2: AGENT }, undefined);
+    await expect(closePaneGated("p2", g.deps)).resolves.toBe(false);
+    expect(g.paneClosed).toEqual([]);
+  });
+
+  it("weighs only the named pane, not the tab it sits in", async () => {
+    // Closing one split pane leaves its siblings alone, so an agent in a
+    // sibling is not this gesture's business.
+    const g = gates({ p2: SHELL, p3: AGENT }, undefined, { p2: ["p2", "p3"] });
+    await expect(closePaneGated("p2", g.deps)).resolves.toBe(true);
+    expect(g.asked).toEqual([]);
+    expect(g.paneClosed).toEqual(["p2"]);
+  });
+});
