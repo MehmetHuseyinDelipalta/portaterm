@@ -53,7 +53,7 @@ import { TerminalActivityTracker } from "./terminal/TerminalActivityTracker";
 import { TerminalFactory } from "./terminal/TerminalFactory";
 import { ThemeManager } from "./theme/ThemeManager";
 import { showBanner } from "./ui/BannerService";
-import { isStackedLayout, shouldCollapseAfterSelection } from "./vault/collapseAfterSelection";
+import { isStackedLayout } from "./vault/stackedLayout";
 import { VaultPanel } from "./vault/VaultPanel";
 import { activatePane } from "./worktree/activatePane";
 import { resolveInitialView, WorktreeController } from "./worktree/WorktreeController";
@@ -1121,16 +1121,10 @@ function handleInit(msg: InitMessage): void {
       // The vault preview sits above the panel body and owns Escape while it is
       // open; the drawer must not close out from under it.
       overlayOpen: () => vaultPanel?.isPreviewOpen() === true,
-      onSelectWorktree: (worktreeId) => {
-        tabBarScope?.onSelectWorktree(worktreeId);
-        // Only an actual selection, and only where two columns do not fit.
-        // Clearing a scope (`null`) is not a selection, and a docked rail is not
-        // taking the terminal's room.
-        const layout = document.getElementById("webview-layout");
-        if (shouldCollapseAfterSelection({ worktreeId, layout })) {
-          vaultPanel?.collapseAfterSelection();
-        }
-      },
+      // Selecting a worktree scopes the tab bar and nothing else: the rail stays
+      // exactly as the user left it. It used to collapse itself here, which read
+      // as the panel closing on a click the user made inside it.
+      onSelectWorktree: (worktreeId) => tabBarScope?.onSelectWorktree(worktreeId),
       onAttribution: (map) => tabBarScope?.onAttribution(map),
     });
     vaultPanel = new VaultPanel({

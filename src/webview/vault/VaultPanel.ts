@@ -676,33 +676,6 @@ export class VaultPanel {
     }
   }
 
-  /**
-   * Hand the room back after the user selects a worktree in the stacked layout.
-   * Deliberately NOT persisted: `vaultCollapsed` is the state the panel seeds
-   * from on every open, and a collapse the user did not ask for must not become
-   * the panel they get next time.
-   */
-  collapseAfterSelection(): void {
-    // No already-collapsed guard: `setCollapsed` writes the same class, the same
-    // aria state and the same visibility, animates only on a real transition,
-    // and refreshes only on collapsed→expanded. Adding one would be dead code
-    // that reads as load-bearing.
-    //
-    // The collapse is about to hide whatever the user was just keyboarding in —
-    // the selected row itself, most of the time. Nothing else would take focus,
-    // so it would fall to the body and the user would lose their place right
-    // after the primary action (round-1 W1). The header is the control the
-    // collapse leaves on screen, and it is the one that undoes it.
-    if (this.bodyEl.contains(document.activeElement)) {
-      this.headerEl.focus();
-    }
-    // Animated but not persisted: the two were fused in one flag, so an
-    // automatic collapse snapped in every motion mode and never reached the
-    // shared reduced-motion path (round-1 S1). Only the write to `vaultCollapsed`
-    // has to stay off — see the doc comment above.
-    this.setCollapsed(true, { persist: false, animate: true });
-  }
-
   /** Whether the vault section is collapsed to its header strip. */
   isCollapsed(): boolean {
     return this.collapsed;
@@ -714,12 +687,11 @@ export class VaultPanel {
   }
 
   /**
-   * Collapse/expand the section. Persists unless `persist: false`. Animation
-   * follows persistence unless `animate` says otherwise: the two coincide for
-   * every caller except the automatic collapse, which animates without being
-   * recorded as the user's own preference.
+   * Collapse/expand the section. Persists unless `persist: false`, and animates
+   * on the same condition: every caller is the user's own toggle except the
+   * constructor seed, which must land instantly.
    */
-  setCollapsed(collapsed: boolean, opts: { persist?: boolean; animate?: boolean } = {}): void {
+  setCollapsed(collapsed: boolean, opts: { persist?: boolean } = {}): void {
     const wasCollapsed = this.collapsed;
     this.collapsed = collapsed;
     // The class toggle is what changes the flex layout; the animator FLIPs the
@@ -729,8 +701,7 @@ export class VaultPanel {
     const applyVisual = (): void => {
       this.host.classList.toggle("vault-collapsed", collapsed);
     };
-    const animate = opts.animate ?? opts.persist !== false;
-    if (collapsed !== wasCollapsed && animate && this.animateCollapse) {
+    if (collapsed !== wasCollapsed && opts.persist !== false && this.animateCollapse) {
       this.animateCollapse(applyVisual);
     } else {
       applyVisual();
