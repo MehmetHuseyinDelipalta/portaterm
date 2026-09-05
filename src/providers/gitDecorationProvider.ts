@@ -701,7 +701,19 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
     pendingEmit.clear();
     revision += 1;
     for (const c of changes) {
-      revisions.set(c.path, revision);
+      if (c.status === null) {
+        // The watermark for an undecorated path is dropped, not recorded: it
+        // would otherwise be the one entry in this provider that never goes
+        // away, so a build loop creating and removing transient files grew
+        // `revisions` without bound (10k churn events -> 10 200 entries for
+        // 201 live dirty paths). `getStatus` falls back to the CURRENT global
+        // revision for a path with no entry, which is a newer stamp for a
+        // value that is still accurate — the webview's race-defeat rule only
+        // needs the stamp to be no older than the value it carries.
+        revisions.delete(c.path);
+      } else {
+        revisions.set(c.path, revision);
+      }
     }
     fireDelta({ revision, changes });
   }
