@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { Readable } from "node:stream";
+import { describe, expect, it, vi } from "vitest";
 import type { ProvisionEntry, ProvisionResultContest, ProvisionStepResult } from "../../types/messages";
 import type { AuthorizedDirectory } from "../../utils/authorizedDirectory";
 import { afterDelay } from "../deadline";
 import { fakeFs } from "./applyEntries.fake";
-import { applyProvisioning, failEveryEntry } from "./applyProvisioning";
+import { applyProvisioning, applyProvisionMaterials, failEveryEntry } from "./applyProvisioning";
 import { prepareEntryGate } from "./entryGate";
 
 const MAIN = "/repo";
@@ -781,5 +782,160 @@ describe("[OOB-F015] a group that claims priority twice is refused entire", () =
     ]);
 
     expect(steps.map((s) => s.outcome.kind)).toEqual(["copied", "copied"]);
+  });
+});
+
+describe("applyProvisionMaterials", () => {
+  it("routes held material without projecting it to a pathname copy and disposes its claim", async () => {
+    const fs = fakeFs({ [MAIN]: { kind: "dir" }, [WT]: { kind: "dir" } });
+    const roots = await prepareEntryGate(MAIN, WT, AUTHORIZATION, fs);
+    if (roots === null) {
+      throw new Error("the fake could not prepare its roots");
+    }
+    const finishWhen = vi.fn();
+    const disposeSource = vi.fn();
+    const acquireSource = vi.fn(() => ({
+      stream: Readable.from("held"),
+      mode: 0o600,
+      size: 4,
+      finishWhen,
+      dispose: disposeSource,
+    }));
+    const disposeClaim = vi.fn();
+    const selected = entry(".env", "copy", NATIVE, "held");
+
+    const result = await applyProvisionMaterials(
+      [
+        {
+          origin: "held-file",
+          entry: selected as ProvisionEntry & { readonly mode: "copy" },
+          canonicalPath: "/repo/.env",
+          file: { acquireSource, dispose: disposeClaim },
+        },
+      ],
+      roots,
+      { maxNodes: 1000, maxBytes: 1_000_000, deadline: afterDelay(60_000) },
+      fs,
+      AUTHORITY,
+    );
+
+    expect(result.steps[0]?.outcome.kind).toBe("copied");
+    expect(fs.nodes.get("/wt/.env")).toMatchObject({ kind: "file", size: 4 });
+    expect(acquireSource).toHaveBeenCalledOnce();
+    expect(finishWhen).toHaveBeenCalledOnce();
+    expect(disposeSource).toHaveBeenCalledOnce();
+    expect(disposeClaim).toHaveBeenCalledOnce();
+  });
+
+  it("keeps copy-before-link production order across mixed material origins", async () => {
+    const fs = fakeFs({
+      [MAIN]: { kind: "dir" },
+      [WT]: { kind: "dir" },
+      [`${MAIN}/third_party`]: { kind: "file", size: 2 },
+    });
+    const roots = await prepareEntryGate(MAIN, WT, AUTHORIZATION, fs);
+    if (roots === null) {
+      throw new Error("the fake could not prepare its roots");
+    }
+    const disposeClaim = vi.fn();
+    const linked = entry("third_party", "link", NATIVE, "link");
+    const copied = entry(".env", "copy", NATIVE, "copy");
+
+    const result = await applyProvisionMaterials(
+      [
+        { origin: "model", entry: linked },
+        {
+          origin: "held-file",
+          entry: copied as ProvisionEntry & { readonly mode: "copy" },
+          canonicalPath: "/repo/.env",
+          file: {
+            acquireSource: () => ({
+              stream: Readable.from("held"),
+              mode: 0o600,
+              size: 4,
+              finishWhen: () => undefined,
+              dispose: () => undefined,
+            }),
+            dispose: disposeClaim,
+          },
+        },
+      ],
+      roots,
+      { maxNodes: 1000, maxBytes: 1_000_000, deadline: afterDelay(60_000) },
+      fs,
+      AUTHORITY,
+    );
+
+    expect(result.steps.map((step) => step.id)).toEqual(["copy", "link"]);
+    expect(result.steps.map((step) => step.outcome.kind)).toEqual(["copied", "linked"]);
+    expect(disposeClaim).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a contested held loser unopened and disposes its claim", async () => {
+    const fs = fakeFs(
+      {
+        [MAIN]: { kind: "dir" },
+        [WT]: { kind: "dir" },
+        [`${MAIN}/MixedCase`]: { kind: "file", size: 4 },
+        [`${MAIN}/mixedcase`]: { kind: "file", size: 4 },
+      },
+      { folds: true },
+    );
+    const roots = await prepareEntryGate(MAIN, WT, AUTHORIZATION, fs);
+    if (roots === null) {
+      throw new Error("the fake could not prepare its roots");
+    }
+    const acquireSource = vi.fn(() => undefined);
+    const dispose = vi.fn();
+    const favoured = entry("MixedCase", "copy", NATIVE, "native");
+    const inherited = entry("mixedcase", "copy", INHERITED, "held");
+
+    const result = await applyProvisionMaterials(
+      [
+        { origin: "model", entry: favoured },
+        {
+          origin: "held-file",
+          entry: inherited as ProvisionEntry & { readonly mode: "copy" },
+          canonicalPath: "/repo/mixedcase",
+          file: { acquireSource, dispose },
+        },
+      ],
+      roots,
+      { maxNodes: 1000, maxBytes: 1_000_000, deadline: afterDelay(60_000) },
+      fs,
+      AUTHORITY,
+    );
+
+    expect(result.steps.find((step) => step.id === "held")?.outcome.kind).toBe("refused");
+    expect(acquireSource).not.toHaveBeenCalled();
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("disposes a claimed source when root authorization fails before dispatch", async () => {
+    const fs = fakeFs({ [MAIN]: { kind: "dir" }, [WT]: { kind: "dir" }, ...MATERIAL });
+    const roots = await prepareEntryGate(MAIN, WT, AUTHORIZATION, fs);
+    if (roots === null) {
+      throw new Error("the fake could not prepare its roots");
+    }
+    const dispose = vi.fn();
+    const selected = entry(".env", "copy", NATIVE, "held");
+
+    const result = await applyProvisionMaterials(
+      [
+        {
+          origin: "held-file",
+          entry: selected as ProvisionEntry & { readonly mode: "copy" },
+          canonicalPath: "/repo/.env",
+          file: { acquireSource: () => undefined, dispose },
+        },
+      ],
+      roots,
+      { maxNodes: 1000, maxBytes: 1_000_000, deadline: afterDelay(60_000) },
+      fs,
+      { directoryStillAuthorized: async () => false },
+    );
+
+    expect(result.steps[0]?.outcome.kind).toBe("failed");
+    expect(dispose).toHaveBeenCalledOnce();
   });
 });

@@ -16,13 +16,20 @@ import {
   type ApplyAuthorizationDeps,
   type ApplyBudget,
   type ApplyFsDeps,
+  admitProvisionMaterial,
   applyEntry,
   applyExclusiveEntry,
   CLAIM_LOST,
 } from "./applyEntries";
-import { admitEntry, type EntryGateRoots } from "./entryGate";
+import type { EntryGateRoots } from "./entryGate";
 import { NATIVE_PROVIDER_FILE } from "./nativeProvider";
 import { contendersOf } from "./providerKit";
+import {
+  disposeProvisionMaterials,
+  modelProvisionMaterials,
+  type ProvisionMaterial,
+  provisionEntryOf,
+} from "./provisionMaterial";
 
 /**
  * Copy before link, whatever order the provider listed them in
@@ -34,8 +41,10 @@ import { contendersOf } from "./providerKit";
  * gives an uncontested copy beneath its name a refusal it never had
  * (design.md D2).
  */
-function copiesFirst(entries: readonly ProvisionEntry[]): ProvisionEntry[] {
-  return [...entries].sort((a, b) => Number(a.mode === "link") - Number(b.mode === "link"));
+function copiesFirst(materials: readonly ProvisionMaterial[]): ProvisionMaterial[] {
+  return [...materials].sort(
+    (a, b) => Number(provisionEntryOf(a).mode === "link") - Number(provisionEntryOf(b).mode === "link"),
+  );
 }
 
 /** What the apply answers with: a step per entry, and each contest named once. */
@@ -178,13 +187,15 @@ export function failEveryEntry(entries: readonly ProvisionEntry[], reason: strin
  * change dressed as a refactor (.reviews/round-1.md F003). `applyEntry` never
  * throws, so this has no failure of its own to report.
  */
-export async function applyProvisioning(
-  entries: readonly ProvisionEntry[],
+async function applyProvisionMaterialsUnchecked(
+  materials: readonly ProvisionMaterial[],
   roots: EntryGateRoots,
   budget: ApplyBudget,
   deps: ApplyFsDeps & ResolvedPathInsideDeps,
   authority: ApplyAuthorizationDeps,
 ): Promise<ApplyProvisioningResult> {
+  const entries = materials.map(provisionEntryOf);
+  const materialByEntry = new Map(materials.map((material) => [provisionEntryOf(material), material]));
   // The contest pass reads destinations before it dispatches entries. Re-check
   // both frozen checkout identities first so that pass cannot classify a
   // replacement and bypass the per-entry authority checks below.
@@ -218,7 +229,12 @@ export async function applyProvisioning(
   const refusedItself = new Map<ProvisionEntry, string>();
 
   const read = async (entry: ProvisionEntry): Promise<Reading> => {
-    const admitted = await admitEntry(entry, roots, deps);
+    const material = materialByEntry.get(entry);
+    if (material === undefined) {
+      refusedItself.set(entry, "this entry has no provisioning material");
+      return "refused";
+    }
+    const admitted = await admitProvisionMaterial(material, roots, deps);
     if (!admitted.ok) {
       if (!admitted.observedDestination) {
         refusedItself.set(entry, admitted.reason);
@@ -310,7 +326,8 @@ export async function applyProvisioning(
     }
   }
 
-  for (const entry of copiesFirst(entries)) {
+  for (const material of copiesFirst(materials)) {
+    const entry = provisionEntryOf(material);
     if (answered.has(entry) || held.has(entry)) {
       continue;
     }
@@ -339,8 +356,8 @@ export async function applyProvisioning(
     // (.reviews/round-2.md F001).
     const applied =
       contest === undefined
-        ? await applyEntry(entry, roots, budget, deps, authority)
-        : await applyExclusiveEntry(entry, roots, budget, deps, authority);
+        ? await applyEntry(material, roots, budget, deps, authority)
+        : await applyExclusiveEntry(material, roots, budget, deps, authority);
     if (contest !== undefined && applied === CLAIM_LOST) {
       await refuseContest(
         contest,
@@ -407,4 +424,29 @@ export async function applyProvisioning(
     }
   }
   return { steps: produced, contests: wireContests(contests) };
+}
+
+export async function applyProvisionMaterials(
+  materials: readonly ProvisionMaterial[],
+  roots: EntryGateRoots,
+  budget: ApplyBudget,
+  deps: ApplyFsDeps & ResolvedPathInsideDeps,
+  authority: ApplyAuthorizationDeps,
+): Promise<ApplyProvisioningResult> {
+  try {
+    return await applyProvisionMaterialsUnchecked(materials, roots, budget, deps, authority);
+  } finally {
+    disposeProvisionMaterials(materials);
+  }
+}
+
+/** Compatibility door for configured provider rows, which are model-owned. */
+export function applyProvisioning(
+  entries: readonly ProvisionEntry[],
+  roots: EntryGateRoots,
+  budget: ApplyBudget,
+  deps: ApplyFsDeps & ResolvedPathInsideDeps,
+  authority: ApplyAuthorizationDeps,
+): Promise<ApplyProvisioningResult> {
+  return applyProvisionMaterials(modelProvisionMaterials(entries), roots, budget, deps, authority);
 }

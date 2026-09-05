@@ -25,16 +25,18 @@
 // what the I10 gate keeps out of these paths.
 
 import { constants } from "node:fs";
-import fs from "node:fs/promises";
+import fs, { type FileHandle } from "node:fs/promises";
 import path from "node:path";
-import { Transform } from "node:stream";
+import { type Readable, Transform, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { ProvisionEntry, ProvisionStepResult } from "../../types/messages";
+import type { ProvisionStepResult } from "../../types/messages";
 import type { AuthorizedDirectory } from "../../utils/authorizedDirectory";
+import type { HeldFileSource } from "../../utils/heldRegularFile";
 import { isResolvedPathInsideRoot, type ResolvedPathInsideDeps } from "../../utils/resolvedPathBoundary";
 import type { Deadline } from "../deadline";
 import { messageOf } from "../errorMessage";
-import { admitEntry, type EntryGateRoots, refusedLockfile } from "./entryGate";
+import { admitEntry, type EntryGateRoots, type EntryVerdict, refusedLockfile } from "./entryGate";
+import { type ProvisionMaterial, provisionEntryOf } from "./provisionMaterial";
 
 /** The subset of `fs.Stats` this walk turns on. */
 export interface LstatLike {
@@ -80,6 +82,14 @@ export interface ApplyFsDeps {
    */
   copyFileNoFollow(
     source: string,
+    destination: string,
+    mode: number,
+    signal?: AbortSignal,
+    limit?: number,
+  ): Promise<number>;
+  /** Copy an already-held regular source without reopening its pathname. */
+  copyHeldFile(
+    source: HeldFileSource,
     destination: string,
     mode: number,
     signal?: AbortSignal,
@@ -167,6 +177,79 @@ function bytesForwarded(error: unknown): number | undefined {
   return typeof held === "number" && Number.isFinite(held) && held >= 0 ? held : undefined;
 }
 
+interface CopyCounter {
+  value: number;
+}
+
+async function copyPipeline(
+  source: Readable,
+  destination: Writable,
+  signal: AbortSignal | undefined,
+  limit: number | undefined,
+  written: CopyCounter,
+): Promise<number> {
+  const counted = new Transform({
+    transform(chunk: Buffer, _encoding, done): void {
+      const next = written.value + chunk.length;
+      if (limit !== undefined && next > limit) {
+        done(new BudgetExceeded(`too large to bring over — stopped after ${limit} bytes`));
+        return;
+      }
+      written.value = next;
+      done(null, chunk);
+    },
+  });
+  try {
+    await pipeline(source, counted, destination, { signal });
+  } catch (error) {
+    throw withBytesForwarded(error, written.value);
+  }
+  return written.value;
+}
+
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error("provisioning was stopped");
+}
+
+function raceCopyTeardown(
+  actual: Promise<number>,
+  signal: AbortSignal | undefined,
+  stop: (error: Error) => void,
+  written: CopyCounter,
+): Promise<number> {
+  if (signal === undefined) {
+    return actual;
+  }
+  return new Promise<number>((resolve, reject) => {
+    let settled = false;
+    const finish = (answer: () => void): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      signal.removeEventListener("abort", aborted);
+      answer();
+    };
+    const aborted = (): void => {
+      const error = withBytesForwarded(abortError(signal), written.value);
+      try {
+        stop(error);
+      } finally {
+        finish(() => reject(error));
+      }
+    };
+    if (signal.aborted) {
+      aborted();
+      return;
+    }
+    signal.addEventListener("abort", aborted, { once: true });
+    void actual.then(
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
+    );
+  });
+}
+
 /**
  * The platform saying it has no symlink to give — Windows without Developer
  * Mode or elevation. Anything else from `symlink` is a real failure and is
@@ -195,14 +278,14 @@ export const CLAIM_LOST = "claim-lost";
 
 /** Apply one entry, and answer for it. Never throws. */
 export function applyEntry(
-  entry: ProvisionEntry,
+  material: ProvisionMaterial,
   roots: EntryGateRoots,
   budget: ApplyBudget,
   deps: ApplyFsDeps & ResolvedPathInsideDeps,
   authority: ApplyAuthorizationDeps,
 ): Promise<ProvisionStepResult> {
   // `exclusive` is off, so the union's other arm is unreachable here.
-  return apply(entry, roots, budget, deps, authority, false) as Promise<ProvisionStepResult>;
+  return apply(material, roots, budget, deps, authority, false) as Promise<ProvisionStepResult>;
 }
 
 /**
@@ -217,23 +300,48 @@ export function applyEntry(
  * (design.md D3).
  */
 export function applyExclusiveEntry(
-  entry: ProvisionEntry,
+  material: ProvisionMaterial,
   roots: EntryGateRoots,
   budget: ApplyBudget,
   deps: ApplyFsDeps & ResolvedPathInsideDeps,
   authority: ApplyAuthorizationDeps,
 ): Promise<ProvisionStepResult | typeof CLAIM_LOST> {
-  return apply(entry, roots, budget, deps, authority, true);
+  return apply(material, roots, budget, deps, authority, true);
+}
+
+export async function admitProvisionMaterial(
+  material: ProvisionMaterial,
+  roots: EntryGateRoots,
+  deps: ApplyFsDeps & ResolvedPathInsideDeps,
+): Promise<EntryVerdict> {
+  const entry = provisionEntryOf(material);
+  if (material.origin === "model") {
+    return admitEntry(entry, roots, deps);
+  }
+  if (entry.mode !== "copy") {
+    return { ok: false, reason: "a held source can only satisfy a copy entry", observedDestination: false };
+  }
+  const expected = path.join(roots.source.prepared.resolved, entry.path);
+  if (expected !== material.canonicalPath) {
+    return { ok: false, reason: "the held source does not match this entry", observedDestination: false };
+  }
+  const sourcePath = path.resolve(roots.source.path, entry.path);
+  return admitEntry(entry, roots, {
+    ...deps,
+    realpath: (candidate) =>
+      candidate === sourcePath ? Promise.resolve(material.canonicalPath) : deps.realpath(candidate),
+  });
 }
 
 async function apply(
-  entry: ProvisionEntry,
+  material: ProvisionMaterial,
   roots: EntryGateRoots,
   budget: ApplyBudget,
   deps: ApplyFsDeps & ResolvedPathInsideDeps,
   authority: ApplyAuthorizationDeps,
   exclusive: boolean,
 ): Promise<ProvisionStepResult | typeof CLAIM_LOST> {
+  const entry = provisionEntryOf(material);
   const LOST = { kind: "claimLost" } as const;
   const step = (outcome: ProvisionStepResult["outcome"], details?: readonly Detail[]): ProvisionStepResult => ({
     id: entry.id,
@@ -257,7 +365,7 @@ async function apply(
     return step({ kind: "failed", reason: messageOf(error) });
   }
 
-  const admitted = await admitEntry(entry, roots, deps);
+  const admitted = await admitProvisionMaterial(material, roots, deps);
   if (!admitted.ok) {
     return step({ kind: "refused", reason: admitted.reason });
   }
@@ -639,7 +747,18 @@ async function apply(
     return WRITTEN;
   }
 
+  let heldSource: HeldFileSource | undefined;
   try {
+    if (material.origin === "held-file") {
+      check(1);
+      heldSource = material.file.acquireSource();
+      if (heldSource === undefined) {
+        return step({ kind: "failed", reason: "the held source is no longer available" });
+      }
+      spend();
+      spendBytes(heldSource.size);
+    }
+
     const parents = await ensureParents();
     if (parents.kind === "claimLost") {
       return CLAIM_LOST;
@@ -671,6 +790,32 @@ async function apply(
       return step({ kind: "degradedToCopy" }, reported());
     }
 
+    if (material.origin === "held-file") {
+      const source = heldSource;
+      if (source === undefined) {
+        return step({ kind: "failed", reason: "the held source is no longer available" });
+      }
+      try {
+        const ceiling = budget.maxBytes - (spent.bytes - source.size);
+        await Promise.all([requireSource(), requireDestination()]);
+        settleBytes(
+          source.size,
+          await deps.copyHeldFile(source, entryDestination, source.mode, stopping.signal, ceiling),
+        );
+      } catch (error) {
+        if (codeOf(error) === "EEXIST") {
+          settleBytes(source.size, 0);
+          return exclusive ? CLAIM_LOST : step({ kind: "skipped", reason: "already there" });
+        }
+        const forwarded = bytesForwarded(error);
+        if (forwarded !== undefined) {
+          settleBytes(source.size, forwarded);
+        }
+        throw error;
+      }
+      return step({ kind: "copied" });
+    }
+
     const result = await walk(entrySource, entryDestination, true);
     if (result.kind === "claimLost") {
       return CLAIM_LOST;
@@ -686,6 +831,8 @@ async function apply(
       return step({ kind: "failed", reason: error.message }, reported());
     }
     return step({ kind: "failed", reason: messageOf(error) }, reported());
+  } finally {
+    heldSource?.dispose();
   }
 }
 
@@ -739,37 +886,63 @@ export const nodeApplyFsDeps: ApplyFsDeps & ResolvedPathInsideDeps = {
       // the file has just been created exclusively, so this cannot re-mode
       // anything that was already there (F027).
       await destination_.chmod(mode & 0o7777);
-      let written = 0;
-      const counted = new Transform({
-        transform(chunk: Buffer, _encoding, done): void {
-          const next = written + chunk.length;
-          if (limit !== undefined && next > limit) {
-            // Refused DURING the transfer. Reconciling a second stat after the
-            // write bounds a sequence of copies and bounds no single one (F021).
-            //
-            // The breaching chunk is never forwarded, so it is never counted:
-            // `written` is what went downstream, which is what the caller has to
-            // charge for.
-            done(new BudgetExceeded(`too large to bring over — stopped after ${limit} bytes`));
-            return;
-          }
-          written = next;
-          done(null, chunk);
-        },
-      });
-      try {
-        await pipeline(source_.createReadStream(), counted, destination_.createWriteStream(), { signal });
-      } catch (error) {
-        // Every termination path after the destination exists, not just the
-        // ceiling: an aborted deadline and a full disk leave the same partial
-        // file behind (round-5 F021).
-        throw withBytesForwarded(error, written);
-      }
-      return written;
+      const written = { value: 0 };
+      // Every termination path after the destination exists, not just the
+      // ceiling, reports what reached the output before teardown.
+      return await copyPipeline(source_.createReadStream(), destination_.createWriteStream(), signal, limit, written);
     } finally {
       if (unstreamed) {
         await source_.close();
       }
     }
+  },
+  copyHeldFile: (source, destination, mode, signal, limit) => {
+    const written = { value: 0 };
+    let output: ReturnType<FileHandle["createWriteStream"]> | undefined;
+    const actual = (async (): Promise<number> => {
+      let destinationHandle: FileHandle | undefined;
+      try {
+        if (signal?.aborted) {
+          throw abortError(signal);
+        }
+        destinationHandle = await fs.open(destination, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, mode);
+        if (signal?.aborted) {
+          throw abortError(signal);
+        }
+        await destinationHandle.chmod(mode & 0o7777);
+        if (signal?.aborted) {
+          throw abortError(signal);
+        }
+        output = destinationHandle.createWriteStream();
+        destinationHandle = undefined;
+        return await copyPipeline(source.stream, output, signal, limit, written);
+      } finally {
+        if (destinationHandle !== undefined) {
+          try {
+            await destinationHandle.close();
+          } catch {
+            // A rejected close does not prove teardown. Keep `actual` pending so
+            // the held lifecycle slot cannot be reused as though it had closed.
+            await new Promise<void>(() => undefined);
+          }
+        }
+      }
+    })();
+    // Register the unraced operation before exposing its deadline-raced answer.
+    // A stalled open, pipeline or destination close therefore retains the
+    // source's lifecycle slot even after the caller stops waiting.
+    source.finishWhen(actual);
+    return raceCopyTeardown(
+      actual,
+      signal,
+      (error) => {
+        try {
+          source.dispose(error);
+        } finally {
+          output?.destroy(error);
+        }
+      },
+      written,
+    );
   },
 };

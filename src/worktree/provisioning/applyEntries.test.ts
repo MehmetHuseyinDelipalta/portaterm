@@ -7,13 +7,16 @@
 // the worktree where it lands.
 
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { Readable } from "node:stream";
+import { describe, expect, it, vi } from "vitest";
 import type { ProvisionEntry } from "../../types/messages";
 import type { AuthorizedDirectory } from "../../utils/authorizedDirectory";
+import type { HeldFileSource } from "../../utils/heldRegularFile";
 import { afterDelay } from "../deadline";
-import { applyEntry, applyExclusiveEntry, CLAIM_LOST } from "./applyEntries";
+import { type ApplyBudget, applyEntry, applyExclusiveEntry, CLAIM_LOST, withBytesForwarded } from "./applyEntries";
 import { type FakeNode, fakeFs } from "./applyEntries.fake";
 import { prepareEntryGate } from "./entryGate";
+import type { ProvisionMaterial } from "./provisionMaterial";
 
 const MAIN = "/repo";
 const WT = "/wt/feature";
@@ -32,6 +35,8 @@ const entry = (path: string, mode: "copy" | "link" = "copy"): ProvisionEntry => 
   source: "asimov/worktree.yaml",
 });
 
+const model = (entry: ProvisionEntry) => ({ origin: "model" as const, entry });
+
 /** Roots exist in every case; only what hangs beneath them varies. */
 const base: Record<string, FakeNode> = {
   "/repo": { kind: "dir" },
@@ -47,7 +52,7 @@ async function apply(e: ProvisionEntry, tree: Record<string, FakeNode>, over: Pa
   if (roots === null) {
     throw new Error("roots did not prepare");
   }
-  const result = await applyEntry(e, roots, { ...budget(), ...over }, fs, AUTHORITY);
+  const result = await applyEntry(model(e), roots, { ...budget(), ...over }, fs, AUTHORITY);
   return { result, fs };
 }
 
@@ -66,7 +71,7 @@ describe("a copy replaces nothing that already existed", () => {
     }
     let destinationChecks = 0;
 
-    const result = await applyEntry(entry(".env"), roots, budget(), fs, {
+    const result = await applyEntry(model(entry(".env")), roots, budget(), fs, {
       directoryStillAuthorized: async (authorization) => {
         if (authorization.path !== WT) {
           return true;
@@ -88,7 +93,7 @@ describe("a copy replaces nothing that already existed", () => {
     }
     let sourceChecks = 0;
 
-    const result = await applyEntry(entry(".env"), roots, budget(), fs, {
+    const result = await applyEntry(model(entry(".env")), roots, budget(), fs, {
       directoryStillAuthorized: async (authorization) => {
         if (authorization.path !== MAIN) {
           return true;
@@ -149,7 +154,7 @@ describe("the walk never follows something it did not check", () => {
     if (roots === null) {
       throw new Error("roots did not prepare");
     }
-    const result = await applyEntry(entry(".env"), roots, budget(), fs, AUTHORITY);
+    const result = await applyEntry(model(entry(".env")), roots, budget(), fs, AUTHORITY);
     expect(result.outcome.kind).not.toBe("copied");
     expect(fs.nodes.has("/wt/feature/.env")).toBe(false);
   });
@@ -435,8 +440,8 @@ describe("[F007/F016/F020] the budget is an exact account, not an estimate", () 
     }
     const shared = { ...budget(), maxNodes: 5 };
 
-    const first = await applyEntry(entry("a"), roots, shared, fs, AUTHORITY);
-    const second = await applyEntry(entry("b"), roots, shared, fs, AUTHORITY);
+    const first = await applyEntry(model(entry("a")), roots, shared, fs, AUTHORITY);
+    const second = await applyEntry(model(entry("b")), roots, shared, fs, AUTHORITY);
 
     expect(first.outcome.kind).toBe("copied");
     // Three nodes are already spent; `b` needs three more and only two remain.
@@ -465,7 +470,13 @@ describe("[F007/F016/F020] the budget is an exact account, not an estimate", () 
         }),
     };
 
-    const result = await applyEntry(entry("slow"), roots, { ...budget(), deadline: afterDelay(5) }, hangs, AUTHORITY);
+    const result = await applyEntry(
+      model(entry("slow")),
+      roots,
+      { ...budget(), deadline: afterDelay(5) },
+      hangs,
+      AUTHORITY,
+    );
 
     expect(result.outcome.kind).toBe("failed");
     if (result.outcome.kind === "failed") {
@@ -497,7 +508,7 @@ describe("[F019/F024] the walk fails loudly rather than quietly", () => {
       throw new Error("roots did not prepare");
     }
 
-    const result = await applyEntry(entry("apps/web/.env"), roots, budget(), fs, AUTHORITY);
+    const result = await applyEntry(model(entry("apps/web/.env")), roots, budget(), fs, AUTHORITY);
 
     expect(result.outcome.kind).toBe("refused");
     if (result.outcome.kind === "refused") {
@@ -530,8 +541,8 @@ describe("[F019/F024] the walk fails loudly rather than quietly", () => {
     };
     const shared = { ...budget(), deadline: afterDelay(40) };
 
-    const first = await applyEntry(entry("fast"), roots, shared, deps, AUTHORITY);
-    const second = await applyEntry(entry("slow"), roots, shared, deps, AUTHORITY);
+    const first = await applyEntry(model(entry("fast")), roots, shared, deps, AUTHORITY);
+    const second = await applyEntry(model(entry("slow")), roots, shared, deps, AUTHORITY);
 
     expect(first.outcome.kind).toBe("copied");
     expect(second.outcome.kind).toBe("failed");
@@ -585,7 +596,7 @@ describe("a link points at the main checkout, or says the platform would not let
       if (roots === null) {
         throw new Error("roots did not prepare");
       }
-      const result = await applyEntry(entry(".env", "link"), roots, budget(), one, AUTHORITY);
+      const result = await applyEntry(model(entry(".env", "link")), roots, budget(), one, AUTHORITY);
       expect(result.outcome.kind).toBe("degradedToCopy");
       // Degraded means the user still got the material — not a link reported as
       // made, and not a failure.
@@ -605,7 +616,7 @@ describe("a link points at the main checkout, or says the platform would not let
     if (roots === null) {
       throw new Error("roots did not prepare");
     }
-    const result = await applyEntry(entry(".env", "link"), roots, budget(), fs, AUTHORITY);
+    const result = await applyEntry(model(entry(".env", "link")), roots, budget(), fs, AUTHORITY);
     expect(result.outcome.kind).toBe("failed");
     expect(fs.nodes.has("/wt/feature/.env")).toBe(false);
   });
@@ -642,7 +653,7 @@ describe("a destination that must be created by this call", () => {
     if (roots === null) {
       throw new Error("roots did not prepare");
     }
-    const result = await applyExclusiveEntry(entry("cfg"), roots, budget(), fs, AUTHORITY);
+    const result = await applyExclusiveEntry(model(entry("cfg")), roots, budget(), fs, AUTHORITY);
 
     expect(result).toBe(CLAIM_LOST);
     // Nothing went in under the other writer's mode.
@@ -659,9 +670,218 @@ describe("a destination that must be created by this call", () => {
     if (roots === null) {
       throw new Error("roots did not prepare");
     }
-    const result = await applyExclusiveEntry(entry(".env"), roots, budget(), fs, AUTHORITY);
+    const result = await applyExclusiveEntry(model(entry(".env")), roots, budget(), fs, AUTHORITY);
 
     expect(result).toBe(CLAIM_LOST);
     expect(fs.nodes.get("/wt/feature/.env")).toMatchObject({ size: 9 });
+  });
+});
+
+function heldMaterial(
+  selected: ProvisionEntry,
+  over: {
+    canonicalPath?: string;
+    size?: number;
+    mode?: number;
+    available?: boolean;
+  } = {},
+) {
+  const source: HeldFileSource = {
+    stream: Readable.from("held"),
+    mode: over.mode ?? 0o600,
+    size: over.size ?? 4,
+    finishWhen: vi.fn(),
+    dispose: vi.fn(),
+  };
+  const acquireSource = vi.fn(() => (over.available === false ? undefined : source));
+  const disposeClaim = vi.fn();
+  const material: ProvisionMaterial = {
+    origin: "held-file",
+    entry: selected as ProvisionEntry & { readonly mode: "copy" },
+    canonicalPath: over.canonicalPath ?? path.posix.join(MAIN, selected.path),
+    file: { acquireSource, dispose: disposeClaim },
+  };
+  return { material, source, acquireSource, disposeClaim };
+}
+
+describe("held-file material", () => {
+  async function harness(selected: ProvisionEntry) {
+    const fs = fakeFs({ ...base });
+    const roots = await prepareEntryGate(MAIN, WT, AUTHORIZATION, fs);
+    if (roots === null) {
+      throw new Error("roots did not prepare");
+    }
+    return { fs, roots, selected };
+  }
+
+  it("acquires its source before creating a destination parent", async () => {
+    const selected = entry("config/.env");
+    const { fs, roots } = await harness(selected);
+    const held = heldMaterial(selected);
+    const mkdir = fs.mkdir;
+    fs.mkdir = async (destination, mode) => {
+      expect(held.acquireSource).toHaveBeenCalledOnce();
+      await mkdir(destination, mode);
+    };
+
+    const result = await applyEntry(held.material, roots, budget(), fs, AUTHORITY);
+
+    expect(result.outcome.kind).toBe("copied");
+    expect(fs.nodes.get("/wt/feature/config/.env")).toMatchObject({ kind: "file", mode: 0o600, size: 4 });
+    expect(held.source.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a mismatched canonical binding before acquiring or writing", async () => {
+    const selected = entry(".env");
+    const { fs, roots } = await harness(selected);
+    const held = heldMaterial(selected, { canonicalPath: "/repo/other" });
+
+    const result = await applyEntry(held.material, roots, budget(), fs, AUTHORITY);
+
+    expect(result.outcome).toMatchObject({ kind: "refused", reason: expect.stringContaining("does not match") });
+    expect(held.acquireSource).not.toHaveBeenCalled();
+    expect(fs.created).toEqual([]);
+  });
+
+  it("writes nothing when source acquisition has already been spent", async () => {
+    const selected = entry("nested/.env");
+    const { fs, roots } = await harness(selected);
+    const held = heldMaterial(selected, { available: false });
+    const copy = vi.spyOn(fs, "copyHeldFile");
+
+    const result = await applyEntry(held.material, roots, budget(), fs, AUTHORITY);
+
+    expect(result.outcome).toMatchObject({ kind: "failed", reason: expect.stringContaining("no longer available") });
+    expect(copy).not.toHaveBeenCalled();
+    expect(fs.created).toEqual([]);
+  });
+
+  it("does not acquire when the node budget is already exhausted", async () => {
+    const selected = entry(".env");
+    const { fs, roots } = await harness(selected);
+    const held = heldMaterial(selected);
+
+    const result = await applyEntry(held.material, roots, { ...budget(), maxNodes: 0 }, fs, AUTHORITY);
+
+    expect(result.outcome.kind).toBe("failed");
+    expect(held.acquireSource).not.toHaveBeenCalled();
+    expect(fs.created).toEqual([]);
+  });
+
+  it("disposes the acquired source when a parent is redirected before creation", async () => {
+    const selected = entry("nested/.env");
+    const { fs, roots } = await harness(selected);
+    fs.nodes.set("/outside", { kind: "dir" });
+    const held = heldMaterial(selected);
+    held.acquireSource.mockImplementationOnce(() => {
+      fs.nodes.set("/wt/feature/nested", { kind: "link", target: "/outside" });
+      return held.source;
+    });
+    const copy = vi.spyOn(fs, "copyHeldFile");
+
+    const result = await applyEntry(held.material, roots, budget(), fs, AUTHORITY);
+
+    expect(result.outcome).toMatchObject({ kind: "refused", reason: expect.stringContaining("outside") });
+    expect(copy).not.toHaveBeenCalled();
+    expect(held.source.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("disposes the acquired source when parent creation throws", async () => {
+    const selected = entry("nested/.env");
+    const { fs, roots } = await harness(selected);
+    const held = heldMaterial(selected);
+    fs.mkdir = async () => {
+      throw new Error("parent refused");
+    };
+    const copy = vi.spyOn(fs, "copyHeldFile");
+
+    const result = await applyEntry(held.material, roots, budget(), fs, AUTHORITY);
+
+    expect(result.outcome).toMatchObject({ kind: "failed", reason: "parent refused" });
+    expect(copy).not.toHaveBeenCalled();
+    expect(held.source.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("disposes the acquired source when checkout authority is lost before copy", async () => {
+    const selected = entry(".env");
+    const { fs, roots } = await harness(selected);
+    const held = heldMaterial(selected);
+    const copy = vi.spyOn(fs, "copyHeldFile");
+    let sourceChecks = 0;
+
+    const result = await applyEntry(held.material, roots, budget(), fs, {
+      directoryStillAuthorized: async (authorization) => {
+        if (authorization.path !== MAIN) {
+          return true;
+        }
+        sourceChecks += 1;
+        return sourceChecks === 1;
+      },
+    });
+
+    expect(result.outcome.kind).toBe("failed");
+    expect(copy).not.toHaveBeenCalled();
+    expect(held.source.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("precharges held size and writes nothing when it exceeds the remaining byte budget", async () => {
+    const selected = entry(".env");
+    const { fs, roots } = await harness(selected);
+    const held = heldMaterial(selected, { size: 5 });
+    const copy = vi.spyOn(fs, "copyHeldFile");
+
+    const result = await applyEntry(held.material, roots, { ...budget(), maxBytes: 4 }, fs, AUTHORITY);
+
+    expect(result.outcome.kind).toBe("failed");
+    expect(copy).not.toHaveBeenCalled();
+    expect(fs.created).toEqual([]);
+    expect(held.source.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("charges bytes a failed held transfer reports as forwarded", async () => {
+    const selected = entry(".env");
+    const { fs, roots } = await harness(selected);
+    const held = heldMaterial(selected, { size: 8 });
+    fs.copyHeldFile = async () => {
+      throw withBytesForwarded(new Error("disk full"), 3);
+    };
+    const shared: ApplyBudget = budget();
+
+    const result = await applyEntry(held.material, roots, shared, fs, AUTHORITY);
+
+    expect(result.outcome).toMatchObject({ kind: "failed", reason: "disk full" });
+    expect(shared.spent?.bytes).toBe(3);
+    expect(held.source.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("returns claim-lost when an exclusive held destination already exists", async () => {
+    const selected = entry(".env");
+    const fs = fakeFs({ ...base, "/wt/feature/.env": { kind: "file", size: 9 } });
+    const roots = await prepareEntryGate(MAIN, WT, AUTHORIZATION, fs);
+    if (roots === null) {
+      throw new Error("roots did not prepare");
+    }
+    const held = heldMaterial(selected);
+
+    const result = await applyExclusiveEntry(held.material, roots, budget(), fs, AUTHORITY);
+
+    expect(result).toBe(CLAIM_LOST);
+    expect(fs.nodes.get("/wt/feature/.env")).toMatchObject({ size: 9 });
+    expect(held.source.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("keeps ordinary model copies on the pathname primitive", async () => {
+    const selected = entry(".env");
+    const fs = fakeFs({ ...base, "/repo/.env": { kind: "file", size: 2 } });
+    const roots = await prepareEntryGate(MAIN, WT, AUTHORIZATION, fs);
+    if (roots === null) {
+      throw new Error("roots did not prepare");
+    }
+    const heldCopy = vi.spyOn(fs, "copyHeldFile");
+
+    const result = await applyEntry(model(selected), roots, budget(), fs, AUTHORITY);
+
+    expect(result.outcome.kind).toBe("copied");
+    expect(heldCopy).not.toHaveBeenCalled();
   });
 });

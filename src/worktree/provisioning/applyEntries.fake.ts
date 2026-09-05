@@ -7,7 +7,7 @@
 
 import path from "node:path";
 import type { ResolvedPathInsideDeps } from "../../utils/resolvedPathBoundary";
-import type { ApplyFsDeps, LstatLike } from "./applyEntries";
+import { type ApplyFsDeps, type LstatLike, withBytesForwarded } from "./applyEntries";
 
 export type FakeNode =
   | { kind: "file"; mode?: number; size?: number }
@@ -155,6 +155,24 @@ export function fakeFs(initial: Record<string, FakeNode>, options: FakeFsOptions
       nodes.set(spelled(destination), { kind: "file", mode, size: from.size ?? 1 });
       created.push(destination);
       return from.size ?? 1;
+    },
+    copyHeldFile: (source, destination, mode, signal, limit) => {
+      const work = (async (): Promise<number> => {
+        if (signal?.aborted) {
+          throw signal.reason;
+        }
+        if (at(destination) !== undefined) {
+          return err("EEXIST", destination);
+        }
+        if (limit !== undefined && source.size > limit) {
+          throw withBytesForwarded(new Error(`too large to bring over — stopped after ${limit} bytes`), 0);
+        }
+        nodes.set(spelled(destination), { kind: "file", mode, size: source.size });
+        created.push(destination);
+        return source.size;
+      })();
+      source.finishWhen(work);
+      return work;
     },
   };
   return fs;

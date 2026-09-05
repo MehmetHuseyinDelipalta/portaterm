@@ -14,9 +14,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Readable } from "node:stream";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProvisionEntry } from "../../types/messages";
 import { authorizeDirectory, directoryStillAuthorized } from "../../utils/authorizedDirectory";
+import { createHeldRegularFilePool } from "../../utils/heldRegularFile";
 import { afterDelay } from "../deadline";
 import { type ApplyBudget, applyEntry, nodeApplyFsDeps } from "./applyEntries";
 import { type EntryGateRoots, prepareEntryGate, refusedLockfile } from "./entryGate";
@@ -25,6 +27,8 @@ let tmp: string;
 let main: string;
 let worktree: string;
 let roots: EntryGateRoots;
+
+const unlinkable = process.platform === "win32" ? it.skip : it;
 
 const budget = (over: Partial<ApplyBudget> = {}): ApplyBudget => ({
   maxNodes: 1000,
@@ -41,8 +45,10 @@ const entry = (over: Partial<ProvisionEntry> = {}): ProvisionEntry => ({
   ...over,
 });
 
+const model = (entry: ProvisionEntry) => ({ origin: "model" as const, entry });
+
 const apply = (e: ProvisionEntry, b: ApplyBudget = budget()) =>
-  applyEntry(e, roots, b, nodeApplyFsDeps, { directoryStillAuthorized });
+  applyEntry(model(e), roots, b, nodeApplyFsDeps, { directoryStillAuthorized });
 
 beforeEach(async () => {
   // `realpath` the temp root: macOS hands out `/var/...`, a symlink to
@@ -106,7 +112,9 @@ describe("the binding production actually passes", () => {
     await fs.mkdir(sourceRoot, { recursive: true });
     await fs.writeFile(path.join(sourceRoot, ".env"), "REPLACEMENT=1");
 
-    const result = await applyEntry(entry(), localRoots, budget(), nodeApplyFsDeps, { directoryStillAuthorized });
+    const result = await applyEntry(model(entry()), localRoots, budget(), nodeApplyFsDeps, {
+      directoryStillAuthorized,
+    });
 
     expect(result.outcome.kind).toBe("failed");
     await expect(fs.readFile(path.join(worktree, ".env"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
@@ -454,10 +462,16 @@ describe("[round-5 F021] a transfer that fails partway is charged for the bytes 
     await fs.writeFile(path.join(main, "after.bin"), "a".repeat(60 * 1024));
     const shared = budget({ maxBytes: CAP });
 
-    const failed = await applyEntry(entry({ path: "grows.bin" }), roots, shared, growsAfterStat(grows, 150 * 1024), {
-      directoryStillAuthorized,
-    });
-    const after = await applyEntry(entry({ id: "e2", path: "after.bin" }), roots, shared, nodeApplyFsDeps, {
+    const failed = await applyEntry(
+      model(entry({ path: "grows.bin" })),
+      roots,
+      shared,
+      growsAfterStat(grows, 150 * 1024),
+      {
+        directoryStillAuthorized,
+      },
+    );
+    const after = await applyEntry(model(entry({ id: "e2", path: "after.bin" })), roots, shared, nodeApplyFsDeps, {
       directoryStillAuthorized,
     });
 
@@ -478,15 +492,182 @@ describe("[round-5 F021] a transfer that fails partway is charged for the bytes 
     const shared = budget({ maxBytes: 64 * 1024 });
     await fs.writeFile(path.join(main, "fine.txt"), "f".repeat(1024));
 
-    const missing = await applyEntry(entry({ path: "gone.txt" }), roots, shared, nodeApplyFsDeps, {
+    const missing = await applyEntry(model(entry({ path: "gone.txt" })), roots, shared, nodeApplyFsDeps, {
       directoryStillAuthorized,
     });
-    const fine = await applyEntry(entry({ id: "e2", path: "fine.txt" }), roots, shared, nodeApplyFsDeps, {
+    const fine = await applyEntry(model(entry({ id: "e2", path: "fine.txt" })), roots, shared, nodeApplyFsDeps, {
       directoryStillAuthorized,
     });
 
     expect(missing.outcome.kind).toBe("failed");
     expect(fine.outcome.kind).toBe("copied");
     expect(shared.spent?.bytes).toBe(1024);
+  });
+});
+
+describe("a held regular source", () => {
+  async function hold(sourcePath: string) {
+    const pool = createHeldRegularFilePool();
+    const held = await pool.reserve()?.hold(sourcePath);
+    const claim = held?.claim();
+    if (claim === undefined) {
+      throw new Error("source was not held");
+    }
+    return { pool, claim };
+  }
+
+  async function applyHeld(sourcePath: string, claim: Awaited<ReturnType<typeof hold>>["claim"]) {
+    const selected = entry();
+    return applyEntry(
+      {
+        origin: "held-file",
+        entry: selected as ProvisionEntry & { readonly mode: "copy" },
+        canonicalPath: sourcePath,
+        file: claim,
+      },
+      roots,
+      budget(),
+      nodeApplyFsDeps,
+      { directoryStillAuthorized },
+    );
+  }
+
+  it("copies the held object after its pathname is replaced", async () => {
+    const sourcePath = path.join(main, ".env");
+    const originalPath = path.join(main, ".env-original");
+    await fs.writeFile(sourcePath, "ORIGINAL=1");
+    const { pool, claim } = await hold(sourcePath);
+    await fs.rename(sourcePath, originalPath);
+    await fs.writeFile(sourcePath, "REPLACEMENT=1");
+
+    const result = await applyHeld(sourcePath, claim);
+
+    expect(result.outcome.kind).toBe("copied");
+    expect(await fs.readFile(path.join(worktree, ".env"), "utf8")).toBe("ORIGINAL=1");
+    expect(pool.charged).toBe(0);
+  });
+
+  unlinkable("copies the held object after its pathname is unlinked", async () => {
+    const sourcePath = path.join(main, ".env");
+    await fs.writeFile(sourcePath, "UNLINKED=1");
+    const { pool, claim } = await hold(sourcePath);
+    await fs.unlink(sourcePath);
+
+    const result = await applyHeld(sourcePath, claim);
+
+    expect(result.outcome.kind).toBe("copied");
+    expect(await fs.readFile(path.join(worktree, ".env"), "utf8")).toBe("UNLINKED=1");
+    expect(pool.charged).toBe(0);
+  });
+
+  it("observes an in-place rewrite through the held object", async () => {
+    const sourcePath = path.join(main, ".env");
+    await fs.writeFile(sourcePath, "BEFORE=1");
+    const { pool, claim } = await hold(sourcePath);
+    await fs.writeFile(sourcePath, "AFTER=2");
+
+    const result = await applyHeld(sourcePath, claim);
+
+    expect(result.outcome.kind).toBe("copied");
+    expect(await fs.readFile(path.join(worktree, ".env"), "utf8")).toBe("AFTER=2");
+    expect(pool.charged).toBe(0);
+  });
+
+  unlinkable("accepts the canonical source paired with an authorized checkout alias", async () => {
+    const alias = path.join(tmp, "main-alias");
+    await fs.symlink(main, alias, "dir");
+    const sourcePath = path.join(alias, ".env");
+    await fs.writeFile(path.join(main, ".env"), "ALIASED=1");
+    const { pool, claim } = await hold(sourcePath);
+    // This is the shape macOS hands downstream for `/var` versus
+    // `/private/var`: the caller's spelling and the prepared resolved root differ.
+    const aliasRoots: EntryGateRoots = {
+      ...roots,
+      source: { ...roots.source, path: alias },
+    };
+    const selected = entry();
+
+    const result = await applyEntry(
+      {
+        origin: "held-file",
+        entry: selected as ProvisionEntry & { readonly mode: "copy" },
+        canonicalPath: await fs.realpath(sourcePath),
+        file: claim,
+      },
+      aliasRoots,
+      budget(),
+      nodeApplyFsDeps,
+      { directoryStillAuthorized },
+    );
+
+    expect(result.outcome.kind).toBe("copied");
+    expect(await fs.readFile(path.join(worktree, ".env"), "utf8")).toBe("ALIASED=1");
+    expect(pool.charged).toBe(0);
+  });
+
+  it("bounds bytes when the held object grows after admission", async () => {
+    const sourcePath = path.join(main, ".env");
+    await fs.writeFile(sourcePath, "x".repeat(1024));
+    const { pool, claim } = await hold(sourcePath);
+    await fs.appendFile(sourcePath, "g".repeat(150 * 1024));
+    const selected = entry();
+    const shared = budget({ maxBytes: 100 * 1024 });
+
+    const result = await applyEntry(
+      {
+        origin: "held-file",
+        entry: selected as ProvisionEntry & { readonly mode: "copy" },
+        canonicalPath: sourcePath,
+        file: claim,
+      },
+      roots,
+      shared,
+      nodeApplyFsDeps,
+      { directoryStillAuthorized },
+    );
+
+    expect(result.outcome.kind).toBe("failed");
+    expect((await fs.stat(path.join(worktree, ".env"))).size).toBeLessThanOrEqual(100 * 1024);
+    expect(shared.spent?.bytes).toBeLessThanOrEqual(100 * 1024);
+    expect(pool.charged).toBe(0);
+  });
+
+  it("races a stalled pipeline against cancellation while retaining its actual teardown", async () => {
+    const stream = new Readable({
+      read() {},
+      destroy(_error, _done) {
+        // Deliberately never acknowledges destruction: this is the kernel-stall
+        // residual represented without wedging a real filesystem worker.
+      },
+    });
+    let actualSettled = false;
+    const finishWhen = vi.fn((actual: Promise<unknown>) => {
+      void actual.then(
+        () => {
+          actualSettled = true;
+        },
+        () => {
+          actualSettled = true;
+        },
+      );
+    });
+    const dispose = vi.fn((error?: Error) => stream.destroy(error));
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new Error("deadline elapsed")), 5).unref?.();
+
+    await expect(
+      nodeApplyFsDeps.copyHeldFile(
+        { stream, mode: 0o600, size: 1, finishWhen, dispose },
+        path.join(worktree, "stalled"),
+        0o600,
+        controller.signal,
+        10,
+      ),
+    ).rejects.toThrow("deadline elapsed");
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(finishWhen).toHaveBeenCalledOnce();
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(actualSettled).toBe(false);
   });
 });

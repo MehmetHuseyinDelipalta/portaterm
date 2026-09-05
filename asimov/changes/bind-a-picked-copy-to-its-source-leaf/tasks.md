@@ -25,7 +25,7 @@
 
 ## 3. Copy held material through a strict lower API
 
-- [ ] 3_1 Add source-first cancellable streams while preserving model compatibility
+- [x] 3_1 Add source-first cancellable streams while preserving model compatibility — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/provisioning/applyEntries.test.ts src/worktree/provisioning/applyEntries.node.test.ts src/worktree/provisioning/applyProvisioning.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 2_1
   - **Refs**: design.md D3, D4
   - **Acceptance**:
