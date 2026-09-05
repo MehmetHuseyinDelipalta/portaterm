@@ -59,3 +59,16 @@
   - **Plan**:
     1. In src/extension.worktreeAssembly.test.ts drive picker → Save → reread → Create, assert no native added path, replace and unlink the source pathname after the holder is issued, and prove copied bytes came from the held object through opaque ids only.
     2. In src/extension.worktreeAssembly.test.ts cover unsupported safe hold and multi-claim failure with no create, no leaked pool slot, and no private handle and path on either wire direction.
+
+## 6. Close review lifecycle and contract gaps
+
+- [ ] 6_1 Retire departed repository authority and keep one provisioning contract owner
+  - **Deps**: 5_1
+  - **Refs**: design.md D2, D3, D6; .reviews/round-2.md F002, F003, F004
+  - **Acceptance**:
+    - Outcome: provisioning retains no authority or duplicate contract owner beyond its live repository
+    - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/worktree/provisioning/suggestProvisioning.test.ts src/worktree/provisioning/offerStore.test.ts src/worktree/provisioning/oneOwner.test.ts
+  - **Plan**:
+    1. In src/providers/WorktreeHost.ts add repository-scoped opening retirement and call it when a repository departs; in src/providers/WorktreeHost.actions.test.ts prove an admitted holder is disposed while another repository can still pick.
+    2. In src/worktree/provisioning/providerKit.ts own the shared destination-conflict predicate; use it from src/providers/WorktreeHost.ts and src/worktree/provisioning/suggestProvisioning.ts, and extend src/worktree/provisioning/oneOwner.test.ts with a non-vacuous structural ownership witness.
+    3. In src/worktree/provisioning/offerStore.ts remove dead `lookup`; update src/worktree/provisioning/offerStore.test.ts so the existing scope, expiry, selection, and forgetting witnesses exercise `redeem`.
