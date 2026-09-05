@@ -2157,6 +2157,34 @@ describe("the create a toolbar with no repository opens", () => {
     });
   });
 
+  it("forwards a pathless copy-file ask with the compose-time opening", () => {
+    const h = ready(twoRepoResponse());
+    h.controller.openCreate();
+    const deps = (
+      h.controller as unknown as {
+        view: {
+          deps: {
+            createDialogDeps(): {
+              onCopyFileAsk(r: { repoId: string; switch: number }): void;
+            };
+          };
+        };
+      }
+    ).view.deps.createDialogDeps();
+
+    h.controller.openCreate();
+    deps.onCopyFileAsk({ repoId: REPO_A, switch: 8 });
+
+    const posted = h.posts.find((message) => message.type === "worktreeCopyFileAsk");
+    expect(posted).toEqual({
+      type: "worktreeCopyFileAsk",
+      repoId: REPO_A,
+      opening: 1,
+      switch: 8,
+    });
+    expect(Object.keys(posted ?? {}).sort()).toEqual(["opening", "repoId", "switch", "type"]);
+  });
+
   it("[2_2] drops a folder picked for a PREVIOUS opening", () => {
     const h = ready(twoRepoResponse());
     h.controller.openCreate();

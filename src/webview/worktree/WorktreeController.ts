@@ -587,6 +587,17 @@ export class WorktreeController {
               provider: request.provider as WorktreeProvisionOffer["model"]["providers"][number]["id"],
             });
           },
+          // Pathless by contract: the host owns both the system picker and the
+          // safely held file it returns. Capture this form's opening here rather
+          // than reading the successor's token when the callback fires.
+          onCopyFileAsk: (request) => {
+            deps.postMessage({
+              type: "worktreeCopyFileAsk",
+              repoId: request.repoId,
+              opening,
+              switch: request.switch,
+            });
+          },
           // An operation and the host's own ids, never text: the command is
           // typed into the host's input and comes back inside a fresh offer
           // through `bindProvisioning` (add-a-setup-step-for-this-create-only D1).

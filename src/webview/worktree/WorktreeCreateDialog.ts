@@ -231,10 +231,11 @@ export interface WorktreeCreateDialogDeps {
    * Receive the function that applies a fresh provisioning offer.
    *
    * Separate from `bindDefaults` on purpose. The destination is answered per
-   * keystroke and the form gates Create on that answer being current;
-   * provisioning is answered once and gates nothing. Routing the offer through
-   * the destination's callback let it clear that gate, so Create went live on
-   * the path resolved for the opening ask (.reviews/round-1.md B4).
+   * keystroke and the form gates Create on that answer being current; this
+   * channel answers the opening and its source/save/input operations without
+   * touching the destination gate. Routing an offer through the destination's
+   * callback let it clear that gate, so Create went live on the path resolved
+   * for the opening ask (.reviews/round-1.md B4).
    */
   bindProvisioning?: (apply: (repoId: string, offer: WorktreeProvisionOffer) => void) => void;
   /** Receive the function that replaces the current source-snapshot move offer. */
@@ -271,6 +272,13 @@ export interface WorktreeCreateDialogDeps {
    * source change order against each other rather than racing (design.md D8).
    */
   onProvisionSave?: (request: { repoId: string; switch: number; offerId: string; kept: readonly string[] }) => void;
+  /**
+   * Ask the host to open its system picker for one file to copy in this create.
+   *
+   * The form sends only the repository and shared ordering sequence. The host
+   * owns the picker, path, holder and fresh offer that answers this ask.
+   */
+  onCopyFileAsk?: (request: { repoId: string; switch: number }) => void;
   /**
    * Ask the host to open ITS input for a setup step that applies to this
    * create only, or to edit or remove one it already holds.
@@ -572,8 +580,10 @@ function bringRows(model: WorktreeProvisionOffer["model"]): BringRow[] {
       subject: entry.path,
       source: entry.source,
       // A suggestion starts unchecked: nobody configured it, so nothing has
-      // consented to it (suggest-worktree-initialization D2).
-      checked: entry.suggestion === undefined && loses === undefined,
+      // consented to it (suggest-worktree-initialization D2). A file the user
+      // just picked is the exception: that gesture selected this create-only
+      // row, and `addedForCreate` is presentation state only.
+      checked: entry.addedForCreate === true || (entry.suggestion === undefined && loses === undefined),
       ...(entry.suggestion === undefined ? {} : { suggestion: entry.suggestion }),
       ...(entry.mode === "link" ? { warn: "writes to main" } : {}),
       ...(named === undefined ? {} : { contender: named }),
@@ -1494,6 +1504,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // repository switch have no such event and nothing more is coming, so each
     // IS the settled edit. Left unsettled, the host is never asked and Create
     // stays disabled waiting for an answer nobody requested.
+    syncStepControls();
     syncDerived(!fromInput);
   };
 
@@ -1545,12 +1556,16 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     pickDestination.setAttribute("aria-label", "Choose…");
     pickDestination.title = "Pick the folder this worktree is created in.";
     pickDestination.addEventListener("click", () => {
+      if (anyAsking()) {
+        return;
+      }
       // Minted here, like `recoverAsks` above: `token` separates two openings
       // and this separates two picks inside one, so an answer to an earlier
       // pick cannot be mistaken for an answer to this one (design.md D7).
       pickAsks += 1;
       pickAsked = pickAsks;
       deps.onPickDestination?.({ repoId: currentRepo().repoId, ask: pickAsks });
+      syncStepControls();
       // The gate is only read while the form re-renders, and a click is not one
       // of the events that already does — so Create would stay armed at the
       // pre-pick destination until something else moved.
@@ -1634,7 +1649,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   // Only the half the label does not already carry. "Save current choices as
   // defaults" says what the press records; what it cannot say is what it leaves
   // out, and that is the whole note now.
-  saveNote.textContent = "Setup steps and ports apply to this create only.";
+  saveNote.textContent = "Added files, setup steps and ports apply to this create only.";
   // The note states what pressing this does NOT record. A sighted user reads it
   // beside the button; without the association a screen reader announces the
   // button alone, which is the half of the sentence that sounds complete
@@ -1671,6 +1686,43 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     });
   });
 
+  // ── Add a file to copy for this create ──────────────────────────────────
+  // The pathname never enters this form. The extension owns the picker and
+  // answers with a fresh opaque offer carrying display material only.
+  const addCopyRow = document.createElement("div");
+  addCopyRow.className = "wt-bring-add";
+  const addCopyButton = document.createElement("button");
+  addCopyButton.type = "button";
+  addCopyButton.className = "wt-bring-add-action wt-bring-add-copy";
+  addCopyButton.textContent = "Add file to copy…";
+  addCopyRow.appendChild(addCopyButton);
+  addCopyButton.addEventListener("click", () => {
+    if (
+      drawnOfferId === null ||
+      drawnModel === null ||
+      pendingSwitch.has(draft.repoId) ||
+      pendingSave.has(draft.repoId) ||
+      anyAsking() ||
+      pickAsked !== null
+    ) {
+      return;
+    }
+    const ticked = checkedByOffer.get(drawnOfferId);
+    if (ticked === undefined) {
+      return;
+    }
+    switchSeq += 1;
+    pendingCopy.set(draft.repoId, {
+      offerId: drawnOfferId,
+      model: drawnModel,
+      kept: new Set(ticked),
+      restoreFocus: document.activeElement === addCopyButton,
+    });
+    deps.onCopyFileAsk?.({ repoId: draft.repoId, switch: switchSeq });
+    syncStepControls();
+    syncDerived();
+  });
+
   // ── Add a setup step for this create ────────────────────────────────────
   // Rendered last inside the box, only while an offer is drawn, and only where
   // an ask can be posted. The text is typed into the HOST's input, not here.
@@ -1678,7 +1730,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   addStepRow.className = "wt-bring-add";
   const addStepButton = document.createElement("button");
   addStepButton.type = "button";
-  addStepButton.className = "wt-bring-add-step";
+  addStepButton.className = "wt-bring-add-action wt-bring-add-step wt-bring-add-setup";
   addStepButton.textContent = "Add setup step…";
   addStepButton.title = "Run a command in the new worktree after files are brought over. Applies to this create only.";
   addStepRow.appendChild(addStepButton);
@@ -1688,7 +1740,8 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       drawnModel === null ||
       pendingSwitch.has(draft.repoId) ||
       pendingSave.has(draft.repoId) ||
-      anyAsking()
+      anyAsking() ||
+      pickAsked !== null
     ) {
       return;
     }
@@ -1725,23 +1778,34 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   addStepButton.addEventListener("click", () => askStep({ kind: "add" }, addStepButton));
   // A user who moved on while the input was open is not pulled back (D5).
   shell.dialog.addEventListener("focusin", (ev) => {
-    const asking = pendingStep.get(draft.repoId);
-    if (asking !== undefined && ev.target instanceof HTMLElement && ev.target !== document.body) {
-      asking.restoreFocus = false;
+    if (!(ev.target instanceof HTMLElement) || ev.target === document.body) {
+      return;
+    }
+    const stepping = pendingStep.get(draft.repoId);
+    if (stepping !== undefined) {
+      stepping.restoreFocus = false;
+    }
+    const copying = pendingCopy.get(draft.repoId);
+    if (copying !== undefined) {
+      copying.restoreFocus = false;
     }
   });
   /** Enablement of every control an in-flight ask must hold, derived, never toggled. */
   function syncStepControls(): void {
     const asking = anyAsking();
-    const busy = asking || pendingSwitch.has(draft.repoId) || pendingSave.has(draft.repoId);
+    const busy = asking || pendingSwitch.has(draft.repoId) || pendingSave.has(draft.repoId) || pickAsked !== null;
     if (repoSelect !== undefined) {
       // The input belongs to the form, and changing repository would let
       // every gate below read a repository that never asked (round 1 F002).
       repoSelect.disabled = asking;
     }
+    addCopyButton.disabled = busy;
     addStepButton.disabled = busy;
-    for (const b of bringBox.querySelectorAll<HTMLButtonElement>(".wt-brow-step")) {
-      b.disabled = busy;
+    for (const checkbox of bringBox.querySelectorAll<HTMLInputElement>(".wt-brow-cb")) {
+      checkbox.disabled = asking;
+    }
+    for (const button of bringBox.querySelectorAll<HTMLButtonElement>(".wt-brow-step")) {
+      button.disabled = busy;
     }
     // A switch is latest-wins and may be taken over an in-flight switch or
     // save; only an open input holds it, since its answer would land in a
@@ -1847,8 +1911,18 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     removing?: number;
   }
   const pendingStep = new Map<string, PendingStep>();
-  /** Any repository's ask still out: the input is the FORM's, so the hold is form-wide (round 1 F002). */
-  const anyAsking = (): boolean => pendingStep.size > 0;
+  interface PendingCopy {
+    offerId: string;
+    model: WorktreeProvisionOffer["model"];
+    kept: ReadonlySet<string>;
+    /** Restore only when the user had focused the action and did not move on. */
+    restoreFocus: boolean;
+  }
+  const pendingCopy = new Map<string, PendingCopy>();
+  /** Any host-owned input still out: each one holds the whole form. */
+  const anyStepAsking = (): boolean => pendingStep.size > 0;
+  const anyCopyAsking = (): boolean => pendingCopy.size > 0;
+  const anyAsking = (): boolean => anyStepAsking() || anyCopyAsking();
   /**
    * Every added step's tick, per repository, by RECORD ordinal.
    *
@@ -1875,22 +1949,46 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       }
     });
   };
-  const applyAddedTicks = (model: WorktreeProvisionOffer["model"], into: Set<string>): void =>
+  const addedCopyTickRecord = new Map<string, boolean[]>();
+  const addedCopiesOf = (model: WorktreeProvisionOffer["model"]) =>
+    model.entries.filter((entry) => entry.addedForCreate === true);
+  const applyAddedCopyTicksFor = (repoId: string, model: WorktreeProvisionOffer["model"], into: Set<string>): void => {
+    const ticks = addedCopyTickRecord.get(repoId) ?? [];
+    addedCopiesOf(model).forEach((entry, index) => {
+      if (ticks[index] ?? true) {
+        into.add(entry.id);
+      } else {
+        into.delete(entry.id);
+      }
+    });
+  };
+  const applyAddedTicks = (model: WorktreeProvisionOffer["model"], into: Set<string>): void => {
     applyAddedTicksFor(draft.repoId, model, into);
-  const recordAddedTick = (itemId: string, on: boolean): void => {
-    if (drawnModel === null) {
-      return;
-    }
-    const ordinal = addedOf(drawnModel).findIndex((step) => step.id === itemId);
+    applyAddedCopyTicksFor(draft.repoId, model, into);
+  };
+  const recordOrdinalTick = (
+    itemId: string,
+    on: boolean,
+    items: readonly { id: string }[],
+    records: Map<string, boolean[]>,
+  ): void => {
+    const ordinal = items.findIndex((item) => item.id === itemId);
     if (ordinal < 0) {
       return;
     }
-    const ticks = addedTickRecord.get(draft.repoId) ?? [];
+    const ticks = records.get(draft.repoId) ?? [];
     while (ticks.length <= ordinal) {
       ticks.push(true);
     }
     ticks[ordinal] = on;
-    addedTickRecord.set(draft.repoId, ticks);
+    records.set(draft.repoId, ticks);
+  };
+  const recordAddedTick = (itemId: string, on: boolean): void => {
+    if (drawnModel === null) {
+      return;
+    }
+    recordOrdinalTick(itemId, on, addedOf(drawnModel), addedTickRecord);
+    recordOrdinalTick(itemId, on, addedCopiesOf(drawnModel), addedCopyTickRecord);
   };
   // The model behind `drawnOfferId`, so the toggle handler can restate the
   // summary without a redraw — redrawing on a tick is what W2 forbids.
@@ -2025,6 +2123,14 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       }
     }
     applyAddedTicksFor(repoId, model, ticked);
+    applyAddedCopyTicksFor(repoId, model, ticked);
+    return ticked;
+  }
+
+  function settleCopy(copied: PendingCopy, model: WorktreeProvisionOffer["model"], repoId: string): Set<string> {
+    const ticked = carryForward(copied.model, copied.kept, bringRows(model), model);
+    applyAddedTicksFor(repoId, model, ticked);
+    applyAddedCopyTicksFor(repoId, model, ticked);
     return ticked;
   }
 
@@ -2058,6 +2164,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     const switched = pendingSwitch.get(draft.repoId);
     const saved = pendingSave.get(draft.repoId);
     const stepped = pendingStep.get(draft.repoId);
+    const copied = pendingCopy.get(draft.repoId);
     if (switched !== offer.offerId) {
       pendingSwitch.delete(draft.repoId);
     }
@@ -2068,6 +2175,11 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     if (stepAnswered) {
       pendingStep.delete(draft.repoId);
       checkedByOffer.delete(stepped.offerId);
+    }
+    const copyAnswered = copied !== undefined && copied.offerId !== offer.offerId;
+    if (copyAnswered) {
+      pendingCopy.delete(draft.repoId);
+      checkedByOffer.delete(copied.offerId);
     }
     // The switched-FROM offer's selection, dropped the same way a save answer
     // drops its own. Only save answers were evicting, so repeated switches left
@@ -2105,6 +2217,8 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       const fresh = bringRows(offer.model);
       if (stepAnswered && stepped !== undefined) {
         ticked = settleStep(stepped, offer.model, draft.repoId);
+      } else if (copyAnswered && copied !== undefined) {
+        ticked = settleCopy(copied, offer.model, draft.repoId);
       } else {
         ticked =
           answering && saved !== undefined
@@ -2149,11 +2263,21 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
           syncStepControls();
         }),
       ),
+      ...(deps.onCopyFileAsk === undefined ? [] : [addCopyRow]),
       ...(deps.onSetupStepAsk === undefined ? [] : [addStepRow]),
     );
     syncStepControls();
     if (stepAnswered && stepped !== undefined && stepped.restoreFocus) {
       restoreStepFocus(stepped, offer.model);
+    }
+    if (
+      copyAnswered &&
+      copied !== undefined &&
+      copied.restoreFocus &&
+      addCopyButton.isConnected &&
+      !addCopyButton.disabled
+    ) {
+      addCopyButton.focus();
     }
     syncYieldNotes(held);
     bringBox.hidden = bringBox.childElementCount === 0;
@@ -2275,7 +2399,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // row above it, and hiding it there would read as a layout change.
     waitField.hidden = afterChoice !== "agent" || drawnModel === null || drawnModel.setup.length === 0;
     const selected = hasSelectedSetup();
-    waitBox.disabled = !selected;
+    waitBox.disabled = !selected || anyAsking();
     if (!selected) {
       // Nothing to wait for is not a gate. The user's own choice is kept for
       // the next time there IS something, but the box cannot stay armed for
@@ -3034,7 +3158,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       // Safe only under the amended D3. With every opened picker answered, this
       // control is given back by an answer that always comes; under the rule
       // that let a cancel go quiet it would have been unrecoverable.
-      pickDestination.disabled = destRefused !== undefined || pickAsked !== null;
+      pickDestination.disabled = destRefused !== undefined || pickAsked !== null || anyAsking();
     }
     pathNote.hidden = destRefused === undefined;
     pathNote.textContent = destRefused ?? "";
@@ -3277,15 +3401,17 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
               ? "Waiting for a destination."
               : outstanding || pickAsked !== null
                 ? "Checking the destination."
-                : anyAsking()
-                  ? "Waiting for the setup step."
-                  : recoverAsked !== null
-                    ? "Reading the existing folder before it can be cleared."
-                    : baseUnresolvable
-                      ? (verdict as { ok: false; reason: string }).reason
-                      : postureMissing
-                        ? "Choose a permission mode before starting the agent."
-                        : undefined);
+                : anyCopyAsking()
+                  ? "Waiting for the file picker."
+                  : anyStepAsking()
+                    ? "Waiting for the setup step."
+                    : recoverAsked !== null
+                      ? "Reading the existing folder before it can be cleared."
+                      : baseUnresolvable
+                        ? (verdict as { ok: false; reason: string }).reason
+                        : postureMissing
+                          ? "Choose a permission mode before starting the agent."
+                          : undefined);
     createBtn.disabled = blockedBy !== undefined;
     disabledReason.hidden = blockedBy === undefined;
     disabledReason.textContent = blockedBy ?? "";
@@ -3426,13 +3552,30 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // repository's selection, so returning to it finds the ticks it left
     // rather than the model's defaults.
     const stepped = pendingStep.get(repoId);
-    if (stepped === undefined || stepped.offerId === offer.offerId) {
+    const copied = pendingCopy.get(repoId);
+    const stepAnswered = stepped !== undefined && stepped.offerId !== offer.offerId;
+    const copyAnswered = copied !== undefined && copied.offerId !== offer.offerId;
+    if (!stepAnswered && !copyAnswered) {
       return;
     }
-    pendingStep.delete(repoId);
-    checkedByOffer.delete(stepped.offerId);
+    if (stepAnswered && stepped !== undefined) {
+      pendingStep.delete(repoId);
+      checkedByOffer.delete(stepped.offerId);
+    }
+    if (copyAnswered && copied !== undefined) {
+      pendingCopy.delete(repoId);
+      checkedByOffer.delete(copied.offerId);
+    }
     if (!checkedByOffer.has(offer.offerId)) {
-      checkedByOffer.set(offer.offerId, settleStep(stepped, offer.model, repoId));
+      const ticked =
+        stepAnswered && stepped !== undefined
+          ? settleStep(stepped, offer.model, repoId)
+          : copyAnswered && copied !== undefined
+            ? settleCopy(copied, offer.model, repoId)
+            : undefined;
+      if (ticked !== undefined) {
+        checkedByOffer.set(offer.offerId, ticked);
+      }
     }
     syncStepControls();
     if (!anyAsking()) {

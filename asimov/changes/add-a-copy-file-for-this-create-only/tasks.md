@@ -37,14 +37,14 @@
 
 ## 4. Gate and render the dialog
 
-- [ ] 4_1 Add the copy control with full-record tick carry
+- [x] 4_1 Add the copy control with full-record tick carry — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts src/webview/worktree/WorktreeController.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 1_1, 3_1
   - **Refs**: specs/worktree-panel/spec.md#{a-file-can-be-added-to-copy-for-this-create-only, picked-files-survive-only-their-opening-s-compatible-reissues, an-opened-copy-file-picker-holds-the-form-until-it-is-answered}; design.md D5
   - **Acceptance**:
     - Outcome: a newly added row is selected and every form control remains held until its fresh answer
     - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts src/webview/worktree/WorktreeController.test.ts
   - **Plan**:
-    1. In src/webview/worktree/WorktreeCreateDialog.ts render `Add file to copy…`, use `addedForCreate` for display and defaults, add copy pending state and full-record tick vectors, extend the shared form gate, restore eligible focus, and update the Save note.
+    1. In src/webview/worktree/WorktreeCreateDialog.ts render `Add file to copy…`, use `addedForCreate` for display and defaults, add copy pending state and full-record tick vectors, extend the shared form gate, restore eligible focus, and update the Save note; in src/webview/worktree/worktreePanel.css give the distinct copy action the existing added-action treatment without reusing the setup action's selector.
     2. In src/webview/worktree/WorktreeController.ts forward the ask with opening captured at compose time; update src/webview/worktree/WorktreeController.test.ts.
     3. In src/webview/worktree/WorktreeCreateDialog.test.ts cover pathless posting, selected default, secret warning, cancel, cross-repository hold, setup and copy mutual exclusion, switch and Save prefix tick carry, and focus restoration and withdrawal.
 

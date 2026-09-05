@@ -2674,9 +2674,7 @@ describe("Bring over — recording the choice in the repository's own configurat
     const { host } = withSave();
     const note = host.querySelector(".wt-bring-save-note")?.textContent ?? "";
 
-    expect(note).toContain("Setup steps");
-    expect(note).toContain("ports");
-    expect(note).toContain("this create only");
+    expect(note).toBe("Added files, setup steps and ports apply to this create only.");
   });
 
   it("offers nothing to record when no offer has arrived", () => {
@@ -6009,7 +6007,7 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
     const addedRows = () =>
       rows().filter((r) => (r.querySelector(".wt-brow-src")?.textContent ?? "").includes(SETUP_STEP_ADDED_SOURCE));
     const ticks = () => addedRows().map((r) => r.querySelector<HTMLInputElement>(".wt-brow-cb")?.checked);
-    const addButton = () => h.q<HTMLButtonElement>(".wt-bring-add-step");
+    const addButton = () => h.q<HTMLButtonElement>(".wt-bring-add-setup");
     return { ...h, asks, answer, rows, addedRows, ticks, addButton };
   }
 
@@ -6026,7 +6024,7 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
 
   it("does not offer the action at all when no ask can be posted", () => {
     const { host } = withAsk({}, { onSetupStepAsk: undefined });
-    expect(host.querySelector(".wt-bring-add-step")).toBeNull();
+    expect(host.querySelector(".wt-bring-add-setup")).toBeNull();
     expect(host.querySelectorAll(".wt-brow-step")).toHaveLength(0);
   });
 
@@ -6182,7 +6180,7 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
     applyOffer?.("/other/.git", provisionOffer({ offerId: "b1", model: provisionModel() }));
     type(q<HTMLInputElement>("#wt-branch"), "feat/x");
 
-    q<HTMLButtonElement>(".wt-bring-add-step").click();
+    q<HTMLButtonElement>(".wt-bring-add-setup").click();
     expect(asks).toHaveLength(1);
     const select = q<HTMLSelectElement>("#wt-repo-select");
     expect(select.disabled).toBe(true);
@@ -6191,15 +6189,15 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
     select.value = "/other/.git";
     select.dispatchEvent(new Event("change"));
     expect(q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(true);
-    expect(q<HTMLButtonElement>(".wt-bring-add-step").disabled).toBe(true);
+    expect(q<HTMLButtonElement>(".wt-bring-add-setup").disabled).toBe(true);
     expect(q<HTMLButtonElement>(".wt-bring-save").disabled).toBe(true);
-    q<HTMLButtonElement>(".wt-bring-add-step").click();
+    q<HTMLButtonElement>(".wt-bring-add-setup").click();
     expect(asks).toHaveLength(1);
 
     // The first repository's answer releases the whole form.
     applyOffer?.(REPO_ID, provisionOffer({ offerId: "a2", model: provisionModel() }));
     expect(select.disabled).toBe(false);
-    expect(host.querySelector<HTMLButtonElement>(".wt-bring-add-step")?.disabled).toBe(false);
+    expect(host.querySelector<HTMLButtonElement>(".wt-bring-add-setup")?.disabled).toBe(false);
   });
 
   it("names each action within bounds, by ordinal, whatever the script's length", () => {
@@ -6337,5 +6335,242 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
     expect(provision?.offerId).toBe("o2");
     expect(provision?.itemIds).toContain("s2");
     expect(JSON.stringify(submitted[0])).not.toContain("pnpm build");
+  });
+});
+
+describe("a file added to copy for this create only", () => {
+  const ADDED_SOURCE = "Added for this create";
+  const picked = (path: string, id: string) => ({
+    id,
+    path,
+    mode: "copy" as const,
+    source: ADDED_SOURCE,
+    suggestion: "May contain secrets.",
+    addedForCreate: true as const,
+  });
+
+  function withCopy(model: Partial<ProvisionModel> = {}, over: Record<string, unknown> = {}) {
+    const asks: Array<{ repoId: string; switch: number }> = [];
+    const stepAsks: unknown[] = [];
+    let applyOffer: ((repoId: string, offer: WorktreeProvisionOffer) => void) | undefined;
+    const h = open({
+      bindProvisioning: (apply) => {
+        applyOffer = apply;
+      },
+      onCopyFileAsk: (request) => asks.push(request),
+      onSetupStepAsk: (request) => stepAsks.push(request),
+      onProvisionSwitch: () => {},
+      onProvisionSave: () => {},
+      ...over,
+    });
+    applyOffer?.(REPO_ID, provisionOffer({ offerId: "o1", model: provisionModel(model) }));
+    const answer = (offerId: string, next: Partial<ProvisionModel>) =>
+      applyOffer?.(REPO_ID, provisionOffer({ offerId, model: provisionModel(next) }));
+    const rows = () =>
+      Array.from(h.host.querySelectorAll<HTMLElement>(".wt-brow")).filter((row) =>
+        (row.querySelector(".wt-brow-src")?.textContent ?? "").includes(ADDED_SOURCE),
+      );
+    const ticks = () => rows().map((row) => row.querySelector<HTMLInputElement>(".wt-brow-cb")?.checked);
+    const addCopy = () => h.q<HTMLButtonElement>(".wt-bring-add-copy");
+    return { ...h, asks, stepAsks, answer, rows, ticks, addCopy, applyOffer };
+  }
+
+  it("offers a pathless add action and posts only the repository and shared sequence", () => {
+    const { asks, addCopy } = withCopy();
+    addCopy().click();
+
+    expect(asks).toEqual([{ repoId: REPO_ID, switch: 1 }]);
+    expect(Object.keys(asks[0] ?? {}).sort()).toEqual(["repoId", "switch"]);
+  });
+
+  it("shows an added copy selected with its visible and accessible secret warning", () => {
+    const { rows, ticks } = withCopy({ entries: [picked(".env.secret", "c1")] });
+    const warning = rows()[0]?.querySelector<HTMLElement>(".wt-brow-suggested");
+
+    expect(ticks()).toEqual([true]);
+    expect(rows()[0]?.textContent).toContain("Copy");
+    expect(rows()[0]?.textContent).toContain(".env.secret");
+    expect(warning?.textContent).toBe("May contain secrets.");
+    expect(warning?.title).toBe("May contain secrets.");
+    expect(warning?.getAttribute("aria-label")).toBe("May contain secrets.");
+    expect(rows()[0]?.textContent).toContain(ADDED_SOURCE);
+  });
+
+  it("holds every competing provisioning control until a different offer answers, then restores focus", () => {
+    const providers: ProvisionModel["providers"] = [
+      { id: "asimov", files: ["asimov/worktree.yaml"], present: ["asimov/worktree.yaml"], active: true },
+      { id: "orca", files: ["orca.yaml"], present: ["orca.yaml"], active: false },
+    ];
+    const { q, host, answer, addCopy } = withCopy(
+      {
+        providers,
+        setup: [
+          {
+            id: "added-setup",
+            kind: "shell",
+            script: "pnpm build",
+            source: SETUP_STEP_ADDED_SOURCE,
+          },
+        ],
+      },
+      { onPickDestination: () => {}, bindDestinationPicked: () => {} },
+    );
+    type(q<HTMLInputElement>("#wt-branch"), "feat/x");
+    expect(q<HTMLInputElement>("#wt-wait-setup").disabled).toBe(false);
+    addCopy().focus();
+    addCopy().click();
+
+    expect(q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(true);
+    expect(host.textContent).toContain("Waiting for the file picker.");
+    expect(addCopy().disabled).toBe(true);
+    expect(q<HTMLButtonElement>(".wt-bring-add-setup").disabled).toBe(true);
+    expect(q<HTMLButtonElement>(".wt-bring-save").disabled).toBe(true);
+    expect(q<HTMLButtonElement>(".wt-bring-switch-take").disabled).toBe(true);
+    expect(q<HTMLButtonElement>(".wt-path-pick").disabled).toBe(true);
+    expect(q<HTMLInputElement>(".wt-brow-cb").disabled).toBe(true);
+    expect(q<HTMLInputElement>("#wt-wait-setup").disabled).toBe(true);
+
+    answer("o1", { providers });
+    expect(q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(true);
+    answer("o2", { providers });
+    expect(q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(false);
+    expect(document.activeElement).toBe(addCopy());
+  });
+
+  it("does not pull focus back after the user leaves the copy action", () => {
+    const { q, answer, addCopy } = withCopy();
+    addCopy().focus();
+    addCopy().click();
+    const branch = q<HTMLInputElement>("#wt-branch");
+    branch.focus();
+    branch.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    answer("o2", {});
+
+    expect(document.activeElement).toBe(branch);
+  });
+
+  it("keeps the whole form held across a forced repository change until the asking repository answers", () => {
+    const other = { ...createDefaults(), repoId: "/other/.git", repoLabel: "other" };
+    let applyOffer: ((repoId: string, offer: WorktreeProvisionOffer) => void) | undefined;
+    const h = open({
+      repos: [createDefaults(), other],
+      bindProvisioning: (apply) => {
+        applyOffer = apply;
+      },
+      onCopyFileAsk: () => {},
+      onSetupStepAsk: () => {},
+      onProvisionSave: () => {},
+    });
+    applyOffer?.(REPO_ID, provisionOffer({ offerId: "a1" }));
+    applyOffer?.(other.repoId, provisionOffer({ offerId: "b1" }));
+    const select = h.q<HTMLSelectElement>("#wt-repo-select");
+    h.q<HTMLButtonElement>(".wt-bring-add-copy").click();
+    expect(select.disabled).toBe(true);
+
+    select.value = other.repoId;
+    select.dispatchEvent(new Event("change"));
+    expect(h.q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(true);
+    expect(h.q<HTMLButtonElement>(".wt-bring-add-copy").disabled).toBe(true);
+    expect(h.q<HTMLButtonElement>(".wt-bring-add-setup").disabled).toBe(true);
+    applyOffer?.(REPO_ID, provisionOffer({ offerId: "a2" }));
+
+    expect(select.disabled).toBe(false);
+    expect(h.q<HTMLButtonElement>(".wt-bring-add-copy").disabled).toBe(false);
+  });
+
+  it("makes setup and copy inputs mutually exclusive", () => {
+    const first = withCopy();
+    first.addCopy().click();
+    first.q<HTMLButtonElement>(".wt-bring-add-setup").click();
+    expect(first.stepAsks).toEqual([]);
+    first.dispose();
+    document.body.replaceChildren();
+
+    const second = withCopy();
+    second.q<HTMLButtonElement>(".wt-bring-add-setup").click();
+    second.addCopy().click();
+    expect(second.stepAsks).toHaveLength(1);
+    expect(second.asks).toEqual([]);
+  });
+
+  it("submits only the picked row's opaque id, never its path or display origin", () => {
+    const h = withCopy({ entries: [picked(".env.secret", "c1")], ports: [] });
+    type(h.q<HTMLInputElement>("#wt-branch"), "feat/x");
+    h.q<HTMLButtonElement>(".wt-btn--primary").click();
+
+    expect(h.submitted[0]?.provision).toEqual({ offerId: "o1", itemIds: ["c1"] });
+    expect(JSON.stringify(h.submitted[0])).not.toContain(".env.secret");
+    expect(JSON.stringify(h.submitted[0])).not.toContain(ADDED_SOURCE);
+  });
+
+  it("keeps prior copy ticks and selects the new row when the picker answer extends the record", () => {
+    const h = withCopy({ entries: [picked("one.env", "c1")] });
+    const first = h.rows()[0]?.querySelector<HTMLInputElement>(".wt-brow-cb");
+    if (first === undefined || first === null) {
+      throw new Error("missing first copy row");
+    }
+    first.checked = false;
+    first.dispatchEvent(new Event("change", { bubbles: true }));
+
+    h.addCopy().click();
+    h.answer("o2", { entries: [picked("one.env", "n1"), picked("two.env", "n2")] });
+
+    expect(h.ticks()).toEqual([false, true]);
+  });
+
+  it("keeps a hidden copy tick by full-record ordinal through source switches", () => {
+    const sparse: ProvisionModel["providers"] = [
+      { id: "asimov", files: ["asimov/worktree.yaml"], present: ["asimov/worktree.yaml"], active: true },
+      { id: "orca", files: ["orca.yaml"], present: ["orca.yaml"], active: false },
+    ];
+    const dense: ProvisionModel["providers"] = [
+      { id: "orca", files: ["orca.yaml"], present: ["orca.yaml"], active: true },
+      { id: "asimov", files: ["asimov/worktree.yaml"], present: ["asimov/worktree.yaml"], active: false },
+    ];
+    const entries = [picked("one.env", "c1"), picked("two.env", "c2")];
+    const h = withCopy({ entries, providers: sparse });
+    const second = h.rows()[1]?.querySelector<HTMLInputElement>(".wt-brow-cb");
+    if (second === undefined || second === null) {
+      throw new Error("missing second copy row");
+    }
+    second.checked = false;
+    second.dispatchEvent(new Event("change", { bubbles: true }));
+
+    h.q<HTMLButtonElement>(".wt-bring-switch-take").click();
+    h.answer("o2", { entries: [picked("one.env", "d1")], providers: dense });
+    expect(h.ticks()).toEqual([true]);
+    h.q<HTMLButtonElement>(".wt-bring-switch-take").click();
+    h.answer("o3", { entries: [picked("one.env", "s1"), picked("two.env", "s2")], providers: sparse });
+    expect(h.ticks()).toEqual([true, false]);
+  });
+
+  it("keeps a hidden copy tick by full-record ordinal through Save rereads", () => {
+    const entries = [picked("one.env", "c1"), picked("two.env", "c2")];
+    const h = withCopy({ entries });
+    const second = h.rows()[1]?.querySelector<HTMLInputElement>(".wt-brow-cb");
+    if (second === undefined || second === null) {
+      throw new Error("missing second copy row");
+    }
+    second.checked = false;
+    second.dispatchEvent(new Event("change", { bubbles: true }));
+
+    h.q<HTMLButtonElement>(".wt-bring-save").click();
+    h.answer("o2", { entries: [picked("one.env", "d1")] });
+    expect(h.ticks()).toEqual([true]);
+    h.q<HTMLButtonElement>(".wt-bring-save").click();
+    h.answer("o3", { entries: [picked("one.env", "s1"), picked("two.env", "s2")] });
+    expect(h.ticks()).toEqual([true, false]);
+  });
+
+  it("offers no copy action when the host callback is unavailable", () => {
+    const { host } = withCopy({}, { onCopyFileAsk: undefined });
+    expect(host.querySelector(".wt-bring-add-copy")).toBeNull();
+  });
+
+  it("states that added files are not saved as defaults", () => {
+    const { q } = withCopy();
+    expect(q<HTMLElement>(".wt-bring-save-note").textContent).toBe(
+      "Added files, setup steps and ports apply to this create only.",
+    );
   });
 });

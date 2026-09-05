@@ -1588,7 +1588,7 @@
   padding: 4px 0 2px;
 }
 
-.wt-bring-add-step {
+.wt-bring-add-action {
   padding: 2px 8px;
   border: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
   border-radius: 2px;
@@ -1599,7 +1599,7 @@
   cursor: pointer;
 }
 
-.wt-bring-add-step:disabled {
+.wt-bring-add-action:disabled {
   opacity: 0.5;
   cursor: default;
 }
