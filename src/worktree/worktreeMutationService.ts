@@ -1655,10 +1655,13 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
                       succeeded: false,
                     });
               if (request.afterCreate.kind === "agent" && request.afterCreate.waitForSetup) {
+                // The choice is ORDER, not permission: "wait for setup to finish
+                // before starting the agent" is what the checkbox says, and a
+                // failed step is exactly when the user wants the agent there to
+                // look at it. Gating the launch on success stranded the create
+                // with nothing running in it and no way forward but a retry.
                 setupOutcome = await run;
-                if (setupOutcome.succeeded) {
-                  await launch();
-                }
+                await launch();
               } else {
                 const launchPromise = launch();
                 setupOutcome = await run;

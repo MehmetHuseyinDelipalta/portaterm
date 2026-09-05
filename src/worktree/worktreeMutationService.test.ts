@@ -3366,7 +3366,7 @@ describe("provisioning rides the create without ever costing it", () => {
     expect(seen).toEqual(["setup", "agent"]);
   });
 
-  it("keeps the create standing and starts no gated agent when setup fails", async () => {
+  it("keeps the create standing and still starts the gated agent when setup fails", async () => {
     const failed: ProvisionSetupResult[] = [
       { ...setup[0]!, outcome: { kind: "failed", reason: "exited with code 1" } },
       { ...setup[1]!, outcome: { kind: "skipped", reason: "previous setup step failed" } },
@@ -3383,7 +3383,9 @@ describe("provisioning rides the create without ever costing it", () => {
       create({ setup, afterCreate: { kind: "agent", agent: "claude", waitForSetup: true } }),
     );
 
-    expect(afterCreate).not.toHaveBeenCalled();
+    // The wait choice orders the launch behind setup; it does not make the
+    // launch conditional on setup passing.
+    expect(afterCreate).toHaveBeenCalledTimes(1);
     expect(okOutcome(h)?.kind).toBe("ok");
     expect(okOutcome(h)?.provision).toMatchObject({
       setup: failed,

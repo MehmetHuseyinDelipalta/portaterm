@@ -114,6 +114,7 @@ const setupHarness = vi.hoisted(() => ({
   wait: null as Promise<void> | null,
   manifests: [] as unknown[][],
   reveals: [] as Array<{ outputId: string; origin: string }>,
+  retirements: 0,
   disposals: 0,
   events: [] as string[],
 }));
@@ -149,6 +150,10 @@ vi.mock("./worktree/provisioning/setupTerminal", () => ({
     reveal(outputId: string, origin: string): boolean {
       setupHarness.reveals.push({ outputId, origin });
       return true;
+    }
+    retire(): void {
+      setupHarness.retirements += 1;
+      setupHarness.events.push("retire");
     }
     dispose(): void {
       setupHarness.disposals += 1;
@@ -677,6 +682,7 @@ beforeEach(() => {
   setupHarness.wait = null;
   setupHarness.manifests = [];
   setupHarness.reveals = [];
+  setupHarness.retirements = 0;
   setupHarness.disposals = 0;
   setupHarness.events = [];
   registered = [LINKED];
@@ -2112,7 +2118,9 @@ describe("the invariants that span the host and the webview", () => {
     );
 
     expect(setupHarness.runs[0]?.steps.map((step) => step.script)).toEqual(["pnpm install"]);
-    expect(launched).toEqual([]);
+    // The wait choice ordered the launch behind setup; it did not withhold it.
+    // A failed step leaves the agent running in the worktree it was asked for.
+    expect(launched).toHaveLength(1);
     expect(setupHarness.manifests).toHaveLength(1);
     [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "View output")?.click();
     await settleUntil(() => setupHarness.reveals.length === 1, "the retained setup output");
@@ -2127,7 +2135,10 @@ describe("the invariants that span the host and the webview", () => {
 
     expect(setupHarness.manifests).toHaveLength(2);
     expect(setupHarness.disposals).toBe(1);
-    expect(setupHarness.events).toEqual(["run", "dispose", "run"]);
+    // Each run retires its live terminal the moment it exits; only the retained
+    // output of the superseded run is disposed outright.
+    expect(setupHarness.retirements).toBe(2);
+    expect(setupHarness.events).toEqual(["run", "retire", "dispose", "run", "retire"]);
     expect(document.body.textContent ?? "").toContain("1 of 1 setup steps completed");
     const setupMessages = outbound.filter(
       (message) => message.type === "worktreeSetupRetry" || message.type === "worktreeSetupViewOutput",

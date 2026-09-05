@@ -140,7 +140,10 @@ async function runStep(
   dependencies.terminal.attach(child);
   try {
     const settled = await waitForExit(child, dependencies.cancellation);
-    if (settled.kind === "exit" && settled.exitCode === 0 && settled.signal === undefined) {
+    // node-pty reports "no signal" as 0 on unix, not `undefined`. Reading that
+    // as a termination turned every clean exit into "terminated by signal 0".
+    const signal = settled.kind === "exit" && settled.signal !== 0 ? settled.signal : undefined;
+    if (settled.kind === "exit" && settled.exitCode === 0 && signal === undefined) {
       return { ok: true, reason: "", result: ok(step) };
     }
     let reason: string;
@@ -148,8 +151,8 @@ async function runStep(
       reason = "setup deadline exceeded";
     } else if (settled.kind === "closed") {
       reason = "setup terminal was closed";
-    } else if (settled.signal !== undefined) {
-      reason = `terminated by signal ${settled.signal}`;
+    } else if (signal !== undefined) {
+      reason = `terminated by signal ${signal}`;
     } else {
       reason = `exited with code ${settled.exitCode}`;
     }

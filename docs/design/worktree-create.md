@@ -563,8 +563,10 @@ agent"* is an offered choice, meaningful only when setup will actually run:
 
 - **Off** (default): setup runs in its own terminal and the agent starts as soon as setup has been
   started for the created worktree. The user sees the worktree immediately.
-- **On**: the agent waits for every selected step and starts only when all of them succeed. A failed,
-  skipped, cancelled, or timed-out run starts no agent and reports on the worktree row.
+- **On**: the agent waits for the setup runner to exit and then starts, whatever the run's outcome.
+  The choice is **order, not permission** — a failed, skipped, cancelled, or timed-out run is
+  reported on the worktree row, and the agent is started into the worktree anyway, because a half-set-up
+  tree with a failure to read is exactly where the user wants their agent.
 
 The control sits under the setup rows it gates, not among the agent's own settings, and is shown
 only for an agent create whose offer carries a setup step. It is **disabled, not hidden**, when that

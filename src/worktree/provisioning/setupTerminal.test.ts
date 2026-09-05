@@ -96,6 +96,47 @@ describe("SetupTerminal", () => {
     expect(terminals[2]?.show).toHaveBeenCalled();
   });
 
+  it("retires the live terminal off screen and still replays its retained tail", async () => {
+    const terminals: Array<{ show: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }> = [];
+    const fired: string[] = [];
+    let pseudo: { open?: () => void; close?: () => void; onDidWrite: unknown } | undefined;
+    let replayOpen: (() => void) | undefined;
+    const terminal = new SetupTerminal({
+      createTerminal: vi.fn((options) => {
+        const created = { show: vi.fn(), dispose: vi.fn() };
+        if (terminals.length === 0) {
+          pseudo = options.pty as typeof pseudo;
+        } else {
+          replayOpen = () => options.pty.open();
+        }
+        terminals.push(created);
+        return created;
+      }),
+      createEmitter: () => ({ event: vi.fn(), fire: (data: string) => fired.push(data), dispose: vi.fn() }),
+      newId: () => "opaque-output",
+    });
+    const pty = child();
+
+    const opened = terminal.open();
+    pseudo?.open?.();
+    await opened;
+    terminal.attach(pty.child);
+    pty.data("Checked 1676 installs\r\n");
+    const outputId = terminal.outputId("surface-a");
+
+    terminal.retire();
+
+    // The tab is gone the moment the run is over — nothing left it open for the
+    // rest of the session.
+    expect(terminals[0]?.dispose).toHaveBeenCalled();
+    // …and the output the notice offers is still there, replayed on demand.
+    expect(terminal.reveal(outputId, "surface-a")).toBe(true);
+    replayOpen?.();
+    expect(terminals).toHaveLength(2);
+    expect(fired.join("")).toContain("Checked 1676 installs");
+    expect(terminal.reveal(outputId, "surface-b")).toBe(false);
+  });
+
   it("evicts transcript chunks on UTF-8 boundaries and bounds one oversized event", async () => {
     let pseudo: { open?: () => void } | undefined;
     const terminal = new SetupTerminal({

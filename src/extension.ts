@@ -885,7 +885,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         runSetup: async (input, origin) => {
           const terminal = new SetupTerminal();
           const result = await runSetup(input, { terminal });
+          // The run is over, so its live terminal has nothing left to say. Retire
+          // it rather than leaving the tab open for the session; `reveal` replays
+          // the retained tail when the user asks for the output.
+          terminal.retire();
           if (origin === undefined) {
+            // Nothing will ever ask this run for its output, so nothing keeps it.
+            terminal.dispose();
             return result;
           }
           const outputId = terminal.outputId(setupSurfaceId(origin));

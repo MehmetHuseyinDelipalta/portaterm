@@ -2863,6 +2863,56 @@ describe("a mutation's outcome reads as what it was (design.md D11)", () => {
     expect(notice?.className).toContain("wt-notice--warn");
   });
 
+  it("expires an ok create notice on its own, holds it once read, and keeps a failure standing", () => {
+    const dismissed: WorktreeActionResult[] = [];
+    const { view } = mount({
+      onDismissActionResult: (result) => dismissed.push(result),
+      onViewSetupOutput: () => {},
+      onRetrySetup: () => {},
+    });
+    const failedSetup: WorktreeActionResult = {
+      action: "create",
+      worktreeId: PANEL_WT,
+      outcome: "ok",
+      setup: [
+        {
+          id: "s1",
+          source: "asimov/worktree.yaml",
+          script: "bun install",
+          outcome: { kind: "failed", reason: "exited with code 1" },
+        },
+      ],
+      setupOutputId: "output-1",
+      setupRetryId: "retry-1",
+    };
+
+    vi.useFakeTimers();
+    try {
+      // A create that stands, even with a failed setup step, says so and then
+      // gets out of the way.
+      view.setData({ ...populated(), actionResults: [failedSetup] });
+      expect(view.element.querySelector(".wt-notice--warn")).not.toBeNull();
+      vi.advanceTimersByTime(10_000);
+      expect(dismissed).toEqual([failedSetup]);
+
+      // Reading it stops the clock: "View output" must not vanish mid-reach.
+      dismissed.length = 0;
+      view.setData({ ...populated(), actionResults: [failedSetup] });
+      view.element.querySelector<HTMLElement>(".wt-notice")?.dispatchEvent(new MouseEvent("mouseenter"));
+      vi.advanceTimersByTime(60_000);
+      expect(dismissed).toEqual([]);
+
+      // A create that did NOT stand is a question the user still has to answer.
+      dismissed.length = 0;
+      view.setData({ ...populated(), actionResults: [removeErrorResult] });
+      vi.advanceTimersByTime(60_000);
+      expect(dismissed).toEqual([]);
+      expect(view.element.querySelector(".wt-notice--error")).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("replaces failed setup with retry success and removes retry", () => {
     const { view } = mount({ onViewSetupOutput: () => {}, onRetrySetup: () => {} });
     const result = (ok: boolean): WorktreeActionResult => ({

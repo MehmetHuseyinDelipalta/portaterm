@@ -102,6 +102,9 @@ function setRowTabStop(row: HTMLElement, isStop: boolean): void {
 /** setTimeout's delay is a signed 32-bit int; anything larger wraps and fires now. */
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
+/** Long enough to read a two-line result, short enough that it is not furniture. */
+const AUTO_DISMISS_MS = 10_000;
+
 export interface WorktreeViewData {
   tree: WorktreeTree | null;
   presence: WorktreePresence | null;
@@ -245,6 +248,14 @@ export class WorktreeView {
   private data: WorktreeViewData = { tree: null, presence: null, loading: true };
   /** Armed only while some row can still cross the ceiling; cleared on disposal. */
   private ceilingTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Countdowns for notices that get out of the way on their own, keyed by the
+   * SAME per-result key the render signature uses — so a redraw of an unchanged
+   * result finds its own timer instead of arming a second one, and a result
+   * that changed is a new notice with a fresh countdown. `"held"` is a notice
+   * the user hovered or focused: it never expires again.
+   */
+  private readonly autoDismiss = new Map<string, ReturnType<typeof setTimeout> | "held">();
   private disposed = false;
   private idleSeeded: Set<string>;
   private query = "";
@@ -379,18 +390,7 @@ export class WorktreeView {
       loading ? "1" : "0",
       refreshing ? "1" : "0",
       noFolder ? "1" : "0",
-      (actionResults ?? [])
-        .map(
-          (r) =>
-            // The blocker fingerprint is part of the key: it decides whether the
-            // notice offers Force remove at all, and WHICH blocker set that
-            // confirmation would authorize.
-            // Provisioning lands as a SECOND message folded onto the same
-            // notice, so its summary is part of the key — without it the merged
-            // result is byte-different and renders identically.
-            `${r.action}:${r.worktreeId ?? r.repoId ?? ""}:${r.orphanedLabel ?? ""}:${r.outcome}:${r.openFailed ?? ""}:${r.migrationIndeterminate ?? ""}:${r.error ?? ""}${r.observed ?? ""}:${r.needsConfirm?.fingerprint ?? ""}:${provisionKey(r)}:${r.branchDelete ? `${r.branchDelete.kind}:${r.branchDelete.kind === "deleted" ? r.branchDelete.branch : r.branchDelete.reason}` : ""}`,
-        )
-        .join("|"),
+      (actionResults ?? []).map(resultKey).join("|"),
     ].join(String.fromCharCode(4));
     if (stateKey !== this.signature) {
       this.signature = stateKey;
@@ -721,6 +721,12 @@ export class WorktreeView {
       clearTimeout(this.ceilingTimer);
       this.ceilingTimer = undefined;
     }
+    for (const timer of this.autoDismiss.values()) {
+      if (timer !== "held") {
+        clearTimeout(timer);
+      }
+    }
+    this.autoDismiss.clear();
     this.closeDialog?.();
     this.closeDialog = null;
     this.menu?.close();
@@ -1415,6 +1421,7 @@ export class WorktreeView {
    */
   private placeResults(): void {
     const results = this.data.actionResults ?? [];
+    this.pruneAutoDismiss(results);
     if (results.length === 0) {
       return;
     }
@@ -1427,6 +1434,7 @@ export class WorktreeView {
       const info = result.worktreeId === undefined ? undefined : this.infoFor(result.worktreeId);
       // A drawn row already says which worktree this is about, directly above.
       const notice = this.buildActionNotice(result, info, row ? undefined : this.nameFor(result, info));
+      this.armAutoDismiss(result, notice);
       const anchor = row ? this.groupEndFor(row) : this.repoAnchorFor(result, info);
       // Unreachable as written — the map is cleared with the DOM, so every anchor in
       // it was recorded after that same `replaceChildren`. Kept because `after()` on
@@ -1440,6 +1448,64 @@ export class WorktreeView {
       const at = cursors.get(anchor) ?? anchor;
       at.after(notice);
       cursors.set(anchor, notice);
+    }
+  }
+
+  /**
+   * A mutation that STANDS reports itself and then gets out of the way — the
+   * tree behind the notice is what the user actually asked for, and a create
+   * whose setup step failed is still a create that succeeded. Only `ok` results
+   * expire: an error, an unreadable subject or a partly-applied action is a
+   * question the user still has to answer, so it waits for them.
+   */
+  private armAutoDismiss(result: WorktreeActionResult, notice: HTMLElement): void {
+    const dismiss = this.deps.onDismissActionResult;
+    if (dismiss === undefined || result.outcome !== "ok") {
+      return;
+    }
+    const key = resultKey(result);
+    if (!this.autoDismiss.has(key)) {
+      this.autoDismiss.set(
+        key,
+        setTimeout(() => {
+          if (this.autoDismiss.get(key) === "held") {
+            return;
+          }
+          this.autoDismiss.delete(key);
+          if (!this.disposed) {
+            dismiss(result);
+          }
+        }, AUTO_DISMISS_MS),
+      );
+    }
+    // Reaching the notice is the user reading it, and "View output" and "Retry
+    // setup" must not vanish under the cursor on the way to a click. The hold
+    // is permanent: someone who looked at a notice closes it themselves.
+    const hold = (): void => {
+      const timer = this.autoDismiss.get(key);
+      if (timer !== undefined && timer !== "held") {
+        clearTimeout(timer);
+      }
+      this.autoDismiss.set(key, "held");
+    };
+    notice.addEventListener("mouseenter", hold);
+    notice.addEventListener("focusin", hold);
+  }
+
+  /** Drop countdowns for results that are already gone, so a long session does
+   *  not accumulate one entry per notice it ever drew. */
+  private pruneAutoDismiss(results: readonly WorktreeActionResult[]): void {
+    if (this.autoDismiss.size === 0) {
+      return;
+    }
+    const live = new Set(results.map(resultKey));
+    for (const [key, timer] of this.autoDismiss) {
+      if (!live.has(key)) {
+        if (timer !== "held") {
+          clearTimeout(timer);
+        }
+        this.autoDismiss.delete(key);
+      }
     }
   }
 
@@ -1887,6 +1953,21 @@ function provisionKey(result: WorktreeActionResult): string {
     result.setupRetryId ?? null,
     result.manifestWarning ?? null,
   ]);
+}
+
+/**
+ * The part of a result that decides whether its notice redraws — and, because it
+ * is stable across redraws of an unchanged result, the identity its auto-dismiss
+ * countdown is keyed on.
+ *
+ * The blocker fingerprint is part of the key: it decides whether the notice
+ * offers Force remove at all, and WHICH blocker set that confirmation would
+ * authorize. Provisioning lands as a SECOND message folded onto the same notice,
+ * so its summary is part of the key — without it the merged result is
+ * byte-different and renders identically.
+ */
+function resultKey(r: WorktreeActionResult): string {
+  return `${r.action}:${r.worktreeId ?? r.repoId ?? ""}:${r.orphanedLabel ?? ""}:${r.outcome}:${r.openFailed ?? ""}:${r.migrationIndeterminate ?? ""}:${r.error ?? ""}${r.observed ?? ""}:${r.needsConfirm?.fingerprint ?? ""}:${provisionKey(r)}:${r.branchDelete ? `${r.branchDelete.kind}:${r.branchDelete.kind === "deleted" ? r.branchDelete.branch : r.branchDelete.reason}` : ""}`;
 }
 
 function setupSummary(

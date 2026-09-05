@@ -271,6 +271,21 @@ export class SetupTerminal {
     }
   }
 
+  /**
+   * End the run's live terminal and take its tab off screen, keeping the
+   * retained tail so `reveal` can still replay it. A finished run has nothing
+   * left to show live, and a panel that stays open is the setup occupying the
+   * editor long after it is done.
+   */
+  retire(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.close();
+    this.terminal?.dispose();
+    this.terminal = undefined;
+  }
+
   dispose(): void {
     if (this.disposed) {
       return;

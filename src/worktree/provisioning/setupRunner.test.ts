@@ -125,6 +125,41 @@ describe("runSetup", () => {
     expect(result.steps[1]?.outcome).toEqual({ kind: "skipped", reason: "previous setup step failed" });
   });
 
+  it("reads a unix clean exit reported as signal 0 as success, and a real signal as failure", async () => {
+    const clean = child(0, 0);
+    const killed = child(0, 9);
+    const spawn = vi.fn().mockReturnValueOnce(clean).mockReturnValueOnce(killed);
+    const terminal = { open: vi.fn(async () => true), attach: vi.fn(), detach: vi.fn(), close: vi.fn() };
+
+    const result = await runSetup(
+      {
+        repoId: "repo",
+        mainPath: "/main",
+        worktreeId: "worktree",
+        worktreePath: "/worktree",
+        branch: "feature",
+        authorization: authorization("/worktree"),
+        asimovEnvironment: false,
+        ports: {},
+        steps: [
+          { id: "one", source: "source", kind: "shell", script: "bun install" },
+          { id: "two", source: "source", kind: "shell", script: "bun test" },
+        ],
+      },
+      {
+        platform: "darwin",
+        pty: { spawn },
+        terminal,
+        detectShell: () => ({ shell: "/bin/zsh", args: [] }),
+        buildEnvironment: () => ({}),
+        directoryStillAuthorized: async () => true,
+      },
+    );
+
+    expect(result.steps[0]?.outcome).toEqual({ kind: "ok" });
+    expect(result.steps[1]?.outcome).toEqual({ kind: "failed", reason: "terminated by signal 9" });
+  });
+
   it("refuses a substituted directory before spawning and marks later steps skipped", async () => {
     const spawn = vi.fn();
     const result = await runSetup(
