@@ -1196,6 +1196,43 @@ describe("createGitDecorationProvider — revision eviction under workspace filt
     provider.dispose();
   });
 
+  it("drops a queued dirty delta when the path goes clean out of scope before the flush", async () => {
+    vi.useFakeTimers();
+    let folders = ["/w/one", "/w/two"];
+    const one = makeRepo("/w/one", [{ path: "/w/one/a.ts", status: Status.MODIFIED }]);
+    const two = makeRepo("/w/two", [{ path: "/w/two/b.ts", status: Status.MODIFIED }]);
+    const { api } = makeApi({ repos: [one.repo, two.repo] });
+    const { extObj } = makeExtension({ api });
+    const provider = createGitDecorationProvider({
+      getExtension: () => extObj as never,
+      getWorkspaceFolders: () => folders,
+    });
+    await vi.runAllTimersAsync();
+    vi.advanceTimersByTime(100);
+    const stale = provider.getStatus("/w/one/a.ts").revision;
+    const seen: Array<{ path: string; status: GitStatus | null }> = [];
+    provider.onDidChange((d) => seen.push(...d.changes));
+
+    // A dirty transition is queued in scope; the folder then goes away and
+    // the path goes clean, all inside one debounce window.
+    one.setChanges([{ path: "/w/one/a.ts", status: Status.INDEX_ADDED }]);
+    one.fire();
+    folders = ["/w/two"];
+    one.setChanges([]);
+    one.fire();
+    vi.advanceTimersByTime(100);
+    // The obsolete `added` must not be flushed after the path is clean.
+    expect(seen.filter((c) => c.path === "/w/one/a.ts")).toEqual([]);
+
+    two.setChanges([{ path: "/w/two/b.ts", status: Status.INDEX_ADDED }]);
+    two.fire();
+    vi.advanceTimersByTime(100);
+    const now = provider.currentRevision();
+    expect(now).toBeGreaterThan(stale);
+    expect(provider.getStatus("/w/one/a.ts")).toEqual({ status: undefined, revision: now });
+    provider.dispose();
+  });
+
   it("evicts every path on reset, including ones the new folder set filters out", async () => {
     vi.useFakeTimers();
     let folders = ["/w/one", "/w/two"];

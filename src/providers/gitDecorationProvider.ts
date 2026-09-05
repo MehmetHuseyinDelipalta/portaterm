@@ -349,6 +349,12 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
     syncIndexedPath(absPath, merged, true);
     if (merged === undefined) {
       revisions.delete(absPath);
+      // A dirty value still queued for this path would be flushed AFTER the
+      // clean transition — and if the workspace filter drops the clean
+      // transition, nothing ever overwrites it: the flush would then emit an
+      // obsolete dirty delta and re-create the watermark just evicted. The
+      // in-scope clean event re-queues its own `null` through `emit`.
+      pendingEmit.delete(absPath);
     }
   }
 
@@ -794,6 +800,9 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
       };
     },
     reset() {
+      // Anything still queued describes the state being torn down; the
+      // rebuild below re-emits every survivor under a fresh revision.
+      pendingEmit.clear();
       // Capture every path that currently has a non-undefined merged status
       // so we can emit `null` for each in one batch.
       const cleared: Array<{ path: string; status: GitStatus | null }> = [];
