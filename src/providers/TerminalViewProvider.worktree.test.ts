@@ -419,6 +419,12 @@ const SAMPLE: Record<(typeof WORKTREE_MESSAGE_TYPES)[number], Record<string, unk
     switch: 1,
     op: { kind: "add" },
   },
+  worktreeCopyFileAsk: {
+    type: "worktreeCopyFileAsk",
+    repoId: "/repo/.git",
+    opening: 1,
+    switch: 1,
+  },
   worktreeSetupRetry: {
     type: "worktreeSetupRetry",
     worktreeId: "/repo-wt/feat",

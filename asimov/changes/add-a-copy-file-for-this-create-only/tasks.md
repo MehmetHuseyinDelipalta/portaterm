@@ -1,6 +1,6 @@
 ## 1. Add the pathless wire contract
 
-- [ ] 1_1 Route a copy-file ask and presentation-only added origin
+- [x] 1_1 Route a copy-file ask and presentation-only added origin — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/types/messages.contract.test.ts src/providers/TerminalViewProvider.worktree.test.ts src/providers/WorktreeHost.actions.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: none
   - **Refs**: specs/worktree-panel/spec.md#{a-file-can-be-added-to-copy-for-this-create-only, a-picked-copy-is-spent-only-through-private-host-held-provenance}; design.md D2, D4
   - **Acceptance**:
@@ -8,7 +8,7 @@
     - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/types/messages.contract.test.ts src/providers/TerminalViewProvider.worktree.test.ts src/providers/WorktreeHost.actions.test.ts
   - **Plan**:
     1. In src/types/messages.ts add `WorktreeCopyFileAskMessage`, route registration, and presentation-only `ProvisionEntry.addedForCreate`; cover forbidden path and handle fields in src/types/messages.contract.test.ts.
-    2. In src/providers/WorktreeHost.ts add the strict validator and route shell; update src/providers/TerminalViewProvider.worktree.test.ts and src/providers/WorktreeHost.actions.test.ts for pathless forwarding and extra-key refusal.
+    2. In src/providers/WorktreeHost.ts add the host-held picker result and action seam, strict validator, and route shell; update src/providers/TerminalViewProvider.worktree.test.ts and src/providers/WorktreeHost.actions.test.ts for repository-root forwarding and extra-key refusal.
 
 ## 2. Safely hold the picker result
 

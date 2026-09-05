@@ -27,6 +27,7 @@ import type {
   ProvisionStepResult,
   ResolvedMode,
   WorktreeAfterCreate,
+  WorktreeCopyFileAskMessage,
   WorktreeCreateMode,
   WorktreeCreateProbeMessage,
   WorktreeDestinationPickedMessage,
@@ -251,6 +252,21 @@ const suggestedEntry: ProvisionEntry = {
   mode: "copy",
   source: ".env",
   suggestion: "`.env` is at the repository root.",
+};
+const addedEntry: ProvisionEntry = {
+  id: "i2",
+  path: ".env.local",
+  mode: "copy",
+  source: "Added for this create",
+  addedForCreate: true,
+};
+const falselyAddedEntry: ProvisionEntry = {
+  id: "i3",
+  path: ".env.test",
+  mode: "copy",
+  source: "provider.yaml",
+  // @ts-expect-error presentation origin has one positive value; absence means provider-owned
+  addedForCreate: false,
 };
 const suggestedSetup: ProvisionSetupStep = {
   id: "i2",
@@ -495,6 +511,32 @@ const askToEdit: WorktreeSetupStepAskMessage = {
   op: { kind: "edit", offerId: "o2", itemId: "i3" },
 };
 
+// The picker is host-owned. The webview sends only ordering and opening identity.
+const askToCopyFile: WorktreeCopyFileAskMessage = {
+  type: "worktreeCopyFileAsk",
+  repoId: "/repo/.git",
+  opening: 1,
+  switch: 5,
+};
+
+const copyAskWithPath: WorktreeCopyFileAskMessage = {
+  type: "worktreeCopyFileAsk",
+  repoId: "/repo/.git",
+  opening: 1,
+  switch: 6,
+  // @ts-expect-error a webview path cannot authorize what the host picker opens
+  path: "/repo/.env",
+};
+
+const copyAskWithHandle: WorktreeCopyFileAskMessage = {
+  type: "worktreeCopyFileAsk",
+  repoId: "/repo/.git",
+  opening: 1,
+  switch: 7,
+  // @ts-expect-error held-file authority never crosses the webview boundary
+  file: {} as unknown,
+};
+
 const askCarryingAScript: WorktreeSetupStepAskMessage = {
   type: "worktreeSetupStepAsk",
   repoId: "/repo/.git",
@@ -623,6 +665,8 @@ describe("the wire contract", () => {
       "`pnpm-lock.yaml` is at the repository root.",
     ]);
     expect(configuredEntry.suggestion).toBeUndefined();
+    expect(addedEntry.addedForCreate).toBe(true);
+    expect(askToCopyFile.type).toBe("worktreeCopyFileAsk");
     expect(selectionWithSuggestion.itemIds).toHaveLength(1);
     expect([copied, linked, degraded, skipped, refusedOutcome, failedOutcome].map((o) => o.kind)).toEqual([
       "copied",
@@ -649,7 +693,10 @@ describe("the wire contract", () => {
       retryWithScript,
       outputWithPath,
       provisionResultWithVerdict,
-    ]).toHaveLength(10);
+      falselyAddedEntry,
+      copyAskWithPath,
+      copyAskWithHandle,
+    ]).toHaveLength(13);
     expect(save.kept).toHaveLength(2);
     expect(detectedProvider.present).toEqual([".worktreeinclude"]);
     expect(refusedSaveProblem.reason).toBe("unsaved");

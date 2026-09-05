@@ -30,6 +30,7 @@ import type {
   WorktreeActionMessage,
   WorktreeAfterCreate,
   WorktreeAgentLaunchFields,
+  WorktreeCopyFileAskMessage,
   WorktreeCreateMode,
   WorktreeMutationResultMessage,
   WorktreeProvisionResultMessage,
@@ -40,6 +41,7 @@ import type {
   WorktreeSubscriptionLevel,
 } from "../types/messages";
 import { MAX_SETUP_STEP_CHARS, SETUP_STEP_ADDED_SOURCE } from "../types/messages";
+import type { HeldRegularFile } from "../utils/heldRegularFile";
 import {
   isResolvedPathInside,
   type PreparedRoot,
@@ -464,6 +466,12 @@ export interface WorktreeHostOptions {
  * `focusPane` takes the view the pane lives in, not the view that asked — revealing the asking surface would focus a pane the user
  * cannot see whenever the panel is open in two places (D4).
  */
+export interface PickedCopyFile {
+  readonly path: string;
+  readonly canonicalPath: string;
+  readonly file: HeldRegularFile;
+}
+
 export interface WorktreeActions {
   openFolder(path: string, mode: "newWindow" | "addToWorkspace"): Promise<void>;
   revealInOS(path: string): Promise<void>;
@@ -474,6 +482,8 @@ export interface WorktreeActions {
    * picker at all, rather than a control that resolves to nothing.
    */
   pickFolder?(): Promise<string | undefined>;
+  /** Safely held file selected through the extension-owned picker. */
+  pickCopyFile?(repoRoot: string): Promise<PickedCopyFile | undefined>;
   /**
    * The setup command the user typed into the HOST's own input, or `undefined`
    * for a dismissed or failed input. `current` seeds the input when an existing
@@ -2057,6 +2067,21 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * at runtime, so a discriminant the webview invented would otherwise reach a
    * `switch` with no arm for it (plan attack F5). Nothing here can carry text.
    */
+  function isKnownCopyFileAsk(msg: unknown): msg is WorktreeCopyFileAskMessage {
+    if (typeof msg !== "object" || msg === null || !onlyKeys(msg, ["type", "repoId", "opening", "switch"])) {
+      return false;
+    }
+    const m = msg as { repoId?: unknown; opening?: unknown; switch?: unknown };
+    return (
+      typeof m.repoId === "string" &&
+      m.repoId.length > 0 &&
+      namedOpening(m.opening) &&
+      typeof m.switch === "number" &&
+      Number.isInteger(m.switch) &&
+      m.switch > 0
+    );
+  }
+
   function isKnownStepAsk(msg: unknown): msg is WorktreeSetupStepAskMessage {
     if (typeof msg !== "object" || msg === null || !onlyKeys(msg, ["type", "repoId", "opening", "switch", "op"])) {
       return false;
@@ -3259,6 +3284,32 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
           // is held here. The map is swept by `retireOpening`, which is what
           // bounds it (.reviews/round-1.md F001).
           .catch(() => {});
+        return;
+      }
+      case "worktreeCopyFileAsk": {
+        if (!isKnownCopyFileAsk(msg)) {
+          return;
+        }
+        const key = surfaceKey(surface);
+        if (liveOpening.get(key) !== msg.opening) {
+          return;
+        }
+        const offerKey = { surface: key, repoId: msg.repoId };
+        const repo = cache.read().repos.find((candidate) => candidate.repoId === msg.repoId);
+        if (offers.current(offerKey) === undefined || repo === undefined) {
+          return;
+        }
+        const slot = `${key} ${msg.repoId} ${msg.opening}`;
+        if (msg.switch <= (provisionSwitch.get(slot) ?? 0)) {
+          return;
+        }
+        provisionSwitch.set(slot, msg.switch);
+        const pick = options.actions?.pickCopyFile;
+        if (pick !== undefined) {
+          void pick(repo.mainPath)
+            .then((picked) => picked?.file.dispose())
+            .catch(() => {});
+        }
         return;
       }
       case "worktreeSetupStepAsk": {
@@ -4726,6 +4777,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
       case "worktreeCreateClosed":
       case "worktreeProvisionSwitch":
       case "worktreeProvisionSave":
+      case "worktreeCopyFileAsk":
       case "worktreeSetupStepAsk":
       case "worktreeSetupRetry":
       case "worktreeSetupViewOutput":

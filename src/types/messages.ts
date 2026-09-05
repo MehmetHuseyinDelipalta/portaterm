@@ -861,6 +861,8 @@ export interface ProvisionEntry extends ProvisionItemId {
    * starts unchecked where a configured one starts checked.
    */
   readonly suggestion?: string;
+  /** Presentation-only: the host added this row for the current create form. */
+  readonly addedForCreate?: true;
 }
 
 /**
@@ -1332,6 +1334,15 @@ export const MAX_SETUP_STEP_CHARS = 4096;
  * `worktreeProvisionSave` mint, so an ask, a source change and a save order
  * against each other (design.md D2).
  */
+export interface WorktreeCopyFileAskMessage {
+  type: "worktreeCopyFileAsk";
+  repoId: string;
+  /** The opening the form was composed in. A retired one is not honoured. */
+  opening: number;
+  /** Monotonic per dialog, shared with source, setup, and save. */
+  switch: number;
+}
+
 export interface WorktreeSetupStepAskMessage {
   type: "worktreeSetupStepAsk";
   repoId: string;
@@ -1838,6 +1849,7 @@ export type WebViewToExtensionMessage =
   | WorktreeCreateClosedMessage
   | WorktreeProvisionSwitchMessage
   | WorktreeProvisionSaveMessage
+  | WorktreeCopyFileAskMessage
   | WorktreeSetupStepAskMessage
   | WorktreeSetupRetryMessage
   | WorktreeSetupViewOutputMessage
@@ -1882,6 +1894,7 @@ export const WORKTREE_MESSAGE_TYPES = [
   "worktreeCreateClosed",
   "worktreeProvisionSwitch",
   "worktreeProvisionSave",
+  "worktreeCopyFileAsk",
   "worktreeSetupStepAsk",
   "worktreeSetupRetry",
   "worktreeSetupViewOutput",

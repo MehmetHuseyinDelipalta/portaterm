@@ -365,6 +365,7 @@ async function builtHost(
     resumeSessionAt?: WorktreeActions["resumeSessionAt"];
     launchTargets?: WorktreeActions["launchTargets"];
     pickFolder?: WorktreeActions["pickFolder"];
+    pickCopyFile?: WorktreeActions["pickCopyFile"];
     promptSetupStep?: WorktreeActions["promptSetupStep"];
     readProvisioning?: (mainWorktree: string) => Promise<ProvisionModel>;
     previewProvisioningPorts?: WorktreeHostOptions["previewProvisioningPorts"];
@@ -490,6 +491,7 @@ async function builtHost(
       ...(over.resumeSessionAt === undefined ? {} : { resumeSessionAt: over.resumeSessionAt }),
       ...(over.launchTargets === undefined ? {} : { launchTargets: over.launchTargets }),
       ...(over.pickFolder === undefined ? {} : { pickFolder: over.pickFolder }),
+      ...(over.pickCopyFile === undefined ? {} : { pickCopyFile: over.pickCopyFile }),
       ...(over.promptSetupStep === undefined ? {} : { promptSetupStep: over.promptSetupStep }),
     },
     now: () => 1000,
@@ -7322,6 +7324,7 @@ describe("the provisioning a create is actually given", () => {
       mode: "copy" as const,
       source: "held-file",
       suggestion: "Added for this create",
+      addedForCreate: true as const,
     };
     const built = await builtHost(undefined, false, {
       readProvisioning: async () => ({ ...twoEntries(), entries: [marker] }),
@@ -8081,6 +8084,7 @@ describe("a setup step typed into the host's own input, for this create only", (
 
   async function opened(over: {
     prompt?: WorktreeActions["promptSetupStep"];
+    pick?: WorktreeActions["pickCopyFile"];
     read?: (main: string, prefer?: string) => Promise<ProvisionModel>;
     write?: (main: string, d: NativeConfigDivergence) => Promise<NativeConfigWrite>;
     sibling?: boolean;
@@ -8093,6 +8097,7 @@ describe("a setup step typed into the host's own input, for this create only", (
         prompts.push(current);
         return over.prompt === undefined ? undefined : over.prompt(current);
       },
+      ...(over.pick === undefined ? {} : { pickCopyFile: over.pick }),
       writeNativeConfig: (async (main: string, divergence: NativeConfigDivergence) => {
         seen.push(divergence);
         return over.write ? over.write(main, divergence) : { ok: true, wrote: true };
@@ -8535,6 +8540,56 @@ describe("a setup step typed into the host's own input, for this create only", (
     }
     expect(added(h.view)).toHaveLength(32);
     expect(h.prompts).toHaveLength(32);
+    h.dispose();
+  });
+
+  it("forwards only a valid pathless copy ask to the repository root", async () => {
+    const picked: string[] = [];
+    const h = await opened({
+      prompt: async () => "pnpm build",
+      pick: async (repoRoot) => {
+        picked.push(repoRoot);
+        return undefined;
+      },
+    });
+    const malformedSwitch = ++seq;
+    h.host.handleMessage(h.view, {
+      type: "worktreeCopyFileAsk",
+      repoId: REPO,
+      opening: 1,
+      switch: malformedSwitch,
+      path: "/repo/.env",
+      file: {},
+    } as never);
+    h.host.handleMessage(h.view, {
+      type: "worktreeSetupStepAsk",
+      repoId: REPO,
+      opening: 1,
+      switch: malformedSwitch,
+      op: { kind: "add" },
+    });
+    await settle();
+    expect(h.prompts).toEqual([undefined]);
+    expect(picked).toEqual([]);
+
+    const validSwitch = ++seq;
+    h.host.handleMessage(h.view, {
+      type: "worktreeCopyFileAsk",
+      repoId: REPO,
+      opening: 1,
+      switch: validSwitch,
+    } as never);
+    h.host.handleMessage(h.view, {
+      type: "worktreeSetupStepAsk",
+      repoId: REPO,
+      opening: 1,
+      switch: validSwitch,
+      op: { kind: "add" },
+    });
+    await settle();
+
+    expect(picked).toEqual([MAIN_PATH]);
+    expect(h.prompts).toEqual([undefined]);
     h.dispose();
   });
 
