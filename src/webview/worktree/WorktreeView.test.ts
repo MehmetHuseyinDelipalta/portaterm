@@ -2913,6 +2913,51 @@ describe("a mutation's outcome reads as what it was (design.md D11)", () => {
     }
   });
 
+  it("[F001] dismisses the result a reconciliation replaced, not the one the timer was armed with", () => {
+    const dismissed: WorktreeActionResult[] = [];
+    const { view } = mount({ onDismissActionResult: (result) => dismissed.push(result) });
+    const armed: WorktreeActionResult = { action: "create", worktreeId: PANEL_WT, outcome: "ok" };
+    // What `WorktreeController.rescope` produces on every tree push: equal in
+    // every field the render key reads, and a DIFFERENT object. The controller
+    // dismisses by identity, so handing back `armed` would remove nothing.
+    const reconciled: WorktreeActionResult = { ...armed };
+
+    vi.useFakeTimers();
+    try {
+      view.setData({ ...populated(), actionResults: [armed] });
+      vi.advanceTimersByTime(4_000);
+      view.setData({ ...populated(), actionResults: [reconciled] });
+      vi.advanceTimersByTime(10_000);
+
+      expect(dismissed).toHaveLength(1);
+      expect(dismissed[0]).toBe(reconciled);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("[F002] expires a create only, leaving every other successful action's notice standing", () => {
+    const dismissed: WorktreeActionResult[] = [];
+    const { view } = mount({ onDismissActionResult: (result) => dismissed.push(result) });
+    const scopeCleared: WorktreeActionResult = {
+      action: "scope",
+      worktreeId: PANEL_WT,
+      outcome: "ok",
+      orphanedLabel: "feat/gone",
+    };
+    const removed: WorktreeActionResult = { action: "remove", worktreeId: PANEL_WT, outcome: "ok" };
+
+    vi.useFakeTimers();
+    try {
+      view.setData({ ...populated(), actionResults: [scopeCleared, removed] });
+      vi.advanceTimersByTime(60_000);
+      expect(dismissed).toEqual([]);
+      expect(view.element.querySelectorAll(".wt-notice")).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("replaces failed setup with retry success and removes retry", () => {
     const { view } = mount({ onViewSetupOutput: () => {}, onRetrySetup: () => {} });
     const result = (ok: boolean): WorktreeActionResult => ({

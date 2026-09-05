@@ -112,6 +112,8 @@ const setupHarness = vi.hoisted(() => ({
   runs: [] as Array<{ steps: readonly { id: string; source: string; script: string }[] }>,
   outcomes: [] as Array<"ok" | "failed">,
   wait: null as Promise<void> | null,
+  /** Makes the mocked runner REJECT, the way an authorization boundary does. */
+  reject: false,
   manifests: [] as unknown[][],
   reveals: [] as Array<{ outputId: string; origin: string }>,
   retirements: 0,
@@ -125,6 +127,9 @@ vi.mock("./worktree/provisioning/setupRunner", () => ({
     setupHarness.events.push("run");
     if (setupHarness.wait !== null) {
       await setupHarness.wait;
+    }
+    if (setupHarness.reject) {
+      throw new Error("the worktree directory could not be re-authorized");
     }
     const outcome = setupHarness.outcomes.shift() ?? "ok";
     return {
@@ -682,6 +687,7 @@ beforeEach(() => {
   setupHarness.wait = null;
   setupHarness.manifests = [];
   setupHarness.reveals = [];
+  setupHarness.reject = false;
   setupHarness.retirements = 0;
   setupHarness.disposals = 0;
   setupHarness.events = [];
@@ -2148,6 +2154,58 @@ describe("the invariants that span the host and the webview", () => {
       expect(message).not.toHaveProperty("script");
       expect(message).not.toHaveProperty("path");
     }
+  });
+
+  it("[F003] disposes the setup terminal when the runner rejects instead of returning", async () => {
+    noProviderFiles();
+    registerCreates = true;
+    setupHarness.reject = true;
+    fs.mkdirSync(path.join(REPO, "asimov"), { recursive: true });
+    fs.writeFileSync(path.join(REPO, "asimov", "worktree.yaml"), "setup:\n  - pnpm install\n");
+    await assemble();
+
+    clickItem(openMenu("feature"), /new worktree/i);
+    await settleUntil(
+      () => [...document.querySelectorAll(".wt-brow")].some((row) => (row.textContent ?? "").includes("Run setup")),
+      "the setup offer",
+    );
+    const branch = document.querySelector<HTMLInputElement>("#wt-branch");
+    if (branch === null) {
+      throw new Error("the create form has no branch field");
+    }
+    branch.value = "feat/setup-rejects";
+    branch.dispatchEvent(new Event("input", { bubbles: true }));
+    branch.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle();
+    const setupBox = [...document.querySelectorAll<HTMLElement>(".wt-brow")]
+      .find((row) => (row.textContent ?? "").includes("Run setup"))
+      ?.querySelector<HTMLInputElement>(".wt-brow-cb");
+    if (setupBox === null || setupBox === undefined) {
+      throw new Error("the setup offer has no checkbox");
+    }
+    setupBox.checked = true;
+    setupBox.dispatchEvent(new Event("change", { bubbles: true }));
+    const destination = document.querySelector<HTMLInputElement>("#wt-path")?.value;
+    if (destination === undefined || destination === "") {
+      throw new Error("the host resolved no destination");
+    }
+    fs.mkdirSync(destination, { recursive: true });
+
+    [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => /create worktree/i.test(button.textContent ?? ""))
+      ?.click();
+    await settleUntil(() => setupHarness.runs.length === 1, "the setup run");
+    await settleUntil(
+      () => (document.body.textContent ?? "").includes("0 of 1 setup steps completed"),
+      "the rejected setup result",
+    );
+
+    // A rejection has no result to retain, so the terminal it opened has no
+    // owner left. Retiring it is not enough — nothing would ever dispose it.
+    expect(setupHarness.disposals).toBe(1);
+    expect(setupHarness.events).toEqual(["run", "dispose"]);
+    // The create itself still stands; only the setup failed.
+    expect(document.body.textContent ?? "").toContain("Create done.");
   });
 
   it("copies a selected environment suggestion and never runs the unchecked suggested setup", async () => {

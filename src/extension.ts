@@ -96,7 +96,7 @@ import { createProvisioningDeps } from "./worktree/provisioning/provisioningDeps
 import { writeProvisionManifest } from "./worktree/provisioning/provisionManifest";
 import { provisionEntryOf } from "./worktree/provisioning/provisionMaterial";
 import { readProvisioning } from "./worktree/provisioning/readProvisioning";
-import { runSetup } from "./worktree/provisioning/setupRunner";
+import { runSetup, type SetupRunResult } from "./worktree/provisioning/setupRunner";
 import { SetupTerminal } from "./worktree/provisioning/setupTerminal";
 import { writeNativeConfig } from "./worktree/provisioning/writeNativeConfig";
 import { probeReattach, type ReattachVerdict, readGitLink } from "./worktree/reattachProbe";
@@ -884,7 +884,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           }),
         runSetup: async (input, origin) => {
           const terminal = new SetupTerminal();
-          const result = await runSetup(input, { terminal });
+          let result: SetupRunResult;
+          try {
+            result = await runSetup(input, { terminal });
+          } catch (error) {
+            // `runSetup` rejects when a boundary it awaits rejects — the
+            // authorization re-check, for one. The caller turns that into a
+            // failed setup, so the terminal it opened has no owner left and
+            // would stay live for the session with nothing to show it.
+            terminal.dispose();
+            throw error;
+          }
           // The run is over, so its live terminal has nothing left to say. Retire
           // it rather than leaving the tab open for the session; `reveal` replays
           // the retained tail when the user asks for the output.

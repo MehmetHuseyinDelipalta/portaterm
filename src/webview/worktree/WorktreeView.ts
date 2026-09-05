@@ -1460,7 +1460,10 @@ export class WorktreeView {
    */
   private armAutoDismiss(result: WorktreeActionResult, notice: HTMLElement): void {
     const dismiss = this.deps.onDismissActionResult;
-    if (dismiss === undefined || result.outcome !== "ok") {
+    // A create only. Every other action's `ok` notice keeps the lifecycle it
+    // was designed with — a scope-cleared statement in particular answers to no
+    // row and is replaced rather than expired.
+    if (dismiss === undefined || result.action !== "create" || result.outcome !== "ok") {
       return;
     }
     const key = resultKey(result);
@@ -1472,8 +1475,17 @@ export class WorktreeView {
             return;
           }
           this.autoDismiss.delete(key);
-          if (!this.disposed) {
-            dismiss(result);
+          if (this.disposed) {
+            return;
+          }
+          // The LIVE result carrying this key, never the object the timer was
+          // armed with: the controller dismisses by object identity, and every
+          // tree reconciliation rebuilds an attached result into an equal but
+          // different object. Handing back the captured one dismissed nothing
+          // and retired the countdown, leaving the notice up for good.
+          const live = (this.data.actionResults ?? []).find((r) => resultKey(r) === key);
+          if (live !== undefined) {
+            dismiss(live);
           }
         }, AUTO_DISMISS_MS),
       );
