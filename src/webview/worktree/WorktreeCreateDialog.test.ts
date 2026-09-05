@@ -1808,15 +1808,6 @@ describe("Bring over — fallback suggestions are explicit, explained, and curre
     expect(JSON.stringify(submitted[0])).not.toContain("pnpm install");
     expect(JSON.stringify(submitted[0])).not.toContain("repository root");
   });
-
-  it("states the true empty state without claiming an uninspected file is absent", () => {
-    const { host } = open({
-      repos: [createDefaults({ provisioning: provisionOffer({ model: emptyProvisionModel() }) })],
-    });
-    const said = host.querySelector(".wt-bring-empty")?.textContent ?? "";
-    expect(said).toContain("No configured items or supported repository-root suggestions");
-    expect(said).not.toContain("no .env");
-  });
 });
 
 describe("Bring over — what the new worktree will lack", () => {
@@ -2002,14 +1993,6 @@ describe("Bring over — what the new worktree will lack", () => {
     expect(code?.textContent).toBe("<img src=x onerror=alert(1)>");
     expect(code?.querySelector("img")).toBeNull();
   });
-
-  it("still offers Create when the repository declares nothing to bring over", () => {
-    // The section is not a gate. This asserts the create path is untouched;
-    // what the empty section SAYS is the next task's.
-    const { q } = open({ repos: [createDefaults()] });
-    type(q<HTMLInputElement>("#wt-branch"), "feat/x");
-    expect(q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(false);
-  });
 });
 
 describe("Bring over — a repository that declares nothing, and a file that cannot be read", () => {
@@ -2030,6 +2013,7 @@ describe("Bring over — a repository that declares nothing, and a file that can
     expect(host.querySelectorAll(".wt-brow")).toHaveLength(0);
     const said = host.querySelector(".wt-bring-empty")?.textContent ?? "";
     expect(said).toContain("No configured items or supported repository-root suggestions");
+    expect(said).not.toContain("no .env");
   });
 
   it("marks the empty section as configuring nothing, not as unread", () => {
@@ -5471,7 +5455,7 @@ describe("provisioning save action weight", () => {
     const rule = ruleOf(css(), ".wt-bring-save");
     expect(rule, "no save button rule").toBeTruthy();
     expect(rule).toContain("--vscode-button-secondaryBackground");
-    expect(rule).toMatch(/font-size:/);
+    expect(rule).toContain("font-size: 11px");
   });
 
   it("[2_2] gives the setup gate's order its own line", () => {
@@ -5492,7 +5476,9 @@ describe("provisioning save action weight", () => {
     expect(rule, "no save row rule").toBeTruthy();
     expect(rule).toContain("flex-direction: row");
     expect(rule).toContain("flex-wrap: wrap");
-    expect(ruleOf(css(), ".wt-bring-save-note"), "no save note rule").toBeTruthy();
+    const note = ruleOf(css(), ".wt-bring-save-note");
+    expect(note, "no save note rule").toContain("color: var(--vscode-descriptionForeground)");
+    expect(note).toContain("font-size: 11px");
   });
 });
 
@@ -6565,12 +6551,5 @@ describe("a file added to copy for this create only", () => {
   it("offers no copy action when the host callback is unavailable", () => {
     const { host } = withCopy({}, { onCopyFileAsk: undefined });
     expect(host.querySelector(".wt-bring-add-copy")).toBeNull();
-  });
-
-  it("states that added files are not saved as defaults", () => {
-    const { q } = withCopy();
-    expect(q<HTMLElement>(".wt-bring-save-note").textContent).toBe(
-      "Added files, setup steps and ports apply to this create only.",
-    );
   });
 });

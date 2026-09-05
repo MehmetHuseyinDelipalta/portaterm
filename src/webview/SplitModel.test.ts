@@ -25,11 +25,6 @@ describe("createLeaf", () => {
     const leaf = createLeaf("abc");
     expect(leaf).toEqual({ type: "leaf", sessionId: "abc" });
   });
-
-  it("has type discriminant 'leaf'", () => {
-    const leaf = createLeaf("xyz");
-    expect(leaf.type).toBe("leaf");
-  });
 });
 
 // ─── createBranch ───────────────────────────────────────────────────

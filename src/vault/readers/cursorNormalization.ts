@@ -11,6 +11,7 @@
 // Bounded and local: no raw blob, argument, or result value is logged or cached,
 // and every emitted string is capped.
 
+import { asRecord } from "../../utils/record";
 import { isSafeCursorChatId } from "../cacheTypes";
 import type { VaultActivityStep, VaultTimelineItem } from "../types";
 
@@ -87,10 +88,6 @@ const EMPTY: CursorNormalizedRecord = {
 
 export function emptyCursorRecord(): CursorNormalizedRecord {
   return { ...EMPTY, timeline: [], activity: [], subagentCalls: [], toolResults: [] };
-}
-
-function asObject(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
 /** First `<name>…</name>` body, by indexOf scan (no regex over untrusted text). */
@@ -215,7 +212,7 @@ function toolName(record: Record<string, unknown>): string | undefined {
 }
 
 function pickString(args: unknown, keys: readonly string[]): string | undefined {
-  const record = asObject(args);
+  const record = asRecord(args);
   if (!record) {
     return undefined;
   }
@@ -246,7 +243,7 @@ function toolCallStep(
   block: Record<string, unknown>,
 ): { step: VaultActivityStep; subagentCall?: CursorSubagentCall } {
   if (SUBAGENT_TOOL_NAMES.has(name.toLowerCase())) {
-    const input = asObject(args);
+    const input = asRecord(args);
     const subagentType = boundedName(input?.subagent_type);
     const title = pickString(args, ["description"]);
     const prompt = pickString(args, SUBAGENT_PROMPT_KEYS);
@@ -305,7 +302,7 @@ function boundedResult(value: unknown): string | undefined {
   if (typeof value === "string") {
     return value.slice(0, MAX_SUBAGENT_RESULT_CHARS);
   }
-  const object = asObject(value);
+  const object = asRecord(value);
   if (!object) {
     return undefined;
   }
@@ -345,7 +342,7 @@ function standaloneToolResults(record: Record<string, unknown>): CursorToolResul
   }
   if (Array.isArray(record.content)) {
     return record.content
-      .map(asObject)
+      .map(asRecord)
       .filter((block): block is Record<string, unknown> => !!block && isToolResultBlock(block.type))
       .map(toolResultFromBlock)
       .filter((result): result is CursorToolResult => !!result);
@@ -377,11 +374,11 @@ function stepChars(step: VaultActivityStep): number {
  * the line.
  */
 export function normalizeCursorRecord(value: unknown): CursorNormalizedRecord | undefined {
-  const envelope = asObject(value);
+  const envelope = asRecord(value);
   if (!envelope) {
     return undefined;
   }
-  const message = asObject(envelope.message);
+  const message = asRecord(envelope.message);
   const record = message ? { ...envelope, ...message } : envelope;
   if (isDropped(envelope) || isDropped(record)) {
     return emptyCursorRecord();
@@ -411,7 +408,7 @@ export function normalizeCursorRecord(value: unknown): CursorNormalizedRecord | 
     texts.push(content);
   } else if (Array.isArray(content)) {
     for (const item of content) {
-      const block = asObject(item);
+      const block = asRecord(item);
       if (!block) {
         continue;
       }

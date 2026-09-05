@@ -7,6 +7,7 @@
 
 import { MAX_CONTINUATION_INSTRUCTION } from "../../vault/continuationLimits";
 import type { AgentPermissionOption, VaultLaunchTarget } from "../../vault/types";
+import { createFocusTrap } from "../ui/focusTrap";
 import type { ForkPoint } from "./forkPoint";
 
 export interface ContinueDialogResult {
@@ -214,13 +215,7 @@ export function openContinueDialog(root: HTMLElement, deps: ContinueDialogDeps):
     dangerNote.hidden = !currentChoice()?.dangerous;
   });
 
-  const focusable = (): HTMLElement[] =>
-    Array.from(
-      card.querySelectorAll<HTMLElement>(
-        'textarea:not([readonly]), input, select, button, [tabindex]:not([tabindex="-1"])',
-      ),
-    ).filter((el) => !el.closest("[hidden]") && !(el instanceof HTMLButtonElement && el.disabled));
-
+  const focusTrap = createFocusTrap(card, overlay);
   let disposed = false;
   const dispose = (restoreFocus = true): void => {
     if (disposed) {
@@ -240,21 +235,7 @@ export function openContinueDialog(root: HTMLElement, deps: ContinueDialogDeps):
       dispose();
       return;
     }
-    if (ev.key !== "Tab") {
-      return;
-    }
-    const controls = focusable();
-    const first = controls[0];
-    const last = controls[controls.length - 1];
-    if (!first || !last) {
-      ev.preventDefault();
-      return;
-    }
-    const active = document.activeElement;
-    if (ev.shiftKey ? active === first || !overlay.contains(active) : active === last || !overlay.contains(active)) {
-      ev.preventDefault();
-      (ev.shiftKey ? last : first).focus();
-    }
+    focusTrap.handleKeyDown(ev);
   }
 
   cancel.addEventListener("click", () => dispose());
@@ -341,6 +322,6 @@ export function openContinueDialog(root: HTMLElement, deps: ContinueDialogDeps):
     },
   );
 
-  instruction.focus();
+  focusTrap.focusInitial(instruction);
   return dispose;
 }

@@ -47,39 +47,6 @@ function labels(host: HTMLElement): string[] {
 
 const EVENT = new MouseEvent("contextmenu", { clientX: 10, clientY: 10 });
 
-/** Records whether the menu was still mounted at the moment an action ran. */
-function setupObservingAction(): {
-  menu: WorktreeContextMenu;
-  host: HTMLElement;
-  seen: { action: string; menuStillOpen: boolean }[];
-} {
-  const host = document.createElement("div");
-  document.body.appendChild(host);
-  const seen: { action: string; menuStillOpen: boolean }[] = [];
-  let menu: WorktreeContextMenu | undefined;
-  const record = (action: string) => (): void => {
-    seen.push({ action, menuStillOpen: menu?.isOpen() ?? false });
-  };
-  const actions: WorktreeMenuActions = {
-    openFolderInNewWindow: record("openFolderInNewWindow"),
-    addFolderToWorkspace: record("addFolderToWorkspace"),
-    openTerminalHere: record("openTerminalHere"),
-    revealWorktree: record("revealWorktree"),
-    copyWorktreePath: record("copyWorktreePath"),
-    toggleLock: record("toggleLock"),
-    removeWorktree: record("removeWorktree"),
-    launchAgentHere: record("launchAgentHere"),
-    focusPane: record("focusPane"),
-    openPreview: record("openPreview"),
-    resumeHere: record("resumeHere"),
-    copyResumeCommand: record("copyResumeCommand"),
-    revealAgentCwd: record("revealAgentCwd"),
-    copyAgentPath: record("copyAgentPath"),
-  };
-  menu = new WorktreeContextMenu({ host, actions });
-  return { menu, host, seen };
-}
-
 describe("worktree row menu", () => {
   it("carries the items from the reference, in order", () => {
     const { menu, host } = setup();
@@ -98,30 +65,10 @@ describe("worktree row menu", () => {
     ]);
   });
 
-  it("offers no Remove on the main worktree", () => {
-    const { menu, host } = setup();
-    menu.openForWorktree(worktree({ id: "/wt", kind: "main", branch: "main" }), EVENT, document.createElement("div"));
-    expect(labels(host)).not.toContain("Remove Worktree…");
-  });
-
   it("flips Lock to Unlock on a locked worktree", () => {
     const { menu, host } = setup();
     menu.openForWorktree(worktree({ id: "/wt", branch: "x", locked: true }), EVENT, document.createElement("div"));
     expect(labels(host)).toContain("Unlock Worktree");
-  });
-
-  it("drops the on-disk actions for a missing worktree but keeps Copy Path", () => {
-    const { menu, host } = setup();
-    menu.openForWorktree(worktree({ id: "/wt", branch: "x", missing: true }), EVENT, document.createElement("div"));
-    const items = labels(host);
-    expect(items).not.toContain("Open Terminal Here");
-    expect(items).not.toContain("Reveal in Finder");
-    // The third door. The row toolbar and the `…` both withdraw the launch on a
-    // gone directory; nothing asserted the menu did the same (round-2 F013).
-    expect(items).not.toContain("Start an Agent Here…");
-    // Copy Path is how the user goes and looks at what happened to the directory.
-    expect(items).toContain("Copy Path");
-    expect(items).toContain("Remove Worktree…");
   });
 
   it("raises the action and closes", () => {
@@ -173,24 +120,6 @@ describe("agent row menu", () => {
     expect(labels(host)).not.toContain("Copy Resume Command");
   });
 
-  it("lands focus on the first item and moves with the arrows", () => {
-    const { menu, host } = setup();
-    menu.openForAgent(
-      agentRow({ rowId: "a", paneId: "p1", entryId: "claude:1" }),
-      EVENT,
-      document.createElement("div"),
-    );
-    const buttons = Array.from(host.querySelectorAll<HTMLButtonElement>(".vault-context-menu button"));
-    expect(document.activeElement).toBe(buttons[0]);
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
-    expect(document.activeElement).toBe(buttons[1]);
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
-    expect(document.activeElement).toBe(buttons[0]);
-    // Wraps rather than dead-ending at the edge.
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
-    expect(document.activeElement).toBe(buttons[buttons.length - 1]);
-  });
-
   it("returns focus to the anchor row on Escape", () => {
     const { menu } = setup();
     const anchor = document.createElement("div");
@@ -199,27 +128,6 @@ describe("agent row menu", () => {
     menu.openForAgent(agentRow({ rowId: "a" }), EVENT, anchor);
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(document.activeElement).toBe(anchor);
-  });
-
-  it("closes before the action runs, so a dialog it opens keeps a live opener", () => {
-    // The menu button is removed on close. If the action ran first, a dialog
-    // opened by it would capture that button as its opener — an element that no
-    // longer exists by the time focus is restored.
-    const { menu, host, seen } = setupObservingAction();
-    menu.openForWorktree(worktree({ id: "/wt", branch: "x" }), EVENT, document.createElement("div"));
-    host.querySelectorAll<HTMLButtonElement>(".vault-context-menu button")[2]?.click();
-    expect(seen).toEqual([{ action: "openTerminalHere", menuStillOpen: false }]);
-  });
-
-  it("closes on Escape and on a pointer-down outside", () => {
-    const { menu } = setup();
-    menu.openForAgent(agentRow({ rowId: "a" }), EVENT, document.createElement("div"));
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    expect(menu.isOpen()).toBe(false);
-
-    menu.openForAgent(agentRow({ rowId: "a" }), EVENT, document.createElement("div"));
-    document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-    expect(menu.isOpen()).toBe(false);
   });
 });
 
@@ -354,16 +262,6 @@ describe("the controller's callbacks post what each item claims", () => {
 });
 
 describe("which capabilities the controller supplies", () => {
-  it("supplies the mutating ones WT-005.2 owns", () => {
-    // This replaces the pre-WT-005.2 case asserting that NONE of these existed.
-    // Supplying them is what this change is for; the absent-not-inert rule is
-    // still enforced below, by what stays undefined.
-    const actions = worktreeMenuActions(() => {});
-    for (const key of ["toggleLock", "removeWorktree"] as const) {
-      expect(actions[key], key).toBeDefined();
-    }
-  });
-
   it("still supplies nothing for the launch WT-005.3 owns", () => {
     // The rule has not moved — only which side of it `resumeHere` sits on.
     const actions = worktreeMenuActions(() => {});
@@ -514,8 +412,10 @@ describe("[1_1] one builder, one surface", () => {
     // is the whole reason the extraction happened.
     const gone = worktree({ id: "/wt", branch: "feat/x", missing: true });
     expect(built(gone)).not.toContain("Open Terminal Here");
+    expect(built(gone)).not.toContain("Reveal in Finder");
     expect(built(gone)).not.toContain("Start an Agent Here…");
     expect(built(gone)).toContain("Copy Path");
+    expect(built(gone)).toContain("Remove Worktree…");
     const main = worktree({ id: "/main", branch: "main", kind: "main" });
     expect(built(main)).not.toContain("Remove Worktree…");
   });

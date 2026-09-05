@@ -243,14 +243,6 @@ export const env = {
 /** Mock configuration store — maps section.key to value. */
 let _mockConfigValues: Record<string, unknown> = {};
 
-/** Default findFiles impl returns no matches. Override via __setFindFiles for per-test behavior. */
-let _findFilesImpl: (
-  include: string | RelativePattern,
-  exclude?: string,
-  maxResults?: number,
-  token?: unknown,
-) => Promise<Array<{ fsPath: string }>> = async () => [];
-
 /** Mock configuration change handlers. */
 const _configChangeHandlers: Array<(e: { affectsConfiguration: (section: string) => boolean }) => void> = [];
 
@@ -307,7 +299,7 @@ export const workspace: {
   fs: {
     stat: async (_uri) => ({ type: 1, ctime: 0, mtime: 0, size: 0 }),
   },
-  findFiles: (include, exclude, maxResults, token) => _findFilesImpl(include, exclude, maxResults, token),
+  findFiles: async () => [],
 };
 
 // ─── extensions ─────────────────────────────────────────────────────
@@ -360,13 +352,11 @@ function createMockWebviewPanel(
     },
     // Test helpers
     __messageHandlers: messageHandlers,
-    __disposeHandlers: disposeHandlers,
     __viewStateHandlers: viewStateHandlers,
   };
   return panel;
 }
 
-let _showQuickPickImpl: (items: readonly unknown[], options?: unknown) => Promise<unknown> = async () => undefined;
 let _showOpenDialogImpl: (options?: unknown) => Promise<readonly { fsPath: string }[] | undefined> = async () =>
   undefined;
 
@@ -387,7 +377,7 @@ export const window = {
   showErrorMessage: (_msg?: string) => Promise.resolve(undefined),
   showWarningMessage: (_msg?: string, ..._rest: unknown[]) => Promise.resolve(undefined),
   showTextDocument: (_uri?: unknown, _opts?: unknown) => Promise.resolve({}),
-  showQuickPick: (items: readonly unknown[], options?: unknown) => _showQuickPickImpl(items, options),
+  showQuickPick: async () => undefined,
   showOpenDialog: (options?: unknown) => _showOpenDialogImpl(options),
   showInputBox: (_options?: unknown) => Promise.resolve(undefined),
   createWebviewPanel: createMockWebviewPanel,
@@ -466,17 +456,6 @@ export class TabInputTextDiff {
     public readonly modified: { scheme: string; fsPath: string },
   ) {}
 }
-export class TabInputNotebookDiff {
-  constructor(
-    public readonly original: { scheme: string; fsPath: string },
-    public readonly modified: { scheme: string; fsPath: string },
-    public readonly notebookType: string = "",
-  ) {}
-}
-export class TabInputTerminal {}
-export class TabInputWebview {
-  constructor(public readonly viewType: string = "") {}
-}
 
 type Tab = { input?: unknown; label?: string; isActive?: boolean };
 type TabChangeEvent = { changed: readonly Tab[]; closed: readonly Tab[]; opened: readonly Tab[] };
@@ -529,14 +508,6 @@ export function __setActiveTab(tab: Tab | undefined): void {
   }
 }
 
-/** Test helper: fire an onDidChangeTabGroups event (e.g. when a group becomes active). */
-export function __fireTabGroupChange(): void {
-  const event: TabGroupChangeEvent = { changed: [], closed: [], opened: [] };
-  for (const handler of [..._tabGroupChangeHandlers]) {
-    handler(event);
-  }
-}
-
 /** Test helper: how many tab-change listeners are currently attached (both kinds combined). */
 export function __getTabChangeListenerCount(): number {
   return _tabChangeHandlers.length + _tabGroupChangeHandlers.length;
@@ -584,23 +555,6 @@ export function __fireConfigChange(affectedSections: string[]): void {
   }
 }
 
-/** Set mock workspace.findFiles for testing. */
-export function __setFindFiles(
-  fn: (
-    include: string | RelativePattern,
-    exclude?: string,
-    maxResults?: number,
-    token?: unknown,
-  ) => Promise<Array<{ fsPath: string }>>,
-): void {
-  _findFilesImpl = fn;
-}
-
-/** Set mock window.showQuickPick for testing. */
-export function __setShowQuickPick(fn: (items: readonly unknown[], options?: unknown) => Promise<unknown>): void {
-  _showQuickPickImpl = fn;
-}
-
 /** Set mock window.showOpenDialog for testing. */
 export function __setShowOpenDialog(
   fn: (options?: unknown) => Promise<readonly { fsPath: string }[] | undefined>,
@@ -615,8 +569,6 @@ export function __resetAll(): void {
   _mockExtension = undefined;
   _mockConfigValues = {};
   _configChangeHandlers.length = 0;
-  _findFilesImpl = async () => [];
-  _showQuickPickImpl = async () => undefined;
   _showOpenDialogImpl = async () => undefined;
   _themeChangeHandlers.length = 0;
   _activeColorTheme = { kind: ColorThemeKind.Dark };

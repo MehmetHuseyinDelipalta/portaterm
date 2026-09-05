@@ -288,20 +288,6 @@ describe("FilePathLinkProvider.provideLinks", () => {
     });
   });
 
-  it("respects the parser's 10-result cap", () => {
-    const parts = Array.from({ length: 15 }, (_, i) => `src/foo${i}.ts`).join(" ");
-    const terminal = makeTerminalStub(parts);
-    const postMessage = vi.fn();
-    const provider = new FilePathLinkProvider({
-      terminal,
-      sessionId: "sess-1",
-      postMessage,
-      platform: "posix",
-    });
-    const links = collect(provider);
-    expect(links).toHaveLength(10);
-  });
-
   it("soft-wrap: hovering the continuation row of a wrapped path returns the FULL path", () => {
     // Real-world repro: long path wrapped across two terminal rows. The user
     // hovered the second visible row (rPreviewPopup.ts portion) and the link

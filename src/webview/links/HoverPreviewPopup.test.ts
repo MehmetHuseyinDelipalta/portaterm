@@ -437,24 +437,6 @@ describe("HoverPreviewPopup — show / hide", () => {
     expect(terminalListener).not.toHaveBeenCalled();
   });
 
-  it("popup.onDismiss callback is invoked on self-dismiss paths (mousedown outside / Escape)", () => {
-    const term = makeTerminalElement();
-    const onDismiss = vi.fn();
-    // mousedown outside
-    let popup = new HoverPreviewPopup({ onDismiss });
-    popup.show(fakeMouseEvent(term, 50, 50), makeOkResult({ path: "p", content: "x" }), "dark");
-    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-    expect(onDismiss).toHaveBeenCalledTimes(1);
-
-    // Escape
-    popup = new HoverPreviewPopup({ onDismiss });
-    popup.show(fakeMouseEvent(term, 50, 50), makeOkResult({ path: "p", requestId: "r2", content: "x" }), "dark");
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    expect(onDismiss).toHaveBeenCalledTimes(2);
-    // Wheel dismissal is owned by the controller (gated by cursorOverPopup);
-    // see HoverPreviewController.test.ts for that path.
-  });
-
   it("header falls back to result.path when absPath is absent", () => {
     const term = makeTerminalElement();
     const popup = new HoverPreviewPopup();

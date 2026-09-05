@@ -5,13 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import {
-  listClaudeWorkflowStubs,
-  lookupClaudeEntry,
-  readClaudeDetail,
-  readClaudeEntry,
-  readClaudeSessions,
-} from "./claudeReader";
+import { listClaudeWorkflowStubs, lookupClaudeEntry, readClaudeDetail, readClaudeSessions } from "./claudeReader";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = path.join(here, "..", "__fixtures__", "claude");
@@ -23,9 +17,14 @@ const TEAM_FIXTURE_ROOT = path.join(here, "..", "__fixtures__", "claude-teams");
 const WF_FIXTURE_ROOT = path.join(here, "..", "__fixtures__", "claude-workflows");
 const PERMISSION_MODE_FIXTURE_ROOT = path.join(here, "..", "__fixtures__", "claude-permission-mode");
 
+async function claudeEntry(sessionId: string, options?: Parameters<typeof lookupClaudeEntry>[1]) {
+  const found = await lookupClaudeEntry(sessionId, options);
+  return found.status === "found" ? found.entry : null;
+}
+
 describe("readClaudeSessions: permission mode is the LATEST recorded mode", () => {
   const modeOf = async (sessionId: string): Promise<string | undefined> =>
-    (await readClaudeEntry(sessionId, { configDir: PERMISSION_MODE_FIXTURE_ROOT }))?.flags.permissionMode;
+    (await claudeEntry(sessionId, { configDir: PERMISSION_MODE_FIXTURE_ROOT }))?.flags.permissionMode;
 
   it("takes the mode from a later permission-mode record over the earlier one", async () => {
     expect(await modeOf("sess-changed")).toBe("default");
@@ -106,7 +105,7 @@ describe("readClaudeSessions", () => {
     expect(entries.some((e) => e.sessionId === "sess-empty")).toBe(false);
     // Hidden from the LIST only — a single-entry resolve still returns it (a real,
     // launchable session), mirroring the team-member rule.
-    const entry = await readClaudeEntry("sess-empty", { configDir: CMDS_FIXTURE_ROOT });
+    const entry = await claudeEntry("sess-empty", { configDir: CMDS_FIXTURE_ROOT });
     expect(entry?.id).toBe("claude:sess-empty");
   });
 
@@ -123,9 +122,9 @@ describe("readClaudeSessions", () => {
   });
 });
 
-describe("readClaudeEntry: single-entry resolve", () => {
+describe("lookupClaudeEntry: single-entry resolve", () => {
   it("resolves one session by id with the same fields as the list scan", async () => {
-    const entry = await readClaudeEntry("sess-valid", { configDir: FIXTURE_ROOT });
+    const entry = await claudeEntry("sess-valid", { configDir: FIXTURE_ROOT });
     expect(entry?.id).toBe("claude:sess-valid");
     expect(entry?.sessionId).toBe("sess-valid");
     expect(entry?.cwd).toBe("/Users/me/proj");
@@ -135,11 +134,7 @@ describe("readClaudeEntry: single-entry resolve", () => {
   });
 
   it("returns null for an unsafe id (path traversal)", async () => {
-    expect(await readClaudeEntry("../../escape", { configDir: FIXTURE_ROOT })).toBeNull();
-  });
-
-  it("returns null for a session that does not exist", async () => {
-    expect(await readClaudeEntry("nope-not-here", { configDir: FIXTURE_ROOT })).toBeNull();
+    expect(await claudeEntry("../../escape", { configDir: FIXTURE_ROOT })).toBeNull();
   });
 });
 
@@ -191,7 +186,7 @@ describe("team-member exclusion from the top-level list (D5)", () => {
   });
 
   it("still resolves a member by explicit id (a member is a real, launchable session)", async () => {
-    const entry = await readClaudeEntry("member-a", { configDir: TEAM_FIXTURE_ROOT });
+    const entry = await claudeEntry("member-a", { configDir: TEAM_FIXTURE_ROOT });
     expect(entry).not.toBeNull();
     expect(entry?.sessionId).toBe("member-a");
     expect(entry?.id).toBe("claude:member-a");
@@ -664,9 +659,5 @@ describe("lookupClaudeEntry: absent is proven, everything else is unknown", () =
     const root = await makeStore();
     await fsp.writeFile(path.join(root, "projects", "proj-a", "broken.jsonl"), "not json at all\n");
     expect(await lookupClaudeEntry("broken", { configDir: root })).toEqual({ status: "unknown" });
-  });
-
-  it("keeps readClaudeEntry nullable for the callers that cannot act on the difference", async () => {
-    expect(await readClaudeEntry("no-such-session", { configDir: PERMISSION_MODE_FIXTURE_ROOT })).toBeNull();
   });
 });

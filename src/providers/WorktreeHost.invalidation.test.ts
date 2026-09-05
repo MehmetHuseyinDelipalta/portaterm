@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { pumpImmediateMacrotasks } from "../test/providerTestUtils";
 import type { ExtensionToWebViewMessage } from "../types/messages";
 import { createGitCapabilities } from "../worktree/gitCapabilities";
 import type { GitCommandResult, GitCommandRunner } from "../worktree/gitCommandRunner";
@@ -122,11 +123,7 @@ function surface(): WorktreeSurface & { posts: ExtensionToWebViewMessage[] } {
   return { posts, isReady: () => true, post: (m) => posts.push(m) };
 }
 
-async function settle(): Promise<void> {
-  for (let i = 0; i < 6; i += 1) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-}
+const settle = (): Promise<void> => pumpImmediateMacrotasks(6);
 
 /** A host over `folders`, already built once and pushing to one visible surface. */
 async function builtHost(options: { folders?: string[]; failWatchFor?: string } = {}) {

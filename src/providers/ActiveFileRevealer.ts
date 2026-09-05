@@ -56,7 +56,7 @@ function extractFileUri(input: unknown): vscode.Uri | null {
 }
 
 /**
- * Listens to `window.tabGroups.onDidChangeActiveTab` for one webview and posts
+ * Listens to `window.tabGroups.onDidChangeTabs` and `onDidChangeTabGroups` for one webview and posts
  * a `RevealInFileTreeMessage` when the active editor's file should be revealed
  * in that webview's file tree.
  *

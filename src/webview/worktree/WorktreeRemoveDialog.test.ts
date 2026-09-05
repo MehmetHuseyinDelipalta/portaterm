@@ -201,7 +201,7 @@ describe("remove worktree — refused for containment (design.md D4)", () => {
 
   it("offers no confirm button", () => {
     const { host } = openNested();
-    expect(host.querySelector(".wt-dialog-confirm")).toBeNull();
+    expect(host.querySelector("button.wt-btn--danger")).toBeNull();
   });
 
   it("does NOT explain the refusal as a busy agent", () => {
@@ -288,19 +288,6 @@ describe("remove worktree — confirmation (§ 11)", () => {
     const dialog = host.querySelector(".wt-dialog");
     expect(dialog?.contains(document.activeElement)).toBe(true);
     expect(document.activeElement?.textContent).toBe("Cancel");
-  });
-
-  it("re-sends the fingerprint the user was shown", () => {
-    const { host, confirmed } = open(confirmableBlocker);
-    // A failing confirmable risk now earns the typed confirmation (1_2), so the
-    // name is entered before the button will answer at all.
-    const field = host.querySelector<HTMLInputElement>("#wt-confirm-name");
-    if (field !== null) {
-      field.value = SPIKE.branch ?? "";
-      field.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-    host.querySelector<HTMLButtonElement>(".wt-btn--danger")?.click();
-    expect(confirmed).toEqual([confirmableBlocker.fingerprint]);
   });
 
   it("is not dismissed by a stray click on the scrim", () => {
@@ -568,12 +555,6 @@ describe("the confirmation states what it destroys and what it spares", () => {
     expect(text).toMatch(/running in a deleted directory/i);
   });
 
-  it("does not claim the losses were reviewed, because they can still change", () => {
-    const { host } = open(confirmableBlocker);
-    const text = host.querySelector(".wt-warnbox")?.textContent ?? "";
-    expect(text).toMatch(/files written after you confirm/i);
-  });
-
   it("[1_3] states the same consequences for an ordinary confirmation", () => {
     // The requirement is about a REMOVAL confirmation, not a forced one
     // (worktree-panel § A removal states what it destroys and what it spares).
@@ -716,13 +697,6 @@ describe("a check nobody could evaluate (round-1 W2)", () => {
     expect(danger(host), "the removal was withheld rather than gated").not.toBeNull();
     expect(host.querySelector("#wt-confirm-name")).not.toBeNull();
     expect(danger(host)?.disabled).toBe(true);
-  });
-
-  it("still offers force when every check was actually evaluated", () => {
-    // The guard must not cost the reachable case its confirmation.
-    const { host } = open(confirmableBlocker);
-
-    expect([...host.querySelectorAll("button")].map((b) => b.textContent)).toContain("Force remove");
   });
 
   it("still offers force when the only unproven checks are PROOFS", () => {

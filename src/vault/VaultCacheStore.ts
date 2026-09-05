@@ -12,6 +12,7 @@
 import * as path from "node:path";
 import type * as vscode from "vscode";
 import type { FsLike } from "../session/SessionStorage";
+import { isRecord } from "../utils/record";
 import {
   isSafeCursorChatId,
   isValidCursorLocationIndex,
@@ -66,10 +67,6 @@ function isValidStamp(s: unknown): boolean {
   }
   const v = s as Record<string, unknown>;
   return isFiniteNumber(v.mtimeMs) && isFiniteNumber(v.size);
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
 function isValidCursorEntry(

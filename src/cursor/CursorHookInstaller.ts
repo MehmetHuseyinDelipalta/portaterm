@@ -1,30 +1,18 @@
 import { randomBytes } from "node:crypto";
 import { chmod, lstat, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { posix, win32 } from "node:path";
+import { CURSOR_HOOK_EVENTS } from "../agentHooks/agents/cursor";
 import { LockedFile } from "../agentHooks/install/lockedJsonFile";
+import { isNotFound } from "../utils/fsPresence";
 import { posixShellQuote } from "../utils/posixShellQuote";
-
-export const CURSOR_HOOK_EVENTS = [
-  "sessionStart",
-  "beforeSubmitPrompt",
-  "preToolUse",
-  "postToolUse",
-  "postToolUseFailure",
-  "beforeShellExecution",
-  "afterShellExecution",
-  "beforeMCPExecution",
-  "afterMCPExecution",
-  "afterAgentResponse",
-  "stop",
-  "sessionEnd",
-] as const;
+import { isRecord } from "../utils/record";
 
 /** Frozen POSIX generation: the whole ownership key and the shell program Cursor executes. */
 export const CURSOR_HOOK_COMMAND =
   // biome-ignore lint/suspicious/noTemplateCurlyInString: frozen POSIX parameter expansion is a literal command byte sequence
   "set +e +x 2>/dev/null; trap '' PIPE 2>/dev/null; unset -f command awk cat curl printf read 2>/dev/null || :; printf '{}\\n'; payload=$(command -p cat 2>/dev/null) || { while IFS= read -r _; do :; done; exit 0; }; url=${ANYWHERE_TERMINAL_CURSOR_URL:-}; command -p awk 'BEGIN { u=ARGV[1]; if (u !~ /^http:\\/\\/127[.]0[.]0[.]1:[0-9]+\\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\/[0-9a-f]+$/) exit 1; n=split(u,p,\"/\"); split(p[3],a,\":\"); port=a[2]+0; if (n != 5 || port < 1 || port > 65535 || length(p[5]) != 64) exit 1 }' \"$url\" 2>/dev/null || exit 0; printf '%s' \"$payload\" | command -p curl --disable --silent --noproxy '*' --globoff --proto '=http' --output /dev/null --connect-timeout 0.5 --max-time 1.5 --request POST --header \"content-type: application/json\" --data-binary @- -- \"$url/cursor\" 2>/dev/null || :; exit 0";
 
-type JsonObject = Record<string, unknown>;
+type CursorConfigObject = Record<string, unknown>;
 
 type FileSystem = Pick<
   typeof import("node:fs/promises"),
@@ -138,7 +126,7 @@ export class CursorHookInstaller {
       async (): Promise<CursorHookInstallResult> => {
         let legacyReferenced = false;
         const reconciled = await this.reconcile((document, managedCommand, ownedCommands) => {
-          const hooks = document.hooks as Record<string, JsonObject[]>;
+          const hooks = document.hooks as Record<string, CursorConfigObject[]>;
           for (const event of CURSOR_HOOK_EVENTS) {
             const entries = hooks[event] ?? [];
             hooks[event] = [
@@ -195,7 +183,7 @@ export class CursorHookInstaller {
         let legacyReferenced = false;
         let removed = false;
         const reconciled = await this.reconcile((document, _managedCommand, ownedCommands) => {
-          const hooks = document.hooks as Record<string, JsonObject[]>;
+          const hooks = document.hooks as Record<string, CursorConfigObject[]>;
           for (const event of CURSOR_HOOK_EVENTS) {
             const entries = hooks[event] ?? [];
             const retained = entries.filter((entry) => !isOwnedEntry(entry, ownedCommands));
@@ -301,7 +289,7 @@ export class CursorHookInstaller {
   }
 
   private async reconcile(
-    change: (document: JsonObject, managedCommand: string, ownedCommands: readonly string[]) => boolean,
+    change: (document: CursorConfigObject, managedCommand: string, ownedCommands: readonly string[]) => boolean,
   ): Promise<"success" | "unsupported" | "failed"> {
     const managedCommand = this.managedCommand();
     const ownedCommands = this.ownedCommands();
@@ -324,7 +312,9 @@ export class CursorHookInstaller {
     return "failed";
   }
 
-  private async readConfiguration(): Promise<{ contents: string; document: JsonObject; mode?: number } | undefined> {
+  private async readConfiguration(): Promise<
+    { contents: string; document: CursorConfigObject; mode?: number } | undefined
+  > {
     try {
       if ((await this.fs.lstat(this.options.configPath)).isSymbolicLink()) {
         return { contents: "", document: {} };
@@ -348,7 +338,7 @@ export class CursorHookInstaller {
     }
     try {
       const file = await this.fs.stat(this.options.configPath);
-      return { contents, document: isObject(document) ? document : {}, mode: file.mode & 0o777 };
+      return { contents, document: isRecord(document) ? document : {}, mode: file.mode & 0o777 };
     } catch {
       return undefined;
     }
@@ -409,15 +399,15 @@ export class CursorHookInstaller {
   }
 }
 
-function ownedEntry(command: string): JsonObject {
+function ownedEntry(command: string): CursorConfigObject {
   return { command, timeout: 2 };
 }
 
-function hasCommandReference(hooks: Record<string, JsonObject[]>, command: string): boolean {
+function hasCommandReference(hooks: Record<string, CursorConfigObject[]>, command: string): boolean {
   return Object.values(hooks).some((entries) => entries.some((entry) => entry.command === command));
 }
 
-function isOwnedEntry(entry: JsonObject, commands: readonly string[]): boolean {
+function isOwnedEntry(entry: CursorConfigObject, commands: readonly string[]): boolean {
   const keys = Object.keys(entry).sort();
   return (
     keys.length === 2 &&
@@ -429,19 +419,11 @@ function isOwnedEntry(entry: JsonObject, commands: readonly string[]): boolean {
   );
 }
 
-function isSupportedDocument(document: JsonObject): boolean {
-  if (document.version !== 1 || !isObject(document.hooks)) {
+function isSupportedDocument(document: CursorConfigObject): boolean {
+  if (document.version !== 1 || !isRecord(document.hooks)) {
     return false;
   }
   return Object.values(document.hooks).every(
-    (entries) => Array.isArray(entries) && entries.every((entry) => isObject(entry)),
+    (entries) => Array.isArray(entries) && entries.every((entry) => isRecord(entry)),
   );
-}
-
-function isObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNotFound(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }

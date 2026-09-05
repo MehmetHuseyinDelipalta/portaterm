@@ -284,7 +284,6 @@ describe("TerminalViewProvider: openFile dispatch", () => {
         stat: expect.any(Function),
         findFiles: expect.any(Function),
         showWarning: expect.any(Function),
-        showError: expect.any(Function),
         showTextDocument: expect.any(Function),
         showQuickPick: expect.any(Function),
       }),

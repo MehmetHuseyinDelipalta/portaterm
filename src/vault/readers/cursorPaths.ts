@@ -284,20 +284,6 @@ export async function resolveChangedCursorChatCandidates(
   return { groups, locations: nextLocations, metaChanged, requiresFullScan: false };
 }
 
-/**
- * Resolve ONE chat id to its candidate directory, applying the same safety
- * and duplicate-ambiguity rules as the list scan (safe-cursor-chat-lookup —
- * point lookup never bypasses ambiguity omission). Returns null for an unsafe,
- * unlocatable, or ambiguous id.
- */
-export async function resolveCursorChatCandidate(
-  chatId: string,
-  options: CursorReaderOptions = {},
-): Promise<CursorChatCandidate | null> {
-  const found = await lookupCursorChatCandidate(chatId, options);
-  return found.status === "found" ? found.candidate : null;
-}
-
 /** What a point lookup could establish about one chat id. */
 export type CursorChatCandidateLookup =
   | { status: "found"; candidate: CursorChatCandidate }

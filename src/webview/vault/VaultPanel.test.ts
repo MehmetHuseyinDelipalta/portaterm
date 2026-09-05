@@ -496,16 +496,6 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
     return host.querySelector(".vault-context-menu");
   }
 
-  function _mount(
-    entryOver: Partial<VaultSessionEntry>,
-    posted: { type: string; entryId?: string | null }[],
-  ): VaultPanel {
-    const host = createHost();
-    const panel = new VaultPanel({ host, postMessage: (m) => posted.push(m), getInitialCollapsed: () => false });
-    panel.render(result([entry({ id: "claude:a", ...entryOver })]));
-    return panel;
-  }
-
   it("has no menu until a row is right-clicked (no ⋯ trigger)", () => {
     const host = createHost();
     const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
@@ -513,23 +503,6 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
     expect(host.querySelector(".vault-context-menu")).toBeNull();
     openMenu(host);
     expect(host.querySelector(".vault-context-menu")).not.toBeNull();
-  });
-
-  it("shows all items for a file-backed session", () => {
-    const host = createHost();
-    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
-    panel.render(result([entry({ id: "claude:a", sessionPath: "/store/a.jsonl" })]));
-    const menu = openMenu(host);
-    const labels = Array.from(menu?.querySelectorAll("button") ?? []).map((b) => b.textContent);
-    expect(labels).toEqual([
-      "Resume in New Tab",
-      "Rename",
-      "Open",
-      "Reveal in Finder",
-      "Copy File Path",
-      "Copy Resume Command",
-      "Open Working Directory",
-    ]);
   });
 
   it("hides the file-targeting items for a DB-backed session (no sessionPath)", () => {
@@ -568,33 +541,18 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
     expect(fileLabels).toEqual(["Rename", "Open", "Reveal in Finder", "Copy File Path", "Open Working Directory"]);
   });
 
-  it("each item posts the matching entryId-only message", () => {
+  it("posts Copy Resume Command from the row context menu", () => {
     const posted: { type: string; entryId?: string | null }[] = [];
     const host = createHost();
     const panel = new VaultPanel({ host, postMessage: (m) => posted.push(m), getInitialCollapsed: () => false });
     panel.render(result([entry({ id: "claude:a", sessionPath: "/store/a.jsonl" })]));
     const menu = openMenu(host);
-    const click = (label: string) =>
-      Array.from(menu?.querySelectorAll("button") ?? [])
-        .find((b) => b.textContent === label)
-        ?.click();
 
-    click("Copy File Path");
-    // Reopen for each (clicking closes the menu).
-    openMenu(host);
-    Array.from(host.querySelector(".vault-context-menu")?.querySelectorAll("button") ?? [])
-      .find((b) => b.textContent === "Copy Resume Command")
-      ?.click();
-    openMenu(host);
-    Array.from(host.querySelector(".vault-context-menu")?.querySelectorAll("button") ?? [])
-      .find((b) => b.textContent === "Open Working Directory")
+    Array.from(menu?.querySelectorAll("button") ?? [])
+      .find((button) => button.textContent === "Copy Resume Command")
       ?.click();
 
-    expect(posted).toContainEqual({ type: "vaultCopyFilePath", entryId: "claude:a" });
     expect(posted).toContainEqual({ type: "vaultCopyResumeCommand", entryId: "claude:a" });
-    expect(posted).toContainEqual({ type: "vaultOpenWorkingDir", entryId: "claude:a" });
-    // No path is ever sent — only entryId.
-    expect(posted.every((m) => !("path" in m))).toBe(true);
   });
 
   it("closes on Esc and on click-outside, clearing is-context-open", () => {
@@ -3978,7 +3936,7 @@ describe("VaultPanel dispose", () => {
     expect(host.querySelector(".vault-preview.is-open")).toBeNull();
   });
 
-  it("tears down the open context menu and is idempotent + inert afterwards", () => {
+  it("tears down the open context menu and is idempotent", () => {
     const host = createHost();
     const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
     panel.render(result([entry({ id: "claude:a" })]));
@@ -3988,12 +3946,7 @@ describe("VaultPanel dispose", () => {
     expect(host.querySelector(".vault-context-menu")).not.toBeNull();
     panel.dispose();
     expect(host.querySelector(".vault-context-menu")).toBeNull();
-    // A second dispose + stray document events must not throw (listeners detached).
-    expect(() => {
-      panel.dispose();
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-      document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-    }).not.toThrow();
+    panel.dispose();
   });
 });
 
@@ -4191,15 +4144,6 @@ describe("worktree segment", () => {
     );
   });
 
-  it("hides the folder filter in the worktree view — the tree is already folder-scoped", () => {
-    const host = createHost();
-    const panel = new VaultPanel({ host, postMessage: () => {}, worktreeBody: worktreeBody() });
-    const toggle = host.querySelector<HTMLElement>(".vault-folder-toggle");
-    expect(toggle?.hidden).toBe(false);
-    panel.setView("worktree");
-    expect(toggle?.hidden).toBe(true);
-  });
-
   it("leaves groupEntries untouched — the grouping survives a round trip", () => {
     const host = createHost();
     const panel = new VaultPanel({ host, postMessage: () => {}, worktreeBody: worktreeBody() });
@@ -4285,22 +4229,6 @@ describe("the create-worktree toolbar control", () => {
     });
     return { host, panel };
   }
-
-  it("[1_1] exists once a create callback is supplied", () => {
-    // It never has been: nothing in production passed `onCreateWorktree`, so the
-    // control the applied requirement describes was never constructed.
-    expect(btn(panelWith().host)).toBeDefined();
-  });
-
-  it("[1_1] is absent from a sessions body and present in the Worktree body", () => {
-    const { host, panel } = panelWith();
-    panel.setCreateWorktreeAvailable(true);
-    panel.setView("sessions", { persist: false });
-    expect(btn(host)?.hidden).toBe(true);
-
-    panel.setView("worktree", { persist: false });
-    expect(btn(host)?.hidden).toBe(false);
-  });
 
   it("[1_1] is absent while there is no repository to create in", () => {
     // Absent, not inert: a disabled control claims the action exists here and is

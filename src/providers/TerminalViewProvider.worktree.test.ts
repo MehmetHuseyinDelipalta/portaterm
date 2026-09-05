@@ -23,6 +23,7 @@ vi.mock("../session/OutputBuffer", () => ({ OutputBuffer: class {} }));
 import type * as vscode from "vscode";
 import * as vscodeApi from "vscode";
 import { SessionManager } from "../session/SessionManager";
+import { mockExtensionContext, pumpTimeoutMacrotasks } from "../test/providerTestUtils";
 import { WORKTREE_MESSAGE_TYPES } from "../types/messages";
 import { createGitCapabilities } from "../worktree/gitCapabilities";
 import type { GitCommandResult, GitCommandRunner } from "../worktree/gitCommandRunner";
@@ -155,11 +156,7 @@ function mountSurface(host: WorktreeHost, location: "sidebar" | "panel") {
   };
 }
 
-async function settle(): Promise<void> {
-  for (let i = 0; i < 8; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-}
+const settle = (): Promise<void> => pumpTimeoutMacrotasks(8);
 
 const pool = { subscribePattern: () => ({ active: true, dispose: () => {} }) };
 
@@ -351,7 +348,7 @@ function panelSeam(): { panel: vscode.WebviewPanel; handlers: Array<(msg: unknow
 }
 
 function mockContext(): vscode.ExtensionContext {
-  return { extensionUri: { fsPath: "/mock/extension" }, subscriptions: [] } as unknown as vscode.ExtensionContext;
+  return mockExtensionContext({ fsPath: "/mock/extension", workspaceState: undefined });
 }
 
 function surfaceOf(handlers: Array<(msg: unknown) => void>, sessions: SessionManager) {

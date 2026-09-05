@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { isRecord } from "../../utils/record";
 import { CLAUDE_HOOK_EVENTS, CLAUDE_MATCHER_EVENTS } from "../agents/claude";
 
 export const CLAUDE_CONFIG_DIR_ENV_VAR = "CLAUDE_CONFIG_DIR";
@@ -74,7 +75,7 @@ export function isSupportedClaudeSettings(document: JsonObject): boolean {
   if (document.hooks === undefined) {
     return true;
   }
-  if (!isJsonObject(document.hooks)) {
+  if (!isRecord(document.hooks)) {
     return false;
   }
   return Object.values(document.hooks).every(
@@ -82,9 +83,9 @@ export function isSupportedClaudeSettings(document: JsonObject): boolean {
       Array.isArray(groups) &&
       groups.every(
         (group) =>
-          isJsonObject(group) &&
+          isRecord(group) &&
           Array.isArray(group.hooks) &&
-          group.hooks.every(isJsonObject) &&
+          group.hooks.every(isRecord) &&
           (group.matcher === undefined || typeof group.matcher === "string"),
       ),
   );
@@ -126,7 +127,7 @@ function isCanonicalManagedGroup(event: string, group: JsonObject, command: stri
   return (
     Array.isArray(handlers) &&
     handlers.length === 1 &&
-    isJsonObject(handlers[0]) &&
+    isRecord(handlers[0]) &&
     isExactManagedHandler(handlers[0], command)
   );
 }
@@ -149,8 +150,4 @@ function sameGroupSequence(left: JsonObject[], right: JsonObject[]): boolean {
   return (
     left.length === right.length && left.every((group, index) => JSON.stringify(group) === JSON.stringify(right[index]))
   );
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

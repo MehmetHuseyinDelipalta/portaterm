@@ -7,7 +7,6 @@ import {
   MAX_REPORTED_TITLE_CHARS,
   OUTPUT_IDLE_WINDOW_MS,
   projectLiveActivity,
-  projectPaneActivity,
 } from "./paneEvidence";
 
 const NOTHING: LiveActivityEvidence = {
@@ -37,10 +36,11 @@ describe("projectLiveActivity", () => {
   });
 });
 
-describe("projectPaneActivity", () => {
+describe("explainPaneActivity activity", () => {
   it("is exited regardless of every other signal", () => {
     expect(
-      projectPaneActivity({ ...NOTHING, waiting: true, semanticWorking: true, outputActive: true, exited: true }),
+      explainPaneActivity({ ...NOTHING, waiting: true, semanticWorking: true, outputActive: true, exited: true })
+        .activity,
     ).toBe("exited");
   });
 
@@ -52,7 +52,7 @@ describe("projectPaneActivity", () => {
       { ...NOTHING, waiting: true },
     ];
     for (const evidence of cases) {
-      expect(projectPaneActivity({ ...evidence, exited: false })).toBe(projectLiveActivity(evidence));
+      expect(explainPaneActivity({ ...evidence, exited: false }).activity).toBe(projectLiveActivity(evidence));
     }
   });
 });
@@ -85,7 +85,7 @@ describe("title rules", () => {
   });
 
   it("does not let a shell title override an exited pty", () => {
-    expect(projectPaneActivity({ ...NOTHING, titleClass: "shell", exited: true })).toBe("exited");
+    expect(explainPaneActivity({ ...NOTHING, titleClass: "shell", exited: true }).activity).toBe("exited");
   });
 
   it("leaves activity alone for a neutral title", () => {

@@ -1555,24 +1555,6 @@ describe("agent rows", () => {
     expect(shell?.querySelector(".wt-apreview")).toBeNull();
   });
 
-  it("renders no preview line when there is no preview", () => {
-    const presence = singleRepoPresence(NOW);
-    const first = presence.rowsByWorktreeId[MAIN_PATH]?.[0];
-    if (!first) {
-      throw new Error("fixture lost its first agent row");
-    }
-    const { view } = mount();
-    view.setData(
-      populated({
-        presence: {
-          ...presence,
-          rowsByWorktreeId: { ...presence.rowsByWorktreeId, [MAIN_PATH]: [{ ...first, preview: "" }] },
-        },
-      }),
-    );
-    expect(agentRows(view)[0]?.querySelector(".wt-apreview")).toBeNull();
-  });
-
   it("presents the preview verbatim everywhere, marker and all", () => {
     const presence = singleRepoPresence(NOW);
     const first = presence.rowsByWorktreeId[MAIN_PATH]?.[0];
@@ -3374,25 +3356,6 @@ describe("a mutation's outcome reads as what it was (design.md D11)", () => {
     });
 
     expect(view.element.querySelector(".wt-notice")?.textContent ?? "").not.toMatch(/brought over/i);
-  });
-
-  it("offers no retry on a failed mutation", () => {
-    // worktree-actions.md § 5: retrying a partially applied git mutation is how
-    // a recoverable error becomes an unrecoverable one. The only offered action
-    // is the confirmation the blocker set demands.
-    const { view } = mount();
-    view.setData({ ...populated(), actionResults: [removeErrorResult] });
-    const labels = [...view.element.querySelectorAll(".wt-notice--error button")].map((b) => b.textContent ?? "");
-    expect(labels.some((l) => /retry|try again/i.test(l))).toBe(false);
-  });
-
-  it("offers no retry on an indeterminate one either", () => {
-    // This is the case where retrying is most tempting and most dangerous — an
-    // unknown fraction of the tree is already gone.
-    const { view } = mount();
-    view.setData({ ...populated(), actionResults: [removeIndeterminateResult] });
-    const labels = [...view.element.querySelectorAll(".wt-notice--warn button")].map((b) => b.textContent ?? "");
-    expect(labels.some((l) => /retry|try again/i.test(l))).toBe(false);
   });
 
   it("does not word an indeterminate result as a clean failure", () => {

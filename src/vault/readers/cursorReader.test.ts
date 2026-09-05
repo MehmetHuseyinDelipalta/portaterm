@@ -12,7 +12,6 @@ import {
   lookupCursorEntry,
   MAX_META_BYTES,
   readCursorDetail,
-  readCursorEntry,
   readCursorMessageRecord,
   readCursorSessions,
   resolveCursorLaunchTarget,
@@ -26,6 +25,11 @@ let tmpRoot: string;
 let chatsDir: string;
 let projectsDir: string;
 let ideDbPath: string;
+
+async function cursorEntry(sessionId: string, options?: Parameters<typeof lookupCursorEntry>[1]) {
+  const found = await lookupCursorEntry(sessionId, options);
+  return found.status === "found" ? found.entry : null;
+}
 
 beforeEach(async () => {
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "anywhere-cursor-"));
@@ -342,7 +346,7 @@ describe("readCursorSessions: duplicate chat-id ambiguity", () => {
   it("omits the ambiguous id from point lookup too", async () => {
     await writeChat("bucket-a", "dup-id", BASE_META);
     await writeChat("bucket-b", "dup-id", BASE_META);
-    expect(await readCursorEntry("dup-id", opts())).toBeNull();
+    expect(await cursorEntry("dup-id", opts())).toBeNull();
   });
 });
 
@@ -354,7 +358,7 @@ describe("readCursorSessions: project source reconciliation", () => {
     const listed = await readCursorSessions(undefined, opts());
     const sessionId = projectSessionIdForCwd(cwd, "project-1");
     expect(listed.entries).toEqual([]);
-    await expect(readCursorEntry(sessionId, opts())).resolves.toMatchObject({ id: `cursor:${sessionId}` });
+    await expect(cursorEntry(sessionId, opts())).resolves.toMatchObject({ id: `cursor:${sessionId}` });
     await expect(readCursorDetail(sessionId, undefined, opts())).resolves.toMatchObject({
       contentKind: "timeline",
       timeline: [{ kind: "message", role: "user", text: "Project question" }],
@@ -397,7 +401,7 @@ describe("readCursorSessions: id and path safety", () => {
   });
 
   it("rejects an id containing '..' even when it matches the filename charset", async () => {
-    expect(await readCursorEntry("a..b", opts())).toBeNull();
+    expect(await cursorEntry("a..b", opts())).toBeNull();
   });
 });
 
@@ -478,7 +482,7 @@ describe("readCursorSessions: regular-file requirement (no directory stat/read)"
     const dir = path.join(chatsDir, "bucket-a", "chat-meta-dir-entry");
     await fs.mkdir(path.join(dir, "meta.json"), { recursive: true });
     await fs.writeFile(path.join(dir, "store.db"), "x", "utf8");
-    expect(await readCursorEntry("chat-meta-dir-entry", opts())).toBeNull();
+    expect(await cursorEntry("chat-meta-dir-entry", opts())).toBeNull();
   });
 
   it("resolves point lookup to null when store.db is a directory (not eligible)", async () => {
@@ -490,7 +494,7 @@ describe("readCursorSessions: regular-file requirement (no directory stat/read)"
       "utf8",
     );
     await fs.mkdir(path.join(dir, "store.db"));
-    expect(await readCursorEntry("chat-db-dir-entry", opts())).toBeNull();
+    expect(await cursorEntry("chat-db-dir-entry", opts())).toBeNull();
   });
 });
 
@@ -777,21 +781,17 @@ describe("readCursorSessions: cache reuse and fallback", () => {
   });
 });
 
-describe("readCursorEntry: point lookup", () => {
+describe("lookupCursorEntry: point lookup", () => {
   it("resolves a single eligible chat by id", async () => {
     await writeChat("bucket-a", "chat-solo", BASE_META);
-    const entry = await readCursorEntry("chat-solo", opts());
+    const entry = await cursorEntry("chat-solo", opts());
     expect(entry?.id).toBe("cursor:chat-solo");
     expect((entry as { canResume?: boolean } | null)?.canResume).toBe(true);
   });
 
-  it("returns null for an unknown id", async () => {
-    expect(await readCursorEntry("nope", opts())).toBeNull();
-  });
-
   it("returns null for an ineligible chat", async () => {
     await writeChat("bucket-a", "chat-ineligible", { ...BASE_META, hasConversation: false });
-    expect(await readCursorEntry("chat-ineligible", opts())).toBeNull();
+    expect(await cursorEntry("chat-ineligible", opts())).toBeNull();
   });
 });
 
@@ -1289,8 +1289,7 @@ describe("readCursorDetail: bounded CLI transcript", () => {
     expect(conflicted?.contentKind).toBe("metadata-only");
     expect(conflicted?.timeline).toEqual([]);
 
-    const unsupported = await writeChat("bucket-a", "chat-unsupported", { ...BASE_META, cwd });
-    expect(unsupported).toBeTruthy();
+    await writeChat("bucket-a", "chat-unsupported", { ...BASE_META, cwd });
     await writeProjectTranscriptForCwd(cwd, "chat-unsupported", [
       { role: "user", message: { content: [{ type: "text", text: "From mirror" }] } },
     ]);
@@ -1453,18 +1452,6 @@ describe("readCursorDetail: bounded CLI transcript", () => {
     await expectLimitGrowth((limit) => readCursorDetail(sessionId, limit, opts()), { start: 8, label: "cursor cli" });
   });
 
-  it("returns a partial detail with an empty timeline and a limited-reason notice", async () => {
-    await writeChat("bucket-a", "chat-detail", BASE_META);
-    const detail = await readCursorDetail("chat-detail", undefined, opts());
-    expect(detail?.entryId).toBe("cursor:chat-detail");
-    expect(detail?.partial).toBe(true);
-    expect(typeof detail?.limitedReason).toBe("string");
-    expect(detail?.limitedReason?.length).toBeGreaterThan(0);
-    expect(detail?.timeline).toEqual([]);
-    expect(detail?.recentActivity).toEqual([]);
-    expect(detail?.stats).toEqual({ messageCount: 0, toolCount: 0, subagentCount: 0 });
-  });
-
   it("builds that limited view through the shared constructor, field for field", async () => {
     // Deep equality, so a hand-written literal that drifts from `limitedDetail`
     // — a stray `truncated`, a missing `contentKind` — fails here rather than
@@ -1544,10 +1531,6 @@ describe("lookupCursorEntry: absent only from a store it could read", () => {
     };
     const id = `project:${Buffer.from(bucket).toString("base64url")}:22222222-2222-4222-8222-222222222222`;
     expect(await lookupCursorEntry(id, opts(undefined, pathsFs))).toEqual({ status: "unknown" });
-  });
-
-  it("keeps readCursorEntry nullable for callers that cannot act on the difference", async () => {
-    expect(await readCursorEntry("11111111-1111-4111-8111-111111111111", opts())).toBeNull();
   });
 });
 

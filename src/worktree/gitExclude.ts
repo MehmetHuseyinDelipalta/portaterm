@@ -27,7 +27,6 @@ export interface GitExcludeDeps {
   lockedFile(path: string): GitExcludeLockedFile;
   mode(path: string): Promise<number | undefined>;
   warn?(message: string): void;
-  deadlineMs?: number;
 }
 
 const realDeps: GitExcludeDeps = {
@@ -60,7 +59,7 @@ export async function addToGitExclude(
 
   const excludePath = path.join(gitDir, "info", "exclude");
   const locked = deps.lockedFile(excludePath);
-  const ownedDeadline = deadline ?? afterDelay(deps.deadlineMs ?? 5_000);
+  const ownedDeadline = deadline ?? afterDelay(5_000);
   const cancel = deadline === undefined;
   try {
     const outcome = await locked.withLock<ExcludeResult>(

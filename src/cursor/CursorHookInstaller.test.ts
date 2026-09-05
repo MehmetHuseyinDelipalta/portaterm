@@ -17,13 +17,9 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { CURSOR_HOOK_EVENTS } from "../agentHooks/agents/cursor";
 import { LockedFile } from "../agentHooks/install/lockedJsonFile";
-import {
-  CURSOR_HOOK_COMMAND,
-  CURSOR_HOOK_EVENTS,
-  CursorHookInstaller,
-  type CursorHookInstallerDependencies,
-} from "./CursorHookInstaller";
+import { CURSOR_HOOK_COMMAND, CursorHookInstaller, type CursorHookInstallerDependencies } from "./CursorHookInstaller";
 
 const tempDirectories: string[] = [];
 

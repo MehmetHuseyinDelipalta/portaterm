@@ -34,6 +34,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import { type FsPresence, presenceFromAccessError } from "../utils/fsPresence";
+import { messageOf } from "../worktree/errorMessage";
 import { type BorrowOptions, type SnapshotLease, SnapshotPool } from "./snapshotPool";
 
 const execFileAsync = promisify(execFile);
@@ -231,7 +232,7 @@ async function defaultRunNodeQuery(dbCopy: string, sql: string): Promise<SqliteR
       db.close();
     }
   } catch (err) {
-    return { rows: [], status: "query-error", error: errorMessage(err) };
+    return { rows: [], status: "query-error", error: messageOf(err) };
   }
 }
 
@@ -250,10 +251,6 @@ function normalizeRow(row: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 /** One `sqlite3 -readonly -json` attempt against `dbFile` (live or copy). */
 async function attemptQuery(deps: SqliteDeps, dbFile: string, sql: string): Promise<SqliteResult> {
   try {
@@ -269,7 +266,7 @@ async function attemptQuery(deps: SqliteDeps, dbFile: string, sql: string): Prom
     }
     return { rows: parsed as Record<string, unknown>[], status: "ok" };
   } catch (err) {
-    return { rows: [], status: "query-error", error: errorMessage(err) };
+    return { rows: [], status: "query-error", error: messageOf(err) };
   }
 }
 
@@ -344,7 +341,7 @@ function cliSnapshot(deps: SqliteDeps, budget: number): (dbPath: string, dest: s
       // `VACUUM INTO` raises the same CANTOPEN for a source it cannot read and a
       // destination it cannot create, so ask the source to prove itself before
       // blaming it (W1) — the same proof the in-process path makes.
-      throw (await cliSourceReads(deps, dbPath, budget)) ? err : new SnapshotOpenError(errorMessage(err));
+      throw (await cliSourceReads(deps, dbPath, budget)) ? err : new SnapshotOpenError(messageOf(err));
     }
   };
 }
@@ -391,7 +388,7 @@ async function defaultSnapshot(
       },
     });
   } catch (err) {
-    throw isSourceRefusal(err, source) ? new SnapshotOpenError(errorMessage(err)) : err;
+    throw isSourceRefusal(err, source) ? new SnapshotOpenError(messageOf(err)) : err;
   } finally {
     source?.close();
   }
@@ -428,7 +425,7 @@ function isOpenClass(err: unknown): boolean {
   if (typeof errcode === "number") {
     return OPEN_REFUSAL_CODES.has(errcode & 0xff);
   }
-  return /unable to open|readonly database|SQLITE_CANTOPEN|SQLITE_READONLY|SQLITE_PERM/i.test(errorMessage(err));
+  return /unable to open|readonly database|SQLITE_CANTOPEN|SQLITE_READONLY|SQLITE_PERM/i.test(messageOf(err));
 }
 
 /** A snapshot that failed at the OPEN, which the entry points report as
@@ -497,7 +494,7 @@ async function withPooledSnapshot<T>(
     lease = await poolFor(deps).borrow(dbPath, (dest) => takeSnapshot(deps, dbPath, dest, useCli), options);
     return await use(lease.file);
   } catch (err) {
-    return fail(isOpenFailure(err) ? "db-unreachable" : "query-error", errorMessage(err));
+    return fail(isOpenFailure(err) ? "db-unreachable" : "query-error", messageOf(err));
   } finally {
     await lease?.release();
   }
@@ -644,7 +641,7 @@ async function defaultRunNodeWrite(
       db.close();
     }
   } catch (err) {
-    return { status: "write-error", changes: 0, error: errorMessage(err) };
+    return { status: "write-error", changes: 0, error: messageOf(err) };
   }
 }
 

@@ -41,13 +41,6 @@ describe("applyTitleChange", () => {
     return { name: "Terminal 1" };
   }
 
-  it("renders the first title after creation", () => {
-    const instance = makeInstance();
-    const render = vi.fn();
-    applyTitleChange(instance, "⠋ Fix tests", render);
-    expect(render).toHaveBeenCalledTimes(1);
-  });
-
   it("does not re-render when only the spinner frame advanced", () => {
     const instance = makeInstance();
     const render = vi.fn();
@@ -126,16 +119,6 @@ describe("applyTitleChange", () => {
     applyTitleChange(instance, "Fix tests", render);
     applyTitleChange(instance, "⠋ Fix tests", render);
     expect(render).toHaveBeenCalledTimes(2);
-  });
-
-  it("still suppresses frame churn once the decoration bit is stable", () => {
-    const instance = makeInstance();
-    const render = vi.fn();
-    applyTitleChange(instance, "⠋ Fix tests", render);
-    for (const frame of ["⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]) {
-      applyTitleChange(instance, `${frame} Fix tests`, render);
-    }
-    expect(render).toHaveBeenCalledTimes(1);
   });
 
   it("always renders an oversized title instead of scanning it twice per frame", () => {

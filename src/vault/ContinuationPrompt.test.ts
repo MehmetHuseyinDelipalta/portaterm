@@ -96,11 +96,6 @@ describe("buildContinuationPrompt", () => {
 // improve-vault-transcript-messages 8_4 — the prompt is composed around what the
 // reader confirmed in the dialog, not around the stored message.
 describe("buildContinuationPrompt — reader-authored instruction", () => {
-  it("carries the reader's instruction rather than the stored text", () => {
-    const prompt = buildContinuationPrompt(entry(), { instruction: "do it a different way", confirmIntent: false });
-    expect(prompt).toContain("do it a different way");
-  });
-
   it("appends the intent block when the reader left the check on", () => {
     const prompt = buildContinuationPrompt(entry(), { instruction: "carry on", confirmIntent: true }) ?? "";
     expect(prompt).toMatch(/before/i);
@@ -122,16 +117,6 @@ describe("buildContinuationPrompt — reader-authored instruction", () => {
     });
     expect(prompt).toContain("a-7");
     expect(prompt).toMatch(/repl(y|ied)|assistant/i);
-  });
-
-  it("still composes without an anchor", () => {
-    const prompt = buildContinuationPrompt(entry(), { instruction: "carry on", confirmIntent: false });
-    expect(prompt).toContain("carry on");
-    expect(prompt).not.toMatch(/uuid/i);
-  });
-
-  it("returns null when the reader confirmed nothing", () => {
-    expect(buildContinuationPrompt(entry(), { instruction: "   ", confirmIntent: true })).toBeNull();
   });
 });
 

@@ -18,9 +18,7 @@ import {
   type AdapterRead,
   type Authorized,
   type Draft,
-  emptyModel,
   modelFromDraft,
-  newBudget,
   newDraft,
   type OpenedProviderFile,
   openProviderFile,
@@ -36,13 +34,6 @@ import {
 /** Repo-relative, POSIX. The one file this adapter reads. */
 export const ASIMOV_PROVIDER_FILE = "asimov/worktree.yaml";
 
-/** The kit's dependencies, under this adapter's original name. */
-export type AsimovProviderDeps = ProviderDeps;
-
-// The budgets belong to the kit now, but they are part of this module's
-// published surface and its suite asserts against them by name.
-export { MAX_MODEL_ROWS, MAX_SCAN } from "./providerKit";
-
 const ASIMOV: ProviderContext = { id: "asimov", file: ASIMOV_PROVIDER_FILE };
 
 /** The four keys § 3.1 maps. Anything else is reported rather than ignored. */
@@ -54,24 +45,6 @@ const PROVIDERS = [
   { id: "asimov" as const, files: [ASIMOV_PROVIDER_FILE], present: [ASIMOV_PROVIDER_FILE], active: true },
 ];
 
-/**
- * The repository's own provisioning file, as the normalized model.
- *
- * Fails OPEN by design: a file that is absent, unreadable or malformed yields a
- * model plus a `problems[]` entry, never a throw. § 9 keeps the create enabled —
- * a broken provisioning config is not a reason to refuse to make a worktree,
- * and nothing executes from this model in this change anyway.
- */
-export async function readAsimovProvisioning(deps: AsimovProviderDeps, repoRoot: string): Promise<ProvisionModel> {
-  const opened = await openProviderFile(deps, repoRoot, ASIMOV);
-  if (opened.kind === "absent") {
-    // No provider file is not a problem — it is the ordinary case for most
-    // repositories, and the section says what the worktree will lack anyway.
-    return emptyModel();
-  }
-  return fromOpened(opened, deps, repoRoot, newBudget());
-}
-
 export const asimovAdapter: ProviderAdapter = {
   id: "asimov",
   files: [ASIMOV_PROVIDER_FILE],
@@ -79,9 +52,8 @@ export const asimovAdapter: ProviderAdapter = {
   /**
    * `null` for an absent file and a model for every other outcome.
    *
-   * The distinction the plain reader does not make: it answers an empty model
-   * for a file that is not there AND for one that declares nothing, which are
-   * the same section but not the same detection answer. Falling through a
+   * The distinction matters because a file that is not there and one that
+   * declares nothing are not the same detection answer. Falling through a
    * present-but-empty file would offer another tool's answer to a question this
    * repository has already answered (design.md D3).
    */
@@ -103,9 +75,8 @@ export const asimovAdapter: ProviderAdapter = {
 /**
  * Everything after the file has been authorized and opened.
  *
- * Split out so the adapter and the plain reader each open the file exactly once
- * and then agree on every other outcome — a second open is a second chance for
- * the file to change under the check.
+ * Split out so the adapter opens the file exactly once; a second open would be
+ * a second chance for the file to change under the check.
  */
 async function fromOpened(
   opened: Exclude<OpenedProviderFile, { kind: "absent" }>,
@@ -148,8 +119,7 @@ async function fromOpened(
   const nextId = draft.budget.nextId;
   await readInlineKeys(parsed as Record<string, unknown>, KNOWN_KEYS, repoRoot, root, deps, nextId, draft);
 
-  // `providers` is the one field this reader owns: `readAsimovProvisioning` is
-  // WT-012.1's single-source entry point and still answers for itself, while the
-  // adapter's copy is replaced by the dispatcher.
+  // `providers` is the one field this adapter owns; the dispatcher replaces it
+  // when composing multiple providers.
   return { ...modelFromDraft(draft), providers: PROVIDERS };
 }

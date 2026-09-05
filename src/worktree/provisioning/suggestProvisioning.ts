@@ -12,6 +12,7 @@ import * as path from "node:path";
 import type { ParseError } from "jsonc-parser";
 import { parse as parseYaml } from "yaml";
 import type { ProvisionEntry, ProvisionModel } from "../../types/messages";
+import { asRecord } from "../../utils/record";
 import { type PreparedRoot, prepareResolvedRoot } from "../../utils/resolvedPathBoundary";
 import {
   addEntry,
@@ -131,11 +132,6 @@ type Declaration =
   | { kind: "refused" };
 
 /** A parsed manifest, or nothing — `null` is not a record, and `"null"` parses to it. */
-function recordOf(parsed: unknown): Record<string, unknown> | undefined {
-  return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-    ? (parsed as Record<string, unknown>)
-    : undefined;
-}
 
 /**
  * How a present declaration value classifies: the patterns it holds, the fact
@@ -149,8 +145,8 @@ function recordOf(parsed: unknown): Record<string, unknown> | undefined {
 function patternsOf(value: unknown): Declaration {
   const list = Array.isArray(value)
     ? value
-    : Array.isArray(recordOf(value)?.packages)
-      ? (recordOf(value)?.packages as unknown[])
+    : Array.isArray(asRecord(value)?.packages)
+      ? (asRecord(value)?.packages as unknown[])
       : undefined;
   if (list === undefined) {
     return { kind: "unsupported" };
@@ -207,7 +203,7 @@ async function packageDeclaration(deps: SuggestDeps, repoRoot: string, root: Pre
   // A top-level `null` parses cleanly and is not a record; reading `.workspaces`
   // off it THREW, and the thrown rejection took the whole offer down — root
   // environment and setup rows included (round-3 F006).
-  const manifest = recordOf(parsed);
+  const manifest = asRecord(parsed);
   if (manifest === undefined) {
     return { kind: "refused" };
   }
@@ -230,7 +226,7 @@ async function pnpmDeclaration(deps: SuggestDeps, repoRoot: string, root: Prepar
   if (parsed === null || parsed === undefined) {
     return { kind: "absent" };
   }
-  const manifest = recordOf(parsed);
+  const manifest = asRecord(parsed);
   if (manifest === undefined) {
     return { kind: "unsupported" };
   }

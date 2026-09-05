@@ -86,5 +86,5 @@ No window reload SHALL be required.
 
 ### Requirement: Disabled state
 
-When the resolved `autoReveal` mode is `"none"` (corresponding to user-configured `false`/`"false"`), the resolver SHALL return early before computing the path. The `onDidChangeActiveTab` subscription SHALL remain registered for the lifetime of the host — the early-return cost is negligible.
+When the resolved `autoReveal` mode is `"none"` (corresponding to user-configured `false`/`"false"`), the resolver SHALL return early before computing the path. The `onDidChangeTabs` and `onDidChangeTabGroups` subscriptions SHALL remain registered for the lifetime of the host — the early-return cost is negligible.
 

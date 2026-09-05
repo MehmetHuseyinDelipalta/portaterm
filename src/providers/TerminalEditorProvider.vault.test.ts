@@ -8,6 +8,7 @@ import type * as vscode from "vscode";
 import { SessionManager } from "../session/SessionManager";
 import * as vscodeApi from "../test/__mocks__/vscode";
 import { __resetAll } from "../test/__mocks__/vscode";
+import { pumpTimeoutMacrotasks } from "../test/providerTestUtils";
 import type { VaultListResult, VaultSessionDetail } from "../vault/types";
 import type { VaultService } from "../vault/VaultService";
 import { TerminalEditorProvider } from "./TerminalEditorProvider";
@@ -81,11 +82,7 @@ function mount(vault: Partial<VaultService> | null, seam = panelSeam()) {
   };
 }
 
-async function settle(): Promise<void> {
-  for (let i = 0; i < 8; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-}
+const settle = (): Promise<void> => pumpTimeoutMacrotasks(8);
 
 describe("an editor surface answers the vault reads a preview needs", () => {
   it("serves the cache first, then the authoritative list", async () => {

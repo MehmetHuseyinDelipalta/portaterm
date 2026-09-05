@@ -458,15 +458,6 @@ export async function readClaudeSessions(
   return { entries, unreadable, cache: { kind: "files", files } };
 }
 
-/** The entry-or-nothing view, for callers that cannot act on the difference. */
-export async function readClaudeEntry(
-  sessionId: string,
-  options: ClaudeReaderOptions = {},
-): Promise<VaultSessionEntry | null> {
-  const found = await lookupClaudeEntry(sessionId, options);
-  return found.status === "found" ? found.entry : null;
-}
-
 /**
  * Resolve ONE Claude session by id — the single-entry counterpart to
  * readClaudeSessions, used by VaultService for fast resume/fork (no full-store

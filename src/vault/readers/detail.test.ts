@@ -10,6 +10,7 @@ import {
   createSpawnIdCollector,
   type DetailParts,
   finalizeDetail,
+  finiteNumberOrZero,
   limitedDetail,
   MAX_ACTIVITY_STEPS,
   MAX_DETAIL_LIMIT,
@@ -53,6 +54,15 @@ function assistantTool(name: string, input: Rec, usage?: Rec): Rec {
   }
   return { type: "assistant", message };
 }
+
+describe("finiteNumberOrZero", () => {
+  it("preserves finite numbers and maps every other value to zero", () => {
+    expect(finiteNumberOrZero(2.5)).toBe(2.5);
+    expect(finiteNumberOrZero(Number.NaN)).toBe(0);
+    expect(finiteNumberOrZero(Number.POSITIVE_INFINITY)).toBe(0);
+    expect(finiteNumberOrZero("2.5")).toBe(0);
+  });
+});
 
 describe("truncate", () => {
   it("collapses whitespace and trims", () => {

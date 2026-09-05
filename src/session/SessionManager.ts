@@ -43,9 +43,6 @@ import type {
 import { CommandTracker, type TrackedCommand } from "./TrackedCommand";
 
 // ─── Re-exports (preserve external API for tests + providers) ──────
-
-export type { CustomNameStorage } from "./CustomNameRegistry";
-export { truncateSnapshotBuffer } from "./SnapshotPersistence";
 export type {
   HeadlessFactory,
   HeadlessTerminalLike,
@@ -73,8 +70,6 @@ const DEFAULT_GRACE_DESTROY_MS = 5000;
 export interface SessionManagerOptions {
   /** Default false — set true once the rest of the restore pipeline is wired. */
   restoreEnabled?: boolean;
-  /** Default 5000ms — grace window before destroying sessions whose webview disposed. */
-  gracePeriodMs?: number;
   /** Test seam: inject a fake headless constructor. */
   headlessFactory?: HeadlessFactory;
   /** Test seam: inject a fake serialize-addon constructor. */
@@ -198,7 +193,7 @@ export class SessionManager {
     this.storage = options.storage ?? null;
     this.agentHooks = options.agentHookContributor;
     this.paneEvidence = options.paneEvidence;
-    this.defaultGracePeriodMs = options.gracePeriodMs ?? DEFAULT_GRACE_DESTROY_MS;
+    this.defaultGracePeriodMs = DEFAULT_GRACE_DESTROY_MS;
     this.shellIntegration = new ShellIntegrationCoordinator({
       ctx: options.shellIntegrationContext,
       getSession: (id) => this.sessions.get(id),

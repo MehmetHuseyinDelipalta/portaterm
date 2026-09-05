@@ -129,10 +129,11 @@ describe("syntaxRenderer — rendering", () => {
     expect(isHighlighterReady()).toBe(true);
   });
 
-  it("whenHighlighterReady resolves after the highlighter loads (W4)", async () => {
-    const promise = whenHighlighterReady();
-    await preloadSyntaxHighlighter();
-    await expect(promise).resolves.toBeUndefined();
-    expect(isHighlighterReady()).toBe(true);
+  it("whenHighlighterReady resolves only after readiness is observable (W4)", async () => {
+    const preload = preloadSyntaxHighlighter();
+    await whenHighlighterReady().then(() => {
+      expect(isHighlighterReady()).toBe(true);
+    });
+    await preload;
   });
 });

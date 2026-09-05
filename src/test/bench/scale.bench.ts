@@ -25,7 +25,7 @@ import { createPaneEvidenceStore } from "../../session/PaneEvidenceStore";
 import type { RunningSessionsOutcome } from "../../vault/readers/runningSessions";
 import { createPresenceProjectorDeps } from "../../worktree/presenceDeps";
 import { createPresenceProjector } from "../../worktree/presenceProjector";
-import { buildWorktreeTree } from "../../worktree/WorktreeDiscovery";
+import { buildWorktreeTreeDetailed } from "../../worktree/WorktreeDiscovery";
 import { createWorktreeTreeDeps } from "../../worktree/worktreeDeps";
 import { createRepoFixture } from "../fixtures/repoFixture";
 import { MODEL_REBUILD, PRESENCE_REBUILD } from "../invariants/budgets";
@@ -129,7 +129,7 @@ async function main(): Promise<void> {
     // cached on it, and rebuilding it per sample would charge the rebuild for a probe
     // production pays once per window.
     const deps = createWorktreeTreeDeps();
-    const modelMs = await measure(() => buildWorktreeTree([repo], deps));
+    const modelMs = await measure(() => buildWorktreeTreeDetailed([repo], deps).then((result) => result.tree));
     if (!report("model rebuild", modelMs, MODEL_REBUILD)) {
       breached++;
       // A breach names a cause rather than a number: this rebuild is dominated by process

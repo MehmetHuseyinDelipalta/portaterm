@@ -27,33 +27,14 @@
 
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { installListViewPolyfills } from "../../test/listViewTestkit";
 import type { ITreeDataSource } from "./ITreeDataSource";
 import type { ITemplateData, ITreeRenderer } from "./ITreeRenderer";
 import { Tree } from "./Tree";
+import { flushMicrotasks, makeHost, readRowLabels } from "./treeTestkit";
 
-// JSDOM stub block copied verbatim from src/test/vendor-import.test.ts —
-// listView.ts needs ResizeObserver and matchMedia, which JSDOM 28 doesn't
-// guarantee. Without these, `new List(...)` throws ReferenceError.
 beforeAll(() => {
-  if (typeof globalThis.ResizeObserver === "undefined") {
-    globalThis.ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    } as unknown as typeof ResizeObserver;
-  }
-  if (typeof globalThis.matchMedia === "undefined") {
-    globalThis.matchMedia = (() => ({
-      matches: false,
-      media: "",
-      onchange: null,
-      addListener: () => {},
-      removeListener: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      dispatchEvent: () => false,
-    })) as unknown as typeof matchMedia;
-  }
+  installListViewPolyfills();
 });
 
 interface Node {
@@ -116,13 +97,6 @@ function makeRenderer(): ITreeRenderer<Node, RowTemplate> {
   };
 }
 
-/** Read the visible row labels in DOM order. */
-function readRowLabels(host: HTMLElement): string[] {
-  return Array.from(host.querySelectorAll<HTMLSpanElement>(".test-row"))
-    .map((el) => el.textContent ?? "")
-    .filter((s) => s.length > 0);
-}
-
 /**
  * Return the rendered `.monaco-list-row` element whose contained `.test-row`
  * span has the given label text, or `null` if not currently materialised.
@@ -177,21 +151,6 @@ const Keys = {
   End: { key: "End", keyCode: 35 },
   Enter: { key: "Enter", keyCode: 13 },
 };
-
-/** Yield to the microtask queue so resolved promises run their then-handlers. */
-async function flushMicrotasks(): Promise<void> {
-  // Two awaits = one extra tick to let the rebuildRows after promise resolution apply.
-  await Promise.resolve();
-  await Promise.resolve();
-}
-
-function makeHost(): HTMLElement {
-  const host = document.createElement("div");
-  host.style.width = "300px";
-  host.style.height = "400px";
-  document.body.appendChild(host);
-  return host;
-}
 
 describe("Tree<T>", () => {
   beforeEach(() => {

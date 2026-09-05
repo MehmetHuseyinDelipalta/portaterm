@@ -11,6 +11,7 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { OpenFileMessage } from "../types/messages";
+import { withFileLinkTimeout } from "./fileLinkTimeout";
 import {
   type BuildCandidatesResult,
   buildCandidates as buildCandidatesShared,
@@ -54,8 +55,6 @@ export interface OpenFileLinkDeps {
   ): Thenable<vscode.Uri[]>;
   /** Modal warning dialog. */
   showWarning: typeof vscode.window.showWarningMessage;
-  /** Error toast (no buttons). Retained for dependency compatibility. */
-  showError: typeof vscode.window.showErrorMessage;
   /** Open an editor for the given URI. */
   showTextDocument: typeof vscode.window.showTextDocument;
   /** Pick-one-of-many dialog used when findFiles returns multiple matches. */
@@ -95,40 +94,7 @@ export const escapeGlob = escapeGlobShared;
  * enumerating).
  */
 function withTimeout<T>(p: Thenable<T>, ms: number, onTimeout?: () => void): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      try {
-        onTimeout?.();
-      } catch {
-        // Cancellation handler shouldn't fail; if it does, prefer to
-        // surface the timeout error rather than swallow it.
-      }
-      reject(new Error(`findFiles timeout after ${ms}ms`));
-    }, ms);
-    Promise.resolve(p).then(
-      (value) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        reject(err);
-      },
-    );
-  });
+  return withFileLinkTimeout(p, ms, onTimeout);
 }
 
 /**

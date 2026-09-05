@@ -23,4 +23,24 @@ describe("escapePathForShell", () => {
   it("uses ANSI-C $'...' quoting when the path contains BOTH single and double quotes", () => {
     expect(escapePathForShell(`/tmp/it's "complicated".log`)).toBe(`$'/tmp/it\\'s "complicated".log'`);
   });
+
+  it("strips command substitution before quoting", () => {
+    expect(escapePathForShell("/Users/me/file$(echo evil).txt")).toBe("'/Users/me/file(echo evil).txt'");
+  });
+
+  it("escapes backslashes", () => {
+    expect(escapePathForShell(String.raw`/Users/me/path\with\backslashes`)).toBe(
+      String.raw`'/Users/me/path\\with\\backslashes'`,
+    );
+  });
+
+  it("keeps double quotes inside simple single-quote wrapping", () => {
+    expect(escapePathForShell('/Users/me/a "file".txt')).toBe(`'/Users/me/a "file".txt'`);
+  });
+
+  it("strips shell metacharacters", () => {
+    expect(escapePathForShell("/tmp/file`cmd`$VAR|pipe&bg>out~home#comment!not^caret*glob;semi<in")).toBe(
+      "'/tmp/filecmdVARpipebgouthomecommentnotcaretglobsemiin'",
+    );
+  });
 });

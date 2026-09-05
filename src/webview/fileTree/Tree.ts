@@ -32,14 +32,10 @@ import { Emitter, type Event } from "vs/base/common/event";
 import type { IDisposable } from "vs/base/common/lifecycle.js";
 
 import type { ITreeDataSource } from "./ITreeDataSource";
-import type { ITemplateData, ITreeMatch, ITreeMatchData, ITreeRenderer } from "./ITreeRenderer";
+import type { ITemplateData, ITreeMatchData, ITreeRenderer } from "./ITreeRenderer";
 
 /** Default row height for tree items (matches existing file-tree styling). */
 const DEFAULT_ROW_HEIGHT = 22;
-
-/** Re-exported aliases — the canonical types live in `ITreeRenderer.ts`. */
-export type IMatch = ITreeMatch;
-export type IMatchData = ITreeMatchData;
 
 /**
  * Internal flat row record. The Tree synthesizes one of these per visible
@@ -1071,11 +1067,6 @@ export class Tree<T extends object, TTemplate extends ITemplateData = ITemplateD
    * `element`. The root itself IS included — task 3_3 (the file-tree-only
    * scope) can hide it via a renderer-level check if needed; the generic
    * Tree<T> shows everything below `setInput`'s element.
-   *
-   * When `_filter` is installed, elements where `shouldRender` returns false
-   * are excluded — but their descendants ARE still walked (rebuildRows can
-   * filter at the leaf level even when an ancestor doesn't render). Match
-   * data, if the filter provides it, is attached to each emitted FlatRow.
    */
   private appendRows(element: T, depth: number, out: FlatRow<T>[]): void {
     const node = this.nodes.get(element);

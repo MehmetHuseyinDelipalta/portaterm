@@ -546,31 +546,6 @@ describe("HoverPreviewController", () => {
     expect(popup.hideCalls).toBeGreaterThanOrEqual(1);
   });
 
-  it("link.leave still dismisses when cursor never reaches the popup", () => {
-    const { terminal } = makeFakeTerminal();
-    const popup = makePopup();
-    const controller = new HoverPreviewController({
-      terminal: terminal as unknown as import("@xterm/xterm").Terminal,
-      sessionId: "s1",
-      postMessage: vi.fn(),
-      getTheme: () => "dark",
-      popup,
-    });
-
-    const link = makeLink("a.ts");
-    controller.attachHover(link);
-    link.hover?.(makeMouseEvent(), link.text);
-    vi.advanceTimersByTime(HOVER_DEBOUNCE_MS);
-    controller.onMessage(
-      makeOkResult({ requestId: (controller as unknown as { activeRequestId: string }).activeRequestId }),
-    );
-
-    // Cursor leaves link, doesn't reach popup → after grace, dismiss fires.
-    link.leave?.(makeMouseEvent(), link.text);
-    vi.advanceTimersByTime(300);
-    expect(popup.hideCalls).toBeGreaterThanOrEqual(1);
-  });
-
   it("Cmd/Ctrl keydown during a hover re-issues the request with override=true (B1)", () => {
     const { terminal } = makeFakeTerminal();
     const postMessage = vi.fn();

@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  type ResolutionWorktree,
-  reportableDisposition,
-  resolveSelection,
-  type SelectionFacts,
-} from "./createResolution";
+import { type ResolutionWorktree, resolveSelection, type SelectionFacts } from "./createResolution";
 
 function wt(displayPath: string, over: Partial<ResolutionWorktree> = {}): ResolutionWorktree {
   return { displayPath, bare: false, detached: false, prunable: false, ...over };
@@ -98,23 +93,5 @@ describe("resolveSelection", () => {
     ).toEqual({
       kind: "reuse",
     });
-  });
-});
-
-describe("reportableDisposition", () => {
-  it("drops the authorization a debris disposition carries", () => {
-    // A probe goes out on every settled edit. An answer carrying a delete
-    // authorization would hand one out for a removal nobody confirmed.
-    const reported = reportableDisposition({
-      kind: "debris",
-      authorization: { path: "/wt/junk", fingerprint: "fp-1" },
-    });
-
-    expect(reported).toEqual({ kind: "debris" });
-    expect(Object.hasOwn(reported, "authorization")).toBe(false);
-  });
-
-  it("a free destination stays free", () => {
-    expect(reportableDisposition({ kind: "free" })).toEqual({ kind: "free" });
   });
 });

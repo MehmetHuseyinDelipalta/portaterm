@@ -11,6 +11,7 @@
 
 import type { ParseError } from "jsonc-parser";
 import { posixShellQuote } from "../../utils/posixShellQuote";
+import { asRecord } from "../../utils/record";
 import {
   type AdapterRead,
   type Authorized,
@@ -104,9 +105,9 @@ function reportUnsubstituted(entry: Record<string, unknown>, label: string, scri
   if (script.includes("${")) {
     report(draft, label, problem(TASKS, "unsubstituted", `${label} holds a \`\${...}\` this does not resolve.`));
   }
-  const options = entry.options;
-  if (typeof options === "object" && options !== null && !Array.isArray(options)) {
-    if ((options as Record<string, unknown>).cwd !== undefined) {
+  const options = asRecord(entry.options);
+  if (options) {
+    if (options.cwd !== undefined) {
       report(draft, label, problem(TASKS, "unsubstituted", `${label} asks to run in a directory of its own.`));
     }
   }

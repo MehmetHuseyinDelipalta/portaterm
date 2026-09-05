@@ -671,9 +671,6 @@ export interface WorktreeOpenFolderMessage {
   mode: "newWindow" | "addToWorkspace";
 }
 
-/** After-creation modes create ships with. */
-export type WorktreeOpenAfterMode = "none" | "terminal" | "agent" | "newWindow" | "addToWorkspace";
-
 /**
  * What a launch runs: which agent, under which posture, seeded with what.
  *
@@ -1809,7 +1806,6 @@ export type WebViewToExtensionMessage =
   | FileTreeCopyRelativePathMessage
   | FileTreeDeleteMessage
   | UpdateHoverPreviewSettingMessage
-  | PersistPanelIdMessage
   | ScrollbackDumpMessage
   | RequestVaultSessionsMessage
   | VaultResumeMessage
@@ -1949,19 +1945,6 @@ export type WorktreeActionMessage = Exclude<
 /** Does this message belong to the worktree host? One test, both providers. */
 export function isWorktreeMessage(msg: WebViewToExtensionMessage): msg is WorktreeInboundMessage {
   return (WORKTREE_MESSAGE_TYPES as readonly string[]).includes(msg.type);
-}
-
-/**
- * Webview → Extension. Sent by the editor webview after it has merged the
- * extension-supplied panelId into `vscode.setState({...})`. Lets the editor
- * provider know it is safe to assume VS Code will include the panelId in any
- * subsequent `WebviewPanelSerializer.deserializeWebviewPanel` payload.
- *
- * See: asimov/changes/restore-terminal-sessions/design.md D2.
- */
-export interface PersistPanelIdMessage {
-  type: "persistPanelId";
-  panelId: string;
 }
 
 // ─── Extension → WebView Messages ───────────────────────────────────
@@ -2175,11 +2158,6 @@ export interface SplitPaneCreatedMessage {
   direction: "horizontal" | "vertical";
 }
 
-/** Close the active split pane in the webview. */
-export interface CloseSplitPaneMessage {
-  type: "closeSplitPane";
-}
-
 /** Close a specific split pane by session ID (from context menu). */
 export interface CloseSplitPaneByIdMessage {
   type: "closeSplitPaneById";
@@ -2325,9 +2303,8 @@ export interface UpdateHoverPreviewSettingMessage {
  * current generation so the webview can drop responses bound to a stale root.
  *
  * Error codes:
- *   - `OUT_OF_WORKSPACE`: requested path is outside the current workspace folder.
  *   - `STALE_ROOT`: request's `rootGeneration` no longer matches the host.
- *   - any other code: filesystem error from `vscode.workspace.fs.readDirectory`.
+ *   - `FS_ERROR`: filesystem error from `vscode.workspace.fs.readDirectory`.
  */
 export interface ReadDirectoryResponseMessage {
   type: "read-directory-response";
@@ -2344,7 +2321,6 @@ export interface ReadDirectoryResponseMessage {
  * the response when `rootGeneration` no longer matches its current value.
  *
  * Error codes:
- *   - `OUT_OF_WORKSPACE`: requested scopePath outside the active workspace.
  *   - `STALE_ROOT`: request's `rootGeneration` no longer matches the host.
  *   - `INTERNAL`: filesystem / findFiles error.
  *
@@ -3090,7 +3066,6 @@ export type ExtensionToWebViewMessage =
   | ViewShowMessage
   | SplitPaneMessage
   | SplitPaneCreatedMessage
-  | CloseSplitPaneMessage
   | CloseSplitPaneByIdMessage
   | SplitPaneAtMessage
   | CtxClearMessage

@@ -370,11 +370,6 @@ describe("a pid file must be named after the process it describes", () => {
 
     expect(result.map((s) => s.sessionId)).toEqual(["real"]);
   });
-
-  it("keeps a record whose filename stem agrees with its payload", async () => {
-    await writePidFile(100, { pid: 100, sessionId: "real", cwd: "/work/a" });
-    expect((await liveSessions(opts(), aliveDeps([100]))).map((s) => s.sessionId)).toEqual(["real"]);
-  });
 });
 
 describe("what a registry record has to prove about its own fields", () => {

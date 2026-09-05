@@ -179,13 +179,6 @@ describe("a surface that cannot perform vault actions", () => {
     expect(menu.isOpen()).toBe(false);
   });
 
-  it("posts nothing, since there is nothing to click", () => {
-    const { menu, host, row, posts } = setup(false);
-    menu.open(entry(), EVENT, row);
-    expect(labels(host)).toEqual([]);
-    expect(posts).toEqual([]);
-  });
-
   it("leaves an action-capable surface exactly as it was", () => {
     // The flag defaults to true, so the sidebar and panel are unchanged by it.
     const explicit = setup(true);

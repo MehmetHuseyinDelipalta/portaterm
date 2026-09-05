@@ -12,6 +12,7 @@
 import type { FileHandle } from "node:fs/promises";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { asRecord } from "../../utils/record";
 import type {
   CursorFileCacheEntry,
   CursorLocationIndex,
@@ -182,10 +183,7 @@ async function readMeta(
     return undefined; // oversized (incl. grown after any earlier stat) or unreadable
   }
   try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : undefined;
+    return asRecord(JSON.parse(raw));
   } catch {
     return undefined;
   }
@@ -622,7 +620,7 @@ function visibleRecentActivity(activity: VaultActivityStep[]): VaultActivityStep
  * metadata-only list path never calls this. IDE and project-transcript ids are
  * never CLI Resume candidates, so they fail closed without opening a store.
  *
- * One resolution per explicit launch action. `resolveCursorChatCandidate`
+ * One resolution per explicit launch action. `lookupCursorChatCandidate`
  * enumerates every chat bucket, so resolving the entry and then re-resolving it
  * for the identity proof both doubled that scan and let the two resolutions
  * observe different candidates across a move or delete-create (B17). The launcher
@@ -647,18 +645,6 @@ export function verifyCursorLaunchTarget(
   return verifyCursorStoreIdentity(target.dbPath, target.entry.sessionId, {
     withSqliteSnapshotFn: options.withSqliteSnapshotFn,
   });
-}
-
-/**
- * Resolve ONE Cursor session to its metadata entry. Source-qualified project and
- * IDE ids never fall through to the CLI chat-id domain.
- */
-export async function readCursorEntry(
-  sessionId: string,
-  options: CursorCombinedReaderOptions = {},
-): Promise<VaultSessionEntry | null> {
-  const found = await lookupCursorEntry(sessionId, options);
-  return found.status === "found" ? found.entry : null;
 }
 
 /**

@@ -43,6 +43,7 @@ vi.mock("./worktree/provisioning/setupTerminal", () => ({
       setupAssembly.reveals.push({ outputId, origin });
       return true;
     }
+    retire(): void {}
     dispose(): void {
       setupAssembly.disposals.push(this.sequence);
     }

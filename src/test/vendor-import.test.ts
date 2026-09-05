@@ -16,33 +16,12 @@
 // @vitest-environment jsdom
 
 import { beforeAll, describe, expect, it } from "vitest";
-
 import type { IListRenderer, IListVirtualDelegate } from "vs/base/browser/ui/list/list";
 import { List } from "vs/base/browser/ui/list/listWidget";
+import { installListViewPolyfills } from "./listViewTestkit";
 
-// JSDOM 28 ships ResizeObserver, but listView.ts also exercises matchMedia and
-// requestAnimationFrame. Stub anything that's missing before any vendored code
-// runs to avoid `ReferenceError` during `new List(...)`.
 beforeAll(() => {
-  if (typeof globalThis.ResizeObserver === "undefined") {
-    globalThis.ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    } as unknown as typeof ResizeObserver;
-  }
-  if (typeof globalThis.matchMedia === "undefined") {
-    globalThis.matchMedia = (() => ({
-      matches: false,
-      media: "",
-      onchange: null,
-      addListener: () => {},
-      removeListener: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      dispatchEvent: () => false,
-    })) as unknown as typeof matchMedia;
-  }
+  installListViewPolyfills();
 });
 
 describe("vendored vs/base/browser/ui/list/listWidget", () => {

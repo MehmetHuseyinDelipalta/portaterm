@@ -855,7 +855,6 @@ export class TerminalEditorProvider {
               findFiles: (include, exclude, maxResults, token) =>
                 vscode.workspace.findFiles(include, exclude, maxResults, token),
               showWarning: vscode.window.showWarningMessage,
-              showError: vscode.window.showErrorMessage,
               showTextDocument: vscode.window.showTextDocument,
               showQuickPick: vscode.window.showQuickPick,
               getFileSearchMaxResults: () =>

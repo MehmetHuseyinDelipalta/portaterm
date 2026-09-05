@@ -10,6 +10,7 @@ import { chmod, link, lstat, mkdir, open, readFile, rename, unlink, writeFile } 
 import { posix, win32 } from "node:path";
 import { type FileIdentity, fileIdentityOf } from "./authorizedDirectory";
 import { sameIdentity } from "./fileIdentity";
+import { isNotFound } from "./fsPresence";
 import { type OpenLike, openRegularFile } from "./regularFileRead";
 
 export type Platform = "darwin" | "linux" | "win32";
@@ -584,6 +585,4 @@ export function isAlreadyExists(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
 }
 
-export function isNotFound(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
-}
+export { isNotFound } from "./fsPresence";

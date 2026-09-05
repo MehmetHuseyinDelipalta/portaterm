@@ -58,6 +58,7 @@ import type {
 } from "./types/messages";
 import { MAX_SETUP_STEP_CHARS } from "./types/messages";
 import { type AuthorizedDirectory, authorizeDirectory, directoryStillAuthorized } from "./utils/authorizedDirectory";
+import { provesAbsence } from "./utils/fsPresence";
 import { createHeldRegularFilePool, type HeldRegularFilePool } from "./utils/heldRegularFile";
 import { isPathInside } from "./utils/pathBoundary";
 import {
@@ -1165,19 +1166,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * (round-1 B1). Declared rather than assigned so `mutations()`, defined
    * above and called lazily, can reach it.
    */
-  /**
-   * Is this the one errno that MEANS the path is not there?
-   *
-   * Every other failure — a permission wall, an I/O error, a stale mount — is
-   * the absence of an ANSWER, and both probes have a separate verdict for that.
-   * Folding them into `false` made an unreadable administrative directory prove
-   * the registration was gone, which is the adopt arm (round-1 F003).
-   */
-  const readsAsAbsent = (error: unknown): boolean => {
-    const code = (error as NodeJS.ErrnoException).code;
-    return code === "ENOENT" || code === "ENOTDIR";
-  };
-
   /** Shared by both probes, so neither can read a failed check as a gone directory. */
   const adminDirIsThere = async (gitdir: string): Promise<boolean> => {
     try {
@@ -1190,7 +1178,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       return true;
     } catch (error) {
-      if (readsAsAbsent(error)) {
+      if (provesAbsence(error)) {
         return false;
       }
       // Thrown, not answered: both probes catch this and reply `unreadable`,
@@ -1297,7 +1285,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // it rather than acting on a file it never read (round-1 F003).
     readFile: (path) =>
       fsp.readFile(path, "utf8").catch((error: unknown) => {
-        if (readsAsAbsent(error)) {
+        if (provesAbsence(error)) {
           return null;
         }
         throw error;

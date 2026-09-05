@@ -291,13 +291,6 @@ export async function detectLaunchTargets(
     }));
 }
 
-/** The continuation half of {@link detectLaunchTargets}, kept for its callers. */
-export async function detectContinuationTargets(
-  deps: AgentDetectDeps = defaultDetectDeps,
-): Promise<VaultLaunchTarget[]> {
-  return detectLaunchTargets("continue", deps);
-}
-
 export function agentKindForExecutable(executable: string | undefined): VaultAgentId | undefined {
   if (!executable) {
     return undefined;

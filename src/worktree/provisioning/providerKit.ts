@@ -24,6 +24,7 @@ import type {
   ProvisionProvider,
   ProvisionSetupStep,
 } from "../../types/messages";
+import { provesAbsence } from "../../utils/fsPresence";
 import { isResolvedPathInsideRoot, type PreparedRoot, prepareResolvedRoot } from "../../utils/resolvedPathBoundary";
 
 export interface ProviderDeps {
@@ -119,8 +120,7 @@ export const MAX_SCAN = 2000;
  * (round-1 B8).
  */
 export function isAbsence(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === "ENOENT" || code === "ENOTDIR";
+  return provesAbsence(error);
 }
 
 /** The errno, for a problem detail. Never the message: it can carry a path. */

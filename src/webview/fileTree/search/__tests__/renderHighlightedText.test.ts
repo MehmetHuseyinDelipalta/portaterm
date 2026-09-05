@@ -73,14 +73,11 @@ describe("renderHighlightedText", () => {
     ]);
   });
 
-  it("preserves multi-byte unicode characters intact", () => {
+  it("preserves astral Unicode characters intact", () => {
     const el = makeContainer();
-    // Note: JavaScript indices are UTF-16 code units. The high surrogate of
-    // the emoji is at index 0, the low surrogate at index 1 — matches MUST
-    // cover both to avoid producing a lone surrogate inside a span.
-    renderHighlightedText(el, "日本.md", [{ start: 0, end: 1 }]);
+    renderHighlightedText(el, "😀本.md", [{ start: 0, end: 2 }]);
     expect(structure(el)).toEqual([
-      { kind: "match", text: "日" },
+      { kind: "match", text: "😀" },
       { kind: "text", text: "本.md" },
     ]);
   });

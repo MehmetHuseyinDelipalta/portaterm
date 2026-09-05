@@ -5,15 +5,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionManager } from "../session/SessionManager";
 import { __resetAll, __setAppRoot, __setWorkspaceFolders } from "../test/__mocks__/vscode";
+import { mockExtensionContext as createMockContext } from "../test/providerTestUtils";
 import { TerminalEditorProvider } from "./TerminalEditorProvider";
-
-function createMockContext() {
-  return {
-    extensionUri: { fsPath: "/mock/ext" },
-    workspaceState: { get: () => undefined, update: () => Promise.resolve() } as any,
-    subscriptions: [],
-  } as unknown as import("vscode").ExtensionContext;
-}
 
 beforeEach(() => {
   __resetAll();

@@ -382,12 +382,6 @@ describe("detectFilePathLinks: dedup on overlap", () => {
     expect(r[0].text).toContain("line 42");
   });
 
-  it("dedups suffixed against bare on same span", () => {
-    const r = detectFilePathLinks("at src/foo.ts:42 here", "posix");
-    expect(r).toHaveLength(1);
-    expect(r[0].text).toBe("src/foo.ts:42");
-  });
-
   it("keeps non-overlapping detections separately", () => {
     const r = detectFilePathLinks("foo src/a.ts:1 bar src/b.ts:2 baz", "posix");
     expect(r).toHaveLength(2);

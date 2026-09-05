@@ -187,11 +187,6 @@ describe("build: continue", () => {
     );
     expect(spec.args).toEqual(["--agent", "build", "--prompt", "go on"]);
   });
-
-  it("leaves resume and fork argv untouched", () => {
-    expect(build(entry(), "resume", {}).args).toEqual(["--resume", "sess-1"]);
-    expect(build(entry(), "fork", {}).args).toEqual(["--resume", "sess-1", "--fork-session"]);
-  });
 });
 
 describe("build: cursor", () => {
@@ -280,18 +275,6 @@ describe("build: cursor", () => {
         expect.objectContaining({ code: "resume-unsupported" }),
       );
     }
-  });
-
-  it("accepts a fully canonical, source-qualified Cursor CLI Resume entry", () => {
-    const spec = build(
-      cursorEntry({ source: "cli", canResume: true }),
-      "resume",
-      {},
-      undefined,
-      undefined,
-      "cursor-agent",
-    );
-    expect(spec.args).toEqual(["--resume", "chat-1"]);
   });
 });
 

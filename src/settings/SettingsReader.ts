@@ -188,11 +188,6 @@ export function readWorktreeCreateRoot(): WorktreeCreateRootSetting {
   };
 }
 
-/** Check whether a configuration change event affects the create root. */
-export function affectsWorktreeCreateRoot(e: vscode.ConfigurationChangeEvent): boolean {
-  return e.affectsConfiguration("anywhereTerminal.worktree.createRoot");
-}
-
 /** Check whether a configuration change event affects row activation. */
 export function affectsWorktreeRowActivation(e: vscode.ConfigurationChangeEvent): boolean {
   return e.affectsConfiguration("anywhereTerminal.worktree.rowActivation");

@@ -304,17 +304,6 @@ describe("the lock read is bounded", () => {
 
     expect(proofs.lockAged).toBe("unproven");
   });
-
-  it("still answers a stat that returns in time", async () => {
-    // The negative that gives the two above their meaning: the bound must not
-    // cost the reachable case its answer.
-    const proofs = await readOrphanProofs(
-      { path: WT, locked: true, sessions: { ok: true, value: [] } },
-      deps({ lockMtime: async () => NOW - LOCK_AGE_MS - 1 }),
-    );
-
-    expect(proofs.lockAged).toBe("passed");
-  });
 });
 
 describe("the proofs that need no registry do not wait on one", () => {

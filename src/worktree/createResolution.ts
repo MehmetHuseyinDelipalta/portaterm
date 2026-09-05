@@ -2,10 +2,7 @@
 // See: asimov/changes/resolve-a-selection-before-the-create-runs/design.md D2, D3, D4
 //      docs/design/worktree-create.md § 2, § 2.0, § 2.3
 
-import type { DestinationDisposition, ResolvedDisposition } from "../types/messages";
 import type { WorktreeRef } from "./repoRefs";
-
-export type { ResolvedDisposition };
 
 /** The fields of a `WorktreeInfo` that answer "what holds this branch?". */
 export interface ResolutionWorktree {
@@ -96,15 +93,4 @@ export function resolveSelection(facts: SelectionFacts): SelectionResolution {
   }
 
   return { mode: { kind: "reuse" } };
-}
-
-/**
- * The wire's disposition, narrowed to what a REPORT may carry.
- *
- * Rebuilt rather than spread: a spread would carry `authorization` through
- * under a type that does not mention it, and the whole point is that a probe's
- * answer has nothing a delete could be built from (design.md D4).
- */
-export function reportableDisposition(disposition: DestinationDisposition): ResolvedDisposition {
-  return disposition.kind === "debris" ? { kind: "debris" } : { kind: "free" };
 }

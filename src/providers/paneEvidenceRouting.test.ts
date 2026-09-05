@@ -11,6 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetAll, __setAppRoot, __setWorkspaceFolders } from "../test/__mocks__/vscode";
+import { mockExtensionContext } from "../test/providerTestUtils";
 
 vi.mock("../pty/PtyManager", () => ({
   loadNodePty: vi.fn(() => ({ spawn: vi.fn() })),
@@ -113,7 +114,7 @@ function makePanelSeam() {
 }
 
 function mockContext(): vscode.ExtensionContext {
-  return { extensionUri: { fsPath: "/mock/extension" }, subscriptions: [] } as unknown as vscode.ExtensionContext;
+  return mockExtensionContext({ fsPath: "/mock/extension", workspaceState: undefined });
 }
 
 /** An editor panel VS Code created directly. */

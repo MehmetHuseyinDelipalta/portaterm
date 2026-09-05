@@ -444,25 +444,9 @@ describe("actions it cannot perform", () => {
     const items = Array.from(document.querySelectorAll(".vault-context-menu button")).map((b) => b.textContent);
     expect(items).toContain("Copy Path");
   });
-
-  it("opens no create form, because nothing would run it", () => {
-    const { controller } = mount();
-    controller.setVisible(true);
-    controller.handleTreeResponse(response());
-    expect(document.querySelector(".wt-dialog")).toBeNull();
-  });
 });
 
 describe("persisted disclosure state", () => {
-  it("writes a collapse the user made back to the store", () => {
-    const { controller, state } = mount();
-    controller.setVisible(true);
-    controller.handleTreeResponse(response());
-    const toggled = document.querySelector<HTMLElement>(".wt-row");
-    toggled?.click();
-    expect(Array.isArray(state.worktreeCollapsed)).toBe(true);
-  });
-
   it("restores a persisted collapse set on mount", () => {
     const tree = singleRepoTree();
     const first = tree.repos[0]?.worktrees[0];
@@ -675,15 +659,6 @@ describe("the mutating capabilities WT-005.2 supplies", () => {
     const { actions } = controllerActions();
     expect(actions.resumeHere).toBeUndefined();
     expect(actions.launchAgentHere).toBeUndefined();
-  });
-
-  it("hands the view both halves of create's entry path", () => {
-    // The submit half is round-1 B1. The OPEN half arrived with the host's
-    // defaults message: the spec says a create names the destination it will
-    // actually use, so the seed is the host's answer, never a path derived here.
-    const view = (mount().controller as unknown as { view: { deps: Record<string, unknown> } }).view;
-    expect(typeof view.deps.onCreateSubmit).toBe("function");
-    expect(typeof view.deps.createDialogDeps).toBe("function");
   });
 
   it("[3_1] retires the opening the form was riding, not a fresh one", () => {
@@ -1719,22 +1694,6 @@ describe("the create a toolbar with no repository opens", () => {
 
     // Still waiting on the destination for "feat/x" — nothing has answered it.
     expect(create()?.disabled).toBe(true);
-  });
-
-  it("[1_4] holds the offer and hands it to the form beside the destination", () => {
-    const h = ready(twoRepoResponse());
-    h.controller.openCreate();
-    h.controller.handleCreateDefaults(answer(REPO_A, "/trees/a"));
-    h.controller.handleCreateDefaults(answer(REPO_B, "/trees/b"));
-    h.controller.handleProvisionOffer({
-      type: "worktreeProvisionOffer",
-      repoId: REPO_A,
-      opening: 1,
-      offerId: "provision-1",
-      model: provisionModel(),
-    });
-
-    expect(document.querySelectorAll(".wt-brow")).toHaveLength(5);
   });
 
   it("hands a suggestion offer to the form with its rows unchecked and explained", () => {

@@ -14,6 +14,7 @@
 import * as path from "node:path";
 import type * as vscode from "vscode";
 import type { FilePreviewResultMessage, RequestFilePreviewMessage } from "../types/messages";
+import { withFileLinkTimeout } from "./fileLinkTimeout";
 import { endsWithPath } from "./openFileLink";
 import { type BuildCandidatesDeps, buildCandidates, escapeGlob, hasTraversal, isAbsolutePath } from "./pathResolution";
 import { type ReadFileForPreviewFs, readFileForPreview } from "./readFileForPreview";
@@ -264,39 +265,7 @@ interface ResolveAmbiguous {
 type ResolveOutcome = ResolveOk | ResolveNotFound | ResolveAmbiguous;
 
 async function withTimeout<T>(p: Thenable<T>, ms: number, onTimeout?: () => void): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      try {
-        onTimeout?.();
-      } catch {
-        // Cancel handler shouldn't fail; if it does, surface the timeout below.
-      }
-      reject(new Error(`findFiles timeout after ${ms}ms`));
-    }, ms);
-    Promise.resolve(p).then(
-      (value) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        reject(err);
-      },
-    );
-  });
+  return withFileLinkTimeout(p, ms, onTimeout);
 }
 
 /**

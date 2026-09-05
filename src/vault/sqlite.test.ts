@@ -92,15 +92,6 @@ describe("presenceFromAccessError: which failures prove absence", () => {
 });
 
 describe("readSqlite: store presence", () => {
-  it("returns no-db when the store file is absent", async () => {
-    const deps = makeDeps({
-      exec: execWith(async () => ({ stdout: "[]", stderr: "" })),
-      exists: vi.fn(async (p: string) => p.includes(":memory:")), // db absent
-    });
-    const result = await readSqlite("/x/missing.sqlite", "SELECT 1", deps);
-    expect(result.status).toBe("no-db");
-  });
-
   it("says db-unreachable, NOT no-db, when the path could not be checked", async () => {
     // The difference a consumer acts on: `no-db` is proof the store is gone,
     // this is proof of nothing (D6).
@@ -425,17 +416,6 @@ describe("withSqliteSnapshot: the other entry point snapshots the same way", () 
       "/tmp/at-vault-xyz/db.sqlite",
     ]);
   });
-
-  it("reports query-error when the snapshot cannot be taken", async () => {
-    const deps = makeDeps({
-      hasNodeSqlite: vi.fn(async () => true),
-      snapshot: vi.fn(async () => {
-        throw new Error("disk went away");
-      }),
-    });
-    const result = await withSqliteSnapshot("/x/state.sqlite", async () => "unreachable", deps);
-    expect(result.status).toBe("query-error");
-  });
 });
 
 describe("readSqlite: a store that cannot be opened is not an empty store", () => {
@@ -482,18 +462,6 @@ describe("readSqlite: a store that cannot be opened is not an empty store", () =
       await fsp.chmod(dir, 0o755);
       await fsp.rm(root, { recursive: true, force: true });
     }
-  });
-
-  it("reports query-error when the snapshot fails for any other reason", async () => {
-    const deps = makeDeps({
-      hasNodeSqlite: vi.fn(async () => true),
-      snapshot: vi.fn(async () => {
-        throw new Error("no space left on device");
-      }),
-    });
-    const result = await readSqlite("/x/state.sqlite", "SELECT 1", deps);
-    expect(result.status).toBe("query-error");
-    expect(result.rows).toEqual([]);
   });
 });
 

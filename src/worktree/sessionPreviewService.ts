@@ -47,8 +47,6 @@ export interface SessionPreviewDeps {
   now?(): number;
   /** Minimum gap between two looks at one session. */
   recheckMs?: number;
-  /** How long one look may run before the row is answered without it. */
-  lookTimeoutMs?: number;
   /** The deadline's clock, overridable so a test resolves it rather than waiting. */
   wait?(ms: number): Deadline;
   /** Most sessions held at once; the least recently asked for is dropped past it. */
@@ -232,7 +230,6 @@ export function createSessionPreviewService(deps: SessionPreviewDeps): SessionPr
   const stat = deps.stat ?? defaultStat;
   const now = deps.now ?? (() => Date.now());
   const recheckMs = deps.recheckMs ?? DEFAULT_RECHECK_MS;
-  const lookTimeoutMs = deps.lookTimeoutMs ?? DEFAULT_LOOK_TIMEOUT_MS;
   const wait = deps.wait ?? afterDelay;
   const cap = Math.max(1, deps.cap ?? DEFAULT_PREVIEW_CACHE_CAP);
   const entryRecheckMs = deps.entryRecheckMs ?? DEFAULT_ENTRY_RECHECK_MS;
@@ -480,7 +477,7 @@ export function createSessionPreviewService(deps: SessionPreviewDeps): SessionPr
       // Tagged rather than compared against a sentinel: a look that answered
       // `undefined` and a look that never answered are different outcomes, and only
       // a discriminant keeps them apart once both are `string | undefined`.
-      const deadline = wait(lookTimeoutMs);
+      const deadline = wait(DEFAULT_LOOK_TIMEOUT_MS);
       const inflight = Promise.race([attempt, deadline.elapsed.then(() => ({ expired: true as const }))]).then(
         (outcome) => {
           if (outcome.expired) {

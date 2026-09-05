@@ -28,9 +28,4 @@ describe("formatRestoreDivider", () => {
     const out = formatRestoreDivider({ snapshotAt: t, shellExited: false, exitCode: null });
     expect(out).toContain("at 03:07");
   });
-
-  it("begins with row-overlay + SGR reset (overwrites inherited prompt row)", () => {
-    const out = formatRestoreDivider({ snapshotAt: REF, shellExited: false, exitCode: null });
-    expect(out.startsWith("\r\x1b[2K\x1b[0m")).toBe(true);
-  });
 });

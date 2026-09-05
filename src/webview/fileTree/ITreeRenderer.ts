@@ -59,8 +59,7 @@ export interface ITreeMatch {
  * Per-row match metadata passed through to `renderElement`. The renderer is
  * responsible for wrapping the `matches` ranges in highlight spans. Owned by
  * this module (instead of `Tree.ts`) so consumers implementing
- * `ITreeRenderer` don't need to pull in the Tree class itself; `Tree.ts`
- * re-exports the same type as `IMatchData` for backwards compatibility.
+ * `ITreeRenderer` don't need to pull in the Tree class itself.
  */
 export interface ITreeMatchData {
   readonly matches: ReadonlyArray<ITreeMatch>;

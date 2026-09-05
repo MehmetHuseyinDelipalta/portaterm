@@ -16,6 +16,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetAll, __setAppRoot, __setWorkspaceFolders } from "../test/__mocks__/vscode";
+import { mockExtensionContext } from "../test/providerTestUtils";
 
 // A spawn that returns a usable handle, because these surfaces have to get all
 // the way through `init` — the correction this file asserts is gated on a
@@ -116,7 +117,7 @@ function makeWebviewSeam() {
 }
 
 function mockContext(): vscode.ExtensionContext {
-  return { extensionUri: { fsPath: "/mock/extension" }, subscriptions: [] } as unknown as vscode.ExtensionContext;
+  return mockExtensionContext({ fsPath: "/mock/extension", workspaceState: undefined });
 }
 
 function makePanelSeam() {

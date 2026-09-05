@@ -1,5 +1,6 @@
 import * as os from "node:os";
 import * as path from "node:path";
+import { asRecord } from "../../utils/record";
 import type { FileStamp } from "../cacheTypes";
 import { boundedPreview } from "../preview";
 import { withPrimarySqliteSnapshot as readSnapshot, type SqliteSnapshot } from "../sqlite";
@@ -74,10 +75,6 @@ export function cursorIdeDbPath(options: CursorIdeReaderOptions = {}): string {
   return path.join(home, ".config", "Cursor", "User", "globalStorage", "state.vscdb");
 }
 
-function asObject(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-}
-
 function parseJson(value: unknown): Record<string, unknown> | undefined {
   if (typeof value !== "string" || value.length === 0 || value.length > MAX_JSON_CHARS) {
     return undefined;
@@ -88,7 +85,7 @@ function parseJson(value: unknown): Record<string, unknown> | undefined {
     sanitized += code < 0x20 && character !== "\n" && character !== "\r" && character !== "\t" ? " " : character;
   }
   try {
-    return asObject(JSON.parse(sanitized));
+    return asRecord(JSON.parse(sanitized));
   } catch {
     return undefined;
   }
@@ -156,9 +153,9 @@ function parseSessionId(sessionId: string): { workspaceId: string; composerId: s
 }
 
 function workspaceIdentity(composer: Record<string, unknown>): { workspaceId: string; cwd: string } | undefined {
-  const identifier = asObject(composer.workspaceIdentifier);
+  const identifier = asRecord(composer.workspaceIdentifier);
   const workspaceId = identifier?.id;
-  const uri = asObject(identifier?.uri);
+  const uri = asRecord(identifier?.uri);
   const cwd = uri?.fsPath ?? uri?.path;
   if (
     typeof workspaceId !== "string" ||
@@ -336,7 +333,7 @@ async function composerFromSnapshot(
     return limited();
   }
   const allHeaders = Array.isArray(data.fullConversationHeadersOnly)
-    ? data.fullConversationHeadersOnly.map(asObject).filter((item): item is Record<string, unknown> => !!item)
+    ? data.fullConversationHeadersOnly.map(asRecord).filter((item): item is Record<string, unknown> => !!item)
     : [];
   if (allHeaders.length === 0) {
     return limited();
@@ -408,14 +405,14 @@ function bubbleTimestamp(bubble: Record<string, unknown>): number | undefined {
 }
 
 function toolDetail(value: unknown): string | undefined {
-  const record = asObject(value);
+  const record = asRecord(value);
   if (!record) {
     return undefined;
   }
   const rawArgs = record.rawArgs;
   if (typeof rawArgs === "string" && rawArgs.length <= MAX_JSON_CHARS) {
     try {
-      const args = asObject(JSON.parse(rawArgs));
+      const args = asRecord(JSON.parse(rawArgs));
       for (const key of ["file_path", "path", "command", "query", "description"]) {
         const detail = args?.[key];
         if (typeof detail === "string" && detail.length > 0) {
@@ -459,7 +456,7 @@ function normalizeBubble(
   if (type !== 2) {
     return { timeline: [], activity: [] };
   }
-  const toolData = asObject(bubble.toolFormerData);
+  const toolData = asRecord(bubble.toolFormerData);
   if (toolData) {
     const name =
       typeof toolData.name === "string" && toolData.name.length > 0 && toolData.name.length <= 200

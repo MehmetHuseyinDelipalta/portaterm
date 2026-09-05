@@ -69,6 +69,7 @@ vi.mock("./openFileLink", () => ({
 }));
 
 import { SessionManager } from "../session/SessionManager";
+import { mockExtensionContext } from "../test/providerTestUtils";
 import { FileTreeHost } from "./fileTreeHost";
 import { openFileLink } from "./openFileLink";
 import { TerminalEditorProvider } from "./TerminalEditorProvider";
@@ -89,10 +90,7 @@ afterEach(() => {
 // ─── Helper ─────────────────────────────────────────────────────────
 
 function createMockContext() {
-  return {
-    extensionUri: { fsPath: "/mock/extension" },
-    subscriptions: [],
-  } as unknown as import("vscode").ExtensionContext;
+  return mockExtensionContext({ fsPath: "/mock/extension", workspaceState: undefined });
 }
 
 // ─── createPanel ────────────────────────────────────────────────────
@@ -275,7 +273,6 @@ describe("TerminalEditorProvider.createPanel", () => {
         stat: expect.any(Function),
         findFiles: expect.any(Function),
         showWarning: expect.any(Function),
-        showError: expect.any(Function),
         showTextDocument: expect.any(Function),
         showQuickPick: expect.any(Function),
       }),

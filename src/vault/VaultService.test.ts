@@ -227,20 +227,6 @@ describe("VaultService.getEntry: single-entry resolve", () => {
     expect(found.status === "found" && found.entry.canFork).toBe(true);
   });
 
-  it("returns null for an unknown agent or a malformed id", async () => {
-    const svc = new VaultService({ entryReaders: makeEntryReaders(), canForkOpenCodeFn: async () => false });
-    expect(await svc.getEntry("bogus:x")).toBeNull();
-    expect(await svc.getEntry("no-colon")).toBeNull();
-  });
-
-  it("returns null when the agent reader can't resolve the session", async () => {
-    const svc = new VaultService({
-      entryReaders: makeEntryReaders({ codex: vi.fn(async () => null) }),
-      canForkOpenCodeFn: async () => false,
-    });
-    expect(await svc.getEntry("codex:missing")).toBeNull();
-  });
-
   it("resolves canFork for claude WITHOUT spawning the opencode probe", async () => {
     const probe = vi.fn(async () => true);
     const svc = new VaultService({

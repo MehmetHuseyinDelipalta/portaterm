@@ -5,6 +5,7 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { asRecord } from "../../utils/record";
 import { boundedPreview } from "../preview";
 import { formatEntryId, type VaultSessionDetail, type VaultTimelineItem } from "../types";
 import { formatWorkflowAgentSessionId, formatWorkflowSessionId } from "./claudeChildIds";
@@ -67,7 +68,7 @@ export async function readClaudeSubagentDetail(
 type ManifestObj = Record<string, unknown>;
 
 function asObj(v: unknown): ManifestObj | undefined {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as ManifestObj) : undefined;
+  return asRecord(v) as ManifestObj | undefined;
 }
 function manifestString(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;

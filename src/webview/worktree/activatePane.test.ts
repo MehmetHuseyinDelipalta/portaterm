@@ -33,8 +33,8 @@ const SPLIT = createBranch("horizontal", createLeaf("t1"), createLeaf("t1-b"));
 
 describe("activatePane", () => {
   it("makes a leaf the owning tab's active pane before showing it", () => {
-    // Showing the tab first would bring it forward on whichever pane was last
-    // active there, which is not the row the user clicked.
+    // Closing a split's root pane can leave the tab displayable only through a
+    // surviving leaf; that leaf must still come forward before the tab is shown.
     const { deps, log } = harness([["t1", SPLIT]], ["t1"]);
     expect(activatePane("t1-b", deps)).toBe(true);
     expect(log).toEqual(["active:t1=t1-b", "persist", "show:t1", "visual:t1", "focus:t1-b"]);
@@ -56,16 +56,6 @@ describe("activatePane", () => {
     );
     expect(activatePane("t1-b", deps)).toBe(true);
     expect(log).toContain("show:t2");
-  });
-
-  it("activates a pane in a tab that lost the pane it was named after", () => {
-    // Closing a split's root pane deletes `terminals[tabId]` while `tabLayouts`
-    // keeps the tab and its remaining live leaves. Round 1 reported this as a
-    // failure; round-2 B2 is that the pane must actually come forward, because
-    // the tab is displayable through the leaf that survived.
-    const { deps, log } = harness([["t1", SPLIT]], ["t1"]);
-    expect(activatePane("t1-b", deps)).toBe(true);
-    expect(log).toEqual(["active:t1=t1-b", "persist", "show:t1", "visual:t1", "focus:t1-b"]);
   });
 
   it("reports failure, and changes nothing, when the tab holds no live pane at all", () => {

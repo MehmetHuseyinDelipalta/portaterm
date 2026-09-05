@@ -676,18 +676,6 @@ const routeMessage = createMessageRouter({
   onSplitPaneCreated(msg) {
     splitRenderer.handleSplitPaneCreated(msg, factory);
   },
-  onCloseSplitPane() {
-    if (!store.activeTabId) {
-      return;
-    }
-    const closed = splitRenderer.closeSplitPaneById(store.tabActivePaneIds.get(store.activeTabId) ?? store.activeTabId);
-    if (closed) {
-      activityTracker.delete(closed);
-      paneEvidenceReporter.forget(closed);
-      factory.disposeHoverController(closed);
-    }
-    factory.disposeSubagentPopup(); // closing any pane dismisses the singleton popup (D7)
-  },
   onCloseSplitPaneById(msg) {
     if (msg.sessionId) {
       const closed = splitRenderer.closeSplitPaneById(msg.sessionId);
@@ -793,7 +781,6 @@ const routeMessage = createMessageRouter({
     // Persist the panel identity so VS Code includes it in the serializer's
     // `state` arg on next reload. See: restore-terminal-sessions design.md D2.
     store.updateState({ panelId: msg.panelId });
-    vscode.postMessage({ type: "persistPanelId", panelId: msg.panelId });
   },
   onRequestScrollbackDump(msg) {
     handleScrollbackDump(msg);

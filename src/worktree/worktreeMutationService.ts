@@ -26,6 +26,7 @@ import type {
   WorktreeProvisionResultMessage,
 } from "../types/messages";
 import type { AuthorizedDirectory } from "../utils/authorizedDirectory";
+import { provesAbsence } from "../utils/fsPresence";
 import { normalizePathForCompare } from "../utils/pathBoundary";
 import type { AdoptVerdict } from "./adoptProbe";
 import type { AdoptRequest, AdoptResidue, AdoptResult } from "./adoptWorktree";
@@ -51,7 +52,7 @@ import { createMutationQueue } from "./mutationQueue";
 import { disposeProvisionMaterials, type ProvisionMaterial, provisionEntryOf } from "./provisioning/provisionMaterial";
 import type { ReattachVerdict } from "./reattachProbe";
 import type { RemovalAssessment, RemovalEvidence } from "./worktreeBlockers";
-import { createFingerprintStore, type FingerprintStore } from "./worktreeFingerprint";
+import { createFingerprintStore } from "./worktreeFingerprint";
 import {
   branchNameIsValid,
   type CreateSource,
@@ -154,7 +155,7 @@ export type MutationVerb = "create" | "remove" | "lock" | "unlock" | "prune";
  * succeeded" on the one irreversible verb (round-3 B13).
  */
 export function existenceFromStatError(error: NodeJS.ErrnoException): false | null {
-  return error.code === "ENOENT" || error.code === "ENOTDIR" ? false : null;
+  return provesAbsence(error) ? false : null;
 }
 
 function migrationReasonOf(error: unknown): string {
@@ -506,7 +507,6 @@ export interface MutationServiceDeps {
   ): { gitDir: string; relativePath: string } | null;
   addToGitExclude(gitDir: string, entry: string): Promise<void>;
   now(): number;
-  fingerprints?: FingerprintStore;
   /** Authorizations for clearing crash debris — the create path's own store (design.md D2). */
   debrisAuthorizations?: DebrisAuthorizationStore;
   /** How a cleared destination is actually removed. Production takes the module default. */
@@ -583,7 +583,7 @@ interface SetupRetryRecord {
 interface PendingSetupRetry extends Omit<SetupRetryRecord, "incarnation" | "retryId"> {}
 
 export function createWorktreeMutationService(deps: MutationServiceDeps): WorktreeMutationService {
-  const fingerprints = deps.fingerprints ?? createFingerprintStore();
+  const fingerprints = createFingerprintStore();
   const setupRetries = new Map<string, SetupRetryRecord>();
   const newSetupRetryId = deps.newSetupRetryId ?? (() => crypto.randomUUID());
   const debrisAuthorizations = deps.debrisAuthorizations ?? createDebrisAuthorizationStore();

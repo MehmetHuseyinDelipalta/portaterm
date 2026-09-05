@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { pumpImmediateMacrotasks } from "../test/providerTestUtils";
 import type { BranchDeleteRequest, ExtensionToWebViewMessage } from "../types/messages";
 import { createGitCapabilities } from "../worktree/gitCapabilities";
 import type { GitCommandResult, GitCommandRunner } from "../worktree/gitCommandRunner";
@@ -97,11 +98,7 @@ function attachShown(h: ReturnType<typeof host>, s: WorktreeSurface) {
 }
 
 /** Let the gate's run and the git listing behind it settle. */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 6; i += 1) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-}
+const settle = (): Promise<void> => pumpImmediateMacrotasks(6);
 
 interface Subscription {
   baseDir: string;

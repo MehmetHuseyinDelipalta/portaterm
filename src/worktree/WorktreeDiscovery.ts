@@ -339,14 +339,3 @@ export async function buildWorktreeTreeDetailed(
     folderOutcomes,
   };
 }
-
-/**
- * Build the whole tree. Never throws: an unusable git empties the tree with a
- * reason, and a single repo's failure is confined to that repo's `degraded`.
- */
-export async function buildWorktreeTree(
-  workspaceFolders: readonly string[],
-  deps: WorktreeTreeDeps,
-): Promise<WorktreeTree> {
-  return (await buildWorktreeTreeDetailed(workspaceFolders, deps)).tree;
-}

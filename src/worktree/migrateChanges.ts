@@ -10,6 +10,7 @@ import {
   type FileIdentity,
   fileIdentityOf,
 } from "../utils/authorizedDirectory";
+import { isNotFound } from "../utils/fsPresence";
 import { normalizePathForCompare } from "../utils/pathBoundary";
 import { type OpenLike, openRegularFile } from "../utils/regularFileRead";
 import { afterDelay, type Deadline } from "./deadline";
@@ -141,12 +142,6 @@ const nodeFs: MigrationFs = {
   realpath: (target) => fs.realpath(target),
   open: (target, flags) => fs.open(target, flags),
 };
-
-function isNotFound(error: unknown): boolean {
-  return (
-    typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "ENOENT"
-  );
-}
 
 function decode(raw: Buffer): string | undefined {
   const value = raw.toString("utf8");

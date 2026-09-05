@@ -130,15 +130,6 @@ export function projectLiveActivity(evidence: LiveActivityEvidence): LiveActivit
   return explainLiveActivity(evidence).activity;
 }
 
-/**
- * Activity for any pane. `exited` wins over everything: the process is gone, so
- * whatever the last output or title evidence claimed is history.
- */
-export function projectPaneActivity(evidence: LiveActivityEvidence & { exited: boolean }): PaneActivity {
-  return evidence.exited ? "exited" : projectLiveActivity(evidence);
-}
-
-/** As `projectPaneActivity`, keeping the rule that decided. */
 export function explainPaneActivity(evidence: LiveActivityEvidence & { exited: boolean }): {
   activity: PaneActivity;
   rule: ActivityRule;

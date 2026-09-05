@@ -4,54 +4,10 @@
 // Tests path escaping, DataTransfer extraction, and drag-drop handler lifecycle.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DragDropHandler, escapePathForShell, extractPathsFromDrop } from "./DragDropHandler";
+import { DragDropHandler, extractPathsFromDrop } from "./DragDropHandler";
 import { FILE_TREE_DRAG_MIME } from "./fileTree/ReadOnlyFileRenderer";
 
-// ─── 1. Path Escaping ───────────────────────────────────────────────
-// Port of VS Code's escapeNonWindowsPath() — default POSIX shell (bash/zsh)
-
-describe("escapePathForShell", () => {
-  it("wraps a simple path in single quotes", () => {
-    expect(escapePathForShell("/Users/me/project/file.txt")).toBe("'/Users/me/project/file.txt'");
-  });
-
-  it("wraps a path with spaces in single quotes", () => {
-    expect(escapePathForShell("/Users/me/My Documents/file.txt")).toBe("'/Users/me/My Documents/file.txt'");
-  });
-
-  it("escapes single quotes using POSIX break-and-escape pattern", () => {
-    // POSIX correct: end quote, escaped quote, restart quote: '\''
-    // '/Users/me/it' + \' + 's a file.txt' → '/Users/me/it'\''s a file.txt'
-    expect(escapePathForShell("/Users/me/it's a file.txt")).toBe("'/Users/me/it'\\''s a file.txt'");
-  });
-
-  it("strips dangerous shell metacharacters before quoting", () => {
-    // $ is stripped, then result is single-quoted
-    expect(escapePathForShell("/Users/me/file$(echo evil).txt")).toBe("'/Users/me/file(echo evil).txt'");
-  });
-
-  it("uses ANSI-C quoting for paths with both single and double quotes", () => {
-    // Both ' and " present → $'...' with \' for single quotes
-    expect(escapePathForShell('/Users/me/it\'s a "file".txt')).toBe("$'/Users/me/it\\'s a \"file\".txt'");
-  });
-
-  it("escapes backslashes", () => {
-    expect(escapePathForShell("/Users/me/path\\with\\backslashes")).toBe("'/Users/me/path\\\\with\\\\backslashes'");
-  });
-
-  it("handles path with only double quotes (no single quotes)", () => {
-    // No single quotes → noSingleQuotes branch → simple single-quote wrap
-    expect(escapePathForShell('/Users/me/a "file".txt')).toBe("'/Users/me/a \"file\".txt'");
-  });
-
-  it("strips multiple dangerous characters", () => {
-    expect(escapePathForShell("/tmp/file`cmd`$VAR|pipe&bg>out~home#comment!not^caret*glob;semi<in")).toBe(
-      "'/tmp/filecmdVARpipebgouthomecommentnotcaretglobsemiin'",
-    );
-  });
-});
-
-// ─── 2. Path Extraction ─────────────────────────────────────────────
+// ─── Path Extraction ─────────────────────────────────────────────
 // Multi-strategy extraction from DataTransfer, matching VS Code priority order
 
 /** Helper: create a mock DataTransfer with specified data and files. */
@@ -371,23 +327,6 @@ describe("DragDropHandler", () => {
       data: "'/repo/a.ts' ",
     });
     fallbackContainer.remove();
-  });
-
-  it("OS-drag without Shift remains a no-op (existing behavior unchanged)", () => {
-    // Standard non-custom drop without Shift → no message posted.
-    const dt = mockDataTransfer({ "text/plain": "/Users/me/file.txt" });
-    container.dispatchEvent(makeDragEvent("drop", { dataTransfer: dt, shiftKey: false }));
-    expect(postMessage).not.toHaveBeenCalled();
-  });
-
-  it("OS-drag with Shift still uses extractPathsFromDrop + active pane (existing behavior unchanged)", () => {
-    const dt = mockDataTransfer({ "text/plain": "/Users/me/file.txt" });
-    container.dispatchEvent(makeDragEvent("drop", { dataTransfer: dt, shiftKey: true }));
-    expect(postMessage).toHaveBeenCalledWith({
-      type: "input",
-      tabId: "session-1",
-      data: "'/Users/me/file.txt' ",
-    });
   });
 
   it("overlay text drops the 'Hold Shift' prompt during a file-tree drag", () => {

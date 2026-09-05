@@ -11,6 +11,7 @@ import {
   fileIdentityOf,
   sameFileIdentity,
 } from "../utils/authorizedDirectory";
+import { isNotFound } from "../utils/fsPresence";
 import {
   type LockDeadline,
   LockedFile,
@@ -128,10 +129,6 @@ const nodeFs = {
   lstat: (target: string) => lstat(target),
   open: (target: string, flags: number) => open(target, flags) as unknown as Promise<HandleLike>,
 };
-
-function isNotFound(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
-}
 
 function sameIdentity(left: { dev: number | bigint; ino: number | bigint }, right: StatLike): boolean {
   return sameFileIdentity(left, right);

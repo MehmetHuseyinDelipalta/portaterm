@@ -50,13 +50,6 @@ function isRemovalPath(rel: string): boolean {
 const FIXTURES = "src/test/invariants/fixtures/fsDeletion/";
 
 /**
- * The limits D10 states out loud, named rather than counted.
- *
- * Counting whatever happened to be present let a stated gap disappear in silence and let any file
- * called `gap-*` inflate the total (round-10 W12) — the same shape of defect as the "reachable from
- * the removal path" overclaim, which survived five rounds because nothing checked it.
- */
-/**
  * The named carve-outs — modules allowed to delete, because git cannot.
  *
  * worktree-actions.md § 3.1 rule 3 states the invariant as "never delete files directly, with
@@ -70,6 +63,13 @@ const FIXTURES = "src/test/invariants/fixtures/fsDeletion/";
  */
 const ALLOWED_DELETERS = new Set(["src/worktree/clearDebris.ts"]);
 
+/**
+ * The limits D10 states out loud, named rather than counted.
+ *
+ * Counting whatever happened to be present let a stated gap disappear in silence and let any file
+ * called `gap-*` inflate the total (round-10 W12) — the same shape of defect as the "reachable from
+ * the removal path" overclaim, which survived five rounds because nothing checked it.
+ */
 const EXPECTED_GAPS = new Set([
   "gap-any-cast.ts",
   "gap-call-produced.ts",

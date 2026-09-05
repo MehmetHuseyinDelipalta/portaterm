@@ -35,12 +35,6 @@ export interface VaultCustomNameStorage {
   update(key: string, value: unknown): Thenable<void>;
 }
 
-/** No-op storage — used when no Memento is available; overlay simply no-ops. */
-export const noopVaultCustomNameStorage: VaultCustomNameStorage = {
-  get: () => undefined,
-  update: () => Promise.resolve(),
-};
-
 export class VaultCustomNameRegistry {
   private readonly cache: Map<string, string>;
 

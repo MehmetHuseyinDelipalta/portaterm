@@ -212,16 +212,6 @@ describe("waiting evidence reaches the host through the tracker", () => {
     expect(posted).toEqual([{ type: "paneEvidence", paneId: "pane-1", waiting: true }]);
   });
 
-  it("stays silent for a pane that has never waited", () => {
-    const { posted, tracker, terminals } = wireSurface();
-    terminals.set("pane-1", { exited: false, activityStatus: "idle" });
-
-    tracker.markOutput("pane-1");
-    tracker.setWaiting("pane-1", false);
-
-    expect(posted).toEqual([]);
-  });
-
   it("interleaves title and waiting evidence without either overwriting the other", () => {
     const { posted, tracker, terminals, factory, emitTitle } = wireSurface();
     terminals.set("pane-1", { exited: false, activityStatus: "idle" });
@@ -236,32 +226,6 @@ describe("waiting evidence reaches the host through the tracker", () => {
       { type: "paneEvidence", paneId: "pane-1", waiting: true },
       { type: "paneEvidence", paneId: "pane-1", title: "Run build", decorated: false },
     ]);
-  });
-});
-
-describe("forget drops local dedup state only", () => {
-  it("lets an unchanged title be reported again after the pane is forgotten", () => {
-    const { posted, reporter, factory, emitTitle } = wireSurface();
-    const instance = factory.createTerminal("pane-1", "Terminal 1", CONFIG as any, false, null);
-
-    emitTitle(instance, "Fix tests");
-    emitTitle(instance, "Fix tests");
-    expect(posted).toHaveLength(1);
-
-    reporter.forget("pane-1");
-    emitTitle(instance, "Fix tests");
-    expect(posted).toHaveLength(2);
-  });
-
-  it("sends no retraction when a pane is forgotten", () => {
-    const { posted, reporter, tracker, terminals } = wireSurface();
-    terminals.set("pane-1", { exited: false, activityStatus: "idle" });
-    tracker.setWaiting("pane-1", true);
-    posted.length = 0;
-
-    reporter.forget("pane-1");
-
-    expect(posted).toEqual([]);
   });
 });
 

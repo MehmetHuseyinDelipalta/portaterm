@@ -16,8 +16,8 @@ import {
   type SerializeAddonFactory,
   type SerializeAddonLike,
   SessionManager,
-  truncateSnapshotBuffer,
 } from "./SessionManager";
+import { truncateSnapshotBuffer } from "./SnapshotPersistence";
 
 function makeFactories() {
   const builtHeadless: Array<HeadlessTerminalLike & { addons: SerializeAddonLike[] }> = [];

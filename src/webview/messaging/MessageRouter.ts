@@ -83,7 +83,6 @@ export interface MessageHandlers {
   onViewShow(): void;
   onSplitPane(msg: SplitPaneMessage): void;
   onSplitPaneCreated(msg: SplitPaneCreatedMessage): void;
-  onCloseSplitPane(): void;
   onCloseSplitPaneById(msg: CloseSplitPaneByIdMessage): void;
   onSplitPaneAt(msg: SplitPaneAtMessage): void;
   onCtxClear(msg: CtxClearMessage): void;
@@ -198,9 +197,6 @@ export function createMessageRouter(handlers: MessageHandlers): (msg: ExtensionT
         break;
       case "splitPaneCreated":
         handlers.onSplitPaneCreated(msg);
-        break;
-      case "closeSplitPane":
-        handlers.onCloseSplitPane();
         break;
       case "closeSplitPaneById":
         handlers.onCloseSplitPaneById(msg);
