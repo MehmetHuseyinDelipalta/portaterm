@@ -76,7 +76,7 @@ function createHost(): HTMLElement {
 }
 
 describe("FileTreePanel", () => {
-  it("renders empty-state placeholder when workspaceRoot is null", () => {
+  it("states the no-folder case in the header when workspaceRoot is null", () => {
     const host = createHost();
     const panel = new FileTreePanel({
       host,
@@ -86,9 +86,14 @@ describe("FileTreePanel", () => {
       postMessage: () => {},
     });
 
-    const empty = host.querySelector(".file-tree-empty");
-    expect(empty).not.toBeNull();
-    expect(empty?.textContent).toContain("No folder open");
+    // The header carries the state, and it is the only thing that does: a body
+    // holding one line of prose is what kept the panel at full height.
+    const root = host.querySelector(".file-tree-header__root");
+    expect(root?.textContent).toContain("No folder open");
+    expect(root?.classList.contains("is-rootless")).toBe(true);
+    // It toggles nothing, so it claims nothing: no button role, no tab stop.
+    expect(root?.getAttribute("role")).toBeNull();
+    expect(root?.getAttribute("tabindex")).toBeNull();
     // No Tree should have been constructed — host itself is NOT stamped with role="tree".
     expect(host.getAttribute("role")).toBeNull();
 
@@ -187,7 +192,8 @@ describe("FileTreePanel", () => {
     // so role="tree" lands on the body, not the panel host.
     const body = host.querySelector(".file-tree-body");
     expect(body?.getAttribute("role")).toBe("tree");
-    expect(host.querySelector(".file-tree-empty")).toBeNull();
+    // With a root, the header row is the toggle again rather than a label.
+    expect(host.querySelector(".file-tree-header__root")?.classList.contains("is-rootless")).toBe(false);
     // Header strip with the move button should be present alongside the body.
     expect(host.querySelector(".file-tree-header__btn")).not.toBeNull();
 
@@ -763,7 +769,7 @@ describe("FileTreePanel — root-collapsed (header-only) mode", () => {
     wrapper.remove();
   });
 
-  it("syncRootCollapsedClass does NOT stamp the class when no workspace is open", () => {
+  it("syncRootCollapsedClass stamps the class when no workspace is open", () => {
     const wrapper = document.createElement("div");
     wrapper.className = "webview-layout";
     document.body.appendChild(wrapper);
@@ -778,10 +784,42 @@ describe("FileTreePanel — root-collapsed (header-only) mode", () => {
       postMessage: () => {},
     });
 
-    // No workspace → empty state visible, wrapper must NOT carry the
-    // collapsed class even though the header's aria-expanded is "false".
+    // No workspace → header-only. There is no body worth the height, and the
+    // panel used to open to full size around a single line of prose.
+    expect(wrapper.classList.contains("file-tree--root-collapsed")).toBe(true);
+    expect(host.querySelector(".file-tree-header__root")?.textContent).toContain("No folder open");
+
+    panel.dispose();
+    wrapper.remove();
+  });
+
+  it("opens back up when a folder finally arrives", async () => {
+    // Non-vacuous half of the rule above: the collapse is a consequence of
+    // having no root, not a state the panel gets stuck in.
+    const wrapper = document.createElement("div");
+    wrapper.className = "webview-layout";
+    document.body.appendChild(wrapper);
+    const host = createHost();
+
+    const panel = new FileTreePanel({
+      host,
+      layoutWrapper: wrapper,
+      workspaceRoot: null,
+      rootGeneration: 0,
+      getActiveSessionId: () => null,
+      postMessage: () => {},
+    });
+    expect(wrapper.classList.contains("file-tree--root-collapsed")).toBe(true);
+
+    panel.handleRootChanged({ rootPath: "/opened", rootGeneration: 1 });
+    await Promise.resolve();
+    await Promise.resolve();
+
     expect(wrapper.classList.contains("file-tree--root-collapsed")).toBe(false);
-    expect(host.querySelector(".file-tree-empty")).not.toBeNull();
+    const root = host.querySelector(".file-tree-header__root");
+    expect(root?.classList.contains("is-rootless")).toBe(false);
+    expect(root?.getAttribute("role")).toBe("button");
+    expect(root?.textContent).not.toContain("No folder open");
 
     panel.dispose();
     wrapper.remove();

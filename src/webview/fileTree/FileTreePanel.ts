@@ -132,8 +132,14 @@ export interface FileTreePanelDeps {
   animateCollapse?: (apply: () => void) => void;
 }
 
-const EMPTY_STATE_CLASS = "file-tree-empty";
-const EMPTY_STATE_TEXT = "No folder open. Open a folder to see its files here.";
+/**
+ * What the header's root row says when there is no workspace folder.
+ *
+ * It used to be a line of body prose, which forced the panel to stay open at
+ * its full height to show it — half the rail spent on one sentence. The panel
+ * is header-only in that state now, so the header carries the sentence.
+ */
+const NO_ROOT_HEADER_TEXT = "No folder open";
 const POSITION_CLASS_PREFIX = "file-tree--";
 const POSITIONS: readonly FileTreePosition[] = ["top", "bottom", "left", "right"];
 /** Pixel size used the first time the panel mounts at each orientation. */
@@ -145,7 +151,6 @@ const MIN_SIZE = 120;
 export class FileTreePanel {
   private tree: Tree<FileNode> | null = null;
   private dataSource: FileSystemDataSource | null = null;
-  private emptyStateEl: HTMLElement | null = null;
   /** Mirrors Tree's expansion state for click-to-toggle decisions (Tree itself does not expose `isExpanded`). */
   private readonly expandedPaths = new Set<string>();
   private disposed = false;
@@ -252,7 +257,9 @@ export class FileTreePanel {
     this.currentSize = persisted?.size ?? this.defaultSizeFor(this.currentPosition);
 
     if (deps.workspaceRoot === null) {
-      this.mountEmptyState();
+      // Stamps the header text AND the root-collapsed class: without this the
+      // panel came up at full height around an empty header.
+      this.syncHeaderRoot();
       return;
     }
     // Mount collapsed unless the workspace root is in expandedPaths. With no
@@ -633,15 +640,13 @@ export class FileTreePanel {
     } else {
       this.deps.host.replaceChildren();
     }
-    this.emptyStateEl = null;
     this.expandedPaths.clear();
     this.rootNode = null;
     this.workspaceRootPath = null;
 
-    // Mount the new root (or empty state for `rootPath === null`).
+    // Mount the new root. `rootPath === null` mounts nothing — the header says
+    // so and the panel collapses to it.
     if (args.rootPath === null) {
-      this.mountEmptyState();
-      // No root → clear the header's root row (name + chevron).
       this.syncHeaderRoot();
     } else {
       // Generation precedence: rotate path uses the message's gen (came from
@@ -827,9 +832,6 @@ export class FileTreePanel {
     this.sash = null;
     this.tree?.dispose();
     this.dataSource?.dispose();
-    if (this.emptyStateEl?.parentElement) {
-      this.emptyStateEl.parentElement.removeChild(this.emptyStateEl);
-    }
     this.expandedPaths.clear();
   }
 
@@ -1381,11 +1383,21 @@ export class FileTreePanel {
       return;
     }
     if (!this.rootNode) {
-      this.headerRootNameEl.textContent = "";
-      this.headerRootRowEl.setAttribute("aria-expanded", "false");
+      // A rootless row toggles nothing, so it stops claiming it can: no chevron,
+      // no button role, no tab stop. The name carries the state instead.
+      this.headerRootNameEl.textContent = NO_ROOT_HEADER_TEXT;
+      this.headerRootRowEl.classList.add("is-rootless");
+      this.headerRootRowEl.removeAttribute("role");
+      this.headerRootRowEl.removeAttribute("tabindex");
+      this.headerRootRowEl.removeAttribute("aria-expanded");
+      this.headerRootRowEl.title = NO_ROOT_HEADER_TEXT;
       this.syncRootCollapsedClass();
       return;
     }
+    this.headerRootRowEl.classList.remove("is-rootless");
+    this.headerRootRowEl.setAttribute("role", "button");
+    this.headerRootRowEl.setAttribute("tabindex", "0");
+    this.headerRootRowEl.title = "Click to collapse / expand";
     this.headerRootNameEl.textContent = this.rootNode.name;
     const expanded = this.tree?.isExpanded(this.rootNode) ?? false;
     this.headerRootRowEl.setAttribute("aria-expanded", expanded ? "true" : "false");
@@ -1394,18 +1406,20 @@ export class FileTreePanel {
 
   /**
    * Stamp `.file-tree--root-collapsed` on the layout wrapper when the body
-   * should be hidden (header-only mode). True iff a root is mounted, search
-   * is inactive, and the user has collapsed the root via the header chevron.
+   * should be hidden (header-only mode). True whenever search is inactive and
+   * the root is not expanded — which includes having no root at all: an
+   * unopened workspace has no body worth the height, and holding one open for
+   * a single line of prose is what made the panel take half the rail.
    * Driving the CSS from a derived class — instead of `:has(aria-expanded)` —
-   * keeps the no-root empty state and search-active mode visible (both also
-   * carry aria-expanded="false" on the root row).
+   * keeps search-active mode visible, which also clears aria-expanded.
    */
   private syncRootCollapsedClass(): void {
     const wrapper = this.deps.layoutWrapper;
     if (!wrapper) {
       return;
     }
-    const collapsed = !!this.tree && !!this.rootNode && !this.searchActive && !this.tree.isExpanded(this.rootNode);
+    const rootExpanded = !!this.tree && !!this.rootNode && this.tree.isExpanded(this.rootNode);
+    const collapsed = !this.searchActive && !rootExpanded;
     const changed = this.hasSyncedRootCollapseOnce && collapsed !== this.lastRootCollapsedStamped;
     const applyToggle = (): void => {
       wrapper.classList.toggle("file-tree--root-collapsed", collapsed);
@@ -1454,14 +1468,6 @@ export class FileTreePanel {
     body.className = "file-tree-body";
     this.deps.host.appendChild(body);
     this.bodyEl = body;
-  }
-
-  private mountEmptyState(): void {
-    const el = this.deps.host.ownerDocument.createElement("div");
-    el.className = EMPTY_STATE_CLASS;
-    el.textContent = EMPTY_STATE_TEXT;
-    (this.bodyEl ?? this.deps.host).appendChild(el);
-    this.emptyStateEl = el;
   }
 
   private mountTree(workspaceRoot: string, overrideRootGeneration?: number, mountCollapsed = false): void {

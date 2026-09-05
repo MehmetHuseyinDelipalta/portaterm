@@ -1,6 +1,7 @@
 import * as crypto from "node:crypto";
 import * as vscode from "vscode";
 import { descendantPids } from "../pty/processTree";
+import { confirmKill, paneSessionIdsOf } from "../session/killConfirmation";
 import type { PaneEvidenceStore } from "../session/PaneEvidenceStore";
 import { type ResolveClaudeSessionDeps, resolveClaudeSession } from "../session/resolveClaudeSession";
 import type { SessionManager } from "../session/SessionManager";
@@ -673,11 +674,19 @@ export class TerminalEditorProvider {
 
         case "closeTab":
           if (typeof message.tabId === "string") {
-            this.cancelPreviewToken(message.tabId);
-            this.sessionManager.destroySession(message.tabId);
-            this.safePostMessage({
-              type: "tabRemoved",
-              tabId: message.tabId,
+            const tabId = message.tabId;
+            // Same gate as the sidebar provider: the webview tears the tab down
+            // only when `tabRemoved` comes back, so declining costs nothing.
+            void confirmKill(paneSessionIdsOf(message), "tab", this.paneEvidence, vscode.window).then((proceed) => {
+              if (!proceed) {
+                return;
+              }
+              this.cancelPreviewToken(tabId);
+              this.sessionManager.destroySession(tabId);
+              this.safePostMessage({
+                type: "tabRemoved",
+                tabId,
+              });
             });
           }
           break;

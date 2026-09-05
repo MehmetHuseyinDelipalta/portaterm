@@ -35,6 +35,7 @@ import {
   type WorktreeSurface,
 } from "./providers/WorktreeHost";
 import { loadNodePty } from "./pty/PtyManager";
+import { confirmKill } from "./session/killConfirmation";
 import type { MessageSender } from "./session/OutputBuffer";
 import { createPaneEvidenceStore } from "./session/PaneEvidenceStore";
 import { SessionManager } from "./session/SessionManager";
@@ -1843,6 +1844,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!activeSessionId) {
       return;
     }
+    void confirmKill([activeSessionId], "terminal", paneEvidence, vscode.window).then((proceed) => {
+      if (proceed) {
+        killTerminalNow(provider, activeSessionId);
+      }
+    });
+  };
+
+  const killTerminalNow = (provider: TerminalViewProvider, activeSessionId: string): void => {
     sessionManager.destroySession(activeSessionId);
     const view = provider.view;
     if (view) {
@@ -1878,7 +1887,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!view) {
       return;
     }
-    safePostMessage(view.webview, { type: "closeSplitPane" });
+    // Gated HERE rather than on the `requestCloseSplitPane` that comes back:
+    // the webview disposes the pane before it posts that, so by then there is
+    // nothing left to decline. Both of this command's siblings do the same.
+    // `getActiveSessionId` prefers the focused pane, which is the pane the
+    // webview will pick — the same rule on both sides.
+    const target = provider.getActiveSessionId();
+    void confirmKill(target ? [target] : [], "pane", paneEvidence, vscode.window).then((proceed) => {
+      if (proceed) {
+        safePostMessage(view.webview, { type: "closeSplitPane" });
+      }
+    });
   };
 
   // ─── Generic Commands (for keybindings — use getFocusedProvider) ──────
@@ -2070,9 +2089,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     vscode.commands.registerCommand("anywhereTerminal.ctx.closePane", (ctx: { paneSessionId?: string }) => {
-      if (ctx?.paneSessionId) {
-        postToCtxWebview(ctx, { type: "closeSplitPaneById", sessionId: ctx.paneSessionId });
+      const paneSessionId = ctx?.paneSessionId;
+      if (!paneSessionId) {
+        return;
       }
+      // This command names its pane outright, so the gate weighs exactly the
+      // one the webview will dispose.
+      void confirmKill([paneSessionId], "pane", paneEvidence, vscode.window).then((proceed) => {
+        if (proceed) {
+          postToCtxWebview(ctx, { type: "closeSplitPaneById", sessionId: paneSessionId });
+        }
+      });
     }),
     vscode.commands.registerCommand("anywhereTerminal.ctx.splitVertical", (ctx: { paneSessionId?: string }) => {
       if (ctx?.paneSessionId) {

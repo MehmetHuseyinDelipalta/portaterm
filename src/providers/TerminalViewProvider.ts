@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { descendantPids } from "../pty/processTree";
+import { confirmKill, paneSessionIdsOf } from "../session/killConfirmation";
 import type { PaneEvidenceStore } from "../session/PaneEvidenceStore";
 import { type ResolveClaudeSessionDeps, resolveClaudeSession } from "../session/resolveClaudeSession";
 import type { SessionManager } from "../session/SessionManager";
@@ -1256,12 +1257,21 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
 
         case "closeTab":
           if (typeof message.tabId === "string") {
-            // Cancel any in-flight hover-preview for this session before destroying.
-            this.cancelPreviewToken(message.tabId);
-            this.sessionManager.destroySession(message.tabId);
-            this.safePostMessage(webviewView.webview, {
-              type: "tabRemoved",
-              tabId: message.tabId,
+            const tabId = message.tabId;
+            // Asked BEFORE anything is destroyed, and before the webview is told
+            // to tear the tab down — the teardown is driven by `tabRemoved`, so
+            // declining here leaves the tab exactly as it was.
+            void confirmKill(paneSessionIdsOf(message), "tab", this.paneEvidence, vscode.window).then((proceed) => {
+              if (!proceed) {
+                return;
+              }
+              // Cancel any in-flight hover-preview for this session before destroying.
+              this.cancelPreviewToken(tabId);
+              this.sessionManager.destroySession(tabId);
+              this.safePostMessage(webviewView.webview, {
+                type: "tabRemoved",
+                tabId,
+              });
             });
           }
           break;

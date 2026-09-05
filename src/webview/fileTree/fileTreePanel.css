@@ -297,12 +297,16 @@
  * Empty state
  * ============================================================ */
 
-.file-tree-empty {
-  padding: 12px;
+/* No workspace folder: the header's root row states it and toggles nothing, so
+   it loses the chevron and reads as prose rather than a control. The panel is
+   collapsed to this strip — the body it would have opened is empty. */
+.file-tree-header__root.is-rootless {
+  cursor: default;
   color: var(--vscode-disabledForeground, var(--vscode-foreground));
   font-style: italic;
-  font-size: 12px;
-  opacity: 0.8;
+}
+.file-tree-header__root.is-rootless .chevron {
+  visibility: hidden;
 }
 
 /* ============================================================
