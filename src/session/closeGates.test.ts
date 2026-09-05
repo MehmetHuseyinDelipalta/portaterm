@@ -12,6 +12,7 @@ function gates(
   panes: Record<string, typeof AGENT | typeof SHELL>,
   answer: string | undefined,
   tabs: Record<string, string[]> = {},
+  splits: readonly string[] = [],
 ) {
   const asked: string[] = [];
   const destroyed: string[] = [];
@@ -26,6 +27,7 @@ function gates(
       },
     },
     panesOfTab: (tabId) => tabs[tabId] ?? [tabId],
+    isSplitPane: (sessionId) => splits.includes(sessionId),
     destroySession: (id) => destroyed.push(id),
     postTabRemoved: (id) => tabRemoved.push(id),
     postClosePane: (id) => paneClosed.push(id),
@@ -74,6 +76,30 @@ describe("killTerminalGated", () => {
     const g = gates({ t1: AGENT }, undefined, { t1: [] });
     await expect(killTerminalGated("t1", g.deps)).resolves.toBe(false);
     expect(g.asked).toHaveLength(1);
+  });
+});
+
+describe("killTerminalGated on a focused split", () => {
+  it("uses the pane protocol, not the tab one", async () => {
+    // `tabRemoved` runs the webview's ROOT-tab teardown, which would leave the
+    // split leaf and its layout standing (round-2 F008).
+    const g = gates({ p2: AGENT }, "Close Pane", { p2: ["p2"] }, ["p2"]);
+    await expect(killTerminalGated("p2", g.deps)).resolves.toBe(true);
+    expect(g.paneClosed).toEqual(["p2"]);
+    expect(g.tabRemoved).toEqual([]);
+    expect(g.destroyed).toEqual([]);
+  });
+
+  it("weighs only the split, not its siblings", async () => {
+    // Killing one leaf leaves the others alone, so an agent beside it is not
+    // this gesture's business.
+    const g = gates({ p2: SHELL, p3: AGENT }, undefined, { p2: ["p2", "p3"] }, ["p2"]);
+    await expect(killTerminalGated("p2", g.deps)).resolves.toBe(true);
+    expect(g.asked).toEqual([]);
+    // Non-vacuous: the same id as a ROOT weighs the whole tab and does ask.
+    const asRoot = gates({ p2: SHELL, p3: AGENT }, undefined, { p2: ["p2", "p3"] });
+    await expect(killTerminalGated("p2", asRoot.deps)).resolves.toBe(false);
+    expect(asRoot.asked).toHaveLength(1);
   });
 });
 

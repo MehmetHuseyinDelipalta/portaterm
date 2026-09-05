@@ -1844,24 +1844,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * builds one of these and hands it the id IT names — the gate never asks the
    * provider what is active a second time (round-1 F002).
    */
-  const closeGatesFor = (provider: TerminalViewProvider): CloseGateDeps => ({
+  const closeGatesTo = (webviewOf: (sessionId: string) => vscode.Webview | undefined): CloseGateDeps => ({
     evidence: paneEvidence,
     ui: vscode.window,
     panesOfTab: (tabId) => sessionManager.panesOfTab(tabId),
+    isSplitPane: (sessionId) => sessionManager.getSession(sessionId)?.isSplitPane === true,
     destroySession: (sessionId) => sessionManager.destroySession(sessionId),
     postTabRemoved: (sessionId) => {
-      const view = provider.view;
-      if (view) {
-        safePostMessage(view.webview, { type: "tabRemoved", tabId: sessionId });
+      const webview = webviewOf(sessionId);
+      if (webview) {
+        safePostMessage(webview, { type: "tabRemoved", tabId: sessionId });
       }
     },
     postClosePane: (sessionId) => {
-      const view = provider.view;
-      if (view) {
-        safePostMessage(view.webview, { type: "closeSplitPaneById", sessionId });
+      const webview = webviewOf(sessionId);
+      if (webview) {
+        safePostMessage(webview, { type: "closeSplitPaneById", sessionId });
       }
     },
   });
+
+  const closeGatesFor = (provider: TerminalViewProvider): CloseGateDeps => closeGatesTo(() => provider.view?.webview);
 
   const doKillTerminal = (provider: TerminalViewProvider): void => {
     const activeSessionId = provider.getActiveSessionId();
@@ -2097,14 +2100,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!paneSessionId) {
         return;
       }
-      // This command names its pane outright, so the gate weighs exactly the one
-      // the webview will dispose. It posts through `postToCtxWebview` rather
-      // than `closeGatesFor`, because the pane's own webview is the one the
-      // context menu was raised on and may be an editor panel.
-      void closePaneGated(paneSessionId, {
-        ...closeGatesFor(getCtxProvider(ctx)),
-        postClosePane: (sessionId) => postToCtxWebview(ctx, { type: "closeSplitPaneById", sessionId }),
-      });
+      // Addressed BY SESSION, not by provider. `postToCtxWebview` resolves only
+      // sidebar and panel, so an editor-owned pane fell back to whichever of
+      // those was focused — confirming a close in an editor could then close an
+      // unrelated sidebar terminal and leave the named pane open (round-2 F006).
+      void closePaneGated(paneSessionId, closeGatesTo(getWebviewForSession));
     }),
     vscode.commands.registerCommand("anywhereTerminal.ctx.splitVertical", (ctx: { paneSessionId?: string }) => {
       if (ctx?.paneSessionId) {
@@ -2133,15 +2133,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       doNewTerminal(getCtxProvider(ctx));
     }),
     vscode.commands.registerCommand("anywhereTerminal.ctx.killTerminal", (ctx?: { paneSessionId?: string }) => {
-      const provider = getCtxProvider(ctx);
-      const sessionId = ctx?.paneSessionId ?? provider.getActiveSessionId();
+      const sessionId = ctx?.paneSessionId ?? getCtxProvider(ctx).getActiveSessionId();
       if (!sessionId) {
         return;
       }
-      // The fifth door, and the one the round-1 sweep missed. It names its own
-      // pane, so it gates on that id rather than on whatever the provider
-      // currently calls active.
-      void killTerminalGated(sessionId, closeGatesFor(provider));
+      // The fifth door, and the one the round-1 sweep missed. It gates on the id
+      // it names, and — like its close-pane sibling — addresses the surface that
+      // actually holds that session rather than a focused provider (F001, F006).
+      void killTerminalGated(sessionId, closeGatesTo(getWebviewForSession));
     }),
     // Right-click → "Reveal Working Directory in File Explorer". The extension
     // resolves the pane's live cwd by querying the PTY shell process at the OS

@@ -19,6 +19,8 @@ export interface CloseGateDeps {
   ui: KillConfirmationUi;
   /** Every session closing this tab destroys — the host's own answer, not the webview's. */
   panesOfTab(tabId: string): string[];
+  /** Whether this session is a leaf of a split, rather than a tab in its own right. */
+  isSplitPane(sessionId: string): boolean;
   destroySession(sessionId: string): void;
   /** Tell the surface holding it to tear the tab down. */
   postTabRemoved(sessionId: string): void;
@@ -34,6 +36,14 @@ export interface CloseGateDeps {
  * about the agent in the split beside it.
  */
 export async function killTerminalGated(sessionId: string, deps: CloseGateDeps): Promise<boolean> {
+  // A focused SPLIT is not a tab, and `tabRemoved` runs the webview's root-tab
+  // teardown — which would destroy the session while leaving the split leaf and
+  // its layout standing (round-2 F008). The pane protocol is the one that
+  // re-renders the tree, and it is also the honest question: killing one leaf
+  // does not touch its siblings, so only it is weighed.
+  if (deps.isSplitPane(sessionId)) {
+    return closePaneGated(sessionId, deps);
+  }
   const panes = deps.panesOfTab(sessionId);
   const weighed = panes.length > 0 ? panes : [sessionId];
   if (!(await confirmKill(weighed, "terminal", deps.evidence, deps.ui))) {

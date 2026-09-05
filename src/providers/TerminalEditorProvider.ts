@@ -414,6 +414,17 @@ export class TerminalEditorProvider {
     //    NOTE: PTY destruction is DEFERRED via scheduleDestroyForView so a
     //    window-reload's webview swap can revive the panel before the grace
     //    period elapses. See: restore-terminal-sessions design.md D3.
+    //
+    //    KNOWN GAP (review round-2 F007): this is a destructive path the close
+    //    confirmation does not cover. Closing the EDITOR TAB kills every pty in
+    //    this view, agents included, with no question asked. It is not an
+    //    oversight in the gate's inventory — `onDidDispose` fires after the fact
+    //    and VS Code offers no veto for a webview panel, so confirming here is
+    //    not possible. Closing it honestly needs a decision this commit does not
+    //    make: either keep a live agent's sessions alive past the grace period
+    //    for reattachment (and own the leak that implies), or adopt a
+    //    pre-disposal protocol. Every door the host DOES control is gated in
+    //    `src/session/closeGates.ts`.
     this._panel.onDidDispose(() => {
       for (const d of disposables) {
         d.dispose();
