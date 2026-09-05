@@ -1041,6 +1041,9 @@ describe("TerminalViewProvider: scrollback replay on re-creation", () => {
       expect.objectContaining({
         type: "init",
         tabs: expect.arrayContaining([expect.objectContaining({ isActive: true })]),
+        // A first open resets the surface's scope to All (D50). Non-vacuous
+        // against the re-creation test below, which asserts the reload keeps it.
+        resetWorktreeScope: true,
       }),
     );
 
@@ -1086,6 +1089,8 @@ describe("TerminalViewProvider: scrollback replay on re-creation", () => {
       expect.objectContaining({
         type: "init",
         tabs: expect.arrayContaining([expect.objectContaining({ id: sessionId })]),
+        // A reload whose sessions survived keeps the scope the user chose (D50).
+        resetWorktreeScope: false,
       }),
     );
 

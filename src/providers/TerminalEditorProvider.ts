@@ -1110,6 +1110,8 @@ export class TerminalEditorProvider {
           // re-sent below rather than lost (design.md D5, round-1 W2).
           worktreeRowActivation: readWorktreeRowActivation(),
           vaultActionsAvailable: false,
+          // Phase A window reload: sessions survived, so the chosen scope stands.
+          resetWorktreeScope: false,
         });
         this.postRowActivation();
         if (initDelivered) {
@@ -1156,6 +1158,8 @@ export class TerminalEditorProvider {
           // re-sent below rather than lost (design.md D5, round-1 W2).
           worktreeRowActivation: readWorktreeRowActivation(),
           vaultActionsAvailable: false,
+          // Phase B cross-restart: a fresh open, so the surface lands on All.
+          resetWorktreeScope: true,
         });
         this.postRowActivation();
         if (initDelivered) {
@@ -1210,6 +1214,8 @@ export class TerminalEditorProvider {
           // re-sent below rather than lost (design.md D5, round-1 W2).
           worktreeRowActivation: readWorktreeRowActivation(),
           vaultActionsAvailable: false,
+          // Cold open: no scope to preserve; All is the first-run state anyway.
+          resetWorktreeScope: true,
         });
         // Same ordering as the reloaded and restored branches — see W2 in
         // TerminalViewProvider.

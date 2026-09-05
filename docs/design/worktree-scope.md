@@ -230,6 +230,15 @@ worktreeScope?: string   // a WorktreeInfo.id; absent means All
   absent is a filter with no visible cause.
 - State written by an older build has no `worktreeScope` and lands on `All`, which is the
   behaviour that build had.
+- **A window reload keeps the scope; a fresh open resets it to `All`.** The scope is the user's
+  choice, so a reload restores it (that is what the requirement below protects). But opening the
+  workspace, launching the app, or coming back through cross-restart lands the surface on `All`
+  rather than the last worktree it was scoped to — reopening on a stale filter reads as the view
+  choosing for the user. The webview cannot tell a reload from a fresh open, because both re-run
+  `main.ts` over the same workspace-scoped state; the **host** decides, from whether live sessions
+  were revived (a reload keeps them, a fresh open has none), and posts `resetWorktreeScope` on the
+  `init` message. The webview clears the persisted key before any coordinator reads it. See
+  DESIGN.md D50.
 
 ## 7. Truthfulness rules the scope must encode
 

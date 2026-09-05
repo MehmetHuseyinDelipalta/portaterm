@@ -8,7 +8,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { PaneAttribution, PaneReport } from "./paneAttribution";
 import { createBranch, createLeaf, getAllSessionIds, type SplitNode } from "./SplitModel";
 import { buildTabBarData } from "./TabBarUtils";
-import { TabBarScopeCoordinator, type TabBarScopeDeps, type TabBarScopeStore } from "./tabBarScope";
+import {
+  resetScopeOnFreshOpen,
+  TabBarScopeCoordinator,
+  type TabBarScopeDeps,
+  type TabBarScopeStore,
+} from "./tabBarScope";
 import type { WorktreeInfo, WorktreeTree } from "./worktree/worktreeViewTypes";
 
 const HERE = "/wt/here";
@@ -576,5 +581,30 @@ describe("[2_1] a persisted scope has to be able to resolve itself", () => {
   it("needs nothing when no scope was ever stored", () => {
     const scope = coordinator({ store: storeOf({}) });
     expect(scope.needsPresence()).toBe(false);
+  });
+});
+
+describe("resetting the scope when the surface opens fresh", () => {
+  it("drops a persisted scope so the coordinator built next lands on All", () => {
+    // The chain the fresh-open flag drives: clear the store, then the coordinator
+    // reads the cleared value and is unscoped — the reload path never calls this.
+    const store = storeOf({ worktreeScope: HERE, worktreeCollapsed: ["/a"] });
+
+    resetScopeOnFreshOpen(store, true);
+
+    expect(store.state.worktreeScope).toBeUndefined();
+    // Every unrelated key survives the reset — it is a scope clear, not a wipe.
+    expect(store.state.worktreeCollapsed).toEqual(["/a"]);
+    expect(coordinator({ store }).scopedWorktreeId()).toBeNull();
+  });
+
+  it("leaves the persisted scope standing on a reload", () => {
+    // Non-vacuous counterparts: false and absent are both the reload path, and a
+    // reload is exactly what the tab-bar spec says must keep the chosen scope.
+    for (const reset of [false, undefined]) {
+      const store = storeOf({ worktreeScope: HERE });
+      resetScopeOnFreshOpen(store, reset);
+      expect(store.state.worktreeScope, `reset: ${String(reset)}`).toBe(HERE);
+    }
   });
 });

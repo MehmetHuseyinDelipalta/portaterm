@@ -44,6 +44,7 @@ import { SplitTreeRenderer } from "./split/SplitTreeRenderer";
 import { resolveTabDisplayPane } from "./split/tabDisplay";
 import { WebviewStateStore } from "./state/WebviewStateStore";
 import { buildTabBarData, handleTabKeyboardShortcut, renderTabBar } from "./TabBarUtils";
+import { resetScopeOnFreshOpen } from "./tabBarScope";
 import { type TabBarScopeWiring, wireTabBarScope } from "./tabBarScopeWiring";
 import { hideRenameOverlay, repositionRenameOverlay, showRenameOverlay } from "./tabRenameOverlay";
 import { hasCurrentCursorApproval, hasStrictCursorTitle } from "./terminal/CursorApprovalDetector";
@@ -968,6 +969,10 @@ const routeMessage = createMessageRouter({
 function handleInit(msg: InitMessage): void {
   store.currentConfig = { ...msg.config };
   vaultWorkspaceRoot = msg.workspaceRoot ?? null; // folder-filter fallback scope
+  // Done BEFORE any scope coordinator is wired below, so a fresh open reads
+  // `All` rather than the last worktree scoped to; a reload leaves the flag
+  // false and the persisted scope stands (DESIGN.md D50).
+  resetScopeOnFreshOpen(store, msg.resetWorktreeScope);
   const validTabIds = new Set(msg.tabs.map((t) => t.id));
 
   const restoredLayouts = store.restore();

@@ -19,6 +19,21 @@ export interface TabBarScopeStore {
   updateState(patch: { worktreeScope?: string }): void;
 }
 
+/**
+ * Drop a persisted scope when the surface is opening fresh, so the tab bar
+ * lands on `All` rather than the last worktree the user scoped to.
+ *
+ * The reset is a WRITE, not a read the coordinator could shrug off: it has to
+ * outlive this boot so the surface stays unscoped until the user picks again.
+ * Called at the init boundary before any coordinator reads the store; `false`
+ * or absent is a reload, which keeps the chosen scope (DESIGN.md D50).
+ */
+export function resetScopeOnFreshOpen(store: TabBarScopeStore, reset: boolean | undefined): void {
+  if (reset) {
+    store.updateState({ worktreeScope: undefined });
+  }
+}
+
 export interface TabBarScopeDeps {
   store: TabBarScopeStore;
   /**

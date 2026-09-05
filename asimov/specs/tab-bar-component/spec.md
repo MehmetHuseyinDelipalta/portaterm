@@ -227,6 +227,24 @@ unscoped.
 - **WHEN** a surface reloads with a persisted scope whose worktree is not in the tree it now holds
 - **THEN** the surface is unscoped and its tab bar hides nothing
 
+### Requirement: A fresh open resets the scope, a reload preserves it
+
+A window reload SHALL restore the surface's persisted scope. A fresh open — a workspace open, an
+app launch, or a cross-restart in which no live session is revived — SHALL reset the surface to
+`All`, so it does not reopen on the worktree it was last scoped to. The host, which alone can tell
+the two apart, SHALL signal the reset on the surface's initialization; the surface SHALL clear its
+persisted scope before any scope state is read from it. See DESIGN.md D50.
+
+#### Scenario: Reopening the workspace
+
+- **WHEN** a surface initializes on a fresh open while holding a persisted scope
+- **THEN** the surface is unscoped, its tab bar shows every pane, and the reset is persisted
+
+#### Scenario: Reloading the window
+
+- **WHEN** a surface initializes on a reload whose sessions survived, while holding a persisted scope
+- **THEN** the persisted scope is restored and the tab bar filters to it once a tree confirms it
+
 ### Requirement: A hidden tab that needs a human is counted
 
 While a surface is scoped, its scope-clearing control SHALL carry a count of the tabs that scope is

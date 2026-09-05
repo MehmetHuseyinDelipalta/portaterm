@@ -1515,6 +1515,8 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           // re-sent below rather than lost (design.md D5, round-1 W2).
           worktreeRowActivation: readWorktreeRowActivation(),
           vaultActionsAvailable: true,
+          // Phase A window reload: sessions survived, so the scope the user chose stands.
+          resetWorktreeScope: false,
         });
         this.postRowActivation(webviewView.webview);
         if (initDelivered) {
@@ -1572,6 +1574,8 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           // re-sent below rather than lost (design.md D5, round-1 W2).
           worktreeRowActivation: readWorktreeRowActivation(),
           vaultActionsAvailable: true,
+          // Cross-restart: a fresh open, so the surface lands on All.
+          resetWorktreeScope: true,
         });
         this.postRowActivation(webviewView.webview);
         if (initDelivered) {
@@ -1636,6 +1640,8 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           // re-sent below rather than lost (design.md D5, round-1 W2).
           worktreeRowActivation: readWorktreeRowActivation(),
           vaultActionsAvailable: true,
+          // First-time: no scope to preserve; All is the first-run state anyway.
+          resetWorktreeScope: true,
         });
         // Await delivery before the activation post, as the reloaded and restored
         // branches already do. An activation that overtakes init reaches a webview
