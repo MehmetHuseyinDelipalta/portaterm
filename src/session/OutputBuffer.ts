@@ -46,6 +46,13 @@ const MAX_BUFFER_SIZE = 65_536;
 /** Maximum number of chunks in the buffer array. Safety cap. */
 const MAX_CHUNKS = 100;
 
+/**
+ * Size at which a paused-buffer chunk stops being merged with its neighbour.
+ * MAX_TOTAL_BUFFER_CHARS / this is the number of "large" chunks the paused
+ * array can hold (64), which with the O(log) small tail stays under MAX_CHUNKS.
+ */
+const PAUSED_MERGE_TARGET = 16_384;
+
 /** Pause PTY when this many chars are unacknowledged by the webview. */
 const HIGH_WATERMARK_CHARS = 100_000;
 
@@ -169,10 +176,7 @@ export class OutputBuffer {
 
     // When output is paused, accumulate data but don't start flush timer
     if (this._isOutputPaused) {
-      // Coalesce chunks to prevent unbounded array growth while paused
-      if (this._chunks.length >= MAX_CHUNKS) {
-        this._chunks = [this._chunks.join("")];
-      }
+      this._coalescePaused();
       return;
     }
 
@@ -297,6 +301,41 @@ export class OutputBuffer {
   }
 
   // ─── Private ────────────────────────────────────────────────────
+
+  /**
+   * Bound the paused chunk array without rebuilding the whole buffer.
+   *
+   * The array does have to be bounded — a hidden view holds up to
+   * MAX_TOTAL_BUFFER_CHARS, which is 100k entries at agent-token chunk sizes —
+   * but `_chunks.join("")` costs O(bufferSize) every MAX_CHUNKS appends, i.e.
+   * ~10 KB copied per appended chunk once the 1 MB cap is reached, whatever the
+   * chunk size. Merging only the tail, and only while the newest chunk is at
+   * least as large as the one before it, is the binary-counter amortisation a
+   * rope uses: each byte is copied O(log) times in total instead of once per
+   * MAX_CHUNKS appends for as long as it stays buffered.
+   *
+   * Merging stops at PAUSED_MERGE_TARGET because past that the array is short
+   * by construction, and copying 64 KB chunks around would cost more than the
+   * array length it saves. The full join stays as the backstop for the one
+   * shape the merge rule cannot bound on its own — a strictly decreasing size
+   * sequence, which FIFO eviction of `_chunks[0]` can produce.
+   */
+  private _coalescePaused(): void {
+    let n = this._chunks.length;
+    while (n >= 2) {
+      const prev = this._chunks[n - 2];
+      if (prev.length >= PAUSED_MERGE_TARGET || this._chunks[n - 1].length < prev.length) {
+        break;
+      }
+      const merged = prev + this._chunks[n - 1];
+      this._chunks.length = n - 2;
+      this._chunks.push(merged);
+      n = this._chunks.length;
+    }
+    if (n >= MAX_CHUNKS) {
+      this._chunks = [this._chunks.join("")];
+    }
+  }
 
   /**
    * Flush all buffered chunks to the webview as a single output message.
