@@ -37,6 +37,7 @@ import type {
   WorktreeRepo,
   WorktreeSubagentRow,
 } from "./worktreeViewTypes";
+import { setIcon } from "../shared/iconNode";
 
 /** Interaction handlers for a worktree row — supplied so the builder stays pure. */
 export interface WorktreeRowCallbacks {
@@ -78,7 +79,7 @@ function rowAction(icon: string, label: string, activate: (ev: MouseEvent) => vo
   btn.type = "button";
   btn.className = "wt-rowaction";
   btn.tabIndex = -1;
-  btn.innerHTML = icon;
+  setIcon(btn, icon);
   btn.setAttribute("aria-label", label);
   btn.dataset.tip = label;
   btn.addEventListener("click", (ev) => {
@@ -244,7 +245,7 @@ export function renderRepoHeader(
 
   const chev = document.createElement("span");
   chev.className = "wt-chev";
-  chev.innerHTML = ICON_CHEVRON_DOWN;
+  setIcon(chev, ICON_CHEVRON_DOWN);
   chev.setAttribute("aria-hidden", "true");
 
   header.append(name, countEl, spacer);
@@ -306,7 +307,7 @@ function renderWorktreeMarks(info: WorktreeInfo): HTMLElement {
     }
     if (badge.kind === "locked") {
       const icon = document.createElement("span");
-      icon.innerHTML = ICON_LOCK;
+      setIcon(icon, ICON_LOCK);
       icon.setAttribute("aria-hidden", "true");
       el.appendChild(icon);
     }
@@ -369,7 +370,7 @@ export function renderWorktreeRow(info: WorktreeInfo, opts: WorktreeRowOptions, 
   if (glyphActivity) {
     glyph.appendChild(stateShape(glyphActivity, worktreeActivityLabel(glyphActivity)));
   } else {
-    glyph.innerHTML = ICON_BRANCH;
+    setIcon(glyph, ICON_BRANCH);
   }
   row.appendChild(glyph);
 
@@ -453,7 +454,7 @@ export function renderPresencePill(groups: readonly PresenceGroup[], onExpand: (
       if (icon) {
         // SVG comes ONLY from the closed agent-icon map, never from presence data.
         badge.classList.add(`vault-badge--${icon.accent}`);
-        badge.innerHTML = icon.svg;
+        setIcon(badge, icon.svg);
         badge.dataset.tip = icon.displayName;
       }
       icons.appendChild(badge);
@@ -470,7 +471,7 @@ export function renderPresencePill(groups: readonly PresenceGroup[], onExpand: (
 
   const chev = document.createElement("span");
   chev.className = "wt-chev";
-  chev.innerHTML = ICON_CHEVRON_DOWN;
+  setIcon(chev, ICON_CHEVRON_DOWN);
   chev.setAttribute("aria-hidden", "true");
 
   pill.append(wrap, chev);
@@ -494,7 +495,7 @@ export function renderAgentsHeader(count: number, onCollapse: () => void): HTMLE
 
   const chev = document.createElement("span");
   chev.className = "wt-chev";
-  chev.innerHTML = ICON_CHEVRON_DOWN;
+  setIcon(chev, ICON_CHEVRON_DOWN);
   chev.setAttribute("aria-hidden", "true");
 
   header.append(label, chev);
@@ -559,7 +560,7 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
   gutter.className = "wt-gutter";
   gutter.setAttribute("aria-hidden", "true");
   if (disclosable) {
-    gutter.innerHTML = ICON_CHEVRON_DOWN;
+    setIcon(gutter, ICON_CHEVRON_DOWN);
     gutter.addEventListener("click", (ev) => {
       ev.stopPropagation();
       cb.onToggleSubagents?.(row);
@@ -579,7 +580,7 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
     const brand = getAgentIcon(row.agent);
     const accent = getAgentAccent(row.agent);
     if (brand) {
-      icon.innerHTML = brand.svg;
+      setIcon(icon, brand.svg);
       icon.dataset.tip = brand.displayName;
     }
     // Only a known, closed accent may reach the style attribute (W6).
@@ -587,7 +588,7 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
       icon.style.color = `var(--vault-accent-${accent})`;
     }
   } else {
-    icon.innerHTML = ICON_TERMINAL;
+    setIcon(icon, ICON_TERMINAL);
   }
   el.appendChild(icon);
 
@@ -618,7 +619,7 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
     scope.className = "wt-scope";
     scope.dataset.tip = "Running in another VS Code window";
     const winIcon = document.createElement("span");
-    winIcon.innerHTML = ICON_WINDOW;
+    setIcon(winIcon, ICON_WINDOW);
     winIcon.setAttribute("aria-hidden", "true");
     scope.append(winIcon, document.createTextNode("other window"));
   }
@@ -831,7 +832,7 @@ export function renderNotice(spec: NoticeSpec): HTMLElement {
   el.setAttribute("role", spec.live ?? "status");
 
   const icon = document.createElement("span");
-  icon.innerHTML = ICON_WARNING;
+  setIcon(icon, ICON_WARNING);
   icon.setAttribute("aria-hidden", "true");
   el.appendChild(icon);
 
@@ -926,7 +927,7 @@ export function renderIdleDisclosure(
   row.dataset.idleKey = repoId;
   const chev = document.createElement("span");
   chev.className = "wt-chev";
-  chev.innerHTML = ICON_CHEVRON_DOWN;
+  setIcon(chev, ICON_CHEVRON_DOWN);
   chev.setAttribute("aria-hidden", "true");
   const label = document.createElement("span");
   label.className = "wt-idle-label";

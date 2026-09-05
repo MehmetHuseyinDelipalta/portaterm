@@ -12,6 +12,7 @@ import { agentLabel, formatRelativeTime, leafSegment } from "./format";
 import type { GroupMode } from "./grouping";
 import { ICON_ARCHIVE, ICON_CHEVRON_DOWN, ICON_FOLDER, ICON_RESUME, ICON_SEARCH } from "./icons";
 import { emptyState } from "./renderAtoms";
+import { setIcon } from "../shared/iconNode";
 
 /** Row interaction handlers — supplied by the panel so the row builder stays pure. */
 export interface VaultRowCallbacks {
@@ -123,7 +124,7 @@ export function renderRow(
     }
     const folderIcon = document.createElement("span");
     folderIcon.className = "vault-row-cwd-icon";
-    folderIcon.innerHTML = ICON_FOLDER;
+    setIcon(folderIcon, ICON_FOLDER);
     const leaf = document.createElement("span");
     leaf.className = "vault-cwd-leaf";
     leaf.textContent = leafSegment(entry.cwd);
@@ -153,7 +154,7 @@ export function renderRow(
     resumeBtn.className = "vault-action vault-action--resume";
     resumeBtn.dataset.tip = "Resume";
     resumeBtn.setAttribute("aria-label", "Resume");
-    resumeBtn.innerHTML = ICON_RESUME;
+    setIcon(resumeBtn, ICON_RESUME);
     resumeBtn.addEventListener("click", (ev) => {
       ev.stopPropagation(); // don't also open the preview
       onResume(entry.id);
@@ -262,7 +263,7 @@ export function renderGroupHeader(
   // state and the whole header toggles it (the row cap "Show more" is separate).
   const chevron = document.createElement("span");
   chevron.className = "vault-group-chevron";
-  chevron.innerHTML = ICON_CHEVRON_DOWN;
+  setIcon(chevron, ICON_CHEVRON_DOWN);
   chevron.setAttribute("aria-hidden", "true");
   header.appendChild(chevron);
   if (mode === "agent") {
@@ -273,7 +274,7 @@ export function renderGroupHeader(
     const icon = getAgentIcon(key);
     if (icon) {
       badge.classList.add(`vault-badge--${icon.accent}`);
-      badge.innerHTML = icon.svg;
+      setIcon(badge, icon.svg);
     } else {
       badge.textContent = label.slice(0, 2);
     }
@@ -282,7 +283,7 @@ export function renderGroupHeader(
     header.classList.add("vault-group-header--folder");
     const folderIcon = document.createElement("span");
     folderIcon.className = "vault-group-icon";
-    folderIcon.innerHTML = ICON_FOLDER;
+    setIcon(folderIcon, ICON_FOLDER);
     header.appendChild(folderIcon);
   }
   const labelEl = document.createElement("span");
