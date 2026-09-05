@@ -72,3 +72,13 @@
     1. In src/providers/WorktreeHost.ts add repository-scoped opening retirement and call it when a repository departs; in src/providers/WorktreeHost.actions.test.ts prove an admitted holder is disposed while another repository can still pick.
     2. In src/worktree/provisioning/providerKit.ts own the shared destination-conflict predicate; use it from src/providers/WorktreeHost.ts and src/worktree/provisioning/suggestProvisioning.ts, and extend src/worktree/provisioning/oneOwner.test.ts with a non-vacuous structural ownership witness.
     3. In src/worktree/provisioning/offerStore.ts remove dead `lookup`; update src/worktree/provisioning/offerStore.test.ts so the existing scope, expiry, selection, and forgetting witnesses exercise `redeem`.
+
+- [ ] 6_2 Sweep bulk repository departures once per state map
+  - **Deps**: 6_1
+  - **Refs**: design.md D6; .reviews/round-3.md F005
+  - **Acceptance**:
+    - Outcome: bulk repository departure scans each provisioning state map once
+    - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/worktree/provisioning/oneOwner.test.ts
+  - **Plan**:
+    1. In src/providers/WorktreeHost.ts replace per-repository full-map retirement with one bulk sweep per repository-scoped map while retaining direct per-surface offer deletion.
+    2. In src/worktree/provisioning/oneOwner.test.ts add a non-vacuous structural witness that the departure path has no per-repository full-map helper.
