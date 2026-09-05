@@ -27,6 +27,7 @@ import type {
   WebViewToExtensionMessage,
   WorktreeProvisionResultMessage,
 } from "./types/messages";
+import type { HeldRegularFilePool } from "./utils/heldRegularFile";
 import type { VaultSessionEntry } from "./vault/types";
 import type { CreateSessionOptions } from "./vault/VaultLauncher";
 import { createMessageRouter, type MessageHandlers } from "./webview/messaging/MessageRouter";
@@ -45,6 +46,67 @@ const REPO_ID = path.join(REPO, ".git");
 const LINKED = path.join(TMP, "repo-wt", "feature");
 fs.mkdirSync(REPO, { recursive: true });
 fs.mkdirSync(LINKED, { recursive: true });
+
+let unsupportedSafeHold = false;
+let failHeldClaimAt = 0;
+let heldPool: HeldRegularFilePool | undefined;
+
+vi.mock("./utils/heldRegularFile", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./utils/heldRegularFile")>();
+  return {
+    ...real,
+    createHeldRegularFilePool: (options?: Parameters<typeof real.createHeldRegularFilePool>[0]) => {
+      const inner = real.createHeldRegularFilePool(
+        unsupportedSafeHold
+          ? {
+              ...(options ?? {}),
+              constants: {
+                O_RDONLY: fs.constants.O_RDONLY,
+                O_NONBLOCK: fs.constants.O_NONBLOCK,
+                O_NOFOLLOW: 0,
+              },
+            }
+          : options,
+      );
+      let admitted = 0;
+      const wrapped: HeldRegularFilePool = {
+        get charged() {
+          return inner.charged;
+        },
+        reserve: () => {
+          const reservation = inner.reserve();
+          if (reservation === undefined) {
+            return undefined;
+          }
+          return {
+            abandon: () => reservation.abandon(),
+            hold: async (filePath) => {
+              const held = await reservation.hold(filePath);
+              if (held === undefined) {
+                return undefined;
+              }
+              admitted += 1;
+              const ordinal = admitted;
+              return {
+                claim: () => {
+                  if (failHeldClaimAt === ordinal) {
+                    held.dispose();
+                    return undefined;
+                  }
+                  return held.claim();
+                },
+                dispose: () => held.dispose(),
+              };
+            },
+          };
+        },
+        dispose: () => inner.dispose(),
+      };
+      heldPool = wrapped;
+      return wrapped;
+    },
+  };
+});
 
 const setupHarness = vi.hoisted(() => ({
   runs: [] as Array<{ steps: readonly { id: string; source: string; script: string }[] }>,
@@ -587,6 +649,9 @@ afterEach(async () => {
 });
 
 beforeEach(() => {
+  unsupportedSafeHold = false;
+  failHeldClaimAt = 0;
+  heldPool = undefined;
   argv = [];
   launched = [];
   publishedRow = null;
@@ -3512,5 +3577,224 @@ describe("a setup step typed into the host's own input runs for this create and 
     expect(written).not.toContain("pnpm build");
     // And the form still offers the step, selected, after the save's re-read.
     expect(addedRow()?.querySelector<HTMLInputElement>(".wt-brow-cb")?.checked).toBe(true);
+  });
+});
+
+describe("a picked file survives Save and is spent only by its held source", () => {
+  const ADDED_SOURCE = "Added for this create";
+
+  function resetProvisioningConfig(declared = ".base-copy.env"): void {
+    fs.rmSync(path.join(REPO, ".vscode"), { recursive: true, force: true });
+    fs.rmSync(path.join(REPO, "asimov"), { recursive: true, force: true });
+    fs.mkdirSync(path.join(REPO, "asimov"), { recursive: true });
+    fs.writeFileSync(path.join(REPO, "asimov", "worktree.yaml"), `copy:\n  - ${declared}\n`);
+    fs.writeFileSync(path.join(REPO, declared), "BASE=1\n");
+  }
+
+  async function openCopyForm(picks: readonly string[]): Promise<void> {
+    await assemble();
+    const vscode = await import("./test/__mocks__/vscode");
+    let next = 0;
+    vscode.__setShowOpenDialog(async () => {
+      const filePath = picks[next];
+      next += 1;
+      return filePath === undefined ? undefined : [{ fsPath: filePath }];
+    });
+    clickItem(openMenu("feature"), /new worktree/i);
+    await settleUntil(
+      () => document.querySelector<HTMLButtonElement>(".wt-bring-add-copy") !== null,
+      "the create form to offer adding a copy file",
+    );
+  }
+
+  const provisionOffers = () => posted.filter((message) => message.type === "worktreeProvisionOffer");
+  const copyRow = (filePath: string): HTMLElement | undefined =>
+    [...document.querySelectorAll<HTMLElement>(".wt-brow")].find(
+      (row) =>
+        row.querySelector(".wt-brow-code")?.textContent === filePath &&
+        row.querySelector(".wt-brow-src")?.textContent === ADDED_SOURCE,
+    );
+
+  async function addCopy(filePath: string, count: number): Promise<void> {
+    document.querySelector<HTMLButtonElement>(".wt-bring-add-copy")?.click();
+    await settleUntil(
+      () =>
+        [...document.querySelectorAll<HTMLElement>(".wt-brow-src")].filter(
+          (source) => source.textContent === ADDED_SOURCE,
+        ).length === count,
+      `picked copy ${filePath} to be offered back`,
+    );
+  }
+
+  async function nameBranch(branch: string): Promise<string> {
+    const input = document.querySelector<HTMLInputElement>("#wt-branch");
+    if (input === null) {
+      throw new Error("the create form has no branch field");
+    }
+    input.value = branch;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await settleUntil(
+      () => document.querySelector<HTMLButtonElement>(".wt-btn--primary")?.disabled === false,
+      "the create form to admit the picked-file create",
+    );
+    const destination = document.querySelector<HTMLInputElement>("#wt-path")?.value;
+    if (destination === undefined || destination === "") {
+      throw new Error("the host resolved no destination");
+    }
+    return destination;
+  }
+
+  function keysDeep(value: unknown, into = new Set<string>()): Set<string> {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        keysDeep(item, into);
+      }
+      return into;
+    }
+    if (typeof value !== "object" || value === null) {
+      return into;
+    }
+    for (const [key, item] of Object.entries(value)) {
+      into.add(key);
+      keysDeep(item, into);
+    }
+    return into;
+  }
+
+  it("saves no picked path, then copies the unlinked original object selected by opaque ids", async () => {
+    resetProvisioningConfig();
+    const source = path.join(REPO, ".picked-e2e.env");
+    const original = "ORIGINAL_HELD_BYTES=1\n";
+    fs.writeFileSync(source, original);
+    await openCopyForm([source]);
+
+    await addCopy(".picked-e2e.env", 1);
+    const heldRow = copyRow(".picked-e2e.env");
+    expect(heldRow?.querySelector<HTMLInputElement>(".wt-brow-cb")?.checked).toBe(true);
+    const copyAsk = outbound.find((message) => message.type === "worktreeCopyFileAsk");
+    expect(copyAsk).toEqual({ type: "worktreeCopyFileAsk", repoId: REPO_ID, opening: 1, switch: 1 });
+    expect(Object.keys(copyAsk ?? {}).sort()).toEqual(["opening", "repoId", "switch", "type"]);
+
+    const base = [...document.querySelectorAll<HTMLElement>(".wt-brow")].find(
+      (row) => row.querySelector(".wt-brow-code")?.textContent === ".base-copy.env",
+    );
+    const baseBox = base?.querySelector<HTMLInputElement>(".wt-brow-cb");
+    if (baseBox === undefined || baseBox === null) {
+      throw new Error("the provider's copy row was not offered");
+    }
+    baseBox.checked = false;
+    baseBox.dispatchEvent(new Event("change", { bubbles: true }));
+    const beforeSave = provisionOffers().length;
+    document.querySelector<HTMLButtonElement>(".wt-bring-save")?.click();
+    await settleUntil(() => provisionOffers().length > beforeSave, "Save to return a fresh offer");
+    await settleUntil(
+      () => copyRow(".picked-e2e.env")?.querySelector<HTMLInputElement>(".wt-brow-cb")?.checked === true,
+      "the picked row to survive the Save reread selected",
+    );
+
+    const native = path.join(REPO, ".vscode", "worktree.json");
+    await settleUntil(() => fs.existsSync(native), "the native configuration to be written");
+    const written = fs.readFileSync(native, "utf8");
+    expect(written).toContain(".base-copy.env");
+    expect(written).not.toContain(".picked-e2e.env");
+    expect(written).not.toContain(ADDED_SOURCE);
+
+    // The holder already exists. Remove its pathname, replace it with another
+    // object, then remove that pathname too: only the original open object can
+    // still supply the bytes below.
+    fs.unlinkSync(source);
+    fs.writeFileSync(source, "REPLACEMENT_BYTES=1\n");
+    fs.unlinkSync(source);
+    expect(fs.existsSync(source)).toBe(false);
+
+    const destination = await nameBranch("feat/held-copy-e2e");
+    fs.rmSync(destination, { recursive: true, force: true });
+    fs.mkdirSync(destination, { recursive: true });
+    document.querySelector<HTMLButtonElement>(".wt-btn--primary")?.click();
+    const copied = path.join(destination, ".picked-e2e.env");
+    await settleUntil(
+      () => fs.existsSync(copied) && fs.readFileSync(copied, "utf8") === original,
+      "the held file bytes to be copied into the worktree",
+    );
+
+    expect(fs.readFileSync(copied, "utf8")).toBe(original);
+    await settleUntil(() => heldPool?.charged === 0, "the held file pool slot to be released");
+    const save = outbound.find((message) => message.type === "worktreeProvisionSave");
+    const create = outbound.find((message) => message.type === "worktreeCreate");
+    expect(save).toBeDefined();
+    expect(create).toBeDefined();
+    expect(keysDeep(save)).not.toContain("canonicalPath");
+    expect(keysDeep(save)).not.toContain("file");
+    expect(keysDeep(create)).not.toContain("canonicalPath");
+    expect(keysDeep(create)).not.toContain("file");
+    expect(JSON.stringify(save)).not.toContain(".picked-e2e.env");
+    expect(JSON.stringify(create)).not.toContain(".picked-e2e.env");
+    const offered = provisionOffers();
+    expect(JSON.stringify(offered)).not.toContain(source);
+    expect(keysDeep(offered)).not.toContain("canonicalPath");
+    expect(keysDeep(offered)).not.toContain("file");
+    expect(JSON.stringify(offered)).toContain(".picked-e2e.env");
+    fs.rmSync(destination, { recursive: true, force: true });
+  });
+
+  it("answers an unsupported no-follow hold unchanged without creating or leaking a pool slot", async () => {
+    resetProvisioningConfig();
+    unsupportedSafeHold = true;
+    const source = path.join(REPO, ".unsupported-hold.env");
+    fs.writeFileSync(source, "SECRET=1\n");
+    await openCopyForm([source]);
+    const before = provisionOffers().length;
+
+    document.querySelector<HTMLButtonElement>(".wt-bring-add-copy")?.click();
+    await settleUntil(() => provisionOffers().length > before, "the unsupported hold to return a fresh offer");
+
+    expect(copyRow(".unsupported-hold.env")).toBeUndefined();
+    expect(document.querySelector<HTMLButtonElement>(".wt-bring-add-copy")?.disabled).toBe(false);
+    expect(heldPool?.charged).toBe(0);
+    expect(gitCalls("add")).toEqual([]);
+    const ask = outbound.find((message) => message.type === "worktreeCopyFileAsk");
+    expect(JSON.stringify(ask)).not.toContain(".unsupported-hold.env");
+    expect(keysDeep(ask)).not.toContain("file");
+    expect(keysDeep(provisionOffers())).not.toContain("canonicalPath");
+    expect(JSON.stringify(provisionOffers())).not.toContain(source);
+    fs.rmSync(source, { force: true });
+  });
+
+  it("rolls back a two-file claim when the second holder is unavailable and releases both slots", async () => {
+    resetProvisioningConfig();
+    failHeldClaimAt = 2;
+    const first = path.join(REPO, ".claim-one.env");
+    const second = path.join(REPO, ".claim-two.env");
+    fs.writeFileSync(first, "ONE=1\n");
+    fs.writeFileSync(second, "TWO=2\n");
+    await openCopyForm([first, second]);
+
+    await addCopy(".claim-one.env", 1);
+    await addCopy(".claim-two.env", 2);
+    expect(heldPool?.charged).toBe(2);
+    await nameBranch("feat/claim-rollback");
+    document.querySelector<HTMLButtonElement>(".wt-btn--primary")?.click();
+    await settleUntil(
+      () => posted.some((message) => message.type === "worktreeMutationResult" && message.result.kind === "error"),
+      "the unavailable second claim to be refused",
+    );
+
+    expect(gitCalls("add")).toEqual([]);
+    await settleUntil(() => heldPool?.charged === 0, "both failed-submission pool slots to be released");
+    const create = outbound.find((message) => message.type === "worktreeCreate");
+    expect(create).toBeDefined();
+    // The configured base row plus both picked rows are selected; failing the
+    // second private claim refuses the whole three-entry submission.
+    expect(create?.type === "worktreeCreate" ? create.provision?.itemIds : undefined).toHaveLength(3);
+    expect(keysDeep(create)).not.toContain("canonicalPath");
+    expect(keysDeep(create)).not.toContain("file");
+    expect(JSON.stringify(create)).not.toContain(".claim-one.env");
+    expect(JSON.stringify(create)).not.toContain(".claim-two.env");
+    expect(keysDeep(provisionOffers())).not.toContain("canonicalPath");
+    expect(JSON.stringify(provisionOffers())).not.toContain(first);
+    expect(JSON.stringify(provisionOffers())).not.toContain(second);
+    fs.rmSync(first, { force: true });
+    fs.rmSync(second, { force: true });
   });
 });

@@ -50,7 +50,7 @@
 
 ## 5. Prove Save then Create end to end
 
-- [ ] 5_1 Spend the held file only after Save leaves configuration unchanged
+- [x] 5_1 Spend the held file only after Save leaves configuration unchanged — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/extension.worktreeAssembly.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 4_1
   - **Refs**: specs/worktree-panel/spec.md#{a-picked-copy-is-spent-only-through-private-host-held-provenance, save-defaults-never-persists-a-picked-file}; design.md D6
   - **Acceptance**:
