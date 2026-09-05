@@ -1234,13 +1234,23 @@ export class SessionManager {
   }
 
   /** Cancel a previously scheduled destroy. Silent no-op when nothing is pending. */
-  cancelScheduledDestroy(viewId: string): void {
+  /**
+   * Returns whether a pending destroy was actually claimed.
+   *
+   * `false` means there was nothing to cancel — either nothing was scheduled, or
+   * the timer already fired and the sessions are gone or going. A caller that
+   * acts on the strength of the cancellation has to know the difference: an
+   * undo offered for a grace window that has since elapsed would otherwise
+   * rebuild a panel around sessions that no longer exist (review round-1 F001).
+   */
+  cancelScheduledDestroy(viewId: string): boolean {
     const existing = this.pendingDestroys.get(viewId);
     if (!existing) {
-      return;
+      return false;
     }
     clearTimeout(existing);
     this.pendingDestroys.delete(viewId);
+    return true;
   }
 
   /** Test/inspection helper — current pending-destroy view ids. */

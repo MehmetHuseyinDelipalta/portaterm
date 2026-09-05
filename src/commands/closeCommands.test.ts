@@ -3,6 +3,7 @@
 // door that weighed one pane and destroyed another, and a door that posted to
 // the focused sidebar for a pane an editor owned.
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CLOSE_COMMAND_IDS, type CloseCommandDeps, createCloseCommands } from "./closeCommands";
 
@@ -13,6 +14,7 @@ interface World {
   panes?: Record<string, typeof AGENT | typeof SHELL>;
   /** Which session each surface reports as active. */
   focused?: string;
+  surface?: Partial<Record<"sidebar" | "panel", string>>;
   ctxActive?: string;
   splits?: readonly string[];
   tabs?: Record<string, string[]>;
@@ -43,6 +45,7 @@ function world(w: World = {}) {
       });
     },
     focusedActiveSession: () => w.focused,
+    surfaceActiveSession: (location) => w.surface?.[location],
     ctxActiveSession: () => w.ctxActive,
   };
   return { commands: createCloseCommands(deps), asked, destroyed, posted };
@@ -52,18 +55,22 @@ function world(w: World = {}) {
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 describe("the destructive command inventory", () => {
-  it("is exactly the four ids, and every one is built", () => {
-    // A sixth door added to `activate()` has to come through here, or this list
-    // and the registration loop disagree.
+  it("is every destructive command the extension actually contributes", () => {
+    // Compared against `package.json`, not another literal: a list that only
+    // agrees with itself cannot catch a door registered outside this factory,
+    // which is the whole reason the factory exists (round-1 F002).
+    const manifest = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
+      contributes: { commands: { command: string }[] };
+    };
+    const destructive = manifest.contributes.commands
+      .map((c) => c.command)
+      .filter((id) => /\.(kill|close)/i.test(id))
+      .sort();
+    expect(destructive).toEqual([...CLOSE_COMMAND_IDS].sort());
+  });
+
+  it("builds a handler for every id it claims", () => {
     const { commands } = world();
-    expect([...CLOSE_COMMAND_IDS].sort()).toEqual(
-      [
-        "anywhereTerminal.closeSplitPane",
-        "anywhereTerminal.ctx.closePane",
-        "anywhereTerminal.ctx.killTerminal",
-        "anywhereTerminal.killTerminal",
-      ].sort(),
-    );
     for (const id of CLOSE_COMMAND_IDS) {
       expect(typeof commands.byId[id]).toBe("function");
     }
@@ -185,20 +192,20 @@ describe("a kill picks the protocol the target actually needs", () => {
   });
 });
 
-describe("killTerminalFor", () => {
-  it("gates a surface-bound kill the same way", async () => {
-    // The per-location `killTerminal.{sidebar,panel}` commands resolve their own
-    // surface rather than the focused one; only resolution differs.
-    const w = world({ panes: { sidebar1: AGENT }, focused: "somewhere-else", answer: undefined });
-    w.commands.killTerminalFor(() => "sidebar1")();
+describe("the per-location doors", () => {
+  it("gate a surface-bound kill the same way, on that surface's own session", async () => {
+    // `killTerminal.{sidebar,panel}` resolve their own surface rather than the
+    // focused one; only resolution differs, which is why it is a seam.
+    const w = world({ panes: { s1: AGENT }, focused: "elsewhere", surface: { sidebar: "s1" }, answer: undefined });
+    w.commands.byId["anywhereTerminal.killTerminal.sidebar"]();
     await settle();
     expect(w.asked).toHaveLength(1);
     expect(w.destroyed).toEqual([]);
   });
 
-  it("does nothing when its surface has no session", async () => {
-    const w = world();
-    w.commands.killTerminalFor(() => undefined)();
+  it("do nothing when their surface has no session", async () => {
+    const w = world({ surface: {} });
+    w.commands.byId["anywhereTerminal.killTerminal.panel"]();
     await settle();
     expect(w.destroyed).toEqual([]);
     expect(w.asked).toEqual([]);

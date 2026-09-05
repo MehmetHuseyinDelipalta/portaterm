@@ -1723,19 +1723,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (choice !== "Reopen Tab") {
           return;
         }
-        context.subscriptions.push(
-          TerminalEditorProvider.reopen(
-            context,
-            sessionManager,
-            panelId,
-            gitDecorationProvider,
-            fsWatcherPool,
-            worktreeHost,
-            paneEvidence,
-            vaultService,
-            pathMemo,
-          ),
+        const reopened = TerminalEditorProvider.reopen(
+          context,
+          sessionManager,
+          panelId,
+          gitDecorationProvider,
+          fsWatcherPool,
+          worktreeHost,
+          paneEvidence,
+          vaultService,
+          pathMemo,
         );
+        if (reopened) {
+          context.subscriptions.push(reopened);
+          return;
+        }
+        // The window elapsed while the toast sat there. Say so rather than
+        // opening a fresh empty tab in the name of an agent that is gone.
+        void vscode.window.showInformationMessage("That terminal tab is gone — the grace period had already elapsed.");
       });
   });
   context.subscriptions.push({ dispose: () => TerminalEditorProvider.setDisposalNotifier(null) });
@@ -1919,6 +1924,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     },
     focusedActiveSession: () => getFocusedProvider().getActiveSessionId(),
+    surfaceActiveSession: (location) => providers[location].getActiveSessionId(),
     ctxActiveSession: (ctx) => getCtxProvider(ctx).getActiveSessionId(),
   });
   for (const id of CLOSE_COMMAND_IDS) {
@@ -1985,10 +1991,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const provider = providers[loc];
     context.subscriptions.push(
       vscode.commands.registerCommand(`anywhereTerminal.newTerminal.${loc}`, () => doNewTerminal(provider)),
-      vscode.commands.registerCommand(
-        `anywhereTerminal.killTerminal.${loc}`,
-        closeCommands.killTerminalFor(() => provider.getActiveSessionId()),
-      ),
       vscode.commands.registerCommand(`anywhereTerminal.splitHorizontal.${loc}`, () => doSplit(provider, "horizontal")),
       vscode.commands.registerCommand(`anywhereTerminal.splitVertical.${loc}`, () => doSplit(provider, "vertical")),
       // View-title "Export…" action — opens a quickpick of the

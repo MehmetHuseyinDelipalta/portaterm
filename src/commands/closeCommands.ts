@@ -35,6 +35,8 @@ export interface CloseCommandDeps {
   postToSession(sessionId: string, message: unknown): void;
   /** The focused surface's active session — the keybinding doors' target. */
   focusedActiveSession(): string | undefined;
+  /** One named surface's active session — the per-location doors' target. */
+  surfaceActiveSession(location: "sidebar" | "panel"): string | undefined;
   /** The active session of the surface a context command was raised on. */
   ctxActiveSession(ctx: CloseCommandContext | undefined): string | undefined;
 }
@@ -42,26 +44,24 @@ export interface CloseCommandDeps {
 /**
  * Every command id that can destroy a terminal.
  *
- * Asserted by the tests, so a sixth door cannot be added to `activate()` without
- * either coming through here or failing the inventory.
+ * The test checks this against `package.json`'s own contributed commands rather
+ * than against another literal — a list that only agrees with itself cannot
+ * catch the thing it exists to catch, which is a door registered outside this
+ * factory (review round-1 F002). The two per-location ids are here for the same
+ * reason: they were a door the earlier sweep never listed.
  */
 export const CLOSE_COMMAND_IDS = [
   "anywhereTerminal.killTerminal",
+  "anywhereTerminal.killTerminal.sidebar",
+  "anywhereTerminal.killTerminal.panel",
   "anywhereTerminal.closeSplitPane",
   "anywhereTerminal.ctx.killTerminal",
   "anywhereTerminal.ctx.closePane",
 ] as const;
 
 export interface CloseCommands {
-  /** The window-wide destructive commands, keyed by the id they register under. */
+  /** Every destructive command, keyed by the id it registers under. */
   byId: Record<(typeof CLOSE_COMMAND_IDS)[number], (ctx?: CloseCommandContext) => void>;
-  /**
-   * A kill bound to one surface rather than to whichever is focused — the
-   * per-location `killTerminal.{sidebar,panel}` commands. It goes through the
-   * same gate; only the target resolution differs, which is the whole reason
-   * this factory takes resolution as a seam.
-   */
-  killTerminalFor(resolveTarget: () => string | undefined): () => void;
 }
 
 export function createCloseCommands(deps: CloseCommandDeps): CloseCommands {
@@ -84,6 +84,10 @@ export function createCloseCommands(deps: CloseCommandDeps): CloseCommands {
 
   const byId = {
     "anywhereTerminal.killTerminal": killFor(deps.focusedActiveSession),
+    // Bound to one surface rather than to whichever is focused. Same gate; only
+    // the resolution differs, which is why resolution is the seam.
+    "anywhereTerminal.killTerminal.sidebar": killFor(() => deps.surfaceActiveSession("sidebar")),
+    "anywhereTerminal.killTerminal.panel": killFor(() => deps.surfaceActiveSession("panel")),
     // Gated at the COMMAND rather than on the `requestCloseSplitPane` that comes
     // back: the webview disposes the pane before it posts that, so by then there
     // is nothing left to decline.
@@ -105,5 +109,5 @@ export function createCloseCommands(deps: CloseCommandDeps): CloseCommands {
     },
   };
 
-  return { byId, killTerminalFor: killFor };
+  return { byId };
 }

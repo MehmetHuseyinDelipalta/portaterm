@@ -243,16 +243,7 @@ export class TerminalEditorProvider {
      *  here would leave every restored editor comparing lexically (round-2 B1). */
     pathMemo: ResolvedPathMemo | null = null,
   ): vscode.Disposable {
-    const panel = vscode.window.createWebviewPanel(
-      TerminalEditorProvider.viewType,
-      "Terminal",
-      vscode.ViewColumn.Active,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "media")],
-      },
-    );
+    const panel = TerminalEditorProvider.newPanel(context);
 
     const provider = new TerminalEditorProvider(
       context.extensionUri,
@@ -327,18 +318,15 @@ export class TerminalEditorProvider {
     paneEvidence: PaneEvidenceStore | null = null,
     vaultService: VaultService | null = null,
     pathMemo: ResolvedPathMemo | null = null,
-  ): vscode.Disposable {
-    sessionManager.cancelScheduledDestroy(`editor-${panelId}`);
-    const panel = vscode.window.createWebviewPanel(
-      TerminalEditorProvider.viewType,
-      "Terminal",
-      vscode.ViewColumn.Active,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "media")],
-      },
-    );
+  ): vscode.Disposable | undefined {
+    // The cancellation is the CLAIM on the grace window, so it is checked. Once
+    // the timer has fired the sessions are gone or going, and building a panel
+    // around them would hand back an empty tab in the name of the agent the
+    // toast promised (review round-1 F001).
+    if (!sessionManager.cancelScheduledDestroy(`editor-${panelId}`)) {
+      return undefined;
+    }
+    const panel = TerminalEditorProvider.newPanel(context);
     TerminalEditorProvider.revive(
       context,
       sessionManager,
@@ -355,6 +343,15 @@ export class TerminalEditorProvider {
     // The panel itself, matching `createPanel` — the caller holds it so a
     // deactivate tears the reopened tab down like any other.
     return panel;
+  }
+
+  /** The panel options, in one place — `createPanel` and `reopen` must not drift. */
+  private static newPanel(context: vscode.ExtensionContext): vscode.WebviewPanel {
+    return vscode.window.createWebviewPanel(TerminalEditorProvider.viewType, "Terminal", vscode.ViewColumn.Active, {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "media")],
+    });
   }
 
   static revive(
