@@ -6,6 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   BranchDeleteRequest,
+  ProvisionEntry,
   ProvisionSetupResult,
   ProvisionSetupStep,
   ProvisionStepResult,
@@ -18,6 +19,7 @@ import type { ClearDebrisDeps } from "./clearDebris";
 import { createDebrisAuthorizationStore, type DebrisAuthorizationStore } from "./debrisAuthorization";
 import type { GitCommandResult, GitCommandRunner } from "./gitCommandRunner";
 import type { MigrationOfferEvidence } from "./migrateChanges";
+import { modelProvisionMaterials, type ProvisionMaterial, provisionEntryOf } from "./provisioning/provisionMaterial";
 import type { ReattachVerdict } from "./reattachProbe";
 import type { RemovalEvidence } from "./worktreeBlockers";
 import {
@@ -2591,7 +2593,7 @@ describe("migration runs inside the successful create", () => {
       },
     });
 
-    await h.service.createWorktree(create({ provision: entries, ports }));
+    await h.service.createWorktree(create({ provision: modelProvisionMaterials(entries), ports }));
 
     expect(seen).toEqual([
       "capture",
@@ -2686,7 +2688,9 @@ describe("migration runs inside the successful create", () => {
       normalizeWorktreeId: async () => "/normalized/new",
     });
 
-    await h.service.createWorktree(create({ provision: entries, ports, afterCreate: { kind: "newWindow" } }));
+    await h.service.createWorktree(
+      create({ provision: modelProvisionMaterials(entries), ports, afterCreate: { kind: "newWindow" } }),
+    );
 
     expect(outcome(h)).toMatchObject({
       kind: "ok",
@@ -2870,6 +2874,12 @@ describe("provisioning rides the create without ever costing it", () => {
     disposition: { kind: "free" as const },
     ...over,
   });
+  const held = (dispose: () => void): ProvisionMaterial => ({
+    origin: "held-file",
+    entry: entries[0]! as ProvisionEntry & { readonly mode: "copy" },
+    canonicalPath: "/repo/.env",
+    file: { acquireSource: () => undefined, dispose },
+  });
   const okOutcome = (h: ReturnType<typeof harness>) =>
     h.outcomes.find((o) => (o as { verb?: string }).verb === "create") as
       | {
@@ -2884,13 +2894,66 @@ describe("provisioning rides the create without ever costing it", () => {
         }
       | undefined;
 
+  it("retains claimed material until the queued create and apply settle", async () => {
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started!: () => void;
+    const applying = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const dispose = vi.fn();
+    const material = held(dispose);
+    let received: readonly ProvisionMaterial[] | undefined;
+    const h = harness({
+      applyProvision: async (_main, _worktree, materials) => {
+        received = materials;
+        started();
+        await waiting;
+        return [];
+      },
+    });
+
+    const creating = h.service.createWorktree(create({ provision: [material] }));
+    await applying;
+
+    expect(received).toEqual([material]);
+    expect(dispose).not.toHaveBeenCalled();
+    release();
+    await creating;
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("disposes claimed material when create admission fails before the queue", async () => {
+    const dispose = vi.fn();
+    const h = harness({ createContext: () => null });
+
+    await h.service.createWorktree(create({ provision: [held(dispose)] }));
+
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["an absent apply binding", { applyProvision: undefined }],
+    ["failed root authorization", { authorizeDirectory: async () => undefined }],
+    ["an apply rejection", { applyProvision: async () => Promise.reject(new Error("apply failed")) }],
+  ] as const)("disposes claimed material after %s", async (_case, over) => {
+    const dispose = vi.fn();
+    const h = harness(over);
+
+    await h.service.createWorktree(create({ provision: [held(dispose)] }));
+
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
   it("[F009] says a selection was not applied rather than dropping it into a silent success", async () => {
     // A host with no binding cannot provision. Returning `provision: undefined`
     // produced an outcome byte-identical to "the user ticked nothing", which is
     // the one answer indistinguishable from the truth — the user is told the
     // worktree was made and never told their files were not brought over.
     const h = harness({ applyProvision: undefined });
-    await h.service.createWorktree(create({ provision: entries }));
+    await h.service.createWorktree(create({ provision: modelProvisionMaterials(entries) }));
     const outcome = okOutcome(h);
 
     expect(outcome?.kind).toBe("ok");
@@ -2900,14 +2963,14 @@ describe("provisioning rides the create without ever costing it", () => {
 
   it("[F015] reports the id the tree keys on, not the path git was handed", async () => {
     const h = harness({ normalizeWorktreeId: async () => "/normalized/feat" });
-    await h.service.createWorktree(create({ provision: entries }));
+    await h.service.createWorktree(create({ provision: modelProvisionMaterials(entries) }));
 
     expect(okOutcome(h)?.provision?.path).toBe("/normalized/feat");
   });
 
   it("[F015] falls back to the resolved path when nothing can normalize it", async () => {
     const h = harness({ normalizeWorktreeId: async () => null });
-    await h.service.createWorktree(create({ provision: entries }));
+    await h.service.createWorktree(create({ provision: modelProvisionMaterials(entries) }));
 
     expect(okOutcome(h)?.provision?.path).toBeTypeOf("string");
     expect(okOutcome(h)?.provision?.path).not.toBe("/normalized/feat");
@@ -2923,7 +2986,7 @@ describe("provisioning rides the create without ever costing it", () => {
         throw new Error("EIO: the walk blew up");
       },
     });
-    await h.service.createWorktree(create({ provision: entries }));
+    await h.service.createWorktree(create({ provision: modelProvisionMaterials(entries) }));
     const outcome = okOutcome(h);
     expect(outcome?.kind).toBe("ok");
     // And it still answers for every entry rather than going silent.
@@ -2933,9 +2996,12 @@ describe("provisioning rides the create without ever costing it", () => {
   it("reports one step per entry on the create's own outcome", async () => {
     const h = harness({
       applyProvision: async (_main, _wt, given) =>
-        given.map((e) => ({ id: e.id, path: e.path, outcome: { kind: "copied" as const } })),
+        given.map((material) => {
+          const e = provisionEntryOf(material);
+          return { id: e.id, path: e.path, outcome: { kind: "copied" as const } };
+        }),
     });
-    await h.service.createWorktree(create({ provision: entries }));
+    await h.service.createWorktree(create({ provision: modelProvisionMaterials(entries) }));
     expect(okOutcome(h)?.provision?.steps).toHaveLength(2);
     expect(okOutcome(h)?.provision?.path).toBe("/repo/wt/new");
   });
@@ -2951,7 +3017,7 @@ describe("provisioning rides the create without ever costing it", () => {
         seen.push("afterCreate");
       },
     });
-    await h.service.createWorktree(create({ provision: entries }));
+    await h.service.createWorktree(create({ provision: modelProvisionMaterials(entries) }));
     // An agent launched into the worktree must not start before its .env lands.
     expect(seen).toEqual(["provision", "afterCreate"]);
   });
@@ -2972,7 +3038,7 @@ describe("provisioning rides the create without ever costing it", () => {
       },
     });
 
-    await h.service.createWorktree(create({ provision: entries, ports }));
+    await h.service.createWorktree(create({ provision: modelProvisionMaterials(entries), ports }));
 
     expect(seen).toEqual(["files", "ports", "afterCreate"]);
   });
@@ -2985,10 +3051,13 @@ describe("provisioning rides the create without ever costing it", () => {
     const applyPorts = vi.fn(async () => ({ ports: [], warnings: [] }));
     const h = harness({ authorizeDirectory: authorize, applyProvision, applyPorts });
 
-    await h.service.createWorktree(create({ provision: entries, ports }));
+    await h.service.createWorktree(create({ provision: modelProvisionMaterials(entries), ports }));
 
     expect(authorize.mock.calls.map(([candidate]) => candidate)).toEqual(["/repo", "/repo/wt/new"]);
-    expect(applyProvision).toHaveBeenCalledWith("/repo", "/repo/wt/new", entries, { source, destination });
+    expect(applyProvision).toHaveBeenCalledWith("/repo", "/repo/wt/new", modelProvisionMaterials(entries), {
+      source,
+      destination,
+    });
     expect(applyPorts).toHaveBeenCalledWith({
       repoId: REPO,
       repoPath: "/repo",
@@ -3009,7 +3078,7 @@ describe("provisioning rides the create without ever costing it", () => {
       afterCreate,
     });
 
-    await h.service.createWorktree(create({ provision: entries, ports }));
+    await h.service.createWorktree(create({ provision: modelProvisionMaterials(entries), ports }));
     const outcome = okOutcome(h);
 
     expect(outcome?.kind).toBe("ok");
@@ -3101,7 +3170,7 @@ describe("provisioning rides the create without ever costing it", () => {
     // notice had none at all, so the merge missed and every real create grew a
     // second notice with a fabricated `outcome: "ok"`.
     const h = harness({ normalizeWorktreeId: async () => "/normalized/feat" });
-    await h.service.createWorktree(create({ provision: entries }));
+    await h.service.createWorktree(create({ provision: modelProvisionMaterials(entries) }));
     const outcome = okOutcome(h);
 
     expect(outcome?.worktreeId).toBe("/normalized/feat");
@@ -3138,7 +3207,7 @@ describe("provisioning rides the create without ever costing it", () => {
         throw new Error("EIO: the registry read blew up");
       },
     });
-    await h.service.createWorktree(create({ provision: entries }));
+    await h.service.createWorktree(create({ provision: modelProvisionMaterials(entries) }));
     const outcome = okOutcome(h);
 
     expect(outcome?.kind).toBe("ok");
@@ -3198,7 +3267,9 @@ describe("provisioning rides the create without ever costing it", () => {
       },
     });
 
-    await h.service.createWorktree(create({ provision: entries.slice(0, 1), ports, setup, asimovEnvironment: true }));
+    await h.service.createWorktree(
+      create({ provision: modelProvisionMaterials(entries.slice(0, 1)), ports, setup, asimovEnvironment: true }),
+    );
 
     expect(seen).toEqual(["files", "ports", "setup", "manifest"]);
     expect(setupRun).toHaveBeenCalledWith(
@@ -3348,7 +3419,9 @@ describe("provisioning rides the create without ever costing it", () => {
       retireSetupOutput,
     });
 
-    await h.service.createWorktree(create({ provision: entries.slice(0, 1), ports: ports.slice(0, 1), setup }));
+    await h.service.createWorktree(
+      create({ provision: modelProvisionMaterials(entries.slice(0, 1)), ports: ports.slice(0, 1), setup }),
+    );
     await h.service.retrySetup({ repoId: REPO, worktreeId: "/normalized/feat" }, "retry-1");
     await h.service.retrySetup({ repoId: REPO, worktreeId: "/normalized/feat" }, "retry-1");
 
@@ -3472,7 +3545,7 @@ describe("provisioning rides the create without ever costing it", () => {
     const h = harness({ applyProvision: applied });
     await h.service.createWorktree(
       create({
-        provision: entries,
+        provision: modelProvisionMaterials(entries),
         mode: { kind: "reattach" as const, branch: "feat", repairPath: "/repo-wt/stale", expectedOid: "oid-1" },
       }),
     );

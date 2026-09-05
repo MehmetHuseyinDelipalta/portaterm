@@ -29,6 +29,7 @@ import type { OrphanProofs } from "../worktree/orphanProofs";
 import type { PresenceProjector } from "../worktree/presenceProjector";
 import type { WorktreeAgentRow, WorktreePresence } from "../worktree/presenceTypes";
 import { MAX_MODEL_ROWS, MAX_READ_ROWS, rowsOf } from "../worktree/provisioning/providerKit";
+import { type ProvisionMaterial, provisionEntryOf } from "../worktree/provisioning/provisionMaterial";
 import type { NativeConfigDivergence, NativeConfigWrite } from "../worktree/provisioning/writeNativeConfig";
 import type { ReattachVerdict } from "../worktree/reattachProbe";
 import type { RebuildGateClock } from "../worktree/rebuildGate";
@@ -7158,7 +7159,9 @@ describe("the provisioning a create is actually given", () => {
 
   const creates = (calls: Array<[string, ...unknown[]]>) => calls.filter(([name]) => name === "createWorktree");
   const given = (calls: Array<[string, ...unknown[]]>) =>
-    (creates(calls)[0]?.[1] as { provision?: readonly { path: string; mode: string }[] } | undefined)?.provision;
+    (creates(calls)[0]?.[1] as { provision?: readonly ProvisionMaterial[] } | undefined)?.provision?.map(
+      provisionEntryOf,
+    );
 
   it("previews named ports before issuing the offer", async () => {
     const previews: Array<{ names: readonly string[]; paths: readonly string[] }> = [];
@@ -7238,10 +7241,10 @@ describe("the provisioning a create is actually given", () => {
     await settle();
 
     const request = creates(built.calls)[0]?.[1] as
-      | { provision?: readonly ProvisionModel["entries"][number][]; ports?: readonly ProvisionModel["ports"][number][] }
+      | { provision?: readonly ProvisionMaterial[]; ports?: readonly ProvisionModel["ports"][number][] }
       | undefined;
     expect(new Set(offer.model.ports.map((item) => item.id)).size).toBe(2);
-    expect(request?.provision).toEqual([offer.model.entries[0]]);
+    expect(request?.provision).toEqual([{ origin: "model", entry: offer.model.entries[0] }]);
     expect(request?.ports).toEqual([offer.model.ports[1]]);
     built.dispose();
   });
@@ -7279,7 +7282,7 @@ describe("the provisioning a create is actually given", () => {
     await settle();
 
     expect(creates(built.calls)[0]?.[1]).toMatchObject({
-      provision: [offer.model.entries[0]],
+      provision: [{ origin: "model", entry: offer.model.entries[0] }],
       ports: [offer.model.ports[0]],
       setup: [offer.model.setup[0]],
       asimovEnvironment: true,
@@ -7309,6 +7312,40 @@ describe("the provisioning a create is actually given", () => {
     await settle();
 
     expect(creates(built.calls)[0]?.[1]).toMatchObject({ setup: [] });
+    built.dispose();
+  });
+
+  it("keeps a marker-like provider row model-owned without inferring held authority", async () => {
+    const marker = {
+      id: "marker",
+      path: ".env",
+      mode: "copy" as const,
+      source: "held-file",
+      suggestion: "Added for this create",
+    };
+    const built = await builtHost(undefined, false, {
+      readProvisioning: async () => ({ ...twoEntries(), entries: [marker] }),
+    });
+    built.host.handleMessage(built.view, { type: "requestWorktreeCreateDefaults", repoId: REPO, opening: 1 });
+    await settle();
+    const offer = (built.view.posts as ExtensionToWebViewMessage[]).find(
+      (message) => message.type === "worktreeProvisionOffer",
+    );
+    if (offer?.type !== "worktreeProvisionOffer") {
+      throw new Error("expected provisioning offer");
+    }
+
+    built.host.handleMessage(built.view, {
+      ...REQ,
+      provision: { offerId: offer.offerId, itemIds: [offer.model.entries[0]?.id ?? ""] },
+    });
+    await settle();
+
+    const material = (creates(built.calls)[0]?.[1] as { provision?: readonly ProvisionMaterial[] } | undefined)
+      ?.provision?.[0];
+    expect(material).toEqual({ origin: "model", entry: offer.model.entries[0] });
+    expect(material).not.toHaveProperty("canonicalPath");
+    expect(material).not.toHaveProperty("file");
     built.dispose();
   });
 

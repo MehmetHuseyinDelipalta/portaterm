@@ -79,10 +79,11 @@ import { createPresenceProjectorDeps } from "./worktree/presenceDeps";
 import { createPresenceProjector } from "./worktree/presenceProjector";
 import type { DelegationRoster } from "./worktree/presenceTypes";
 import { nodeApplyFsDeps } from "./worktree/provisioning/applyEntries";
-import { applyProvisioning, failEveryEntry } from "./worktree/provisioning/applyProvisioning";
+import { applyProvisionMaterials, failEveryEntry } from "./worktree/provisioning/applyProvisioning";
 import { prepareEntryGate } from "./worktree/provisioning/entryGate";
 import { createProvisioningDeps } from "./worktree/provisioning/provisioningDeps";
 import { writeProvisionManifest } from "./worktree/provisioning/provisionManifest";
+import { provisionEntryOf } from "./worktree/provisioning/provisionMaterial";
 import { readProvisioning } from "./worktree/provisioning/readProvisioning";
 import { runSetup } from "./worktree/provisioning/setupRunner";
 import { SetupTerminal } from "./worktree/provisioning/setupTerminal";
@@ -693,7 +694,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const bindings = worktreeHost.mutationBindings();
       worktreeMutations = createWorktreeMutationService({
         authorizeDirectory,
-        // Sequential, and every entry answers. `applyProvisioning` never
+        // Sequential, and every entry answers. `applyProvisionMaterials` never
         // throws, so a rejection here would be a bug rather than a bad entry —
         // the call site catches one anyway, because the create has already
         // succeeded by then.
@@ -704,7 +705,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           }
           return unavailable.steps;
         },
-        applyProvision: async (mainCheckout, worktreePath, entries, authorization) => {
+        applyProvision: async (mainCheckout, worktreePath, materials, authorization) => {
+          const entries = materials.map(provisionEntryOf);
           const roots = await prepareEntryGate(mainCheckout, worktreePath, authorization);
           if (roots === null) {
             // Through the same builder as the ordinary path, and staging its
@@ -729,7 +731,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             deadline: afterDelay(60_000),
           };
           try {
-            const applied = await applyProvisioning(entries, roots, budget, nodeApplyFsDeps, {
+            const applied = await applyProvisionMaterials(materials, roots, budget, nodeApplyFsDeps, {
               directoryStillAuthorized,
             });
             if (applied.contests.length > 0) {

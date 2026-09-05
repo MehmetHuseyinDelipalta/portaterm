@@ -38,7 +38,7 @@
 
 ## 4. Switch production create to strict material
 
-- [ ] 4_1 Switch model provisioning to the strict material path in one green wave
+- [x] 4_1 Switch model provisioning to the strict material path in one green wave — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/providers/WorktreeHost.actions.test.ts src/extension.worktreeAssembly.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 3_1
   - **Refs**: design.md D3, D5
   - **Acceptance**:

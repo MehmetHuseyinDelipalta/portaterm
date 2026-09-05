@@ -17,7 +17,6 @@ import type {
   DestinationDisposition,
   ExtensionToWebViewMessage,
   ProbeBase,
-  ProvisionEntry,
   ProvisionModel,
   ProvisionPort,
   ProvisionProblem,
@@ -71,6 +70,7 @@ import { ACTIVITY_EVIDENCE } from "../worktree/presenceTypes";
 import { NATIVE_PROVIDER_FILE } from "../worktree/provisioning/nativeProvider";
 import { createProvisionOfferStore } from "../worktree/provisioning/offerStore";
 import { MAX_MODEL_ROWS, rowsOf } from "../worktree/provisioning/providerKit";
+import type { ProvisionMaterial } from "../worktree/provisioning/provisionMaterial";
 import {
   divergenceOf,
   type NativeConfigDivergence,
@@ -532,11 +532,11 @@ export interface WorktreeActions {
     /** The launch details live on the `agent` variant; no other variant can carry them. */
     afterCreate: WorktreeAfterCreate;
     /**
-     * Entries the host resolved from the model it issued — values, never ids,
-     * and never anything the webview spelled (D2). Absent means provision
-     * nothing, which is every create made before this existed.
+     * Materials the host resolved from the offer it issued — explicit model
+     * provenance today, never inferred from presentation fields, and never
+     * anything the webview spelled (D2). Absent means provision nothing.
      */
-    provision?: readonly ProvisionEntry[];
+    provision?: readonly ProvisionMaterial[];
     /** Ports resolved from the same host-held offer, kept separate from path-bearing entries. */
     ports?: readonly ProvisionPort[];
     migration?: {
@@ -2845,7 +2845,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
         // half of that rule — resolving and re-presenting the fresh model — is
         // a named follow-up, so the user's recovery today is to reopen the
         // dialog.
-        let selected: readonly ProvisionEntry[] | undefined;
+        let selected: readonly ProvisionMaterial[] | undefined;
         let selectedPorts: readonly ProvisionPort[] | undefined;
         let migrationOffer: ReturnType<typeof migrationOffers.get>;
         let selectedSetup: readonly ProvisionSetupStep[] | undefined;
@@ -2879,7 +2879,9 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
             return;
           }
           const wanted = new Set(msg.provision.itemIds);
-          selected = offered.entries.filter((entry) => wanted.has(entry.id));
+          selected = offered.entries
+            .filter((entry) => wanted.has(entry.id))
+            .map((entry) => ({ origin: "model", entry }));
           selectedPorts = offered.ports.filter((port) => wanted.has(port.id));
           selectedSetup = offered.setup.filter((step) => wanted.has(step.id));
           asimovEnvironment = offered.providers.some((provider) => provider.id === "asimov" && provider.active);

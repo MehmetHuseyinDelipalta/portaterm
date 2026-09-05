@@ -48,6 +48,7 @@ import type {
 } from "./migrateChanges";
 import { createMutationCoordinator, type MutationCoordinator, type MutationSettle } from "./mutationCoordinator";
 import { createMutationQueue } from "./mutationQueue";
+import { disposeProvisionMaterials, type ProvisionMaterial, provisionEntryOf } from "./provisioning/provisionMaterial";
 import type { ReattachVerdict } from "./reattachProbe";
 import type { RemovalAssessment, RemovalEvidence } from "./worktreeBlockers";
 import { createFingerprintStore, type FingerprintStore } from "./worktreeFingerprint";
@@ -324,7 +325,7 @@ export interface SetupExecutionOutcome {
 
 export interface MutationServiceDeps {
   /**
-   * Materialize the entries the host resolved, and answer per entry.
+   * Materialize the host-resolved provenance-bearing inputs, and answer per entry.
    *
    * Optional: a host without it provisions nothing, which is every caller that
    * existed before this. Its rejection is caught at the call site — the create
@@ -335,7 +336,7 @@ export interface MutationServiceDeps {
   applyProvision?(
     mainCheckout: string,
     worktreePath: string,
-    entries: readonly ProvisionEntry[],
+    materials: readonly ProvisionMaterial[],
     authorization: { readonly source: AuthorizedDirectory; readonly destination: AuthorizedDirectory },
   ): Promise<readonly ProvisionStepResult[]>;
   provisionUnavailable?(
@@ -708,7 +709,7 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
     return result.ok ? { kind: "ok", verb, repoId } : { kind: "error", verb, repoId, message: result.message };
   }
 
-  return {
+  const service: WorktreeMutationService = {
     /**
      * Drop the confirmation of every worktree the tree no longer holds.
      *
@@ -1458,6 +1459,7 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
               return settled("create", request.repoId, result);
             }
             const wanted = request.provision ?? [];
+            const wantedEntries = wanted.map(provisionEntryOf);
             const wantedPorts = request.ports ?? [];
             const wantedSetup = request.setup ?? [];
             const migrationIndeterminate = async (reason: string): Promise<MutationOutcome> => ({
@@ -1569,7 +1571,7 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
             let provisionedAt: string | undefined;
             if (wanted.length > 0) {
               const failed = (reason: string): readonly ProvisionStepResult[] =>
-                wanted.map((entry) => ({
+                wantedEntries.map((entry) => ({
                   id: entry.id,
                   path: entry.path,
                   outcome: { kind: "failed" as const, reason },
@@ -1580,7 +1582,8 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
                   : "the main checkout could not be read after the worktree was created";
               provisioned =
                 sourceAuthorization === undefined || destinationAuthorization === undefined
-                  ? (deps.provisionUnavailable?.(check.path, wanted, unavailableReason) ?? failed(unavailableReason))
+                  ? (deps.provisionUnavailable?.(check.path, wantedEntries, unavailableReason) ??
+                    failed(unavailableReason))
                   : deps.applyProvision === undefined
                     ? // A host with no binding cannot provision, but it CAN say so.
                       // Dropping the selection produced an outcome byte-identical
@@ -1739,6 +1742,17 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
           },
           (error: unknown) => deps.report(fail(messageOf(error)), request.origin),
         );
+    },
+  };
+  const runCreateWorktree = service.createWorktree;
+  return {
+    ...service,
+    createWorktree: async (request) => {
+      try {
+        await runCreateWorktree(request);
+      } finally {
+        disposeProvisionMaterials(request.provision ?? []);
+      }
     },
   };
 }

@@ -2145,6 +2145,8 @@ describe("the invariants that span the host and the webview", () => {
       expect(wire).not.toContain(".env.local");
       expect(wire).not.toContain("pnpm install");
       expect(wire).not.toContain("secrets");
+      expect(wire).not.toContain('"origin"');
+      expect(wire).not.toContain('"canonicalPath"');
     } finally {
       // `REPO` outlives the test, and detection is about which files exist —
       // a leftover root file would decide later tests' offers.
