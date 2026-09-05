@@ -337,6 +337,21 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
     }
   }
 
+  /**
+   * Record a merged-status change on the mutation side: fold it into the
+   * descendant index and, when the path went clean, drop its revision
+   * watermark. The eviction lives HERE and not in `flushPendingEmit` because
+   * `emit` filters deltas against the current workspace folders — a path
+   * that went clean after its folder was removed never reaches the flush, and
+   * its entry would otherwise outlive the path (review F001).
+   */
+  function noteMergedChange(absPath: string, merged: GitStatus | undefined): void {
+    syncIndexedPath(absPath, merged, true);
+    if (merged === undefined) {
+      revisions.delete(absPath);
+    }
+  }
+
   // Listener side of the public `onDidChange`. We use a tiny in-process emitter
   // instead of `vscode.EventEmitter` so the unit test surface doesn't need to
   // stub that class — the real runtime semantics (subscribe / dispose / fire-
@@ -561,7 +576,7 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
       if (merged === prevMerged) {
         continue;
       }
-      syncIndexedPath(absPath, merged, true);
+      noteMergedChange(absPath, merged);
       changes.push({ path: absPath, status: merged ?? null });
     }
     if (changes.length > 0) {
@@ -633,7 +648,7 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
             })()
           : computeMergedExcludingRepo(absPath, key);
       if (merged !== prevMerged) {
-        syncIndexedPath(absPath, merged, true);
+        noteMergedChange(absPath, merged);
         delta.push({ path: absPath, status: merged ?? null });
       }
     }
@@ -648,7 +663,7 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
       const prevMerged =
         prevOther === undefined ? oldMap.get(absPath) : pickHigherSeverity(oldMap.get(absPath)!, prevOther);
       if (merged !== prevMerged) {
-        syncIndexedPath(absPath, merged, true);
+        noteMergedChange(absPath, merged);
         delta.push({ path: absPath, status: merged ?? null });
       }
     }
@@ -700,17 +715,15 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
     pendingEmit.clear();
     revision += 1;
     for (const c of changes) {
-      if (c.status === null) {
-        // The watermark for an undecorated path is dropped, not recorded: it
-        // would otherwise be the one entry in this provider that never goes
-        // away, so a build loop creating and removing transient files grew
-        // `revisions` without bound (10k churn events -> 10 200 entries for
-        // 201 live dirty paths). `getStatus` falls back to the CURRENT global
-        // revision for a path with no entry, which is a newer stamp for a
-        // value that is still accurate — the webview's race-defeat rule only
-        // needs the stamp to be no older than the value it carries.
-        revisions.delete(c.path);
-      } else {
+      // An undecorated path gets no watermark: `noteMergedChange` already
+      // dropped its entry when the merge went clean, so a build loop creating
+      // and removing transient files no longer grows `revisions` without
+      // bound (10k churn events -> 10 200 entries for 201 live dirty paths).
+      // `getStatus` falls back to the CURRENT global revision for a path with
+      // no entry, which is a newer stamp for a value that is still accurate —
+      // the webview's race-defeat rule only needs the stamp to be no older
+      // than the value it carries.
+      if (c.status !== null) {
         revisions.set(c.path, revision);
       }
     }
@@ -796,6 +809,10 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
       repoMaps.clear();
       indexedStatus.clear();
       dirBuckets.clear();
+      // Every surviving path is re-stamped by the rebuild below under a newer
+      // revision; entries for paths that do NOT survive (or whose clear is
+      // filtered by the new workspace folders) must not linger.
+      revisions.clear();
       if (cleared.length > 0) {
         emit(cleared);
         flushPendingEmit();
