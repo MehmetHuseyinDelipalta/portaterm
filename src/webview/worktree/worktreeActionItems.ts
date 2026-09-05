@@ -1,15 +1,16 @@
 // src/webview/worktree/worktreeActionItems.ts — What a worktree can be asked to
 // do, as one list (worktree-actions § 2).
 //
-// Lifted out of WorktreeContextMenu so the inspector drawer offers exactly what
-// the menu offers, under exactly the same conditions. The gating here is a set of
-// truthfulness rules, not conveniences — `missing` withdraws the openers, the main
-// worktree is never removable, an absent capability makes the item ABSENT rather
-// than present and inert — and each one cost a review round to find. A second
-// surface re-deriving them is a second place for one of them to go missing.
+// Lifted out of WorktreeContextMenu so every surface offering these actions
+// offers exactly the same ones, under exactly the same conditions. The gating
+// here is a set of truthfulness rules, not conveniences — `missing` withdraws
+// the openers AND the launch, the main worktree is never removable, an absent
+// capability makes the item ABSENT rather than present and inert — and each one
+// cost a review round to find. A second surface re-deriving them is a second
+// place for one of them to go missing, which is exactly how the row toolbar and
+// the menu came to disagree about a missing worktree (round-1 F006).
 //
-// The list is what varies; how it is DRAWN is the caller's: the menu renders
-// items and separators, the drawer renders buttons and drops the separators.
+// The list is what varies; how it is DRAWN is the caller's.
 
 import type { ContextMenuItem } from "../shared/contextMenuShell";
 import { collapseSeparators } from "../vault/format";
@@ -25,8 +26,8 @@ export interface WorktreeActionItemOptions {
    * Whether the surface acts for the whole REPOSITORY as well as this worktree.
    *
    * The menu is opened on a row but is the repo's only door to create and prune,
-   * so it says `true`. The inspector is about one worktree, and an action that
-   * silently targets its repository instead would be the same false claim as an
+   * so it says `true`. A surface about ONE worktree says `false`: an action that
+   * silently targeted its repository instead would be the same false claim as an
    * item that cannot act at all.
    */
   repoScoped: boolean;
@@ -49,6 +50,19 @@ export function menuItem<T>(
   return capability ? [{ label, icon, act: () => capability(target) }] : [];
 }
 
+/**
+ * Whether this worktree's directory is there to be acted IN.
+ *
+ * The one rule behind every action that needs a checkout on disk — opening it,
+ * a terminal in it, revealing it, and starting an agent in it. Exported because
+ * the row toolbar gates its launch button on the same fact, and two spellings of
+ * "is it still there" is how the button and the menu came to disagree about a
+ * missing worktree (round-1 F006).
+ */
+export function canActOnDisk(info: WorktreeInfo): boolean {
+  return !info.missing;
+}
+
 /** Every action offerable for `info`. `missing` and `main` change what is even offered. */
 export function worktreeActionItems(
   info: WorktreeInfo,
@@ -56,8 +70,9 @@ export function worktreeActionItems(
   opts: WorktreeActionItemOptions,
 ): (ContextMenuItem | "sep")[] {
   const a = actions;
-  // A directory that is gone cannot be opened, revealed, or given a terminal.
-  const onDisk = !info.missing;
+  // A directory that is gone cannot be opened, revealed, given a terminal, or
+  // have an agent started in it.
+  const onDisk = canActOnDisk(info);
   return collapseSeparators<ContextMenuItem>([
     ...(onDisk
       ? ([
@@ -66,6 +81,10 @@ export function worktreeActionItems(
           ...menuItem(a.openTerminalHere, info, "Open Terminal Here", ICON_TERMINAL),
           "sep",
           ...menuItem(a.revealWorktree, info, "Reveal in Finder", ICON_REVEAL),
+          // Above the destructive pair, below the openers: starting an agent is
+          // the point of most worktrees, not an afterthought. Inside `onDisk`,
+          // because there is nowhere to start one in a directory that is gone.
+          ...menuItem(a.launchAgentHere, info, "Start an Agent Here…", ICON_RESUME),
         ] as (ContextMenuItem | "sep")[])
       : []),
     // Copy Path works whether or not the directory still exists — it is how the
@@ -78,9 +97,6 @@ export function worktreeActionItems(
     // Create is repo-scoped, so it is offered from any row of the repo — and
     // it is the item that makes the whole create path reachable at all.
     ...(opts.repoScoped ? menuItem(a.createWorktree, info, "New Worktree…", ICON_PLUS) : []),
-    // Above the destructive pair, below the openers: starting an agent is the
-    // point of most worktrees, not an afterthought.
-    ...menuItem(a.launchAgentHere, info, "Start an Agent Here…", ICON_RESUME),
     // Absent, not disabled, when nothing is prunable: a disabled item claims
     // the action exists here.
     ...(opts.repoScoped && opts.prunableCount > 0

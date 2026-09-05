@@ -378,6 +378,13 @@ export class WorktreeView {
       refreshing ? "1" : "0",
       noFolder ? "1" : "0",
       (actionResults ?? []).map(resultKey).join("|"),
+      // The capabilities the ROWS draw, not just the ones the menu resolves at
+      // click time. `actions` is a record the host mutates in place, so a launch
+      // target arriving moves no field above it — and the row's launch control
+      // is built at paint. Without this the button appears only if some
+      // unrelated tree or presence delta happens to force a repaint later
+      // (.reviews/round-1.md B3, re-found on the row toolbar).
+      this.deps.actions?.launchAgentHere ? "1" : "0",
     ].join(String.fromCharCode(4));
     if (stateKey !== this.signature) {
       this.signature = stateKey;
@@ -418,11 +425,11 @@ export class WorktreeView {
   }
 
   /**
-   * The window's asked-once roster set, shared with the inspector.
+   * The window's asked-once roster set.
    *
-   * Exposed rather than constructed twice: "at most one request per row and
-   * session" is a claim about the window, and two sets would each ask once for
-   * the same key (design.md D6).
+   * Exposed rather than kept private: "at most one request per row and session"
+   * is a claim about the WINDOW, so any future surface that draws agent rows
+   * shares this one rather than constructing a second (design.md D6).
    */
   rosterRequests(): RosterRequests {
     return this.rosters;
@@ -430,8 +437,7 @@ export class WorktreeView {
 
   /**
    * Put focus on a worktree's row, or on the tree itself when that row is not
-   * drawn — the inspector's close returns focus here, and a filtered-out row
-   * must not leave focus on `<body>`.
+   * drawn — a filtered-out row must not leave focus on `<body>`.
    */
   focusWorktree(worktreeId: string): void {
     const rows = this.navRows();
@@ -477,16 +483,20 @@ export class WorktreeView {
    * rect is where the gesture actually happened, so that is what is passed on.
    */
   private openRowMenu(info: WorktreeInfo, ev: MouseEvent, row: HTMLElement): void {
-    const fromKeyboard = ev.detail === 0;
-    if (!fromKeyboard) {
-      this.menu?.openForWorktree(info, ev, row);
+    // The row anchors the menu and takes the open class; the control is where
+    // focus goes back to. They are different elements here, and returning to the
+    // row would cost a keyboard user a tab stop on every dismissal.
+    const control = ev.currentTarget instanceof HTMLElement ? ev.currentTarget : undefined;
+    if (ev.detail !== 0) {
+      this.menu?.openForWorktree(info, ev, row, control);
       return;
     }
-    const rect = (ev.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+    const rect = control?.getBoundingClientRect();
     this.menu?.openForWorktree(
       info,
       new MouseEvent("contextmenu", { clientX: rect?.left ?? 0, clientY: rect?.bottom ?? 0 }),
       row,
+      control,
     );
   }
 
@@ -769,7 +779,7 @@ export class WorktreeView {
     this.repaint();
   }
 
-  /** What this row's activation does — the one decision, shared with the drawer. */
+  /** What this row's activation does — see `worktreeActivation`. */
   private activationFor(row: WorktreeAgentRow): WorktreeRowActivation {
     return sharedActivationFor(row, this.deps.rowActivation?.() ?? "focus");
   }
@@ -985,8 +995,8 @@ export class WorktreeView {
    * rosters are QUEUED from inside the repo loop and dispatched by `render` once
    * this has returned, so a dep that answers synchronously can no longer replace
    * the half-built DOM or make `placeResults` run twice over `repoAnchors`. The
-   * shipped host answers over `postMessage`, so nothing reached it before; the
-   * inspector adds a second caller, which is why the ordering became a rule.
+   * shipped host answers over `postMessage`, so nothing reaches it synchronously
+   * today — the ordering is a rule so that a caller which did could not break it.
    */
   private renderListing(now: number, focusWasInside: boolean): string | null | undefined {
     // `replaceChildren` detaches the focused row, and focus falls to <body> — a

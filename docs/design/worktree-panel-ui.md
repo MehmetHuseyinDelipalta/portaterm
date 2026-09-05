@@ -207,9 +207,10 @@ tells them what to do; a title and a timestamp do not.
 | Confidence marker | 1 | Carried by the state glyph itself when activity is unconfirmed (§ 7.2); a quiet marker when `activitySource` is a fallback one | Identity confidence is derived from `agentSource` separately and expressed by the icon's presence or absence — a row can be uncertain about one and sure of the other |
 
 The model id is **not** on the row. It competed with the preview for the same scarce width and
-lost; it is carried by the agent row's own hint, and omitted entirely when unknown — never a
-placeholder. It was shown in the inspector drawer until D49 withdrew it; no surface gained the
-room in exchange, so the hint is now the only place it appears.
+lost. It is carried by the agent row's own hint — appended to the title / preview / confidence
+lines that hint already composes — and omitted entirely when unknown, never a placeholder. It
+was shown in the inspector drawer until D49 withdrew it; no surface gained the room in exchange,
+so the hint is its only home.
 
 **Age means two different things and must not be conflated.** For a row that has finished, it is
 time since it finished. For a row still working, it is time since the current state began. One
@@ -307,9 +308,12 @@ What replaces it is the platform's own tree pattern — the row carries its acti
 |----------|------|
 | Placement | On the worktree row's trailing edge, after the pills and badges |
 | Contents | The launch, as its own button, because starting an agent is what most worktrees exist for; then `…`, which opens the same menu the right-click opens. Nothing else earns a permanent glyph at this width |
-| Availability | Revealed on hover, on focus, and on the **selected** row — so the controls are never pointer-only. They are always in the DOM, and join the tab order the moment their row becomes the tree's single stop, which is how Tab from a focused row reaches them |
-| Absence | An action whose capability was not supplied is absent, not inert — the same rule the menu follows (D10). The launch is also absent for a `missing` directory, which has nowhere to start one |
-| Independence | Both controls stop the gesture. Pressing one must not also select the row, or the coupling § 6 removes would simply reappear one level down |
+| Availability | Revealed on hover, on focus, on the **selected** row (`aria-selected="true"` — a worktree row carries no `is-selected` class; that belongs to agent rows), and while the row's own menu is open (`is-context-open` — the shell moves focus into the menu, so `:focus-within` alone would hide the control underneath it). They are always in the DOM, and join the tab order the moment their row becomes the tree's single stop, which is how Tab from a focused row reaches them |
+| Absence | An action whose capability was not supplied is absent, not inert — the same rule the menu follows (D10). Capability presence is a **render input**: the host mutates the action record in place, so a launch target arriving moves nothing in the tree or presence envelope, and a control built at paint would otherwise appear only if some unrelated delta forced a repaint (§ 6.1) |
+| Independence | Both controls stop the gesture — `click`, Enter/Space, **and `dblclick`**, which is a third event the click's `stopPropagation` does not cover and which the row answers by opening the folder in a new window. Pressing one must not also select the row or open anything, or the coupling § 6 removes would reappear one level down |
+| Naming | The row sets its own `aria-label` unconditionally. A `treeitem` with no name computes one from its contents, and the controls' labels are contents — an agentless row otherwise announced as "feature-x Start an agent in feature-x More actions for feature-x". The repo header carries the same rule for the same reason |
+| Focus return | The row is the menu's visual anchor; the **control** is its focus-restore target. Returning to the row would cost a keyboard user a tab stop on every dismissal |
+| Availability of the launch | Gated on one predicate (`canActOnDisk`) shared with the item builder, so the button, the right-click and the `…` cannot disagree about a `missing` worktree |
 | Menu placement | The `…` menu is cursor-anchored. A keyboard press reports (0, 0), so the opener substitutes the control's own rect rather than pinning the menu to the panel corner |
 | The path | Keeps the two homes D16 gave it: the row hint, and Copy Path in the menu. It is not on a row (§ 3.2) |
 | The model id | Stays on the agent row's own hint. There was never room for it in the visible row, and there is no longer a second surface with room to spare |
@@ -601,7 +605,11 @@ is four (§ 3.6).
 - [ ] Selecting a worktree scopes the tab bar and does nothing else — no surface opens, and the row's `aria-expanded` is unchanged
 - [ ] Working the chevron discloses and leaves the selection and the scope alone
 - [ ] A row control fires its action without also selecting the row, and is reachable by Tab once its row is the tree's stop
-- [ ] The launch control is absent for a `missing` directory and when the capability was not supplied
+- [ ] The launch control is absent for a `missing` directory and when the capability was not supplied — in the row toolbar, the right-click and the `…` alike
+- [ ] A launch capability arriving or being withdrawn repaints the row controls, with the tree and presence envelope unchanged
+- [ ] A worktree row announces its own name, with its controls' labels excluded from it
+- [ ] Double-clicking a row control fires its action and does not open the folder
+- [ ] Dismissing the `…` menu returns focus to the `…`, not to the row
 - [ ] The selection card wraps exactly the selected worktree, and a worktree with agents that is not selected gets no card
 - [ ] Collapsed presence renders the pill with grouped glyphs and a `+N` overflow; expanded renders an `N agents` header plus per-agent rows
 - [ ] A worktree with nine agents collapsed occupies the same height as one with two

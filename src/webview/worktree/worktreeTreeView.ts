@@ -12,6 +12,7 @@ import { ACTIVITY_EVIDENCE } from "../../worktree/presenceTypes";
 import { getAgentAccent, getAgentIcon } from "../vault/agentIcons";
 import { ICON_CHEVRON_DOWN, ICON_FOLDER, ICON_RESUME, ICON_TERMINAL } from "../vault/icons";
 import { emptyState } from "../vault/renderAtoms";
+import { canActOnDisk } from "./worktreeActionItems";
 import {
   agentCountLabel,
   agentRowTitle,
@@ -95,6 +96,10 @@ function rowAction(icon: string, label: string, activate: (ev: MouseEvent) => vo
       ev.stopPropagation();
     }
   });
+  // `dblclick` is a THIRD event, not a repeat of the click — stopping the click
+  // does not stop it. The worktree row listens for it and opens the folder in a
+  // new window, so two impatient presses on `…` would open one (round-1 F005).
+  btn.addEventListener("dblclick", (ev) => ev.stopPropagation());
   return btn;
 }
 
@@ -338,14 +343,22 @@ export function renderWorktreeRow(info: WorktreeInfo, opts: WorktreeRowOptions, 
   // is the only thing a keyboard user reaches — and a `~`-worthy glyph here with no
   // way to read why is the overstatement the ceiling exists to retract.
   row.dataset.tip = opts.confidenceTip ? `${worktreeTooltip(info)}\n${opts.confidenceTip}` : worktreeTooltip(info);
+  // ALWAYS named, never left to compute from contents. A `treeitem` with no
+  // `aria-label` takes one from its descendants, which now include the toolbar's
+  // two `aria-label`s — so every agentless row announced as "feature-x Start an
+  // agent in feature-x More actions for feature-x". The repo header fixed this
+  // same defect when it gained a control (round-1 W3); the row inherits the rule
+  // rather than a second copy of the discovery (round-1 F003).
+  //
+  // The presence pill and the "N agents" header are hidden from assistive tech
+  // (a button is not valid inside `role="tree"`), so the summary they carry
+  // visually has to reach a screen reader from here.
+  row.setAttribute(
+    "aria-label",
+    opts.agentSummary ? `${branchLabel(info).text}, ${opts.agentSummary}` : branchLabel(info).text,
+  );
   if (opts.hasAgents) {
     row.setAttribute("aria-expanded", opts.expanded ? "true" : "false");
-    // The presence pill and the "N agents" header are hidden from assistive tech
-    // (a button is not valid inside `role="tree"`), so the summary they carry
-    // visually has to reach a screen reader from the row itself.
-    if (opts.agentSummary) {
-      row.setAttribute("aria-label", `${branchLabel(info).text}, ${opts.agentSummary}`);
-    }
   }
 
   // One glyph slot, never two: the branch mark at rest, the state shape when any
@@ -375,7 +388,7 @@ export function renderWorktreeRow(info: WorktreeInfo, opts: WorktreeRowOptions, 
   tools.className = "wt-rowtools";
   // Launching is the affirmative action a worktree exists for, so it is the one
   // that gets its own button; everything else is one press further in.
-  if (cb.onLaunchAgent && !info.missing) {
+  if (cb.onLaunchAgent && canActOnDisk(info)) {
     tools.appendChild(
       rowAction(ICON_RESUME, `Start an agent in ${branchLabel(info).text}`, () => cb.onLaunchAgent?.(info)),
     );
@@ -387,9 +400,10 @@ export function renderWorktreeRow(info: WorktreeInfo, opts: WorktreeRowOptions, 
       ),
     );
   }
-  if (tools.childElementCount > 0) {
-    row.appendChild(tools);
-  }
+  // Appended unconditionally: the row declares a fourth grid track, and a row
+  // that skipped it still paid the gap before it — so its pills stopped 6px
+  // short of every neighbour's. An empty `.wt-rowtools` is zero-width.
+  row.appendChild(tools);
 
   // Selection only. Disclosure belongs to the presence pill below and to the
   // Left/Right keys — one gesture that both scoped the terminal and folded the
@@ -502,26 +516,8 @@ export interface AgentRowOptions {
   now: number;
   /**
    * ARIA role. Defaults to `treeitem`, which is only valid inside `role="tree"`;
-   * the inspector draws the same row inside a list and passes `listitem`.
+   * the tree is the only surface that draws one.
    */
-  role?: string;
-  /**
-   * Raise the tab stop. The tree keeps every row at -1 and moves a single roving
-   * stop between them; the inspector has no roving machinery, so its rows would
-   * be unreachable by keyboard at the default.
-   */
-  focusable?: boolean;
-  /**
-   * Whether the row owns the subagent disclosure. False draws no chevron and
-   * announces no `aria-expanded`: the inspector shows the history unconditionally,
-   * and a control beside content it does not govern is inert either way it reads.
-   */
-  disclosure?: boolean;
-  /**
-   * Name the model. False everywhere but the inspector — on a list row the model
-   * competed with the preview for the same scarce width and lost (§ 3.3).
-   */
-  showModel?: boolean;
 }
 
 /**
@@ -544,15 +540,15 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
   // Two things at once: whether this row OWNS the disclosure, and whether it has
   // anything to disclose. A surface drawing the history unconditionally owns
   // neither the chevron nor the expanded state.
-  const disclosable = hasSession && opts.disclosure !== false;
+  const disclosable = hasSession;
   if (disclosable && opts.expanded) {
     el.classList.add("is-open");
   }
   if (opts.selected) {
     el.classList.add("is-selected");
   }
-  el.setAttribute("role", opts.role ?? "treeitem");
-  el.tabIndex = opts.focusable ? 0 : -1;
+  el.setAttribute("role", "treeitem");
+  el.tabIndex = -1;
   el.dataset.rowId = row.rowId;
   if (disclosable) {
     el.setAttribute("aria-expanded", opts.expanded ? "true" : "false");
@@ -611,21 +607,12 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
   if (confidenceTip !== undefined) {
     title.append(document.createTextNode(" "), confidenceMarker(confidenceTip));
   }
-  // Inside the title cell, never a root child: `.wt-arow` declares exactly seven
-  // grid tracks and pins every non-preview root child to row 1, so an eighth one
-  // would silently add an implicit column to the drawer's rows. Absent entirely
-  // when unknown — a placeholder would claim we asked and were told (§ 3.3).
-  if (opts.showModel === true && row.model !== undefined && row.model !== "") {
-    const model = document.createElement("span");
-    model.className = "wt-amodel";
-    model.textContent = row.model;
-    title.append(document.createTextNode(" "), model);
-  }
   el.appendChild(title);
 
   // 5 — external-scope chip. An external row is labelled because it offers no
-  // focus. The model is not named on a list row at all: the inspector has room to
-  // present it, and this width belongs to the row's own last activity.
+  // focus. The model is not named on the visible row at all — it competed with
+  // the preview for this width and lost (§ 3.3); it joins the hint below, which
+  // is now its only home.
   const scope = document.createElement("span");
   if (row.scope === "external") {
     scope.className = "wt-scope";
@@ -652,11 +639,14 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
   // it when it repeats the title — every session is a one-message session at its
   // first render — without normalizing it on the way past.
   const previewText = presentedPreview(row);
-  el.dataset.tip = [titleText, previewText, confidenceTip].filter(Boolean).join("\n");
+  // The model rides on the hint rather than the row. Absent entirely when
+  // unknown — a placeholder would claim we asked and were told (§ 3.3).
+  const modelText = row.model === undefined || row.model === "" ? undefined : row.model;
+  el.dataset.tip = [titleText, previewText, modelText, confidenceTip].filter(Boolean).join("\n");
 
   // 6 — collapsed child count. Disappears when expanded; the children show instead.
   const count = document.createElement("span");
-  if (hasChildren && !opts.expanded && opts.disclosure !== false) {
+  if (hasChildren && !opts.expanded) {
     count.className = "wt-count";
     count.textContent = `+${delegated.length}`;
   }
@@ -699,33 +689,15 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
  * tense (.reviews/round-1.md W3). Activating either focuses the PARENT's pane;
  * a subagent has no pane of its own.
  */
-export interface SubagentSectionOptions {
-  /** Wrapper role. `group` is a tree construct; a list surface passes `list`. */
-  role?: string;
-  /** Row role, for the same reason. */
-  rowRole?: string;
-  /** Raise each row's tab stop — see `AgentRowOptions.focusable`. */
-  focusable?: boolean;
-  /**
-   * This parent has no session, so no roster will ever be asked for or arrive.
-   *
-   * Without it an unread roster is indistinguishable from an unreadable one, and
-   * a surface that draws the section unconditionally would leave such a row on
-   * "Reading…" for ever, waiting on a read nobody can make.
-   */
-  noSession?: boolean;
-}
-
 export function renderSubagentSection(
   roster: DelegationRoster | undefined,
   parent: WorktreeAgentRow,
   onActivate: (subagent: WorktreeSubagentRow, parent: WorktreeAgentRow) => void,
   now?: number,
-  opts?: SubagentSectionOptions,
 ): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "wt-hist";
-  wrap.setAttribute("role", opts?.role ?? "group");
+  wrap.setAttribute("role", "group");
   wrap.dataset.parentRowId = parent.rowId;
 
   // Provenance, not row contents, decides the vocabulary: an agent that reported
@@ -746,9 +718,10 @@ export function renderSubagentSection(
   // renders one of them: silence would read as "this session delegated
   // nothing", which is the one claim an unfinished or failed read cannot make.
   if (roster === undefined) {
-    // A row with no session is not waiting — nothing was asked and nothing is
-    // coming, so "Reading…" would promise an answer that cannot arrive.
-    wrap.appendChild(note(opts?.noSession === true ? "No session to read a history from" : "Reading…"));
+    // Always "Reading…" here: the section is drawn only for an EXPANDED row, and
+    // only a row with a session can be expanded (`disclosable` above), so a
+    // roster has always been asked for by the time this renders.
+    wrap.appendChild(note("Reading…"));
     return wrap;
   }
   if (roster.kind === "failed") {
@@ -768,8 +741,8 @@ export function renderSubagentSection(
   for (const [i, sub] of subagents.entries()) {
     const row = document.createElement("div");
     row.className = "wt-srow";
-    row.setAttribute("role", opts?.rowRole ?? "treeitem");
-    row.tabIndex = opts?.focusable ? 0 : -1;
+    row.setAttribute("role", "treeitem");
+    row.tabIndex = -1;
     // A subagent has no id of its own, so its key is derived from the parent and
     // its position. Without one, every subagent row keys as "" and the roving
     // tabindex cannot tell them apart.

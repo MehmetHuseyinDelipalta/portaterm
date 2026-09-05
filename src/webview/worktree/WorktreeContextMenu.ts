@@ -108,13 +108,13 @@ export class WorktreeContextMenu {
     ]);
   }
 
-  openForWorktree(info: WorktreeInfo, ev: MouseEvent, row: HTMLElement): void {
+  openForWorktree(info: WorktreeInfo, ev: MouseEvent, row: HTMLElement, restoreTo?: HTMLElement): void {
     // Repo-scoped: this menu is the repository's only door to create and prune.
     const items = worktreeActionItems(info, this.actions, {
       prunableCount: this.prunableCount(info),
       repoScoped: true,
     });
-    this.openMenu(items, ev, row);
+    this.openMenu(items, ev, row, restoreTo);
   }
 
   openForAgent(agentRow: WorktreeAgentRow, ev: MouseEvent, row: HTMLElement): void {
@@ -122,8 +122,13 @@ export class WorktreeContextMenu {
     this.openMenu(this.agentItems(agentRow), ev, row);
   }
 
-  private openMenu(items: (ContextMenuItem | "sep")[], ev: MouseEvent, row: HTMLElement): void {
-    this.shell.open(items, ev, row);
+  private openMenu(
+    items: (ContextMenuItem | "sep")[],
+    ev: MouseEvent,
+    row: HTMLElement,
+    restoreTo?: HTMLElement,
+  ): void {
+    this.shell.open(items, ev, row, restoreTo);
   }
 
   close(): void {

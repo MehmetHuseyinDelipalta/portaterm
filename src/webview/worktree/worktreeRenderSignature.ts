@@ -115,9 +115,9 @@ function agentRowFields(r: WorktreeAgentRow, degraded: readonly PresenceDegradat
     r.agentSource,
     r.activity,
     r.activitySource,
-    // Back in the key because the inspector draws it. It left when the model
-    // left the list row (WT-009.2), which made a model change invisible to the
-    // guard — and the drawer is a surface that would then show a stale one.
+    // In the key because the row's HINT draws it (§ 3.3). It left when the model
+    // left the visible row (WT-009.2), which made a model change invisible to
+    // the guard and left a stale id in the hint.
     r.model ?? "",
     // The PRESENTED state, not just the wire one: confidence is derived
     // from the clock, so a row that crosses the confirmation ceiling
@@ -136,29 +136,6 @@ function agentRowFields(r: WorktreeAgentRow, degraded: readonly PresenceDegradat
     String(r.startedAt ?? ""),
     delegationSignature(r.delegations),
   ].join(FIELD_SEP);
-}
-
-/**
- * The signature over ONE worktree and the rows drawn for it.
- *
- * The inspector draws one worktree, so guarding it on `worktreeSignature` would
- * rebuild it whenever an unrelated repository's listing failed, its label moved,
- * or git became unavailable — none of which the drawer renders. It shares the
- * field encoders above rather than defining a second vocabulary, so a field added
- * to a row cannot reach one surface's guard and miss the other's.
- */
-export function worktreeScopeSignature(
-  info: WorktreeInfo,
-  rows: readonly WorktreeAgentRow[],
-  degraded: readonly PresenceDegradation[],
-  now: number,
-): string {
-  // `degraded` reaches the key only THROUGH `presentedActivity`, which folds in
-  // the sources that actually change a row's glyph. Hashing the raw list as well
-  // moved the guard for a failure in a source no drawn row reads — which is the
-  // whole-tree coupling this scoped signature exists to remove, reintroduced one
-  // field lower down (.reviews/round-1.md B5).
-  return [worktreeFields(info), rows.map((r) => agentRowFields(r, degraded, now)).join(ROW_SEP)].join(SECTION_SEP);
 }
 
 /**

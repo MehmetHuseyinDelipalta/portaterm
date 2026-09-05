@@ -25,7 +25,7 @@ export class ContextMenuShell {
   private readonly host: HTMLElement;
   private menuEl: HTMLElement | null = null;
   private menuRow: HTMLElement | null = null;
-  /** Anchor row kept past `close()`, which clears `menuRow`, so Escape can restore focus. */
+  /** Focus target kept past `close()`, which clears `menuRow`, so Escape can restore it. */
   private menuRowRestore: HTMLElement | null = null;
   private onDocPointerDown?: (ev: MouseEvent) => void;
   private onDocKeyDown?: (ev: KeyboardEvent) => void;
@@ -39,7 +39,14 @@ export class ContextMenuShell {
     return this.menuEl !== null;
   }
 
-  open(entries: ContextMenuEntry[], ev: MouseEvent, row: HTMLElement): void {
+  /**
+   * `row` is the ANCHOR: it takes the open class and is where the menu belongs
+   * visually. `restoreTo` is where focus goes back to, which is only the same
+   * element when the row is what opened the menu — a control ON the row is a
+   * stop of its own, and returning to the row costs the user that stop on every
+   * dismissal (round-1 F008).
+   */
+  open(entries: ContextMenuEntry[], ev: MouseEvent, row: HTMLElement, restoreTo?: HTMLElement): void {
     this.close();
 
     const menu = document.createElement("div");
@@ -57,7 +64,7 @@ export class ContextMenuShell {
 
     this.menuEl = menu;
     this.menuRow = row;
-    this.menuRowRestore = row;
+    this.menuRowRestore = restoreTo ?? row;
     row.classList.add("is-context-open");
 
     // The opening event is a `contextmenu`, so attaching mousedown/keydown now

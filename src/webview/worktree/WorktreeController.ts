@@ -282,11 +282,6 @@ export class WorktreeController {
   private readonly deps: WorktreeControllerDeps;
   private readonly view: WorktreeView;
   /**
-   * The detail drawer under the tree. Always mounted — hidden while closed, so
-   * the rollout being off costs a `hidden` attribute rather than a second
-   * mounting path to keep right (design.md D12).
-   */
-  /**
    * The level last posted, or null while unsubscribed. The effective state, not
    * a request — `applySubscription` derives it.
    */
@@ -1224,10 +1219,11 @@ export class WorktreeController {
    * offered, rather than offered and refused.
    */
   private syncLaunchActions(): void {
-    // No invalidation needed anywhere: the tree builds its menu and its row
-    // controls from `menuActions` at click and at paint, so a launch target
-    // arriving reaches both without a cached surface to nudge. It is the drawer
-    // that had to be told, and the drawer is gone.
+    // The MENU needs no nudge — `openForWorktree` rebuilds its items at click
+    // time from this same record. The row's launch control does: it is built at
+    // paint, behind a guard `menuActions` is not an input to. That capability is
+    // in the view's render key for exactly this reason, so mutating the record
+    // here and pushing is enough to move it (.reviews/round-1.md B3).
     if (this.launchAgents.length === 0) {
       delete this.menuActions.launchAgentHere;
       delete this.menuActions.resumeHere;

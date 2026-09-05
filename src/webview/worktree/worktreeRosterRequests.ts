@@ -1,11 +1,10 @@
 // src/webview/worktree/worktreeRosterRequests.ts — Who has already been asked
 // what a session delegated (worktree-panel-ui § 3.4, design.md D6).
 //
-// Shared by the tree and the inspector because "at most one request per row and
-// session" is a claim about the WINDOW, not about a surface. Two instance-local
-// sets would each ask once for the same key, which is two requests for one
-// answer — and the second surface would then also have to re-implement the
-// eviction below.
+// Owned per WINDOW, not per surface: "at most one request per row and session"
+// is a claim about the window. Two instance-local sets would each ask once for
+// the same key, which is two requests for one answer — and the second surface
+// would then also have to re-implement the eviction below.
 //
 // Requests are queued and dispatched separately. `renderListing` warns that a
 // dependency answering synchronously would re-enter a half-built render and

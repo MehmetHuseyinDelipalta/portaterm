@@ -120,6 +120,11 @@ function discloserFor(view: WorktreeView, worktreeId: string, cls: string): HTML
   return next instanceof HTMLElement && next.classList.contains(cls) ? next : null;
 }
 
+/** One of a worktree row's own controls, by the label it announces. */
+function actionIn(row: HTMLElement, label: string): HTMLButtonElement | null {
+  return row.querySelector<HTMLButtonElement>(`.wt-rowtools .wt-rowaction[aria-label^="${label}"]`);
+}
+
 /** The collapse control an EXPANDED worktree offers. Disclosure lives here, not on the row. */
 function agentsHeaderFor(view: WorktreeView, worktreeId: string): HTMLElement | null {
   return discloserFor(view, worktreeId, "wt-agents");
@@ -1149,9 +1154,6 @@ describe("what activating a worktree row does, and what it does not", () => {
 });
 
 describe("the worktree row's own controls", () => {
-  const actionIn = (row: HTMLElement, label: string): HTMLButtonElement | null =>
-    row.querySelector<HTMLButtonElement>(`.wt-rowtools .wt-rowaction[aria-label^="${label}"]`);
-
   it("carries the launch and the overflow, and neither one activates the row", () => {
     // `rowAction` stops the gesture: a control that also selected the worktree
     // would be the same coupling one level down.
@@ -1170,6 +1172,101 @@ describe("the worktree row's own controls", () => {
 
     expect(launched).toEqual([MAIN_PATH]);
     expect(scoped).toEqual([]);
+  });
+
+  it("gains the launch control when the host's answer arrives, and loses it again", () => {
+    // F001: `actions` is a record the host mutates in place, so a launch target
+    // arriving moves nothing in the tree/presence envelope. The control is built
+    // at paint, so without the capability in the render key it would appear only
+    // if some unrelated delta happened to force a repaint.
+    const actions: WorktreeMenuActions = noopActions();
+    const { view } = mount({ actions });
+    view.setData(populated());
+    const launchOn = (): HTMLElement | null => {
+      const row = rowFor(view, "main");
+      return row ? actionIn(row, "Start an agent") : null;
+    };
+    expect(launchOn()).toBeNull();
+
+    // The host answers. Same tree, same presence — only the capability moved.
+    actions.launchAgentHere = () => {};
+    view.setData(populated());
+    expect(launchOn()).not.toBeNull();
+
+    // …and the withdrawal, which is the worse direction: a button left painted
+    // would optional-chain to nothing — present and inert (D10).
+    delete actions.launchAgentHere;
+    view.setData(populated());
+    expect(launchOn()).toBeNull();
+  });
+
+  it("names the row itself, so its controls' labels are not read as part of it", () => {
+    // F003: a `treeitem` with no `aria-label` computes one from its contents,
+    // and the toolbar's two labels are contents.
+    const { view } = mount({ actions: { ...noopActions(), launchAgentHere: () => {} } });
+    view.setData(populated());
+    // An AGENTLESS row is the case that had no explicit name at all — it never
+    // reached the `hasAgents` branch that used to set one.
+    const idle = rowFor(view, "release/0.4.x");
+    expect(idle).toBeDefined();
+    expect(idle?.getAttribute("aria-label")).toBe("release/0.4.x");
+    // A row WITH agents keeps naming its count, which is the other half of the rule.
+    expect(rowFor(view, "main")?.getAttribute("aria-label")).toMatch(/^main, \d+ agents?$/);
+  });
+
+  it("does not open the folder when a control is double-clicked", () => {
+    // F005: `dblclick` is a third event; stopping the click does not stop it,
+    // and the row opens the folder on one.
+    const opened: string[] = [];
+    const { view } = mount({
+      actions: { ...noopActions(), openFolderInNewWindow: (info) => opened.push(info.id) },
+    });
+    view.setData(populated());
+    const row = rowFor(view, "main");
+    const control = row ? actionIn(row, "More actions") : null;
+    if (!control) {
+      throw new Error("expected the overflow control");
+    }
+    control.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    expect(opened).toEqual([]);
+
+    // Non-vacuous: the row itself still opens the folder on a double-click.
+    row?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    expect(opened).toEqual([MAIN_PATH]);
+  });
+
+  it("anchors the menu at the cursor for a pointer press, and at the control for a key press", () => {
+    // Only the keyboard branch was covered: jsdom's `element.click()` reports
+    // `detail === 0`, so the pointer path and its rect substitution were unasserted.
+    const { view, host } = mount();
+    view.setData(populated());
+    const row = rowFor(view, "main");
+    const control = row ? actionIn(row, "More actions") : null;
+    if (!control) {
+      throw new Error("expected the overflow control");
+    }
+    control.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX: 120, clientY: 200 }));
+    const at = host.querySelector<HTMLElement>(".vault-context-menu");
+    // Placement is relative to the host, which jsdom reports at the origin.
+    expect(at?.style.left).toBe("120px");
+    expect(at?.style.top).toBe("200px");
+  });
+
+  it("returns focus to the control the menu came from, not to the row under it", () => {
+    // F008: the row is the ANCHOR; the control is a tab stop of its own, and
+    // landing back on the row costs the user that stop on every dismissal.
+    const { view } = mount();
+    view.setData(populated());
+    const row = rowFor(view, "main");
+    const control = row ? actionIn(row, "More actions") : null;
+    if (!control) {
+      throw new Error("expected the overflow control");
+    }
+    row?.focus();
+    control.focus();
+    control.click();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(document.activeElement).toBe(control);
   });
 
   it("opens the same menu the right-click opens", () => {
@@ -4094,9 +4191,9 @@ describe("create on the repo group header", () => {
     view.setData({ tree: twoRepoTree(), presence: singleRepoPresence(NOW) });
 
     expect(host.querySelectorAll(".wt-repo").length).toBeGreaterThan(0);
-    // Scoped to the header: worktree rows carry controls of their own, and
-    // counting every control in the tree would pass for the wrong reason.
-    expect(host.querySelectorAll(".wt-repo .wt-rowaction")).toHaveLength(0);
+    // By identity: worktree rows carry controls of their own, so counting every
+    // control in the tree would fail for the wrong reason.
+    expect(host.querySelectorAll('[aria-label^="Create worktree"]')).toHaveLength(0);
   });
 
   it("[1_2] a single-repo tree renders no header and no header control", () => {
@@ -4104,7 +4201,9 @@ describe("create on the repo group header", () => {
     view.setData(populated());
 
     expect(host.querySelectorAll(".wt-repo")).toHaveLength(0);
-    expect(host.querySelectorAll(".wt-repo .wt-rowaction")).toHaveLength(0);
+    // By identity, not by container: with no `.wt-repo` in the DOM a descendant
+    // selector rooted at one cannot match, so it would pass for the wrong reason.
+    expect(host.querySelectorAll('[aria-label^="Create worktree"]')).toHaveLength(0);
   });
 });
 

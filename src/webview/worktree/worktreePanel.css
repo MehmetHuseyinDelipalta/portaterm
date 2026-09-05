@@ -37,14 +37,6 @@
   padding: 2px 0 8px;
 }
 
-/* The model, inside the title cell rather than an eighth grid column — see
-   renderAgentRow. Dimmer than the title it follows, so it reads as the
-   qualifier it is rather than competing with the row's own identity. */
-.wt-amodel {
-  color: var(--vscode-descriptionForeground);
-  font-size: 10px;
-}
-
 /* ── Repo group header (only when > 1 repo) ─────────────────────────────── */
 /* Strongest emphasis, no leading glyph slot: reads as a separator, not a row.
    The disclosure chevron sits on the trailing edge so the label stays flush. */
@@ -1429,7 +1421,8 @@
 }
 
 .wt-repo:hover .wt-rowaction,
-.wt-repo:focus-within .wt-rowaction {
+.wt-repo:focus-within .wt-rowaction,
+.wt-repo.is-context-open .wt-rowaction {
   visibility: visible;
 }
 
@@ -1442,9 +1435,15 @@
   gap: 1px;
   flex: 0 0 auto;
 }
+/* `aria-selected`, not a class: a worktree row's selection is that attribute
+   plus the wrapper's `.wt-card`; `.is-selected` belongs to AGENT rows, so a rule
+   naming it here matched nothing and the selected-row reveal never happened.
+   `is-context-open` is what the menu shell puts on the anchor row — without it
+   the `…` hides itself the moment its own menu takes focus out of the row. */
 .wt-row:hover .wt-rowaction,
 .wt-row:focus-within .wt-rowaction,
-.wt-row.is-selected .wt-rowaction {
+.wt-row.is-context-open .wt-rowaction,
+.wt-row[aria-selected="true"] .wt-rowaction {
   visibility: visible;
 }
 

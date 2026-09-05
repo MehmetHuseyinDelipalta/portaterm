@@ -71,27 +71,16 @@ describe("[1_2] an agent row outside a tree", () => {
     expect(el.tabIndex).toBe(-1);
   });
 
-  it("takes the role and the tab stop the caller asks for", () => {
-    // `treeitem` outside `role="tree"` is invalid ARIA, and a row left at -1 in a
-    // surface with no roving machinery is unreachable by keyboard.
-    const el = renderWith({ entryId: "claude:s1" }, { role: "listitem", focusable: true });
-    expect(el.getAttribute("role")).toBe("listitem");
-    expect(el.tabIndex).toBe(0);
-  });
+  it("offers a disclosure to a row that has a session, and none to one that has not", () => {
+    // The disclosure is offered by the presence of a SESSION, not by children
+    // already held — the children are read on expansion.
+    const withSession = renderWith({ entryId: "claude:s1" }, {});
+    expect(withSession.getAttribute("aria-expanded")).toBe("false");
+    expect(withSession.querySelector(".wt-gutter")?.innerHTML).not.toBe("");
 
-  it("offers no disclosure when it does not own one", () => {
-    // The drawer draws the history unconditionally. A chevron and an
-    // `aria-expanded` beside content the row does not govern are inert whichever
-    // way they read.
-    const el = renderWith({ entryId: "claude:s1" }, { disclosure: false });
-    expect(el.hasAttribute("aria-expanded")).toBe(false);
-    expect(el.querySelector(".wt-gutter")?.innerHTML).toBe("");
-  });
-
-  it("still offers one by default, so the tree is untouched", () => {
-    const el = renderWith({ entryId: "claude:s1" }, {});
-    expect(el.getAttribute("aria-expanded")).toBe("false");
-    expect(el.querySelector(".wt-gutter")?.innerHTML).not.toBe("");
+    const without = renderWith({}, {});
+    expect(without.hasAttribute("aria-expanded")).toBe(false);
+    expect(without.querySelector(".wt-gutter")?.innerHTML).toBe("");
   });
 
   it("claims no collapsed children where nothing is collapsed", () => {
@@ -108,33 +97,33 @@ describe("[1_2] an agent row outside a tree", () => {
     );
     // Unclassed when it has nothing to say, so the selector finds nothing at all.
     expect(
-      renderWith({ entryId: "claude:s1", delegations: roster }, { disclosure: false }).querySelector(".wt-count"),
+      renderWith({ entryId: "claude:s1", delegations: roster }, { expanded: true }).querySelector(".wt-count"),
     ).toBeNull();
   });
 });
 
 describe("[1_2] the model the list row will not name", () => {
-  const modelOf = (el: HTMLElement): HTMLElement | null => el.querySelector<HTMLElement>(".wt-amodel");
-
-  it("names it only where it was asked for", () => {
-    expect(modelOf(renderWith({ model: "claude-opus-5" }, {}))).toBeNull();
-    expect(modelOf(renderWith({ model: "claude-opus-5" }, { showModel: true }))?.textContent).toBe("claude-opus-5");
+  it("keeps it off the visible row and puts it in the hint, its only home", () => {
+    // It competed with the preview for this width and lost (§ 3.3). The drawer
+    // that had room for it is gone (D49), so the hint is where it lives now.
+    const el = renderWith({ model: "claude-opus-5", title: "t" }, {});
+    expect(el.querySelector(".wt-amodel")).toBeNull();
+    expect(el.textContent).not.toContain("claude-opus-5");
+    expect(el.dataset.tip?.split("\n")).toContain("claude-opus-5");
   });
 
-  it("draws nothing at all when the model is unknown", () => {
+  it("names nothing at all when the model is unknown", () => {
     // A placeholder would claim we asked and were told (§ 3.3).
-    expect(modelOf(renderWith({}, { showModel: true }))).toBeNull();
-    expect(modelOf(renderWith({ model: "" }, { showModel: true }))).toBeNull();
+    expect(renderWith({ title: "t" }, {}).dataset.tip).not.toContain("claude-opus-5");
+    expect(renderWith({ model: "", title: "t" }, {}).dataset.tip?.split("\n")).not.toContain("");
   });
 
-  it("rides inside the title cell rather than becoming an eighth column", () => {
-    // `.wt-arow` declares exactly seven grid tracks and pins every non-preview
-    // root child to row 1, so a root-level model span would add an implicit
-    // column on exactly the rows the drawer draws.
+  it("adds no root child, so the row keeps its seven grid tracks", () => {
+    // `.wt-arow` declares exactly seven tracks and pins every non-preview root
+    // child to row 1; an eighth would add an implicit column.
     const bare = renderWith({ preview: "p" }, {});
-    const withModel = renderWith({ model: "claude-opus-5", preview: "p" }, { showModel: true });
+    const withModel = renderWith({ model: "claude-opus-5", preview: "p" }, {});
     expect(withModel.children.length).toBe(bare.children.length);
-    expect(modelOf(withModel)?.parentElement?.className).toBe("wt-atitle");
   });
 });
 
@@ -146,30 +135,21 @@ describe("[1_2] a delegation section outside a tree", () => {
     expect(el.getAttribute("role")).toBe("group");
   });
 
-  it("takes list roles and a tab stop when asked", () => {
+  it("keeps every row on the tree's roles and off the tab order", () => {
+    // The tree moves ONE roving stop between rows; a row raised to 0 here would
+    // be a second stop the traversal does not know about.
     const roster = { kind: "ok" as const, rows: [{ name: "a", status: "completed" as const, live: false }] };
-    const el = renderSubagentSection(roster, parent, () => undefined, NOW, {
-      role: "list",
-      rowRole: "listitem",
-      focusable: true,
-    });
-    expect(el.getAttribute("role")).toBe("list");
+    const el = renderSubagentSection(roster, parent, () => undefined, NOW);
     const row = el.querySelector<HTMLElement>(".wt-srow");
-    expect(row?.getAttribute("role")).toBe("listitem");
-    expect(row?.tabIndex).toBe(0);
+    expect(row?.getAttribute("role")).toBe("treeitem");
+    expect(row?.tabIndex).toBe(-1);
   });
 
-  it("says a row with no session has nothing to read, rather than waiting for ever", () => {
-    // An unread roster and an unreadable one look identical from here. A surface
-    // that draws the section unconditionally would otherwise leave a
-    // sessionless row on "Reading…" with nothing coming.
+  it("reads an unheld roster as pending, because only an asked-for row is drawn", () => {
+    // The section renders only under an EXPANDED row, and only a row with a
+    // session can expand — so a roster has always been asked for by now.
     const waiting = renderSubagentSection(undefined, parent, () => undefined, NOW);
     expect(waiting.textContent).toContain("Reading…");
-    const never = renderSubagentSection(undefined, agentRow({ rowId: "row-2" }), () => undefined, NOW, {
-      noSession: true,
-    });
-    expect(never.textContent).not.toContain("Reading…");
-    expect(never.textContent).toContain("No session");
   });
 });
 

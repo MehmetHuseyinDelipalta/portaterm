@@ -1,10 +1,9 @@
 // src/webview/worktree/worktreeActivation.ts — What activating an agent row does.
 //
-// One decision, two surfaces. The tree and the inspector both draw agent rows,
-// and the version that lived in the tree alone had two clauses the drawer's copy
-// did not: an external row has no pane in THIS window to focus, and a row with no
-// session has no transcript to preview. Missing either one turns a working row on
-// one surface into a dead click on the other (.reviews/round-1.md B4).
+// One decision, held apart from the renderer that draws the row. It has two
+// clauses a per-surface copy kept losing: an external row has no pane in THIS
+// window to focus, and a row with no session has no transcript to preview.
+// Missing either one turns a working row into a dead click (.reviews/round-1.md B4).
 
 import type { WorktreeAgentRow, WorktreeRowActivation } from "./worktreeViewTypes";
 
