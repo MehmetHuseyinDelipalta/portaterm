@@ -740,6 +740,8 @@ export class WorktreeView {
 
   dispose(): void {
     this.disposed = true;
+    this.rowMemo.clear();
+    this.rowMemoSeen.clear();
     if (this.ceilingTimer !== undefined) {
       clearTimeout(this.ceilingTimer);
       this.ceilingTimer = undefined;
@@ -1011,6 +1013,22 @@ export class WorktreeView {
    * today — the ordering is a rule so that a caller which did could not break it.
    */
   private renderListing(now: number, focusWasInside: boolean): string | null | undefined {
+    try {
+      return this.renderListingInner(now, focusWasInside);
+    } finally {
+      // On EVERY exit, not only the one that walked the repos: the loading and
+      // empty states return early with nothing on screen, and a memo that kept
+      // the last listing's detached rows (and their listener closures) across
+      // them would retain an uncapped tree for as long as the state lasted.
+      for (const id of [...this.rowMemo.keys()]) {
+        if (!this.rowMemoSeen.has(id)) {
+          this.rowMemo.delete(id);
+        }
+      }
+    }
+  }
+
+  private renderListingInner(now: number, focusWasInside: boolean): string | null | undefined {
     // `replaceChildren` detaches the focused row, and focus falls to <body> — a
     // keyboard user loses their place on every disclosure toggle. Restored by
     // `render` from this key, which is why subagent rows had to gain one.
@@ -1113,11 +1131,6 @@ export class WorktreeView {
     }
     if (rendered === 0 && this.query) {
       this.element.appendChild(worktreeEmptyState("noMatch"));
-    }
-    for (const id of [...this.rowMemo.keys()]) {
-      if (!this.rowMemoSeen.has(id)) {
-        this.rowMemo.delete(id);
-      }
     }
     this.stampLevels(multiRepo);
     return restoreFocusTo;

@@ -2147,6 +2147,94 @@ describe("persisted collapse", () => {
   });
 });
 
+// The row memo: a delta that touches one worktree must not rebuild the others.
+// Asserted on node identity and on the element count the document created —
+// a memo that silently rebuilt everything would still render correctly.
+describe("row memo", () => {
+  function createdElements(run: () => void): number {
+    const original = document.createElement.bind(document);
+    let created = 0;
+    const spy = vi.spyOn(document, "createElement").mockImplementation(((
+      tag: string,
+      opts?: ElementCreationOptions,
+    ) => {
+      created += 1;
+      return original(tag, opts);
+    }) as typeof document.createElement);
+    try {
+      run();
+    } finally {
+      spy.mockRestore();
+    }
+    return created;
+  }
+
+  it("reuses the rows of worktrees a delta did not touch", () => {
+    const { view } = mount();
+    view.setData(populated());
+    const untouchedBefore = rowFor(view, "feat/worktree-panel");
+    const touchedBefore = rowFor(view, "release/0.4.x");
+    expect(untouchedBefore).toBeDefined();
+
+    const tree = singleRepoTree();
+    const release = tree.repos[0]?.worktrees.find((w) => w.branch === "release/0.4.x");
+    if (!release) {
+      throw new Error("fixture lost release");
+    }
+    release.locked = false;
+    const created = createdElements(() => view.setData({ tree, presence: singleRepoPresence(NOW) }));
+
+    expect(rowFor(view, "feat/worktree-panel")).toBe(untouchedBefore);
+    expect(rowFor(view, "release/0.4.x")).not.toBe(touchedBefore);
+    expect(view.element.querySelector(".wt-badge--locked")).toBeNull();
+    // One row rebuilt: the whole listing is well over this.
+    expect(created).toBeLessThan(40);
+  });
+
+  it("does not bind a second listener onto a reused row", () => {
+    const opened: string[] = [];
+    const { view } = mount({ actions: { ...noopActions(), openFolderInNewWindow: (info) => opened.push(info.id) } });
+    view.setData(populated());
+    const tree = singleRepoTree();
+    const release = tree.repos[0]?.worktrees.find((w) => w.branch === "release/0.4.x");
+    if (release) {
+      release.locked = false;
+    }
+    view.setData({ tree, presence: singleRepoPresence(NOW) });
+    view.setData({ tree: singleRepoTree(), presence: singleRepoPresence(NOW) });
+    const row = rowFor(view, "feat/worktree-panel");
+    expect(row).toBeDefined();
+    row?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    // Three renders the row survived, one gesture, one activation.
+    expect(opened).toHaveLength(1);
+  });
+
+  it("drops every memoized row when the listing goes empty, and on dispose", () => {
+    const { view } = mount();
+    view.setData(populated());
+    const memo = (view as unknown as { rowMemo: Map<string, unknown> }).rowMemo;
+    expect(memo.size).toBeGreaterThan(0);
+
+    view.setData({ tree: noRepoTree(), presence: singleRepoPresence(NOW) });
+    expect(memo.size).toBe(0);
+
+    view.setData(populated());
+    expect(memo.size).toBeGreaterThan(0);
+    view.setData({ tree: gitMissingTree(), presence: singleRepoPresence(NOW) });
+    expect(memo.size).toBe(0);
+
+    view.setData(populated());
+    expect(memo.size).toBeGreaterThan(0);
+    view.setData({ tree: undefined, presence: undefined, loading: true } as never);
+    expect(memo.size).toBe(0);
+
+    view.setData(populated());
+    expect(memo.size).toBeGreaterThan(0);
+    view.dispose();
+    expect(memo.size).toBe(0);
+  });
+});
+
 describe("render guard", () => {
   it("does not repaint when only a spinner frame changed", () => {
     const { view } = mount();
