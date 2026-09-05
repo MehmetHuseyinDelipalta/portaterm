@@ -7,12 +7,12 @@
 // SVG inserted is the agent's real brand icon from the closed icon map (D1).
 
 import type { VaultSessionEntry } from "../../vault/types";
+import { setIcon } from "../shared/iconNode";
 import { getAgentAccent, getAgentIcon } from "./agentIcons";
 import { agentLabel, formatRelativeTime, leafSegment } from "./format";
 import type { GroupMode } from "./grouping";
 import { ICON_ARCHIVE, ICON_CHEVRON_DOWN, ICON_FOLDER, ICON_RESUME, ICON_SEARCH } from "./icons";
 import { emptyState } from "./renderAtoms";
-import { setIcon } from "../shared/iconNode";
 
 /** Row interaction handlers — supplied by the panel so the row builder stays pure. */
 export interface VaultRowCallbacks {

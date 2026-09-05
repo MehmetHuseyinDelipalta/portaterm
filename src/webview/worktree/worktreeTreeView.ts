@@ -9,6 +9,7 @@
 // is a static icon constant or the closed agent-icon map (D1).
 
 import { ACTIVITY_EVIDENCE } from "../../worktree/presenceTypes";
+import { setIcon } from "../shared/iconNode";
 import { getAgentAccent, getAgentIcon } from "../vault/agentIcons";
 import { ICON_CHEVRON_DOWN, ICON_FOLDER, ICON_RESUME, ICON_TERMINAL } from "../vault/icons";
 import { emptyState } from "../vault/renderAtoms";
@@ -37,7 +38,6 @@ import type {
   WorktreeRepo,
   WorktreeSubagentRow,
 } from "./worktreeViewTypes";
-import { setIcon } from "../shared/iconNode";
 
 /** Interaction handlers for a worktree row — supplied so the builder stays pure. */
 export interface WorktreeRowCallbacks {

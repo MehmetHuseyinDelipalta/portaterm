@@ -20,12 +20,12 @@ import { openWorktreePruneDialog, type PruneDialogDeps } from "./WorktreePruneDi
 import { openWorktreeRemoveDialog, type WorktreeRemoveDialogDeps } from "./WorktreeRemoveDialog";
 import { activationFor as sharedActivationFor } from "./worktreeActivation";
 import {
-  ageTimestamp,
   agentCountLabel,
   agentRowTitle,
+  ageTimestamp,
   branchLabel,
-  compactAge,
   CONFIRMATION_CEILING_MS,
+  compactAge,
   groupPresenceByActivity,
   presentedActivity,
   strongestActivity,
