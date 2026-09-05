@@ -2049,16 +2049,17 @@ export interface InitMessage {
   vaultActionsAvailable: boolean;
   /**
    * Clear this surface's persisted `worktreeScope` on receipt, landing the tab
-   * bar on `All`. TRUE only when the surface is starting fresh — a workspace
-   * open, an app launch, or a cross-restart — never on a window reload whose
-   * sessions survived the grace window. A reload preserves the scope the user
-   * chose (tab-bar-component spec); a fresh open must not silently reopen on the
-   * last worktree they poked at (DESIGN.md D50).
+   * bar on `All`, so the surface does not reopen on the last worktree the user
+   * scoped to (DESIGN.md D50).
    *
-   * The webview cannot tell the two apart — both re-run `main.ts` over the same
-   * workspace-scoped state — so the HOST decides here, from whether live
-   * sessions were revived. Absent reads as `false`: preserve, the reload
-   * behaviour, which is the conservative default.
+   * TRUE whenever the host (re)started and revived no live sessions for this
+   * surface — a workspace open, a window reload, an app launch, or a
+   * cross-restart. These are INDISTINGUISHABLE to the extension: each restarts
+   * the host and restores the same persisted state, so a full Cmd+R reload
+   * resets exactly like a fresh open. FALSE only on an in-memory re-resolve
+   * whose sessions are still live (a webview swap with the host alive), where
+   * nothing about the workspace changed and the chosen scope stands. Absent
+   * reads as `false` — the conservative default is to preserve.
    */
   resetWorktreeScope?: boolean;
 }

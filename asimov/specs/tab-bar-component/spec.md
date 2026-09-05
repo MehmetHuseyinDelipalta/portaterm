@@ -227,22 +227,27 @@ unscoped.
 - **WHEN** a surface reloads with a persisted scope whose worktree is not in the tree it now holds
 - **THEN** the surface is unscoped and its tab bar hides nothing
 
-### Requirement: A fresh open resets the scope, a reload preserves it
+### Requirement: A host restart resets the scope; an in-memory re-resolve preserves it
 
-A window reload SHALL restore the surface's persisted scope. A fresh open — a workspace open, an
-app launch, or a cross-restart in which no live session is revived — SHALL reset the surface to
-`All`, so it does not reopen on the worktree it was last scoped to. The host, which alone can tell
-the two apart, SHALL signal the reset on the surface's initialization; the surface SHALL clear its
-persisted scope before any scope state is read from it. See DESIGN.md D50.
+A surface SHALL reset its scope to `All` whenever the extension host has (re)started and revived no
+live sessions for it — a workspace open, a window reload, an app launch, or a cross-restart. These
+are indistinguishable to the extension: each restarts the host and restores the same persisted
+state (see the "scope survives a reload" requirement above, which the host thereby narrows to the
+in-memory case). The scope SHALL be preserved only across an in-memory re-resolve in which the
+surface's own sessions are still live — a webview swap with the host alive — where nothing about
+the workspace changed. The host, which alone knows whether sessions were revived, SHALL signal the
+reset on the surface's initialization; the surface SHALL clear its persisted scope before any scope
+state is read from it. See DESIGN.md D50.
 
-#### Scenario: Reopening the workspace
+#### Scenario: Reopening the workspace, or reloading the window
 
-- **WHEN** a surface initializes on a fresh open while holding a persisted scope
+- **WHEN** a surface initializes after a host restart that revived no live sessions, while holding a
+  persisted scope
 - **THEN** the surface is unscoped, its tab bar shows every pane, and the reset is persisted
 
-#### Scenario: Reloading the window
+#### Scenario: An in-memory re-resolve with live sessions
 
-- **WHEN** a surface initializes on a reload whose sessions survived, while holding a persisted scope
+- **WHEN** a surface re-resolves while its own sessions are still live, holding a persisted scope
 - **THEN** the persisted scope is restored and the tab bar filters to it once a tree confirms it
 
 ### Requirement: A hidden tab that needs a human is counted

@@ -230,15 +230,17 @@ worktreeScope?: string   // a WorktreeInfo.id; absent means All
   absent is a filter with no visible cause.
 - State written by an older build has no `worktreeScope` and lands on `All`, which is the
   behaviour that build had.
-- **A window reload keeps the scope; a fresh open resets it to `All`.** The scope is the user's
-  choice, so a reload restores it (that is what the requirement below protects). But opening the
-  workspace, launching the app, or coming back through cross-restart lands the surface on `All`
-  rather than the last worktree it was scoped to — reopening on a stale filter reads as the view
-  choosing for the user. The webview cannot tell a reload from a fresh open, because both re-run
-  `main.ts` over the same workspace-scoped state; the **host** decides, from whether live sessions
-  were revived (a reload keeps them, a fresh open has none), and posts `resetWorktreeScope` on the
-  `init` message. The webview clears the persisted key before any coordinator reads it. See
-  DESIGN.md D50.
+- **A host restart resets the scope to `All`; only an in-memory re-resolve keeps it.** Opening the
+  workspace, reloading the window (Cmd+R), launching the app, or coming back through cross-restart
+  lands the surface on `All` rather than the last worktree it was scoped to — reopening on a stale
+  filter reads as the view choosing for the user. These events are **indistinguishable** to the
+  extension: each restarts the host and restores the same workspace-scoped state, so a Cmd+R reload
+  resets exactly like a fresh open. The scope is preserved only across an in-memory view re-resolve
+  in which the surface's own sessions are still live (a webview swap with the host alive), where
+  nothing about the workspace changed. The **host** decides, from whether live sessions were
+  revived, and posts `resetWorktreeScope` on the `init` message; the webview clears the persisted
+  key before any coordinator reads it. This narrows the older "scope survives a reload" intent
+  (D26) to the webview-reload / view-toggle case. See DESIGN.md D50.
 
 ## 7. Truthfulness rules the scope must encode
 

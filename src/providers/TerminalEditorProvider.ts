@@ -1110,7 +1110,7 @@ export class TerminalEditorProvider {
           // re-sent below rather than lost (design.md D5, round-1 W2).
           worktreeRowActivation: readWorktreeRowActivation(),
           vaultActionsAvailable: false,
-          // Phase A window reload: sessions survived, so the chosen scope stands.
+          // Phase A in-memory re-resolve: live sessions survived, so the chosen scope stands.
           resetWorktreeScope: false,
         });
         this.postRowActivation();
