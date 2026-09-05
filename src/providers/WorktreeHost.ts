@@ -1123,55 +1123,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     return offers.issue(offerKey, composed.model, composed.heldFiles);
   };
 
-  const retireRepository = (key: string, repoId: string): void => {
-    const reading = `${key} ${repoId}`;
-    provisionReading.delete(reading);
-    const surfacePrefix = `${key} `;
-    const belongsToRepository = (slot: string): boolean => {
-      if (!slot.startsWith(surfacePrefix)) {
-        return false;
-      }
-      const openingAt = slot.lastIndexOf(" ");
-      return openingAt >= surfacePrefix.length && slot.slice(surfacePrefix.length, openingAt) === repoId;
-    };
-    for (const slot of [...provisionSwitch.keys()]) {
-      if (belongsToRepository(slot)) {
-        provisionSwitch.delete(slot);
-      }
-    }
-    for (const slot of [...provisionBaseline.keys()]) {
-      if (belongsToRepository(slot)) {
-        provisionBaseline.delete(slot);
-      }
-    }
-    for (const slot of [...addedSteps.keys()]) {
-      if (belongsToRepository(slot)) {
-        addedSteps.delete(slot);
-      }
-    }
-    for (const slot of [...addedCopyFiles.keys()]) {
-      if (!belongsToRepository(slot)) {
-        continue;
-      }
-      for (const added of addedCopyFiles.get(slot) ?? []) {
-        added.file.dispose();
-      }
-      addedCopyFiles.delete(slot);
-    }
-    offers.forget({ surface: key, repoId });
-    openings.delete(`${key}\u0000${repoId}`);
-    for (const [slot, reading] of migrationReading) {
-      if (reading.repoId === repoId && slot.startsWith(`${key}::`)) {
-        migrationReading.delete(slot);
-      }
-    }
-    for (const [offerId, offer] of migrationOffers) {
-      if (offer.surface === key && offer.repoId === repoId) {
-        migrationOffers.delete(offerId);
-      }
-    }
-  };
-
   const retireOpening = (key: string): void => {
     liveOpening.delete(key);
     const reading = `${key} `;
@@ -1564,13 +1515,67 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
 
   /** Retire every per-repository form capability the rebuilt tree no longer carries. */
   const forgetDepartedRepos = (departed: ReadonlySet<string>): void => {
+    if (departed.size === 0) {
+      return;
+    }
+    const repositoryOfProvisionSlot = (slot: string): string | undefined => {
+      const surfaceAt = slot.indexOf(" ");
+      const openingAt = slot.lastIndexOf(" ");
+      return surfaceAt >= 0 && openingAt > surfaceAt ? slot.slice(surfaceAt + 1, openingAt) : undefined;
+    };
+    for (const reading of [...provisionReading.keys()]) {
+      const surfaceAt = reading.indexOf(" ");
+      if (surfaceAt >= 0 && departed.has(reading.slice(surfaceAt + 1))) {
+        provisionReading.delete(reading);
+      }
+    }
+    for (const slot of [...provisionSwitch.keys()]) {
+      if (departed.has(repositoryOfProvisionSlot(slot) ?? "")) {
+        provisionSwitch.delete(slot);
+      }
+    }
+    for (const slot of [...provisionBaseline.keys()]) {
+      if (departed.has(repositoryOfProvisionSlot(slot) ?? "")) {
+        provisionBaseline.delete(slot);
+      }
+    }
+    for (const slot of [...addedSteps.keys()]) {
+      if (departed.has(repositoryOfProvisionSlot(slot) ?? "")) {
+        addedSteps.delete(slot);
+      }
+    }
+    for (const slot of [...addedCopyFiles.keys()]) {
+      if (!departed.has(repositoryOfProvisionSlot(slot) ?? "")) {
+        continue;
+      }
+      for (const added of addedCopyFiles.get(slot) ?? []) {
+        added.file.dispose();
+      }
+      addedCopyFiles.delete(slot);
+    }
+    for (const key of [...openings.keys()]) {
+      const repoAt = key.indexOf("\u0000");
+      if (repoAt >= 0 && departed.has(key.slice(repoAt + 1))) {
+        openings.delete(key);
+      }
+    }
+    for (const slot of [...migrationReading.keys()]) {
+      if (departed.has(migrationReading.get(slot)?.repoId ?? "")) {
+        migrationReading.delete(slot);
+      }
+    }
+    for (const offerId of [...migrationOffers.keys()]) {
+      if (departed.has(migrationOffers.get(offerId)?.repoId ?? "")) {
+        migrationOffers.delete(offerId);
+      }
+    }
     for (const surface of surfaces.keys()) {
       const key = surfaceKeys.get(surface);
       if (key === undefined) {
         continue;
       }
       for (const repoId of departed) {
-        retireRepository(key, repoId);
+        offers.forget({ surface: key, repoId });
       }
     }
   };

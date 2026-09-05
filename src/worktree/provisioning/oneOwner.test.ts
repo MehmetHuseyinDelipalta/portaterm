@@ -86,6 +86,43 @@ describe("one owner for provisioning destination conflicts", () => {
   });
 });
 
+const DEPARTURE_SCAN_MAPS = [
+  "provisionReading",
+  "provisionSwitch",
+  "provisionBaseline",
+  "addedSteps",
+  "addedCopyFiles",
+  "openings",
+  "migrationReading",
+  "migrationOffers",
+] as const;
+const DEPARTURE_MAP_SCAN = new RegExp(String.raw`\[\.\.\.(${DEPARTURE_SCAN_MAPS.join("|")})\.keys\(\)\]`, "g");
+
+function departureScans(source: string): string[] {
+  return [...source.matchAll(DEPARTURE_MAP_SCAN)].map((match) => match[1] ?? "");
+}
+
+describe("one bulk owner for repository-departure map scans", () => {
+  it("scans every flat state map once in forgetDepartedRepos itself", () => {
+    const source = sourceOf("../../providers/WorktreeHost.ts");
+
+    expect(departureScans(bodyOf(source, "forgetDepartedRepos"))).toEqual(DEPARTURE_SCAN_MAPS);
+  });
+
+  it("detects scans hidden in a per-repository helper", () => {
+    const repeated = [
+      "const forgetDepartedRepos = (departed: Set<string>) => {",
+      "  for (const repoId of departed) retireRepository(repoId);",
+      "};",
+      "const retireRepository = () => {",
+      "  for (const slot of [...addedCopyFiles.keys()]) addedCopyFiles.delete(slot);",
+      "};",
+    ].join("\n");
+    expect(departureScans(bodyOf(repeated, "forgetDepartedRepos"))).toEqual([]);
+    expect(departureScans(bodyOf(repeated, "retireRepository"))).toEqual(["addedCopyFiles"]);
+  });
+});
+
 describe("one owner for the model assembly", () => {
   it("is providerKit alone", () => {
     const assemblers = SHIPPED.filter((file) => MODEL_LITERAL.test(sourceOf(file)));

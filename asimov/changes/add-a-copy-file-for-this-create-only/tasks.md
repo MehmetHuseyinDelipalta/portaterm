@@ -73,7 +73,7 @@
     2. In src/worktree/provisioning/providerKit.ts own the shared destination-conflict predicate; use it from src/providers/WorktreeHost.ts and src/worktree/provisioning/suggestProvisioning.ts, and extend src/worktree/provisioning/oneOwner.test.ts with a non-vacuous structural ownership witness.
     3. In src/worktree/provisioning/offerStore.ts remove dead `lookup`; update src/worktree/provisioning/offerStore.test.ts so the existing scope, expiry, selection, and forgetting witnesses exercise `redeem`.
 
-- [ ] 6_2 Sweep bulk repository departures once per state map
+- [x] 6_2 Sweep bulk repository departures once per state map — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/worktree/provisioning/oneOwner.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 6_1
   - **Refs**: design.md D6; .reviews/round-3.md F005
   - **Acceptance**:
