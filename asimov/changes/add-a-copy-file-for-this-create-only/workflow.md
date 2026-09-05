@@ -8,7 +8,7 @@
 
 - [-] Gate 1: direction approved — fail-closed choice: current provider entries and exclusions win over an ad-hoc duplicate
 - [x] `asm change validate` passes
-- [ ] Gate 2: plan approved
+- [x] Gate 2: plan approved
 
 ## Implement
 
@@ -31,6 +31,6 @@
 
 Blueprint: none
 Lane: full (standard) — new inbound operation, system picker and current-opening copy authority | flags: new-api-contract, security-privacy
-Planned at: c270a0bb
-Dependencies: archived `add-a-setup-step-for-this-create-only` (host-held input/record pattern), archived `reserve-the-host-s-rows-in-the-model-budget` (shared final-model bound), and active `bind-a-picked-copy-to-its-source-leaf` (exact held source plus private offer provenance); Gate 2 waits for the prerequisite archive.
+Planned at: fb164483
+Dependencies: archived `add-a-setup-step-for-this-create-only` (host-held input/record pattern), archived `reserve-the-host-s-rows-in-the-model-budget` (shared final-model bound), and archived `bind-a-picked-copy-to-its-source-leaf` (exact held source plus private offer provenance).
 Plan attack: the original path-only record, string-marker provenance, current-source duplicate check, and Create-before-Save witness were refuted. Replanned on the held-file prerequisite with resolved containment, exact-object sidecars, provider precedence, transactional claims, lifecycle disposal, and Save-before-Create verification.
