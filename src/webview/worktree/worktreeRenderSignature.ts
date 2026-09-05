@@ -79,7 +79,7 @@ export function worktreeSignature(
 }
 
 /** One worktree's own fields, in the order the tree renders them. */
-function worktreeFields(w: WorktreeInfo): string {
+export function worktreeFields(w: WorktreeInfo): string {
   return [
     w.id,
     w.displayPath,
@@ -97,7 +97,7 @@ function worktreeFields(w: WorktreeInfo): string {
 }
 
 /** One agent row's fields. `degraded` and `now` only reach `presentedActivity`. */
-function agentRowFields(r: WorktreeAgentRow, degraded: readonly PresenceDegradation[], now: number): string {
+export function agentRowFields(r: WorktreeAgentRow, degraded: readonly PresenceDegradation[], now: number): string {
   return [
     r.rowId,
     r.scope,

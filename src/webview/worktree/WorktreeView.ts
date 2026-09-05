@@ -20,15 +20,17 @@ import { openWorktreePruneDialog, type PruneDialogDeps } from "./WorktreePruneDi
 import { openWorktreeRemoveDialog, type WorktreeRemoveDialogDeps } from "./WorktreeRemoveDialog";
 import { activationFor as sharedActivationFor } from "./worktreeActivation";
 import {
+  ageTimestamp,
   agentCountLabel,
   agentRowTitle,
   branchLabel,
+  compactAge,
   CONFIRMATION_CEILING_MS,
   groupPresenceByActivity,
   presentedActivity,
   strongestActivity,
 } from "./worktreeFormat";
-import { worktreeSignature } from "./worktreeRenderSignature";
+import { agentRowFields, worktreeFields, worktreeSignature } from "./worktreeRenderSignature";
 import { RosterRequests, rosterKey } from "./worktreeRosterRequests";
 import {
   confidenceHint,
@@ -274,6 +276,16 @@ export class WorktreeView {
    * nothing while a pane that started a NEW session asks again.
    */
   private readonly rosters = new RosterRequests();
+
+  /**
+   * PERF PROTOTYPE — per-worktree DOM memo. A render whose signature moved
+   * repaints only the rows whose OWN key moved; the rest are re-attached.
+   * The key covers every field the row's renderers and their listeners read,
+   * including the clock-derived strings (`compactAge`, confidence hints), so a
+   * retained subtree is byte-identical to the one a full repaint would build.
+   */
+  private rowMemo = new Map<string, { key: string; nodes: Node[] }>();
+  private rowMemoSeen = new Set<string>();
 
   constructor(deps: WorktreeViewDeps) {
     this.deps = deps;
@@ -1008,6 +1020,7 @@ export class WorktreeView {
     // never reach the repo loop. An anchor map outliving its nodes is a drawing
     // artifact deciding what gets reported — the exact coupling this change removes.
     this.repoAnchors.clear();
+    this.rowMemoSeen.clear();
     this.element.replaceChildren();
     const { tree, presence, loading, refreshing, noFolder } = this.data;
 
@@ -1100,6 +1113,11 @@ export class WorktreeView {
     }
     if (rendered === 0 && this.query) {
       this.element.appendChild(worktreeEmptyState("noMatch"));
+    }
+    for (const id of [...this.rowMemo.keys()]) {
+      if (!this.rowMemoSeen.has(id)) {
+        this.rowMemo.delete(id);
+      }
     }
     this.stampLevels(multiRepo);
     return restoreFocusTo;
@@ -1318,21 +1336,107 @@ export class WorktreeView {
     return visible.length;
   }
 
+  /**
+   * PERF PROTOTYPE — the memo key for one worktree's subtree. Covers every field
+   * the row + its agent rows + subagent sections read, INCLUDING the clock-derived
+   * strings, so a key match means a repaint would produce identical DOM.
+   */
+  private worktreeMemoKey(
+    info: WorktreeInfo,
+    rows: readonly WorktreeAgentRow[],
+    now: number,
+    inTail: boolean,
+    expanded: boolean,
+    selected: boolean,
+  ): string {
+    const degraded = this.degradedSources();
+    const parts: string[] = [
+      worktreeFields(info),
+      inTail ? "1" : "0",
+      expanded ? "1" : "0",
+      selected ? "1" : "0",
+      this.isIdle(info) ? "1" : "0",
+      strongestActivity(rows, degraded, now) ?? "",
+      this.strongestConfidenceTip(rows, now) ?? "",
+      this.deps.actions?.launchAgentHere ? "1" : "0",
+      this.deps.actions?.openFolderInNewWindow ? "1" : "0",
+      this.menu ? "1" : "0",
+    ];
+    for (const row of rows) {
+      const activity = presentedActivity(row, degraded, now);
+      parts.push(
+        agentRowFields(row, degraded, now),
+        this.expandedRows.has(row.rowId) ? "1" : "0",
+        // Clock-derived rendered strings — the only render inputs `agentRowFields`
+        // does not already hold.
+        compactAge(ageTimestamp(row), now),
+        confidenceHint(row, activity, now) ?? "",
+      );
+    }
+    return parts.join("\u0005");
+  }
+
   private renderWorktree(info: WorktreeInfo, now: number, inTail = false): void {
     const rows = this.rowsFor(info.id);
     const expanded = rows.length > 0 && this.isExpanded(info);
     const selected = this.selectedWorktreeId === info.id;
+    // Asked BEFORE the memo check: the roster request is owed by the render, not
+    // by the repaint, and `RosterRequests` already dedupes it.
+    if (expanded) {
+      for (const row of rows) {
+        if (this.expandedRows.has(row.rowId)) {
+          this.requestSubagents(row);
+        }
+      }
+    }
+    this.rowMemoSeen.add(info.id);
+    const memoKey = this.worktreeMemoKey(info, rows, now, inTail, expanded, selected);
+    const hit = this.rowMemo.get(info.id);
+    if (hit !== undefined && hit.key === memoKey) {
+      for (const node of hit.nodes) {
+        this.element.appendChild(node);
+      }
+      return;
+    }
+    const produced: Node[] = [];
+    this.buildWorktree(info, rows, now, inTail, expanded, selected, produced);
+    this.rowMemo.set(info.id, { key: memoKey, nodes: produced });
+    for (const node of produced) {
+      this.element.appendChild(node);
+    }
+  }
+
+  private buildWorktree(
+    info: WorktreeInfo,
+    rows: readonly WorktreeAgentRow[],
+    now: number,
+    inTail: boolean,
+    expanded: boolean,
+    selected: boolean,
+    produced: Node[],
+  ): void {
     // Grouping and selection are two jobs that shared one class. `.wt-card` used
     // to mean "expanded", and it is the loudest treatment in the tree — so once
     // selection exists it reads as a selection nobody made (design.md D5). The
     // card marks selection alone; `.wt-group` does the grouping.
     const grouped = expanded || selected;
-    const container = grouped ? document.createElement("div") : this.element;
-    if (grouped) {
-      container.className = selected ? "wt-group wt-card" : "wt-group";
-      container.setAttribute("role", "none");
-      this.element.appendChild(container);
+    // PERF PROTOTYPE: nodes are collected, not attached — `renderWorktree` owns
+    // the attach so a memo hit can re-attach the very same nodes.
+    const groupEl = grouped ? document.createElement("div") : undefined;
+    if (groupEl) {
+      groupEl.className = selected ? "wt-group wt-card" : "wt-group";
+      groupEl.setAttribute("role", "none");
+      produced.push(groupEl);
     }
+    const container = {
+      appendChild(node: Node): void {
+        if (groupEl) {
+          groupEl.appendChild(node);
+        } else {
+          produced.push(node);
+        }
+      },
+    };
 
     container.appendChild(
       renderWorktreeRow(
