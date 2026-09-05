@@ -1848,7 +1848,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     evidence: paneEvidence,
     ui: vscode.window,
     panesOfTab: (tabId) => sessionManager.panesOfTab(tabId),
-    isSplitPane: (sessionId) => sessionManager.getSession(sessionId)?.isSplitPane === true,
+    // Live session first, then the pane registry — which outlives it. A pane
+    // whose pty exited naturally is still on screen and still closable, and its
+    // teardown protocol has not changed just because the session row is gone
+    // (round-3 F009).
+    isSplitPane: (sessionId) =>
+      (sessionManager.getSession(sessionId)?.isSplitPane ?? paneEvidence.read(sessionId)?.isSplitPane) === true,
     destroySession: (sessionId) => sessionManager.destroySession(sessionId),
     postTabRemoved: (sessionId) => {
       const webview = webviewOf(sessionId);
@@ -2081,16 +2086,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * has no surfaced webview (e.g. an editor panel disposed mid-click).
    */
   const getWebviewForSession = (sessionId: string): vscode.Webview | undefined => {
-    const session = sessionManager.getSession(sessionId);
-    if (!session) {
+    // The pane registry is the fallback, not a second opinion: a naturally
+    // exited pane is dropped from `sessions` while its tab is still on screen,
+    // and a destructive action addressed only by session then reached no
+    // surface at all and silently did nothing (round-3 F009).
+    const viewId = sessionManager.getSession(sessionId)?.viewId ?? paneEvidence.read(sessionId)?.viewId;
+    if (viewId === undefined) {
       return undefined;
     }
     for (const provider of [sidebarProvider, panelProvider]) {
-      if (provider.getViewId() === session.viewId) {
+      if (provider.getViewId() === viewId) {
         return provider.view?.webview;
       }
     }
-    const editor = TerminalEditorProvider.findByViewId(session.viewId);
+    const editor = TerminalEditorProvider.findByViewId(viewId);
     return editor?.panel.webview;
   };
 

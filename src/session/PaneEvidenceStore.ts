@@ -62,6 +62,8 @@ export interface PaneEvidence {
   isAgentLaunch?: boolean;
   /** Which view holds the pane. */
   viewId?: string;
+  /** Whether the pane is a leaf of a split rather than a tab of its own. */
+  isSplitPane?: boolean;
   /** The agent's own report of its turn, if it has made one. */
   turn?: PaneTurn;
 }
@@ -119,6 +121,7 @@ export interface PaneEvidenceStore {
     init?: {
       exited?: boolean;
       viewId?: string;
+      isSplitPane?: boolean;
       cwd?: string;
       ptyPid?: number;
       shell?: string;
@@ -360,6 +363,7 @@ export function createPaneEvidenceStore(options: PaneEvidenceStoreOptions = {}):
         ...(init?.shell !== undefined ? { shell: init.shell } : {}),
         ...(init?.isAgentLaunch !== undefined ? { isAgentLaunch: init.isAgentLaunch } : {}),
         ...(init?.viewId !== undefined ? { viewId: init.viewId } : {}),
+        ...(init?.isSplitPane !== undefined ? { isSplitPane: init.isSplitPane } : {}),
       });
       unindex(paneId);
       if (init?.viewId !== undefined) {

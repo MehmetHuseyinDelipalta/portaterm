@@ -9,7 +9,15 @@ import type { SplitPaneCreatedMessage } from "../../types/messages";
 import type { FlowControl } from "../flow/FlowControl";
 import type { ResizeCoordinator } from "../resize/ResizeCoordinator";
 import { renderSplitTree } from "../SplitContainer";
-import { createBranch, createLeaf, getAllSessionIds, removeLeaf, replaceNode, updateBranchRatio } from "../SplitModel";
+import {
+  createBranch,
+  createLeaf,
+  getAllSessionIds,
+  removeLeaf,
+  replaceNode,
+  tabOwningPane,
+  updateBranchRatio,
+} from "../SplitModel";
 import { attachResizeHandle } from "../SplitResizeHandle";
 import type { WebviewStateStore } from "../state/WebviewStateStore";
 import type { TerminalFactory } from "../terminal/TerminalFactory";
@@ -281,17 +289,22 @@ export class SplitTreeRenderer {
    * terminal + its controller via `removeTerminal`) or when it no-ops.
    */
   closeSplitPaneById(paneSessionId: string): string | null {
-    if (!this.store.activeTabId) {
+    // The OWNING tab, not the active one. The host confirms a close and then
+    // posts this id, and the active tab can move underneath the modal — an
+    // `activeTabId` lookup then closed an unrelated tab, or disposed the named
+    // pane while leaving its own layout stale (round-3 F002).
+    const owner = tabOwningPane(this.store.tabLayouts, paneSessionId);
+    if (!owner) {
       return null;
     }
-    const layout = this.store.tabLayouts.get(this.store.activeTabId);
+    const layout = this.store.tabLayouts.get(owner);
     if (!layout) {
       return null;
     }
 
     // If the layout is a single leaf, fall back to tab close
     if (layout.type === "leaf") {
-      this.postMessage({ type: "closeTab", tabId: this.store.activeTabId });
+      this.postMessage({ type: "closeTab", tabId: owner });
       return null;
     }
 
@@ -299,17 +312,18 @@ export class SplitTreeRenderer {
     const updatedLayout = removeLeaf(layout, paneSessionId);
 
     if (updatedLayout === null) {
-      this.postMessage({ type: "closeTab", tabId: this.store.activeTabId });
+      this.postMessage({ type: "closeTab", tabId: owner });
       return null;
     }
 
     // Find the sibling to focus (first leaf in the remaining tree)
     const remainingIds = getAllSessionIds(updatedLayout);
-    const newActivePaneId = remainingIds[0] ?? this.store.activeTabId;
+    const newActivePaneId = remainingIds[0] ?? owner;
 
-    // Update state
-    this.store.tabLayouts.set(this.store.activeTabId, updatedLayout);
-    this.store.tabActivePaneIds.set(this.store.activeTabId, newActivePaneId);
+    // Update state — on the OWNER, so a tab switch during the confirmation
+    // cannot write one tab's layout into another's slot.
+    this.store.tabLayouts.set(owner, updatedLayout);
+    this.store.tabActivePaneIds.set(owner, newActivePaneId);
 
     // Destroy the terminal instance for the closed pane
     const closedInstance = this.store.terminals.get(paneSessionId);
@@ -324,14 +338,20 @@ export class SplitTreeRenderer {
     this.postMessage({ type: "requestCloseSplitPane", sessionId: paneSessionId });
 
     // Re-render the split tree
-    this.renderTabSplitTree(this.store.activeTabId);
-    this.showTabContainer(this.store.activeTabId);
+    this.renderTabSplitTree(owner);
+    // Only if the owner is what the user is looking at — showing it otherwise
+    // would make closing a background tab's pane switch tabs under them.
+    if (this.store.activeTabId === owner) {
+      this.showTabContainer(owner);
+    }
     this.store.persist();
 
     // Fit and focus
-    const currentActiveTabId = this.store.activeTabId;
     requestAnimationFrame(() => {
-      this.resizeCoordinator.debouncedFitAllLeaves(currentActiveTabId!);
+      this.resizeCoordinator.debouncedFitAllLeaves(owner);
+      if (this.store.activeTabId !== owner) {
+        return;
+      }
       const siblingInstance = this.store.terminals.get(newActivePaneId);
       if (siblingInstance) {
         siblingInstance.terminal.focus();

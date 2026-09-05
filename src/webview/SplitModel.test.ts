@@ -14,6 +14,7 @@ import {
   removeLeaf,
   replaceNode,
   type SplitNode,
+  tabOwningPane,
   updateBranchRatio,
 } from "./SplitModel";
 
@@ -226,5 +227,32 @@ describe("updateBranchRatio", () => {
     const root = createLeaf("a");
     const result = updateBranchRatio(root, 0, 0.7);
     expect(result).toBe(root);
+  });
+});
+
+// ─── tabOwningPane ──────────────────────────────────────────────────
+// A close confirmed by the host arrives as a pane id. Applying it to whatever
+// tab is active when the message lands is what let one tab's pane close another
+// tab (review round-3 F002).
+
+describe("tabOwningPane", () => {
+  const layouts = new Map<string, SplitNode>([
+    ["tab-a", createLeaf("tab-a")],
+    ["tab-b", createBranch("vertical", createLeaf("tab-b"), createLeaf("pane-b2"))],
+  ]);
+
+  it("finds the tab holding a split leaf, not the first tab", () => {
+    expect(tabOwningPane(layouts, "pane-b2")).toBe("tab-b");
+  });
+
+  it("finds a single-leaf tab by its own id", () => {
+    expect(tabOwningPane(layouts, "tab-a")).toBe("tab-a");
+  });
+
+  it("answers null for a pane no layout holds", () => {
+    // The caller must then mutate nothing: acting on a pane that belongs to no
+    // tab is exactly the case that used to fall through to the active one.
+    expect(tabOwningPane(layouts, "gone")).toBeNull();
+    expect(tabOwningPane(new Map(), "tab-a")).toBeNull();
   });
 });

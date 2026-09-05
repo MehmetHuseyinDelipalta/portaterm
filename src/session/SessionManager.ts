@@ -598,6 +598,11 @@ export class SessionManager {
     this.paneEvidence?.create(id, {
       exited: restoringExited,
       viewId,
+      // Beside the evidence for the same reason as the facts below: a close
+      // acting on a naturally-exited pane still has to know which surface holds
+      // it and which teardown protocol it takes, and `sessions` no longer has
+      // the row by then (review round-3 F009).
+      isSplitPane,
       // The pane facts a presence projection needs, seeded here because this is
       // the only place that knows them at birth. The store outlives the session
       // map, so these must live beside the evidence rather than be read back

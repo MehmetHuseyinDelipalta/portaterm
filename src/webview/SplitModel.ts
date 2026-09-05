@@ -51,6 +51,23 @@ export function findLeaf(root: SplitNode, sessionId: string): LeafNode | undefin
 }
 
 /** Collect all sessionIds from leaf nodes in the tree. */
+/**
+ * The tab whose layout holds `paneSessionId`, or `null`.
+ *
+ * Pane ids are unique across tabs, so this is a lookup rather than a guess. It
+ * exists because a close arriving from the host must not be applied to whatever
+ * tab happens to be active when the message lands — the active tab can move
+ * while a confirmation modal is open (review round-3 F002).
+ */
+export function tabOwningPane(tabLayouts: ReadonlyMap<string, SplitNode>, paneSessionId: string): string | null {
+  for (const [tabId, layout] of tabLayouts) {
+    if (getAllSessionIds(layout).includes(paneSessionId)) {
+      return tabId;
+    }
+  }
+  return null;
+}
+
 export function getAllSessionIds(root: SplitNode): string[] {
   if (root.type === "leaf") {
     return [root.sessionId];
