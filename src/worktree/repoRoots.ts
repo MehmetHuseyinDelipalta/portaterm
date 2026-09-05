@@ -5,6 +5,7 @@
 import * as path from "node:path";
 import type { API } from "../providers/git";
 import type { AuthorizedDirectory } from "../utils/authorizedDirectory";
+import { mapBounded } from "../utils/mapBounded";
 import { isPathInside } from "../utils/pathBoundary";
 import type { TrackedPathResolver } from "../utils/resolvedPathMemo";
 import { describeGitFailure } from "./describeGitFailure";
@@ -60,6 +61,9 @@ export interface FolderResolution {
 
 type TopLevel = { kind: "resolved"; root: string } | { kind: "absent" } | { kind: "failed"; reason: string };
 type CommonDir = { kind: "resolved"; dir: string } | { kind: "failed"; reason: string };
+
+/** Workspace folders resolve concurrently, matching `REPO_LISTING_CONCURRENCY`. */
+export const FOLDER_RESOLUTION_CONCURRENCY = 8;
 
 const PATH_FORMAT_COMMAND = "git rev-parse --path-format=absolute --git-common-dir";
 const BARE_COMMON_COMMAND = "git rev-parse --git-common-dir";
@@ -179,18 +183,17 @@ export async function resolveRepoOutcomes(
   folders: readonly string[],
   deps: RepoRootsDeps,
 ): Promise<FolderResolution[]> {
-  const out: FolderResolution[] = [];
-
   // One pass over both bounded sets, before any of them is compared. Resolving
   // inside `matchRepository` instead would be a syscall per folder per repo
   // per rebuild, which is the cost half of this change's acceptance (D1, D4).
   await deps.paths?.prepare([...folders, ...openRepoRoots(deps)]);
 
-  for (const folder of folders) {
-    out.push({ folder, outcome: await resolveOne(folder, deps) });
-  }
-
-  return out;
+  // Concurrent, but assembled by index — the same bound, for the same reason,
+  // that `buildWorktreeTreeDetailed` already puts on repository LISTING: each
+  // folder costs two git spawns, one folder's 10 s timeout must not delay its
+  // siblings, and the result order still follows workspace-folder order.
+  const outcomes = await mapBounded(folders, FOLDER_RESOLUTION_CONCURRENCY, (folder) => resolveOne(folder, deps));
+  return folders.map((folder, index) => ({ folder, outcome: outcomes[index] as RepoResolution }));
 }
 
 async function resolveOne(folder: string, deps: RepoRootsDeps): Promise<RepoResolution> {
