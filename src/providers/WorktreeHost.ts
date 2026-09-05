@@ -17,6 +17,7 @@ import type {
   DestinationDisposition,
   ExtensionToWebViewMessage,
   ProbeBase,
+  ProvisionEntry,
   ProvisionModel,
   ProvisionPort,
   ProvisionProblem,
@@ -71,8 +72,13 @@ import type {
 import { ACTIVITY_EVIDENCE } from "../worktree/presenceTypes";
 import { NATIVE_PROVIDER_FILE } from "../worktree/provisioning/nativeProvider";
 import { createProvisionOfferStore } from "../worktree/provisioning/offerStore";
-import { MAX_MODEL_ROWS, rowsOf } from "../worktree/provisioning/providerKit";
-import type { ProvisionMaterial } from "../worktree/provisioning/provisionMaterial";
+import { contendersOf, identityOf, MAX_MODEL_ROWS, rowsOf } from "../worktree/provisioning/providerKit";
+import {
+  claimProvisionMaterials,
+  disposeProvisionMaterials,
+  type HeldProvisionSource,
+  type ProvisionMaterial,
+} from "../worktree/provisioning/provisionMaterial";
 import {
   divergenceOf,
   type NativeConfigDivergence,
@@ -982,6 +988,9 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    */
   const addedSteps = new Map<string, readonly string[]>();
   const MAX_ADDED_STEPS = 32;
+  const addedCopyFiles = new Map<string, readonly PickedCopyFile[]>();
+  const MAX_ADDED_COPY_FILES = 32;
+  const ADDED_COPY_SOURCE = "Added for this create";
   /**
    * The model as the provider read gave it: marker rows and the host's own
    * withholding problem stripped.
@@ -989,78 +998,131 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * The ask handler builds from `offers.current`, which already carries the
    * previous answer's rows, and appending onto that duplicated the record on
    * every ask (plan attack F1) — and would have stacked the withholding problem
-   * on every cancel (round 2 plan attack 6). Both are recognised by the marker
-   * string: no provider file can collide with it — a `source` or a problem's
-   * `file` is a repo-relative path the adapter read, and none of the adapters
-   * reads a file spelled like a sentence.
+   * on every cancel (round 2 plan attack 6). Setup rows retain their existing
+   * host marker; picked rows are removed only by the current offer's private
+   * sidecar ids, never by presentation fields.
    */
-  const withoutAdded = (model: ProvisionModel): ProvisionModel => ({
+  const withoutAdded = (model: ProvisionModel, heldIds: ReadonlySet<string> = new Set()): ProvisionModel => ({
     ...model,
+    entries: model.entries.filter((entry) => !heldIds.has(entry.id)),
     setup: model.setup.filter((step) => step.source !== SETUP_STEP_ADDED_SOURCE),
     problems: model.problems.filter((problem) => problem.file !== SETUP_STEP_ADDED_SOURCE),
   });
-  /**
-   * Whether one more step fits, before the input is opened.
-   *
-   * An accepted add is reissued with the whole record, so it must fit whole —
-   * then it emits no withholding problem and needs no slot for one.
-   */
-  const roomForOneMore = (model: ProvisionModel, record: readonly string[]): boolean =>
-    rowsOf(withoutAdded(model)) + record.length + 1 <= MAX_MODEL_ROWS;
-  /**
-   * The model with this form's added steps, and only them, after its own —
-   * as many as fit, and a statement of the rest.
-   *
-   * Bounded HERE, at the one place every issue site passes through: the
-   * provider budget bounds what a READ emits, and the record is appended after
-   * it, so a bound checked only when a step was added let a switch to a denser
-   * source reissue the whole record past `MAX_MODEL_ROWS` — whose full
-   * selection `isKnownSave` then refused, stalling a valid save with no answer
-   * (review rounds 1 and 2, F003). The bound is `MAX_MODEL_ROWS` itself, what
-   * a capped read already hands over and exactly what `isKnownSave` admits back.
-   * The record is never cut: a source with room shows every step again.
-   */
-  const withAdded = (slot: string, model: ProvisionModel): ProvisionModel => {
-    const base = withoutAdded(model);
-    const record = addedSteps.get(slot) ?? [];
-    if (
-      record.length === 0 &&
-      base.setup.length === model.setup.length &&
-      base.problems.length === model.problems.length
-    ) {
-      return model;
+
+  const conflictsWith = (occupied: readonly ProvisionEntry[], candidate: ProvisionEntry): boolean => {
+    const identity = identityOf(candidate.path);
+    return (
+      occupied.some((entry) => identityOf(entry.path) === identity) ||
+      contendersOf([...occupied, candidate]).some((group) => group.members.includes(candidate.id))
+    );
+  };
+
+  const privateIdsFor = (offerKey: { surface: string; repoId: string }, model: ProvisionModel): ReadonlySet<string> => {
+    const current = offers.current(offerKey);
+    if (current?.model !== model) {
+      return new Set();
     }
+    return new Set(offers.redeem(offerKey, current.offerId)?.heldFiles.keys());
+  };
+
+  const withAdded = (
+    offerKey: { surface: string; repoId: string },
+    slot: string,
+    model: ProvisionModel,
+    copyRecord: readonly PickedCopyFile[] = addedCopyFiles.get(slot) ?? [],
+    setupRecord: readonly string[] = addedSteps.get(slot) ?? [],
+  ): { readonly model: ProvisionModel; readonly heldFiles: ReadonlyMap<ProvisionEntry, HeldProvisionSource> } => {
+    const base = withoutAdded(model, privateIdsFor(offerKey, model));
+    const occupied: ProvisionEntry[] = [...base.entries, ...base.excluded];
+    const heldFiles = new Map<ProvisionEntry, HeldProvisionSource>();
+    const candidateCopies: Array<{ entry: ProvisionEntry; source: PickedCopyFile }> = [];
+    const usedIds = new Set([...base.entries, ...base.excluded, ...base.setup, ...base.ports].map((row) => row.id));
+    for (const [index, source] of copyRecord.entries()) {
+      let id = `added-copy-${index}`;
+      while (usedIds.has(id)) {
+        id = `_${id}`;
+      }
+      usedIds.add(id);
+      const entry: ProvisionEntry = {
+        id,
+        path: source.path,
+        mode: "copy",
+        source: ADDED_COPY_SOURCE,
+        suggestion: "May contain secrets.",
+        addedForCreate: true,
+      };
+      if (conflictsWith(occupied, entry)) {
+        break;
+      }
+      candidateCopies.push({ entry, source });
+      occupied.push(entry);
+    }
+
     const room = MAX_MODEL_ROWS - rowsOf(base);
-    // One slot held back for the statement whenever something is withheld. A
-    // base with no room at all is a capped read carrying the reader's own cap
-    // problem, which is already the statement — there is no slot for another.
-    const shown = record.length <= room ? record.length : Math.max(0, room - 1);
-    const withheld = record.length - shown;
+    const conflictWithheld = copyRecord.length - candidateCopies.length;
+    const totalAdded = candidateCopies.length + setupRecord.length;
+    const needsStatement = conflictWithheld > 0 || totalAdded > room;
+    const usable = needsStatement ? Math.max(0, room - 1) : room;
+    const shownCopies = Math.min(candidateCopies.length, usable);
+    const shownSetup = Math.min(setupRecord.length, Math.max(0, usable - shownCopies));
+    for (const { entry, source } of candidateCopies.slice(0, shownCopies)) {
+      heldFiles.set(entry, { canonicalPath: source.canonicalPath, file: source.file });
+    }
+    const withheldCopies = copyRecord.length - shownCopies;
+    const withheldSetup = setupRecord.length - shownSetup;
+    const withheld: string[] = [];
+    if (withheldCopies > 0) {
+      withheld.push(`${withheldCopies} added file${withheldCopies === 1 ? "" : "s"}`);
+    }
+    if (withheldSetup > 0) {
+      withheld.push(`${withheldSetup} added setup step${withheldSetup === 1 ? "" : "s"}`);
+    }
+    const statement = withheld.join(" and ");
     return {
-      ...base,
-      setup: [
-        ...base.setup,
-        ...record.slice(0, shown).map((script, i) => ({
-          // Reminted by the store on issue, like every other row.
-          id: `added-${i}`,
-          kind: "shell" as const,
-          script,
-          source: SETUP_STEP_ADDED_SOURCE,
-        })),
-      ],
-      problems:
-        withheld === 0 || room <= 0
-          ? base.problems
-          : [
-              ...base.problems,
-              {
-                file: SETUP_STEP_ADDED_SOURCE,
-                reason: "malformed" as const,
-                detail: `${withheld} added setup step${withheld === 1 ? "" : "s"} not offered: this source leaves no room.`,
-              },
-            ],
+      model: {
+        ...base,
+        entries: [...base.entries, ...candidateCopies.slice(0, shownCopies).map(({ entry }) => entry)],
+        setup: [
+          ...base.setup,
+          ...setupRecord.slice(0, shownSetup).map((script, index) => ({
+            id: `added-${index}`,
+            kind: "shell" as const,
+            script,
+            source: SETUP_STEP_ADDED_SOURCE,
+          })),
+        ],
+        problems:
+          statement.length === 0 || room <= 0
+            ? base.problems
+            : [
+                ...base.problems,
+                {
+                  file: SETUP_STEP_ADDED_SOURCE,
+                  reason: "malformed" as const,
+                  detail: `${statement} not offered: this source leaves no room or has a conflicting destination.`,
+                },
+              ],
+      },
+      heldFiles,
     };
   };
+
+  const roomForOneMoreSetup = (
+    offerKey: { surface: string; repoId: string },
+    slot: string,
+    model: ProvisionModel,
+    record: readonly string[],
+  ): boolean => {
+    const next = [...record, ""];
+    const composed = withAdded(offerKey, slot, model, addedCopyFiles.get(slot) ?? [], next);
+    return composed.model.setup.filter((step) => step.source === SETUP_STEP_ADDED_SOURCE).length === next.length;
+  };
+
+  const issueWithAdded = (offerKey: { surface: string; repoId: string }, slot: string, model: ProvisionModel) => {
+    const composed = withAdded(offerKey, slot, model);
+    return offers.issue(offerKey, composed.model, composed.heldFiles);
+  };
+
   const retireOpening = (key: string): void => {
     liveOpening.delete(key);
     const reading = `${key} `;
@@ -1083,6 +1145,15 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
       if (slot.startsWith(reading)) {
         addedSteps.delete(slot);
       }
+    }
+    for (const slot of [...addedCopyFiles.keys()]) {
+      if (!slot.startsWith(reading)) {
+        continue;
+      }
+      for (const added of addedCopyFiles.get(slot) ?? []) {
+        added.file.dispose();
+      }
+      addedCopyFiles.delete(slot);
     }
     offers.forgetSurface(key);
     const migrationPrefix = `${key}::`;
@@ -2870,7 +2941,8 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
         // half of that rule — resolving and re-presenting the fresh model — is
         // a named follow-up, so the user's recovery today is to reopen the
         // dialog.
-        let selected: readonly ProvisionMaterial[] | undefined;
+        let selectedEntries: readonly ProvisionEntry[] | undefined;
+        let selectedHeldFiles: ReadonlyMap<string, HeldProvisionSource> | undefined;
         let selectedPorts: readonly ProvisionPort[] | undefined;
         let migrationOffer: ReturnType<typeof migrationOffers.get>;
         let selectedSetup: readonly ProvisionSetupStep[] | undefined;
@@ -2885,7 +2957,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
           if (!isKnownProvision(msg.provision)) {
             return;
           }
-          const offered = offers.lookup({ surface: surfaceKey(surface), repoId: msg.repoId }, msg.provision.offerId);
+          const offered = offers.redeem({ surface: surfaceKey(surface), repoId: msg.repoId }, msg.provision.offerId);
           if (offered === undefined) {
             // Refused OUT LOUD. D3 says a stale offer refuses the create "with
             // a stated reason, on the existing error arm"; returning bare left
@@ -2904,12 +2976,11 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
             return;
           }
           const wanted = new Set(msg.provision.itemIds);
-          selected = offered.entries
-            .filter((entry) => wanted.has(entry.id))
-            .map((entry) => ({ origin: "model", entry }));
-          selectedPorts = offered.ports.filter((port) => wanted.has(port.id));
-          selectedSetup = offered.setup.filter((step) => wanted.has(step.id));
-          asimovEnvironment = offered.providers.some((provider) => provider.id === "asimov" && provider.active);
+          selectedEntries = offered.model.entries.filter((entry) => wanted.has(entry.id));
+          selectedHeldFiles = offered.heldFiles;
+          selectedPorts = offered.model.ports.filter((port) => wanted.has(port.id));
+          selectedSetup = offered.model.setup.filter((step) => wanted.has(step.id));
+          asimovEnvironment = offered.model.providers.some((provider) => provider.id === "asimov" && provider.active);
         }
         if (msg.migrateChanges !== undefined) {
           if (
@@ -2946,6 +3017,25 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
           migrationOffer = offered;
         }
         if (create && typeof msg.path === "string" && msg.path.length > 0 && msg.repoId.length > 0) {
+          if (msg.afterCreate.kind === "agent" && !admissibleLaunch(surface, msg.afterCreate)) {
+            return;
+          }
+          const selected =
+            selectedEntries === undefined
+              ? undefined
+              : claimProvisionMaterials(selectedEntries, selectedHeldFiles ?? new Map());
+          if (selectedEntries !== undefined && selected === undefined) {
+            surface.post({
+              type: "worktreeMutationResult",
+              verb: "create",
+              repoId: msg.repoId,
+              result: {
+                kind: "error",
+                message: "one of the files selected for this create is no longer available — reopen the dialog",
+              },
+            });
+            return;
+          }
           const request = {
             repoId: msg.repoId,
             path: msg.path,
@@ -2959,65 +3049,59 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
             origin: surface,
           };
           const runCreate = async (): Promise<void> => {
-            if (migrationOffer === undefined) {
-              await create(request);
-              return;
-            }
-            const current = await options
-              .probeMigrationSource?.(migrationOffer.sourcePath, migrationOffer.binding)
-              .catch(() => undefined);
-            const source = cache
-              .read()
-              .repos.find((repo) => repo.repoId === migrationOffer.repoId)
-              ?.worktrees.find(
-                (row) =>
-                  row.id === migrationOffer.sourceWorktreeId &&
-                  row.kind === migrationOffer.binding.sourceKind &&
-                  !row.bare &&
-                  !row.missing &&
-                  !row.prunable,
-              );
-            if (
-              source === undefined ||
-              current === undefined ||
-              !isDeepStrictEqual(
-                currentMigrationRegistration(migrationOffer.repoId),
-                migrationOffer.binding.registration,
-              ) ||
-              !isDeepStrictEqual(current, migrationOffer.evidence)
-            ) {
-              surface.post({
-                type: "worktreeMutationResult",
-                verb: "create",
-                repoId: msg.repoId,
-                result: {
-                  kind: "error",
-                  message: "the source work changed — close and reopen the dialog, then create again",
+            try {
+              if (migrationOffer === undefined) {
+                await create(request);
+                return;
+              }
+              const current = await options
+                .probeMigrationSource?.(migrationOffer.sourcePath, migrationOffer.binding)
+                .catch(() => undefined);
+              const source = cache
+                .read()
+                .repos.find((repo) => repo.repoId === migrationOffer.repoId)
+                ?.worktrees.find(
+                  (row) =>
+                    row.id === migrationOffer.sourceWorktreeId &&
+                    row.kind === migrationOffer.binding.sourceKind &&
+                    !row.bare &&
+                    !row.missing &&
+                    !row.prunable,
+                );
+              if (
+                source === undefined ||
+                current === undefined ||
+                !isDeepStrictEqual(
+                  currentMigrationRegistration(migrationOffer.repoId),
+                  migrationOffer.binding.registration,
+                ) ||
+                !isDeepStrictEqual(current, migrationOffer.evidence)
+              ) {
+                surface.post({
+                  type: "worktreeMutationResult",
+                  verb: "create",
+                  repoId: msg.repoId,
+                  result: {
+                    kind: "error",
+                    message: "the source work changed — close and reopen the dialog, then create again",
+                  },
+                });
+                return;
+              }
+              await create({
+                ...request,
+                migration: {
+                  sourcePath: migrationOffer.sourcePath,
+                  source: migrationOffer.evidence.source,
+                  snapshot: migrationOffer.evidence.snapshot,
+                  binding: migrationOffer.binding,
                 },
               });
-              return;
+            } finally {
+              disposeProvisionMaterials(selected ?? []);
             }
-            await create({
-              ...request,
-              migration: {
-                sourcePath: migrationOffer.sourcePath,
-                source: migrationOffer.evidence.source,
-                snapshot: migrationOffer.evidence.snapshot,
-                binding: migrationOffer.binding,
-              },
-            });
           };
-          if (msg.afterCreate.kind !== "agent") {
-            perform(runCreate);
-            return;
-          }
-          const asked = msg.afterCreate;
-          // Admitted BEFORE git runs: a create that made a worktree and then
-          // refused its launch would leave the user a directory they did not
-          // ask for on its own.
-          if (admissibleLaunch(surface, asked)) {
-            perform(runCreate);
-          }
+          perform(runCreate);
         }
         return;
       }
@@ -3262,7 +3346,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
             // A fresh id, and the old one evicted with it: a submission naming
             // the superseded offer would name the model the user is no longer
             // looking at.
-            const offer = offers.issue(offerKey, withAdded(slot, previewed));
+            const offer = issueWithAdded(offerKey, slot, previewed);
             deliver(surface, {
               type: "worktreeProvisionOffer",
               repoId: msg.repoId,
@@ -3295,8 +3379,9 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
           return;
         }
         const offerKey = { surface: key, repoId: msg.repoId };
+        const shown = offers.current(offerKey);
         const repo = cache.read().repos.find((candidate) => candidate.repoId === msg.repoId);
-        if (offers.current(offerKey) === undefined || repo === undefined) {
+        if (shown === undefined || repo === undefined) {
           return;
         }
         const slot = `${key} ${msg.repoId} ${msg.opening}`;
@@ -3304,12 +3389,78 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
           return;
         }
         provisionSwitch.set(slot, msg.switch);
-        const pick = options.actions?.pickCopyFile;
-        if (pick !== undefined) {
-          void pick(repo.mainPath)
-            .then((picked) => picked?.file.dispose())
-            .catch(() => {});
+        const mine = msg.switch;
+        const stillMine = (): boolean =>
+          !disposed &&
+          surfaces.has(surface) &&
+          provisionSwitch.get(slot) === mine &&
+          liveOpening.get(key) === msg.opening &&
+          cache.read().repos.some((current) => current.repoId === repo.repoId && current.mainPath === repo.mainPath);
+        const publish = (): void => {
+          if (!stillMine()) {
+            return;
+          }
+          const current = offers.current(offerKey)?.model ?? shown.model;
+          const offer = issueWithAdded(offerKey, slot, current);
+          deliver(surface, {
+            type: "worktreeProvisionOffer",
+            repoId: msg.repoId,
+            opening: msg.opening,
+            offerId: offer.offerId,
+            model: offer.model,
+          });
+        };
+        const record = addedCopyFiles.get(slot) ?? [];
+        const composedCurrent = withAdded(offerKey, slot, shown.model, record);
+        const current = composedCurrent.model;
+        const shownRecord = composedCurrent.heldFiles.size;
+        if (
+          record.length >= MAX_ADDED_COPY_FILES ||
+          shownRecord !== record.length ||
+          rowsOf(current) >= MAX_MODEL_ROWS ||
+          options.actions?.pickCopyFile === undefined
+        ) {
+          publish();
+          return;
         }
+        void options.actions
+          .pickCopyFile(repo.mainPath)
+          .then((picked) => {
+            if (!stillMine()) {
+              picked?.file.dispose();
+              return;
+            }
+            if (picked === undefined) {
+              publish();
+              return;
+            }
+            const base = withoutAdded(shown.model, privateIdsFor(offerKey, shown.model));
+            const occupied = [...base.entries, ...base.excluded];
+            const probe: ProvisionEntry = {
+              id: "added-copy-probe",
+              path: picked.path,
+              mode: "copy",
+              source: ADDED_COPY_SOURCE,
+            };
+            if (
+              record.some((entry) => identityOf(entry.path) === identityOf(picked.path)) ||
+              conflictsWith(occupied, probe)
+            ) {
+              picked.file.dispose();
+              publish();
+              return;
+            }
+            const next = [...record, picked];
+            const composed = withAdded(offerKey, slot, shown.model, next);
+            if (composed.heldFiles.size !== next.length) {
+              picked.file.dispose();
+              publish();
+              return;
+            }
+            addedCopyFiles.set(slot, next);
+            publish();
+          })
+          .catch(() => publish());
         return;
       }
       case "worktreeSetupStepAsk": {
@@ -3365,7 +3516,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
             }
           } else if (
             op.kind === "add"
-              ? record.length < MAX_ADDED_STEPS && roomForOneMore(shown.model, record)
+              ? record.length < MAX_ADDED_STEPS && roomForOneMoreSetup(offerKey, slot, shown.model, record)
               : ordinal !== undefined
           ) {
             const prompt = options.actions?.promptSetupStep;
@@ -3400,7 +3551,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
           // what releases the form (design.md D4). The model is the one the
           // host holds now — already previewed when it was issued.
           const current = offers.current(offerKey)?.model ?? shown.model;
-          const offer = offers.issue(offerKey, withAdded(slot, current));
+          const offer = issueWithAdded(offerKey, slot, current);
           deliver(surface, {
             type: "worktreeProvisionOffer",
             repoId: msg.repoId,
@@ -3435,7 +3586,9 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
         }
         // The model the user was LOOKING at, resolved by the host. An unknown,
         // expired or foreign id writes nothing (design.md D1).
-        const shown = offers.lookup(offerKey, msg.offerId);
+        const redeemed = offers.redeem(offerKey, msg.offerId);
+        const heldIds = new Set(redeemed?.heldFiles.keys());
+        const shown = redeemed === undefined ? undefined : withoutAdded(redeemed.model, heldIds);
         // THE SAME slot the switch uses, so the two order against each other.
         // Taken synchronously, before the write starts, so a later switch
         // raises the ceiling immediately and this save can never find itself
@@ -3461,7 +3614,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
           ) {
             return;
           }
-          const offer = offers.issue(offerKey, withAdded(slot, previewed));
+          const offer = issueWithAdded(offerKey, slot, previewed);
           deliver(surface, {
             type: "worktreeProvisionOffer",
             repoId: msg.repoId,
@@ -3497,7 +3650,10 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
         const active = shown.providers.find((p) => p.active)?.id ?? "";
         const tookSource = started !== undefined && started !== active;
         void options
-          .writeNativeConfig(repo.mainPath, divergenceOf(shown, new Set(msg.kept), tookSource))
+          .writeNativeConfig(
+            repo.mainPath,
+            divergenceOf(shown, new Set(msg.kept.filter((id) => !heldIds.has(id))), tookSource),
+          )
           .then(async (written) => {
             if (disposed || !surfaces.has(surface)) {
               return;
@@ -3755,7 +3911,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
               ) {
                 return;
               }
-              const offer = offers.issue(offerKey, withAdded(start, previewed));
+              const offer = issueWithAdded(offerKey, start, previewed);
               deliver(surface, {
                 type: "worktreeProvisionOffer",
                 repoId: msg.repoId,
@@ -4993,6 +5149,9 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
         watch.dispose();
       }
       watches.clear();
+      for (const surface of surfaces.keys()) {
+        forgetSurfaceOpenings(surfaceKey(surface));
+      }
       surfaces.clear();
       // A read still in flight resolves into a disposed host; clearing here is
       // what makes that completion a no-op rather than a late publication.

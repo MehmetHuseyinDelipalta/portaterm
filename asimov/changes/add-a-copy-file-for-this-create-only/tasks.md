@@ -24,7 +24,7 @@
 
 ## 3. Compose and retain the opening record
 
-- [ ] 3_1 Issue added copy rows with private sidecars and provider precedence
+- [x] 3_1 Issue added copy rows with private sidecars and provider precedence — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 2_1
   - **Refs**: specs/worktree-panel/spec.md#{a-picked-copy-is-spent-only-through-private-host-held-provenance, picked-files-survive-only-their-opening-s-compatible-reissues, save-defaults-never-persists-a-picked-file}; design.md D2, D3, D4, D6
   - **Acceptance**:

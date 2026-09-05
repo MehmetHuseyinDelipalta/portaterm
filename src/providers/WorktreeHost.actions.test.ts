@@ -367,6 +367,7 @@ async function builtHost(
     pickFolder?: WorktreeActions["pickFolder"];
     pickCopyFile?: WorktreeActions["pickCopyFile"];
     promptSetupStep?: WorktreeActions["promptSetupStep"];
+    createWorktree?: WorktreeActions["createWorktree"];
     readProvisioning?: (mainWorktree: string) => Promise<ProvisionModel>;
     previewProvisioningPorts?: WorktreeHostOptions["previewProvisioningPorts"];
     writeNativeConfig?: (mainWorktree: string, divergence: NativeConfigDivergence) => Promise<NativeConfigWrite>;
@@ -493,6 +494,7 @@ async function builtHost(
       ...(over.pickFolder === undefined ? {} : { pickFolder: over.pickFolder }),
       ...(over.pickCopyFile === undefined ? {} : { pickCopyFile: over.pickCopyFile }),
       ...(over.promptSetupStep === undefined ? {} : { promptSetupStep: over.promptSetupStep }),
+      ...(over.createWorktree === undefined ? {} : { createWorktree: over.createWorktree }),
     },
     now: () => 1000,
     // Without these `assessRemoval` returns null before it reaches git, which
@@ -8081,10 +8083,27 @@ describe("a setup step typed into the host's own input, for this create only", (
   const scripts = (view: { posts: unknown[] }) => last(view).model.setup.map((s) => `${s.source}: ${s.script}`);
   const added = (view: { posts: unknown[] }) =>
     last(view).model.setup.filter((s) => s.source === SETUP_STEP_ADDED_SOURCE);
+  const addedCopies = (view: { posts: unknown[] }) => last(view).model.entries.filter((entry) => entry.addedForCreate);
+
+  const copyAsk = () => ({
+    type: "worktreeCopyFileAsk" as const,
+    repoId: REPO,
+    opening: 1,
+    switch: ++seq,
+  });
+
+  function pickedFile(path = ".env.local") {
+    const claim = { acquireSource: vi.fn(), dispose: vi.fn() };
+    const file = { claim: vi.fn(() => claim), dispose: vi.fn() };
+    return { picked: { path, canonicalPath: `${MAIN_PATH}/${path}`, file }, file, claim };
+  }
 
   async function opened(over: {
     prompt?: WorktreeActions["promptSetupStep"];
     pick?: WorktreeActions["pickCopyFile"];
+    create?: WorktreeActions["createWorktree"];
+    probeMigrationSource?: WorktreeHostOptions["probeMigrationSource"];
+    sourceWorktreeId?: string;
     read?: (main: string, prefer?: string) => Promise<ProvisionModel>;
     write?: (main: string, d: NativeConfigDivergence) => Promise<NativeConfigWrite>;
     sibling?: boolean;
@@ -8093,18 +8112,27 @@ describe("a setup step typed into the host's own input, for this create only", (
     const seen: NativeConfigDivergence[] = [];
     const h = await builtHost(undefined, false, {
       readProvisioning: (over.read ?? (async () => OFFERED)) as never,
+      ...(over.probeMigrationSource === undefined ? {} : { probeMigrationSource: over.probeMigrationSource }),
       promptSetupStep: async (current) => {
         prompts.push(current);
         return over.prompt === undefined ? undefined : over.prompt(current);
       },
       ...(over.pick === undefined ? {} : { pickCopyFile: over.pick }),
+      ...(over.create === undefined ? {} : { createWorktree: over.create }),
       writeNativeConfig: (async (main: string, divergence: NativeConfigDivergence) => {
         seen.push(divergence);
         return over.write ? over.write(main, divergence) : { ok: true, wrote: true };
       }) as never,
       ...(over.sibling === true ? { sibling: true } : {}),
     });
-    h.host.handleMessage(h.view, { type: "requestWorktreeCreateDefaults", repoId: REPO, opening: 1 });
+    h.host.handleMessage(h.view, {
+      type: "requestWorktreeCreateDefaults",
+      repoId: REPO,
+      opening: 1,
+      ...(over.sourceWorktreeId === undefined
+        ? {}
+        : { sourceWorktreeId: over.sourceWorktreeId, sourceGeneration: gen() }),
+    });
     await settle();
     return { ...h, prompts, seen };
   }
@@ -8685,6 +8713,651 @@ describe("a setup step typed into the host's own input, for this create only", (
     expect(scripts(h.view).at(-1)).toBe(`${SETUP_STEP_ADDED_SOURCE}: pnpm build`);
     expect(added(h.view)).toHaveLength(1);
     h.dispose();
+  });
+
+  it("offers a picked file with private provenance and creates from its claimed holder", async () => {
+    const held = pickedFile();
+    const roots: string[] = [];
+    const h = await opened({
+      pick: async (repoRoot) => {
+        roots.push(repoRoot);
+        return held.picked;
+      },
+    });
+    const before = last(h.view).offerId;
+
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+
+    const offer = last(h.view);
+    const row = addedCopies(h.view)[0];
+    expect(roots).toEqual([MAIN_PATH]);
+    expect(offer.offerId).not.toBe(before);
+    expect(row).toMatchObject({
+      path: ".env.local",
+      mode: "copy",
+      source: "Added for this create",
+      suggestion: "May contain secrets.",
+      addedForCreate: true,
+    });
+    h.host.handleMessage(h.view, {
+      type: "worktreeCreate",
+      repoId: REPO,
+      opening: 1,
+      path: "/trees/feat",
+      mode: { kind: "fresh", branch: "feat" },
+      disposition: { kind: "free" },
+      afterCreate: { kind: "none" },
+      provision: { offerId: offer.offerId, itemIds: [row?.id ?? ""] },
+    });
+    await settle();
+
+    const request = h.calls.find(([name]) => name === "createWorktree")?.[1] as
+      | { provision?: readonly ProvisionMaterial[] }
+      | undefined;
+    expect(request?.provision).toEqual([
+      { origin: "held-file", entry: row, canonicalPath: `${MAIN_PATH}/.env.local`, file: held.claim },
+    ]);
+    expect(held.file.claim).toHaveBeenCalledOnce();
+    expect(held.claim.dispose).toHaveBeenCalledOnce();
+    h.dispose();
+  });
+
+  it("reissues after dismissal and disposes a picked provider duplicate or possible fold", async () => {
+    const duplicate = pickedFile(".ENV");
+    const answers = [undefined, duplicate.picked];
+    const h = await opened({ pick: async () => answers.shift() });
+    const initial = last(h.view).offerId;
+
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    const dismissed = last(h.view).offerId;
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+
+    expect(dismissed).not.toBe(initial);
+    expect(last(h.view).offerId).not.toBe(dismissed);
+    expect(addedCopies(h.view)).toEqual([]);
+    expect(duplicate.file.dispose).toHaveBeenCalledOnce();
+    h.dispose();
+  });
+
+  it("reissues after picker failure", async () => {
+    const h = await opened({
+      pick: async () => {
+        throw new Error("picker failed");
+      },
+    });
+    const before = last(h.view).offerId;
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+
+    expect(last(h.view).offerId).not.toBe(before);
+    expect(addedCopies(h.view)).toEqual([]);
+    h.dispose();
+  });
+
+  it("disposes a picked duplicate already in this opening's record", async () => {
+    const first = pickedFile("custom.env");
+    const duplicate = pickedFile("CUSTOM.ENV");
+    const answers = [first.picked, duplicate.picked];
+    const h = await opened({ pick: async () => answers.shift() });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    const before = last(h.view).offerId;
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+
+    expect(last(h.view).offerId).not.toBe(before);
+    expect(addedCopies(h.view).map((entry) => entry.path)).toEqual(["custom.env"]);
+    expect(duplicate.file.dispose).toHaveBeenCalledOnce();
+    expect(first.file.dispose).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it("lets an explicit exclusion defeat the picked file", async () => {
+    const held = pickedFile("ignored.env");
+    const excluded: ProvisionModel = {
+      ...OFFERED,
+      excluded: [{ id: "x1", path: "IGNORED.ENV", mode: "copy", source: "asimov/worktree.yaml" }],
+    };
+    const h = await opened({ pick: async () => held.picked, read: async () => excluded });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+
+    expect(addedCopies(h.view)).toEqual([]);
+    expect(held.file.dispose).toHaveBeenCalledOnce();
+    h.dispose();
+  });
+
+  it("does not mistake presentation-only provider metadata for private Save provenance", async () => {
+    const marker: ProvisionModel = {
+      ...OFFERED,
+      entries: [
+        {
+          id: "marker",
+          path: "marker.env",
+          mode: "copy",
+          source: "provider.yaml",
+          addedForCreate: true,
+        },
+      ],
+    };
+    const h = await opened({ read: async () => marker });
+    const offer = last(h.view);
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSave",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      offerId: offer.offerId,
+      kept: [],
+    });
+    await settle();
+
+    expect(h.seen[0]?.exclude).toEqual(["marker.env"]);
+    h.dispose();
+  });
+
+  it("does not let presentation-only provider metadata block picker admission", async () => {
+    const held = pickedFile("picked.env");
+    const marker: ProvisionModel = {
+      ...OFFERED,
+      entries: [
+        {
+          id: "marker",
+          path: "marker.env",
+          mode: "copy",
+          source: "provider.yaml",
+          addedForCreate: true,
+        },
+      ],
+    };
+    let picks = 0;
+    const h = await opened({
+      read: async () => marker,
+      pick: async () => {
+        picks += 1;
+        return held.picked;
+      },
+    });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+
+    expect(picks).toBe(1);
+    expect(last(h.view).model.entries.some((entry) => entry.source === "Added for this create")).toBe(true);
+    expect(held.file.dispose).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it("keeps picked provenance when a setup ask reissues the offer", async () => {
+    const held = pickedFile();
+    const h = await opened({ pick: async () => held.picked, prompt: async () => "pnpm build" });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+    const offer = last(h.view);
+    const row = offer.model.entries.find((entry) => entry.source === "Added for this create");
+
+    h.host.handleMessage(h.view, {
+      type: "worktreeCreate",
+      repoId: REPO,
+      opening: 1,
+      path: "/trees/feat",
+      mode: { kind: "fresh", branch: "feat" },
+      disposition: { kind: "free" },
+      afterCreate: { kind: "none" },
+      provision: { offerId: offer.offerId, itemIds: [row?.id ?? ""] },
+    });
+    await settle();
+
+    expect(held.file.claim).toHaveBeenCalledOnce();
+    h.dispose();
+  });
+
+  it("does not prompt for a setup step that composition cannot display", async () => {
+    const held = pickedFile("picked.env");
+    const crowded: ProvisionModel = {
+      ...SWITCHED,
+      entries: Array.from({ length: MAX_MODEL_ROWS - 1 }, (_, index) => ({
+        id: `crowded-${index}`,
+        path: index === 0 ? "PICKED.ENV" : `crowded-${index}`,
+        mode: "copy" as const,
+        source: "orca.yaml",
+      })),
+      setup: [],
+      problems: [],
+    };
+    const h = await opened({
+      pick: async () => held.picked,
+      prompt: async () => "hidden setup",
+      read: async (_main, prefer) => (prefer === "orca" ? crowded : OFFERED),
+    });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSwitch",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      provider: "orca",
+    });
+    await settle();
+    expect(rowsOf(last(h.view).model)).toBe(MAX_MODEL_ROWS);
+
+    h.host.handleMessage(h.view, ask({ kind: "add" }));
+    await settle();
+
+    expect(h.prompts).toEqual([]);
+    expect(added(h.view)).toEqual([]);
+    h.dispose();
+  });
+
+  it("retains an added file through a compatible source switch", async () => {
+    const held = pickedFile();
+    const h = await opened({
+      pick: async () => held.picked,
+      read: async (_main, prefer) => (prefer === "orca" ? SWITCHED : OFFERED),
+    });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    const first = addedCopies(h.view)[0];
+
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSwitch",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      provider: "orca",
+    });
+    await settle();
+
+    expect(addedCopies(h.view)).toHaveLength(1);
+    expect(addedCopies(h.view)[0]?.path).toBe(first?.path);
+    expect(held.file.dispose).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it.each([true, false])("keeps a %s-selected picked file out of Save divergence", async (selected) => {
+    const held = pickedFile();
+    const h = await opened({ pick: async () => held.picked });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    const offer = last(h.view);
+    const row = addedCopies(h.view)[0];
+
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSave",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      offerId: offer.offerId,
+      kept: selected && row !== undefined ? [row.id] : [],
+    });
+    await settle();
+
+    expect(h.seen).toHaveLength(1);
+    expect(h.seen[0]?.addCopy).not.toContain(".env.local");
+    expect(h.seen[0]?.exclude).not.toContain(".env.local");
+    expect(addedCopies(h.view)).toHaveLength(1);
+    expect(held.file.dispose).not.toHaveBeenCalled();
+    if (selected) {
+      const refreshed = last(h.view);
+      const refreshedRow = addedCopies(h.view)[0];
+      h.host.handleMessage(h.view, {
+        type: "worktreeCreate",
+        repoId: REPO,
+        opening: 1,
+        path: "/trees/feat",
+        mode: { kind: "fresh", branch: "feat" },
+        disposition: { kind: "free" },
+        afterCreate: { kind: "none" },
+        provision: { offerId: refreshed.offerId, itemIds: [refreshedRow?.id ?? ""] },
+      });
+      await settle();
+      expect(held.file.claim).toHaveBeenCalledOnce();
+    }
+    h.dispose();
+  });
+
+  it("withholds a colliding record suffix and restores it when the compatible source returns", async () => {
+    const first = pickedFile("one.env");
+    const second = pickedFile("two.env");
+    const answers = [first.picked, second.picked];
+    const colliding: ProvisionModel = {
+      ...SWITCHED,
+      entries: [{ id: "collision", path: "ONE.ENV", mode: "copy", source: "orca.yaml" }],
+    };
+    const h = await opened({
+      pick: async () => answers.shift(),
+      read: async (_main, prefer) => (prefer === "orca" ? colliding : OFFERED),
+    });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    expect(addedCopies(h.view).map((entry) => entry.path)).toEqual(["one.env", "two.env"]);
+
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSwitch",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      provider: "orca",
+    });
+    await settle();
+    expect(addedCopies(h.view)).toEqual([]);
+    expect(last(h.view).model.problems.some((problem) => problem.file === SETUP_STEP_ADDED_SOURCE)).toBe(true);
+
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSwitch",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      provider: "asimov",
+    });
+    await settle();
+    expect(addedCopies(h.view).map((entry) => entry.path)).toEqual(["one.env", "two.env"]);
+    expect(first.file.dispose).not.toHaveBeenCalled();
+    expect(second.file.dispose).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it("disposes a picker answer that loses to a later source action", async () => {
+    let resolve!: (value: ReturnType<typeof pickedFile>["picked"]) => void;
+    const pending = new Promise<ReturnType<typeof pickedFile>["picked"]>((done) => {
+      resolve = done;
+    });
+    const held = pickedFile();
+    const h = await opened({
+      pick: async () => pending,
+      read: async (_main, prefer) => (prefer === "orca" ? SWITCHED : OFFERED),
+    });
+    const before = offersIn(h.view).length;
+    h.host.handleMessage(h.view, copyAsk());
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSwitch",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      provider: "orca",
+    });
+    await settle();
+    resolve(held.picked);
+    await settle();
+
+    expect(held.file.dispose).toHaveBeenCalledOnce();
+    expect(offersIn(h.view)).toHaveLength(before + 1);
+    expect(addedCopies(h.view)).toEqual([]);
+    h.dispose();
+  });
+
+  it("disposes a picker answer that loses to Save", async () => {
+    let resolve!: (value: ReturnType<typeof pickedFile>["picked"]) => void;
+    const pending = new Promise<ReturnType<typeof pickedFile>["picked"]>((done) => {
+      resolve = done;
+    });
+    const held = pickedFile();
+    const h = await opened({ pick: async () => pending });
+    const initial = last(h.view);
+    h.host.handleMessage(h.view, copyAsk());
+    h.host.handleMessage(h.view, {
+      type: "worktreeProvisionSave",
+      repoId: REPO,
+      opening: 1,
+      switch: ++seq,
+      offerId: initial.offerId,
+      kept: initial.model.entries.map((entry) => entry.id),
+    });
+    await settle();
+    const answered = offersIn(h.view).length;
+    resolve(held.picked);
+    await settle();
+
+    expect(held.file.dispose).toHaveBeenCalledOnce();
+    expect(offersIn(h.view)).toHaveLength(answered);
+    expect(addedCopies(h.view)).toEqual([]);
+    h.dispose();
+  });
+
+  it("disposes a picker answer when its repository leaves the workspace", async () => {
+    let resolve!: (value: ReturnType<typeof pickedFile>["picked"]) => void;
+    const pending = new Promise<ReturnType<typeof pickedFile>["picked"]>((done) => {
+      resolve = done;
+    });
+    const held = pickedFile();
+    const h = await opened({ pick: async () => pending, sibling: true });
+    h.host.handleMessage(h.view, copyAsk());
+    await h.setFolders([OTHER_ROOT]);
+    resolve(held.picked);
+    await settle();
+
+    expect(held.file.dispose).toHaveBeenCalledOnce();
+    expect(addedCopies(h.view)).toEqual([]);
+    h.dispose();
+  });
+
+  it("claims before close and retains the claim until an admitted create settles", async () => {
+    let finish!: () => void;
+    const creating = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const requests: unknown[] = [];
+    const held = pickedFile();
+    const h = await opened({
+      pick: async () => held.picked,
+      create: async (request) => {
+        requests.push(request);
+        await creating;
+      },
+    });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    const offer = last(h.view);
+    const row = addedCopies(h.view)[0];
+
+    h.host.handleMessage(h.view, {
+      type: "worktreeCreate",
+      repoId: REPO,
+      opening: 1,
+      path: "/trees/feat",
+      mode: { kind: "fresh", branch: "feat" },
+      disposition: { kind: "free" },
+      afterCreate: { kind: "none" },
+      provision: { offerId: offer.offerId, itemIds: [row?.id ?? ""] },
+    });
+    h.host.handleMessage(h.view, { type: "worktreeCreateClosed", opening: 1 });
+    await settle();
+
+    expect(held.file.claim).toHaveBeenCalledOnce();
+    expect(requests).toHaveLength(1);
+    expect(held.claim.dispose).not.toHaveBeenCalled();
+    finish();
+    await settle();
+    expect(held.claim.dispose).toHaveBeenCalledOnce();
+    h.dispose();
+  });
+
+  it("rolls back earlier claims and dispatches no create when one selected holder is unavailable", async () => {
+    const first = pickedFile("one.env");
+    const second = pickedFile("two.env");
+    second.file.claim.mockReturnValueOnce(undefined as never);
+    const answers = [first.picked, second.picked];
+    const h = await opened({ pick: async () => answers.shift() });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    const offer = last(h.view);
+
+    h.host.handleMessage(h.view, {
+      type: "worktreeCreate",
+      repoId: REPO,
+      opening: 1,
+      path: "/trees/feat",
+      mode: { kind: "fresh", branch: "feat" },
+      disposition: { kind: "free" },
+      afterCreate: { kind: "none" },
+      provision: { offerId: offer.offerId, itemIds: addedCopies(h.view).map((entry) => entry.id) },
+    });
+    await settle();
+
+    expect(first.claim.dispose).toHaveBeenCalledOnce();
+    expect(h.calls.filter(([name]) => name === "createWorktree")).toEqual([]);
+    expect(h.view.posts.filter((message) => message.type === "worktreeMutationResult").at(-1)).toMatchObject({
+      result: { kind: "error" },
+    });
+    h.dispose();
+  });
+
+  it("refuses before opening the picker when the current model leaves no row", async () => {
+    const full: ProvisionModel = {
+      ...OFFERED,
+      entries: Array.from({ length: MAX_MODEL_ROWS }, (_, index) => ({
+        id: `full-${index}`,
+        path: `file-${index}`,
+        mode: "copy" as const,
+        source: "asimov/worktree.yaml",
+      })),
+      setup: [],
+      problems: [],
+    };
+    const picks: string[] = [];
+    const h = await opened({
+      read: async () => full,
+      pick: async (root) => {
+        picks.push(root);
+        return pickedFile().picked;
+      },
+    });
+    const before = last(h.view).offerId;
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+
+    expect(picks).toEqual([]);
+    expect(last(h.view).offerId).not.toBe(before);
+    expect(rowsOf(last(h.view).model)).toBe(MAX_MODEL_ROWS);
+    h.dispose();
+  });
+
+  it("never downgrades an already-claimed holder on a repeated submit", async () => {
+    const held = pickedFile();
+    held.file.claim.mockReturnValueOnce(held.claim).mockReturnValueOnce(undefined as never);
+    const h = await opened({ pick: async () => held.picked });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    const offer = last(h.view);
+    const row = addedCopies(h.view)[0];
+    const request = {
+      type: "worktreeCreate" as const,
+      repoId: REPO,
+      opening: 1,
+      path: "/trees/feat",
+      mode: { kind: "fresh" as const, branch: "feat" },
+      disposition: { kind: "free" as const },
+      afterCreate: { kind: "none" as const },
+      provision: { offerId: offer.offerId, itemIds: [row?.id ?? ""] },
+    };
+
+    h.host.handleMessage(h.view, request);
+    await settle();
+    h.host.handleMessage(h.view, request);
+    await settle();
+
+    expect(h.calls.filter(([name]) => name === "createWorktree")).toHaveLength(1);
+    expect(held.file.claim).toHaveBeenCalledTimes(2);
+    h.dispose();
+  });
+
+  it("keeps a claimed file across close while migration is re-probed", async () => {
+    const evidence = migrationEvidence();
+    let release!: (value: MigrationOfferEvidence) => void;
+    const reprobe = new Promise<MigrationOfferEvidence>((resolve) => {
+      release = resolve;
+    });
+    let probes = 0;
+    const held = pickedFile();
+    const h = await opened({
+      pick: async () => held.picked,
+      sourceWorktreeId: FEAT_PATH,
+      probeMigrationSource: async () => {
+        probes += 1;
+        return probes === 1 ? evidence : reprobe;
+      },
+    });
+    const migration = h.view.posts.find((message) => message.type === "worktreeMigrationOffer");
+    if (migration?.type !== "worktreeMigrationOffer") {
+      throw new Error("migration offer missing");
+    }
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    const offer = last(h.view);
+    const row = addedCopies(h.view)[0];
+
+    h.host.handleMessage(h.view, {
+      type: "worktreeCreate",
+      repoId: REPO,
+      opening: 1,
+      path: "/trees/feat",
+      mode: { kind: "fresh", branch: "feat" },
+      disposition: { kind: "free" },
+      afterCreate: { kind: "none" },
+      provision: { offerId: offer.offerId, itemIds: [row?.id ?? ""] },
+      migrateChanges: { offerId: migration.offerId },
+    });
+    h.host.handleMessage(h.view, { type: "worktreeCreateClosed", opening: 1 });
+    await settle();
+
+    expect(held.file.claim).toHaveBeenCalledOnce();
+    expect(held.claim.dispose).not.toHaveBeenCalled();
+    release(evidence);
+    await settle();
+    expect(held.claim.dispose).toHaveBeenCalledOnce();
+    h.dispose();
+  });
+
+  it("caps one opening at thirty-two held files and refuses before opening another picker", async () => {
+    let picks = 0;
+    const files = Array.from({ length: 32 }, (_, index) => pickedFile(`file-${index}.env`));
+    const h = await opened({
+      pick: async () => {
+        const answer = files[picks]?.picked;
+        picks += 1;
+        return answer;
+      },
+    });
+    for (let index = 0; index < 33; index += 1) {
+      h.host.handleMessage(h.view, copyAsk());
+      await settle();
+    }
+
+    expect(picks).toBe(32);
+    expect(addedCopies(h.view)).toHaveLength(32);
+    h.dispose();
+  });
+
+  it.each(["close", "supersede", "detach", "host disposal"])("disposes an unclaimed holder on %s", async (ending) => {
+    const held = pickedFile();
+    const h = await opened({ pick: async () => held.picked });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+
+    if (ending === "close") {
+      h.host.handleMessage(h.view, { type: "worktreeCreateClosed", opening: 1 });
+    } else if (ending === "supersede") {
+      h.host.handleMessage(h.view, { type: "requestWorktreeCreateDefaults", repoId: REPO, opening: 2 });
+    } else if (ending === "detach") {
+      h.attachment.dispose();
+    } else {
+      h.dispose();
+    }
+    await settle();
+
+    expect(held.file.dispose).toHaveBeenCalledOnce();
+    if (ending !== "host disposal") {
+      h.dispose();
+    }
   });
 
   it("dies with the opening: a reopened form and a sibling repository's form offer no added step", async () => {
