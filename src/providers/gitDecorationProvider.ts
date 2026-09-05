@@ -337,7 +337,6 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
     }
   }
 
-
   // Listener side of the public `onDidChange`. We use a tiny in-process emitter
   // instead of `vscode.EventEmitter` so the unit test surface doesn't need to
   // stub that class — the real runtime semantics (subscribe / dispose / fire-
