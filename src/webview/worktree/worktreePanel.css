@@ -37,97 +37,6 @@
   padding: 2px 0 8px;
 }
 
-/* ── Inspector drawer (§ 3.7) ───────────────────────────────────────────── */
-/* Capped at half the panel so the tree above stays scannable while one worktree
-   is read in full, and `flex: 0 0 auto` so it takes only what the cap allows —
-   the tree keeps the rest. It scrolls inside its own bound rather than pushing
-   the tree off the panel. */
-.wt-inspector {
-  flex: 0 0 auto;
-  max-height: 50%;
-  overflow-y: auto;
-  min-width: 0;
-  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
-  background: var(--vscode-editorWidget-background, transparent);
-  padding: 6px 0 8px;
-}
-.wt-ihead {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
-  align-items: center;
-  padding: 2px 8px 4px 10px;
-}
-.wt-ibranch {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--vscode-foreground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.wt-idismiss {
-  background: none;
-  border: none;
-  color: var(--vscode-descriptionForeground);
-  cursor: pointer;
-  padding: 2px 4px;
-  line-height: 1;
-  border-radius: 3px;
-}
-.wt-idismiss:hover {
-  background: var(--vscode-toolbar-hoverBackground);
-  color: var(--vscode-foreground);
-}
-/* The full path — one of only two places it appears at all (§ 3.2, D16). It
-   wraps rather than truncating: this is the surface that exists to show it. */
-.wt-ipath {
-  padding: 0 10px 6px;
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-  overflow-wrap: anywhere;
-  user-select: text;
-}
-.wt-iactions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 0 10px 6px;
-}
-.wt-ibtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--vscode-button-secondaryBackground, transparent);
-  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
-  border-radius: 3px;
-  padding: 2px 6px;
-  font-size: 11px;
-  cursor: pointer;
-}
-.wt-ibtn:hover {
-  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
-}
-.wt-ibtn-icon {
-  display: inline-flex;
-  width: 12px;
-  height: 12px;
-}
-.wt-ibtn-icon svg {
-  width: 12px;
-  height: 12px;
-}
-.wt-iagents {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.wt-inote {
-  padding: 2px 10px;
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-}
 /* The model, inside the title cell rather than an eighth grid column — see
    renderAgentRow. Dimmer than the title it follows, so it reads as the
    qualifier it is rather than competing with the row's own identity. */
@@ -183,7 +92,7 @@
 /* ── Worktree row ───────────────────────────────────────────────────────── */
 .wt-row {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
   gap: 6px;
   align-items: center;
   padding: 3px 10px 3px 8px;
@@ -1521,6 +1430,21 @@
 
 .wt-repo:hover .wt-rowaction,
 .wt-repo:focus-within .wt-rowaction {
+  visibility: visible;
+}
+
+/* The worktree row's own controls. Always in the DOM — they join the tab order
+   the moment the row becomes the tree's stop — and revealed on hover, on focus,
+   and on the SELECTED row, so reaching them never requires a pointer. */
+.wt-rowtools {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+.wt-row:hover .wt-rowaction,
+.wt-row:focus-within .wt-rowaction,
+.wt-row.is-selected .wt-rowaction {
   visibility: visible;
 }
 

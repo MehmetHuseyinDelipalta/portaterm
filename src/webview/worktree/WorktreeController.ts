@@ -30,7 +30,6 @@ import { attributionKey, type PaneReport, waitingKey } from "../paneAttribution"
 import type { WebviewState } from "../state/WebviewState";
 import type { VaultView } from "../vault/VaultPanel";
 import type { WorktreeMenuActions } from "./WorktreeContextMenu";
-import { WorktreeInspector } from "./WorktreeInspector";
 import { WorktreeView } from "./WorktreeView";
 import type {
   WorktreeActionResult,
@@ -78,12 +77,6 @@ export interface WorktreeControllerDeps {
    * The scope consumer subscribes here; the controller only relays and holds.
    */
   onSelectWorktree?: (worktreeId: string | null) => void;
-  /**
-   * Whether an overlay above this panel currently owns Escape. True → the panel
-   * body leaves the key alone, so the overlay closes first rather than the
-   * drawer stealing the dismissal out from under it (design.md D9).
-   */
-  overlayOpen?: () => boolean;
   /**
    * Which worktree each of this window's panes is running in. Emitted on every
    * push whose attribution moved, and never otherwise.
@@ -293,7 +286,6 @@ export class WorktreeController {
    * the rollout being off costs a `hidden` attribute rather than a second
    * mounting path to keep right (design.md D12).
    */
-  private readonly inspector: WorktreeInspector;
   /**
    * The level last posted, or null while unsubscribed. The effective state, not
    * a request — `applySubscription` derives it.
@@ -828,51 +820,12 @@ export class WorktreeController {
       rowActivation: () => this.rowActivation,
       // Forwarded, not mirrored: the view owns the selection because the view is
       // what marks it, and a second copy here is a second thing to keep right.
-      onSelectWorktree: (worktreeId) => {
-        if (worktreeId === null) {
-          // The chip cleared the scope, or the selected worktree left the tree:
-          // either way there is no selection left for the drawer to describe.
-          this.inspector.close();
-        }
-        this.deps.onSelectWorktree?.(worktreeId);
-      },
-      onInspect: (worktreeId) => this.inspector.open(worktreeId),
-      // The tree's one deadline timer drives both surfaces, so they cannot
-      // disagree about a row's confidence at any moment (design.md D7).
-      onCeilingTick: () => this.inspector.refresh(),
-      now: deps.now,
-    });
-    this.inspector = WorktreeInspector.mount({
-      actions: this.menuActions,
-      // The view's set, not a second one: the window asks once per row and
-      // session, whichever surface wants it first (design.md D6).
-      rosters: this.view.rosterRequests(),
-      onRequestSubagents: (row) => this.requestRoster(row),
-      onActivateAgent: (row, activation) => this.activateAgent(row, activation),
-      onActivateSubagent: (_subagent, parent) => this.activateSubagentParent(parent),
-      rowActivation: () => this.rowActivation,
-      // Only the drawer knows whether focus was inside; only the tree can find
-      // the row it belongs back on.
-      onClosed: (worktreeId, focusWasInside) => {
-        if (focusWasInside) {
-          this.view.focusWorktree(worktreeId);
-        }
-      },
+      onSelectWorktree: (worktreeId) => this.deps.onSelectWorktree?.(worktreeId),
       now: deps.now,
     });
     this.element = document.createElement("div");
     this.element.className = "wt-body";
-    this.element.append(this.view.element, this.inspector.element);
-    // Bubbling, and only while the drawer is open: an overlay above it owns
-    // Escape first, and swallowing the key here would leave that overlay unable
-    // to close (design.md D9).
-    this.element.addEventListener("keydown", (ev) => {
-      if (ev.key !== "Escape" || !this.inspector.isOpen() || this.deps.overlayOpen?.() === true) {
-        return;
-      }
-      ev.stopPropagation();
-      this.inspector.close();
-    });
+    this.element.append(this.view.element);
     this.push();
   }
 
@@ -1271,11 +1224,10 @@ export class WorktreeController {
    * offered, rather than offered and refused.
    */
   private syncLaunchActions(): void {
-    // Both directions: the drawer must gain the item when a target arrives and
-    // lose it when the last one goes, and neither moves any field in its guard
-    // (.reviews/round-1.md B3). The tree rebuilds its menu at click time, so it
-    // has never needed this.
-    this.inspector.invalidate();
+    // No invalidation needed anywhere: the tree builds its menu and its row
+    // controls from `menuActions` at click and at paint, so a launch target
+    // arriving reaches both without a cached surface to nudge. It is the drawer
+    // that had to be told, and the drawer is gone.
     if (this.launchAgents.length === 0) {
       delete this.menuActions.launchAgentHere;
       delete this.menuActions.resumeHere;
@@ -1731,11 +1683,6 @@ export class WorktreeController {
     this.view.clearSelection();
   }
 
-  /** The drawer, for tests and for the panel that needs to know it is open. */
-  isInspectorOpen(): boolean {
-    return this.inspector.isOpen();
-  }
-
   /**
    * The tab bar dropped its scope because the worktree left the tree. Reported
    * through the panel's own notice list — the one place this panel says what
@@ -1939,9 +1886,6 @@ export class WorktreeController {
       actionResults: this.actionResults,
       noFolder: this.deps.init.workspaceRoot === null,
     });
-    // After the view: the drawer describes a worktree the tree has already
-    // reconciled, and a selection that left the tree is dropped in there.
-    this.inspector.setData(this.tree, this.presence);
   }
 }
 

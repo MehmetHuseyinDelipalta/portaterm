@@ -1118,9 +1118,6 @@ function handleInit(msg: InitMessage): void {
       // drawn from presence. The subscription drops to the presence level, so
       // the window stops per-row work nothing is drawing.
       presenceNeeded: () => tabBarScope?.needsPresence() === true,
-      // The vault preview sits above the panel body and owns Escape while it is
-      // open; the drawer must not close out from under it.
-      overlayOpen: () => vaultPanel?.isPreviewOpen() === true,
       // Selecting a worktree scopes the tab bar and nothing else: the rail stays
       // exactly as the user left it. It used to collapse itself here, which read
       // as the panel closing on a click the user made inside it.

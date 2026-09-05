@@ -206,11 +206,10 @@ appropriate feels.
 | Location | Layout |
 |----------|--------|
 | Panel, editor | Two columns — the worktree rail beside the terminal region. Both are visible at once, so scope reads as "this rail drives that terminal" |
-| Sidebar (~300 px) | Stacked, as today. Two columns do not fit; the rail auto-collapses after a selection, giving a "choose → view" flow |
+| Sidebar (~300 px) | Stacked, as today. Two columns do not fit. The rail was to auto-collapse after a selection, giving a "choose → view" flow; that was withdrawn in `10977d40` — see worktree-panel-ui.md § 2.4 |
 
-Sidebar auto-collapse is a behaviour of the selection, not a timer: it happens on an explicit
-selection and is reversible by the same control that collapsed it. A user who re-expands the
-rail keeps it expanded until they select again.
+Sidebar auto-collapse is gone: a selection sets the scope and touches nothing else, and the rail
+stays exactly as the user left it. Collapsing and expanding it is the header control's job.
 
 Nothing about scope depends on the layout. A surface in the stacked layout scopes exactly the
 way a two-column one does.
@@ -254,7 +253,7 @@ worktreeScope?: string   // a WorktreeInfo.id; absent means All
 | Presence degraded for the pane source | Attribution is recomputed from the push like any other, and is unchanged by the degradation: it is derived from each pane's own `cwd` against the tree's worktree ids, so a failing source weakens what a row says about its *agent* without moving the row between worktrees (§ 3.4). There is no retained last-known map, and nothing to retain one for |
 | Selecting a scope while an out-of-scope pane is active | The filter applies to it like any other tab; the first in-scope pane becomes active, or the empty-scope region is shown (§ 3.3). The pane keeps running and returns with `All` |
 | Two surfaces, different scopes | Both legal; neither is reconciled |
-| Sidebar, rail auto-collapsed | The chip and `All` live on the tab bar, so the escape survives the collapse |
+| Sidebar, rail collapsed by the user | The chip and `All` live on the tab bar, so the escape survives the collapse |
 | Reduced motion | The rail collapse is instant; the badge does not animate |
 
 ## 9. Testing
@@ -274,7 +273,7 @@ worktreeScope?: string   // a WorktreeInfo.id; absent means All
 - [ ] Scope survives a reload; an absent persisted scope is All; a persisted id not in the tree is All
 - [ ] A push that changes no attribution performs no tab-bar DOM work
 - [ ] Two surfaces hold different scopes simultaneously, and neither follows the other
-- [ ] Sidebar: an explicit selection auto-collapses the rail; re-expanding it survives until the next selection
+- [ ] Sidebar: a selection leaves the rail exactly as it was — only the header control collapses or expands it
 
 ---
 

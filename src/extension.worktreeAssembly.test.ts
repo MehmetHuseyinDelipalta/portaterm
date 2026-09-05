@@ -953,6 +953,11 @@ function openMenu(rowText: string): HTMLElement[] {
 }
 
 /** Open a worktree card so the agent rows it holds collapsed are on screen. */
+/**
+ * Open a worktree's agent block through the control that owns disclosure — the
+ * presence pill that follows the row. Activating the ROW only selects and scopes
+ * it (panel-ui § 6, D49); it has not folded the block since.
+ */
 function expandCard(rowText: string): void {
   const card = [...document.querySelectorAll<HTMLElement>('[role="treeitem"]')].find((r) =>
     (r.textContent ?? "").includes(rowText),
@@ -960,7 +965,11 @@ function expandCard(rowText: string): void {
   if (card === undefined) {
     throw new Error(`no rendered card matching ${rowText}`);
   }
-  card.click();
+  const pill = card.nextElementSibling;
+  if (!(pill instanceof HTMLElement) || !pill.classList.contains("wt-presence")) {
+    throw new Error(`no presence pill under ${rowText} — nothing to expand`);
+  }
+  pill.click();
 }
 
 /** Click a menu item by its visible label. Absence IS the failure. */
@@ -1606,10 +1615,7 @@ describe("a mutating verb reaches git from the menu item a user can see", () => 
     await assemble();
     // The card holds its agents collapsed until it is opened, exactly as a user
     // must open it before the row is there to right-click.
-    const card = [...document.querySelectorAll<HTMLElement>('[role="treeitem"]')].find((r) =>
-      (r.textContent ?? "").includes("feature"),
-    );
-    card?.click();
+    expandCard("feature");
     await settle();
     clickItem(openMenu("worktree walk"), /resume session here/i);
     await settleUntil(() => launched.length > 0, "the resumed session to launch");

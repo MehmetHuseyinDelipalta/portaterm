@@ -108,6 +108,28 @@ function rowFor(view: WorktreeView, branch: string): HTMLElement | undefined {
   );
 }
 
+/**
+ * The disclosure control a worktree offers, which directly follows its row —
+ * the pill while collapsed, the agents header while expanded. A collapsed,
+ * unselected worktree has no `.wt-group` wrapper, so the sibling is the only
+ * anchor that holds in both states.
+ */
+function discloserFor(view: WorktreeView, worktreeId: string, cls: string): HTMLElement | null {
+  const row = view.element.querySelector<HTMLElement>(`.wt-row[data-worktree-id="${worktreeId}"]`);
+  const next = row?.nextElementSibling;
+  return next instanceof HTMLElement && next.classList.contains(cls) ? next : null;
+}
+
+/** The collapse control an EXPANDED worktree offers. Disclosure lives here, not on the row. */
+function agentsHeaderFor(view: WorktreeView, worktreeId: string): HTMLElement | null {
+  return discloserFor(view, worktreeId, "wt-agents");
+}
+
+/** The expand control a COLLAPSED worktree offers. */
+function presencePillFor(view: WorktreeView, worktreeId: string): HTMLElement | null {
+  return discloserFor(view, worktreeId, "wt-presence");
+}
+
 // ── § 3: first load, refresh, and the three empty causes ──────────────────
 
 describe("loading and empty states", () => {
@@ -1065,6 +1087,148 @@ describe("tree structure", () => {
 
 // ── § 3.5: the two independent disclosure levels ──────────────────────────
 
+describe("what activating a worktree row does, and what it does not", () => {
+  // The bug this section exists for: one click used to select the worktree,
+  // re-scope the terminal tab bar, open a detail drawer, AND fold the agent
+  // block — four consequences from one gesture, which read as a dialog opening
+  // by itself. § 6 gives the row selection and gives disclosure to the chevron.
+
+  it("selects and scopes, and leaves the disclosure exactly where it was", () => {
+    const scoped: (string | null)[] = [];
+    const { view } = mount({ onSelectWorktree: (id) => scoped.push(id) });
+    view.setData(populated());
+    const before = rowFor(view, "main")?.getAttribute("aria-expanded");
+    // Non-vacuous: this row HAS a disclosure to move, so "unchanged" is a claim
+    // about behaviour rather than about an attribute that was never there.
+    expect(before).toBe("true");
+
+    rowFor(view, "main")?.click();
+
+    expect(scoped).toEqual([MAIN_PATH]);
+    expect(rowFor(view, "main")?.getAttribute("aria-expanded")).toBe(before);
+  });
+
+  it("does not fold the agent block open or shut, however many times it is pressed", () => {
+    const persistedCollapsed: string[][] = [];
+    const { view } = mount({ persistCollapsed: (ids) => persistedCollapsed.push(ids) });
+    view.setData(populated());
+    const shown = () => view.element.querySelectorAll(".wt-arow").length;
+    const before = shown();
+    // Same reason: there are rows on screen that a fold WOULD remove.
+    expect(before).toBeGreaterThan(0);
+    // The seeding write the first render makes is not this test's subject; what
+    // matters is that the clicks add nothing after it.
+    const persistedBefore = persistedCollapsed.length;
+
+    rowFor(view, "main")?.click();
+    rowFor(view, "main")?.click();
+    rowFor(view, "main")?.click();
+
+    expect(shown()).toBe(before);
+    // Nor was anything persisted: a collapse that only redraws is still a
+    // collapse the next window would inherit.
+    expect(persistedCollapsed.length).toBe(persistedBefore);
+  });
+
+  it("leaves the selection and the scope alone when the disclosure is worked", () => {
+    // The converse: the chevron discloses and says nothing about scope, or the
+    // two controls are the same control wearing two names.
+    const scoped: (string | null)[] = [];
+    const { view } = mount({ onSelectWorktree: (id) => scoped.push(id) });
+    view.setData(populated());
+
+    // Both directions, and both must actually have moved something.
+    expect(agentsHeaderFor(view, MAIN_PATH)).not.toBeNull();
+    agentsHeaderFor(view, MAIN_PATH)?.click();
+    expect(view.element.querySelector(".wt-arow")).toBeNull();
+    presencePillFor(view, MAIN_PATH)?.click();
+    expect(view.element.querySelector(".wt-arow")).not.toBeNull();
+
+    expect(scoped).toEqual([]);
+  });
+});
+
+describe("the worktree row's own controls", () => {
+  const actionIn = (row: HTMLElement, label: string): HTMLButtonElement | null =>
+    row.querySelector<HTMLButtonElement>(`.wt-rowtools .wt-rowaction[aria-label^="${label}"]`);
+
+  it("carries the launch and the overflow, and neither one activates the row", () => {
+    // `rowAction` stops the gesture: a control that also selected the worktree
+    // would be the same coupling one level down.
+    const launched: string[] = [];
+    const scoped: (string | null)[] = [];
+    const { view } = mount({
+      actions: { ...noopActions(), launchAgentHere: (info) => launched.push(info.id) },
+      onSelectWorktree: (id) => scoped.push(id),
+    });
+    view.setData(populated());
+    const row = rowFor(view, "main");
+    if (!row) {
+      throw new Error("expected a worktree row");
+    }
+    actionIn(row, "Start an agent")?.click();
+
+    expect(launched).toEqual([MAIN_PATH]);
+    expect(scoped).toEqual([]);
+  });
+
+  it("opens the same menu the right-click opens", () => {
+    const { view } = mount();
+    view.setData(populated());
+    const row = rowFor(view, "main");
+    if (!row) {
+      throw new Error("expected a worktree row");
+    }
+    actionIn(row, "More actions")?.click();
+
+    const menu = document.querySelector(".vault-context-menu");
+    expect(menu).not.toBeNull();
+    expect(menu?.querySelectorAll("[role='menuitem']").length).toBeGreaterThan(0);
+  });
+
+  it("offers no launch for a directory that is gone", () => {
+    // Absent, not inert — there is nowhere to start it.
+    const { view } = mount({ actions: { ...noopActions(), launchAgentHere: () => {} } });
+    const tree = singleRepoTree();
+    const target = tree.repos[0]?.worktrees.find((w) => w.kind === "main");
+    if (!target) {
+      throw new Error("expected a main worktree");
+    }
+    target.missing = true;
+    view.setData({ tree, presence: singleRepoPresence(NOW) });
+    const row = rowFor(view, "main");
+    if (!row) {
+      throw new Error("expected a worktree row");
+    }
+    expect(actionIn(row, "Start an agent")).toBeNull();
+    expect(actionIn(row, "More actions")).not.toBeNull();
+  });
+
+  it("offers no launch at all when the capability was not supplied", () => {
+    const { view } = mount();
+    view.setData(populated());
+    const row = rowFor(view, "main");
+    if (!row) {
+      throw new Error("expected a worktree row");
+    }
+    expect(actionIn(row, "Start an agent")).toBeNull();
+  });
+
+  it("joins the tab order only while its own row is the tree's stop", () => {
+    const { view } = mount({ actions: { ...noopActions(), launchAgentHere: () => {} } });
+    view.setData(populated());
+    const row = rowFor(view, "main");
+    const other = rowFor(view, "feat/worktree-panel");
+    if (!row || !other) {
+      throw new Error("expected two worktree rows");
+    }
+    row.focus();
+    expect(actionIn(row, "Start an agent")?.tabIndex).toBe(0);
+    other.focus();
+    expect(actionIn(row, "Start an agent")?.tabIndex).toBe(-1);
+  });
+});
+
 describe("presence disclosure", () => {
   it("renders the collapsed pill with grouped dots and a +N overflow", () => {
     const { view } = mount();
@@ -1137,16 +1301,16 @@ describe("presence disclosure", () => {
     expect(view.element.querySelector(".wt-hist")).not.toBeNull();
     expect(persistedRows.at(-1)).toEqual(["main-claude"]);
 
-    // Level one: collapse the worktree. The row expansion must survive it.
-    rowFor(view, "main")?.click();
-    // The click also selects, so the group survives as the selection's card —
-    // what has to be gone is the expansion, not the wrapper.
+    // Level one: collapse the worktree through the control that owns disclosure
+    // — the agents header. The row expansion must survive it.
+    agentsHeaderFor(view, MAIN_PATH)?.click();
     expect(rowFor(view, "main")?.getAttribute("aria-expanded")).toBe("false");
     expect(view.element.querySelector(".wt-arow")).toBeNull();
     expect(persistedCollapsed.at(-1)).toContain(MAIN_PATH);
     expect(persistedRows.at(-1)).toEqual(["main-claude"]);
 
-    rowFor(view, "main")?.click();
+    // …and back, through the pill the collapsed worktree offers.
+    presencePillFor(view, MAIN_PATH)?.click();
     expect(view.element.querySelector(".wt-hist")).not.toBeNull();
   });
 
@@ -3930,7 +4094,9 @@ describe("create on the repo group header", () => {
     view.setData({ tree: twoRepoTree(), presence: singleRepoPresence(NOW) });
 
     expect(host.querySelectorAll(".wt-repo").length).toBeGreaterThan(0);
-    expect(host.querySelectorAll(".wt-rowaction")).toHaveLength(0);
+    // Scoped to the header: worktree rows carry controls of their own, and
+    // counting every control in the tree would pass for the wrong reason.
+    expect(host.querySelectorAll(".wt-repo .wt-rowaction")).toHaveLength(0);
   });
 
   it("[1_2] a single-repo tree renders no header and no header control", () => {
@@ -3938,7 +4104,7 @@ describe("create on the repo group header", () => {
     view.setData(populated());
 
     expect(host.querySelectorAll(".wt-repo")).toHaveLength(0);
-    expect(host.querySelectorAll(".wt-rowaction")).toHaveLength(0);
+    expect(host.querySelectorAll(".wt-repo .wt-rowaction")).toHaveLength(0);
   });
 });
 

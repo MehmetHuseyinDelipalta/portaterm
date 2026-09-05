@@ -137,19 +137,6 @@ export interface WorktreeViewDeps {
    * naming a worktree that is gone.
    */
   onSelectWorktree?: (worktreeId: string | null) => void;
-  /**
-   * A worktree row was activated. Raised on EVERY activation under the rollout,
-   * where `onSelectWorktree` fires only on a move: what is scoped and what is
-   * being read are two questions, and re-activating the selected row is how a
-   * dismissed inspector is reopened (design.md D3).
-   */
-  onInspect?: (worktreeId: string) => void;
-  /**
-   * A confidence re-derivation just happened, driven by the ceiling deadline
-   * rather than by a push. Raised so a second surface reading the same rows
-   * cannot disagree with the tree about a row's state (design.md D7).
-   */
-  onCeilingTick?: () => void;
   /** Activating an agent row — focus its pane, or open its preview (§ 6). */
   onActivateAgent?: (row: WorktreeAgentRow, activation: WorktreeRowActivation) => void;
   /** Activating a subagent row targets the PARENT's pane; it has none of its own. */
@@ -483,15 +470,33 @@ export class WorktreeView {
   }
 
   /**
-   * Select a worktree. Returns whether the selection moved so the caller can
-   * decide who repaints: activation also toggles disclosure, and two repaints
-   * for one click would rebuild the tree twice and throw focus away in between.
+   * Open the row's action menu from its own `…` control.
+   *
+   * A keyboard press reports (0, 0), which the cursor-anchored shell would take
+   * literally and pin the menu to the panel's top-left corner. The control's own
+   * rect is where the gesture actually happened, so that is what is passed on.
+   */
+  private openRowMenu(info: WorktreeInfo, ev: MouseEvent, row: HTMLElement): void {
+    const fromKeyboard = ev.detail === 0;
+    if (!fromKeyboard) {
+      this.menu?.openForWorktree(info, ev, row);
+      return;
+    }
+    const rect = (ev.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+    this.menu?.openForWorktree(
+      info,
+      new MouseEvent("contextmenu", { clientX: rect?.left ?? 0, clientY: rect?.bottom ?? 0 }),
+      row,
+    );
+  }
+
+  /**
+   * Select a worktree. Returns whether the selection moved, so the caller
+   * repaints once or not at all — the mark is a render input, and repainting on
+   * a re-select would rebuild the tree and throw focus away for nothing.
    */
   private select(worktreeId: string): boolean {
     if (this.selectedWorktreeId === worktreeId) {
-      // Nothing to announce about the scope, but the user asked to read this
-      // worktree again — which is the only way a dismissed drawer reopens.
-      this.deps.onInspect?.(worktreeId);
       return false;
     }
     // Announced BEFORE the field moves, and the throw is not caught. The listener
@@ -501,9 +506,6 @@ export class WorktreeView {
     // the chip cleared it (round-2 V1).
     this.deps.onSelectWorktree?.(worktreeId);
     this.selectedWorktreeId = worktreeId;
-    // Last, for the same reason: inspecting first would leave the drawer
-    // describing a worktree the selection never reached.
-    this.deps.onInspect?.(worktreeId);
     return true;
   }
 
@@ -531,7 +533,6 @@ export class WorktreeView {
       () => {
         this.ceilingTimer = undefined;
         this.applyAt(this.now());
-        this.deps.onCeilingTick?.();
       },
       // Clamped, because a `stateStartedAt` in the future is CONFIRMED — an
       // impossible clock must not manufacture staleness — which is exactly what
@@ -1341,15 +1342,23 @@ export class WorktreeView {
           agentSummary: rows.length > 0 ? agentCountLabel(rows.length) : undefined,
         },
         {
+          // Select and scope. NOTHING else: folding the agent block open from the
+          // same gesture is what made one click read as three events at once, and
+          // § 6 has always given disclosure to the chevron rather than the row.
           onActivate: () => {
-            const moved = this.select(info.id);
-            if (rows.length > 0) {
-              this.toggleCollapsed(info.id);
-            } else if (moved) {
+            if (this.select(info.id)) {
               this.repaint();
             }
           },
           onContextMenu: this.menu ? (i, ev, row) => this.menu?.openForWorktree(i, ev, row) : undefined,
+          // The affirmative action, on the row that owns it — absent when the
+          // capability was not supplied, and for a directory that is gone.
+          onLaunchAgent: this.deps.actions?.launchAgentHere
+            ? (i) => this.deps.actions?.launchAgentHere?.(i)
+            : undefined,
+          // Everything else, one press further in — the same menu the right-click
+          // opens, so the two can never offer different things.
+          onOverflowMenu: this.menu ? (i, ev, row) => this.openRowMenu(i, ev, row) : undefined,
           // Same rule as the menu's: an affordance whose capability was not
           // supplied is absent, not present and inert (design.md D10).
           onOpenFolder: this.deps.actions?.openFolderInNewWindow

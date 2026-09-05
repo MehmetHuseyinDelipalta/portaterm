@@ -10,7 +10,7 @@
 
 import { ACTIVITY_EVIDENCE } from "../../worktree/presenceTypes";
 import { getAgentAccent, getAgentIcon } from "../vault/agentIcons";
-import { ICON_CHEVRON_DOWN, ICON_FOLDER, ICON_TERMINAL } from "../vault/icons";
+import { ICON_CHEVRON_DOWN, ICON_FOLDER, ICON_RESUME, ICON_TERMINAL } from "../vault/icons";
 import { emptyState } from "../vault/renderAtoms";
 import {
   agentCountLabel,
@@ -28,7 +28,7 @@ import {
   worktreePills,
   worktreeTooltip,
 } from "./worktreeFormat";
-import { ICON_BRANCH, ICON_LOCK, ICON_PLUS, ICON_WARNING, ICON_WINDOW } from "./worktreeIcons";
+import { ICON_BRANCH, ICON_ELLIPSIS, ICON_LOCK, ICON_PLUS, ICON_WARNING, ICON_WINDOW } from "./worktreeIcons";
 import type {
   DelegationRoster,
   WorktreeAgentRow,
@@ -45,6 +45,15 @@ export interface WorktreeRowCallbacks {
   onContextMenu?: (info: WorktreeInfo, ev: MouseEvent, row: HTMLElement) => void;
   /** Double click opens the folder (§ 6). */
   onOpenFolder?: (info: WorktreeInfo) => void;
+  /**
+   * The row's own controls, drawn on its trailing edge and reachable by Tab from
+   * the row (§ 6). Absent → the control is absent, never present and inert.
+   *
+   * They exist because activating the row now does one thing — select and scope
+   * it — so the actions need a door of their own that is not a right-click.
+   */
+  onLaunchAgent?: (info: WorktreeInfo) => void;
+  onOverflowMenu?: (info: WorktreeInfo, ev: MouseEvent, row: HTMLElement) => void;
 }
 
 export interface AgentRowCallbacks {
@@ -63,7 +72,7 @@ export interface AgentRowCallbacks {
  * tab index starts at -1: the tree exposes one tab stop, and the view raises
  * this to 0 only while its own row holds focus.
  */
-function rowAction(icon: string, label: string, activate: () => void): HTMLButtonElement {
+function rowAction(icon: string, label: string, activate: (ev: MouseEvent) => void): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "wt-rowaction";
@@ -73,7 +82,10 @@ function rowAction(icon: string, label: string, activate: () => void): HTMLButto
   btn.dataset.tip = label;
   btn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    activate();
+    // The event travels on: a cursor-anchored menu has no other way to know
+    // where the gesture happened, and a keyboard press reports (0, 0), which is
+    // a placement the opener has to recognise rather than trust.
+    activate(ev);
   });
   btn.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter" || ev.key === " ") {
@@ -266,6 +278,39 @@ export interface WorktreeRowOptions {
   selected?: boolean;
 }
 
+/** The pills and badges for one worktree, as one `.wt-marks` run (§ 3.3). */
+function renderWorktreeMarks(info: WorktreeInfo): HTMLElement {
+  const marks = document.createElement("span");
+  marks.className = "wt-marks";
+  for (const pill of worktreePills(info)) {
+    const el = document.createElement("span");
+    el.className = pill.kind === "open" ? "wt-pill wt-pill--open" : "wt-pill";
+    el.textContent = pill.text;
+    if (pill.kind === "open") {
+      // Every worktree the workspace holds open carries this, so several rows can
+      // — the hint has to say so, or the mark reads as "the one you are in".
+      el.dataset.tip = "This worktree is open as a workspace folder";
+    }
+    marks.appendChild(el);
+  }
+  for (const badge of worktreeBadges(info)) {
+    const el = document.createElement("span");
+    el.className = `wt-badge wt-badge--${badge.kind}`;
+    if (badge.title) {
+      el.dataset.tip = badge.title;
+    }
+    if (badge.kind === "locked") {
+      const icon = document.createElement("span");
+      icon.innerHTML = ICON_LOCK;
+      icon.setAttribute("aria-hidden", "true");
+      el.appendChild(icon);
+    }
+    el.append(document.createTextNode(badge.kind));
+    marks.appendChild(el);
+  }
+  return marks;
+}
+
 /**
  * One worktree row: state-aware leading glyph, branch, pills, badges. **No path
  * anywhere** (§ 3.2) — it lives in the tooltip and the copy action.
@@ -321,36 +366,34 @@ export function renderWorktreeRow(info: WorktreeInfo, opts: WorktreeRowOptions, 
   branch.textContent = label.text;
   row.appendChild(branch);
 
-  const marks = document.createElement("span");
-  marks.className = "wt-marks";
-  for (const pill of worktreePills(info)) {
-    const el = document.createElement("span");
-    el.className = pill.kind === "open" ? "wt-pill wt-pill--open" : "wt-pill";
-    el.textContent = pill.text;
-    if (pill.kind === "open") {
-      // Every worktree the workspace holds open carries this, so several rows can
-      // — the hint has to say so, or the mark reads as "the one you are in".
-      el.dataset.tip = "This worktree is open as a workspace folder";
-    }
-    marks.appendChild(el);
-  }
-  for (const badge of worktreeBadges(info)) {
-    const el = document.createElement("span");
-    el.className = `wt-badge wt-badge--${badge.kind}`;
-    if (badge.title) {
-      el.dataset.tip = badge.title;
-    }
-    if (badge.kind === "locked") {
-      const icon = document.createElement("span");
-      icon.innerHTML = ICON_LOCK;
-      icon.setAttribute("aria-hidden", "true");
-      el.appendChild(icon);
-    }
-    el.append(document.createTextNode(badge.kind));
-    marks.appendChild(el);
-  }
-  row.appendChild(marks);
+  row.appendChild(renderWorktreeMarks(info));
 
+  // The row's own toolbar. Hidden until the row is hovered, focused, or selected
+  // (CSS) — but always in the DOM, so it joins the tab order the moment the row
+  // becomes the tree's stop and is never pointer-only.
+  const tools = document.createElement("span");
+  tools.className = "wt-rowtools";
+  // Launching is the affirmative action a worktree exists for, so it is the one
+  // that gets its own button; everything else is one press further in.
+  if (cb.onLaunchAgent && !info.missing) {
+    tools.appendChild(
+      rowAction(ICON_RESUME, `Start an agent in ${branchLabel(info).text}`, () => cb.onLaunchAgent?.(info)),
+    );
+  }
+  if (cb.onOverflowMenu) {
+    tools.appendChild(
+      rowAction(ICON_ELLIPSIS, `More actions for ${branchLabel(info).text}`, (ev) =>
+        cb.onOverflowMenu?.(info, ev, row),
+      ),
+    );
+  }
+  if (tools.childElementCount > 0) {
+    row.appendChild(tools);
+  }
+
+  // Selection only. Disclosure belongs to the presence pill below and to the
+  // Left/Right keys — one gesture that both scoped the terminal and folded the
+  // row open is what made a single click read as three separate events (§ 6).
   bindActivation(row, () => cb.onActivate(info, row));
   if (cb.onContextMenu) {
     row.addEventListener("contextmenu", (ev) => {
