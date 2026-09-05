@@ -367,6 +367,8 @@ function createMockWebviewPanel(
 }
 
 let _showQuickPickImpl: (items: readonly unknown[], options?: unknown) => Promise<unknown> = async () => undefined;
+let _showOpenDialogImpl: (options?: unknown) => Promise<readonly { fsPath: string }[] | undefined> = async () =>
+  undefined;
 
 // ─── ColorThemeKind / theme bridge ──────────────────────────────────
 
@@ -386,7 +388,7 @@ export const window = {
   showWarningMessage: (_msg?: string, ..._rest: unknown[]) => Promise.resolve(undefined),
   showTextDocument: (_uri?: unknown, _opts?: unknown) => Promise.resolve({}),
   showQuickPick: (items: readonly unknown[], options?: unknown) => _showQuickPickImpl(items, options),
-  showOpenDialog: (_options?: unknown) => Promise.resolve(undefined),
+  showOpenDialog: (options?: unknown) => _showOpenDialogImpl(options),
   showInputBox: (_options?: unknown) => Promise.resolve(undefined),
   createWebviewPanel: createMockWebviewPanel,
   registerWebviewViewProvider: (_viewType: string, _provider: unknown, _options?: unknown) => ({
@@ -599,6 +601,13 @@ export function __setShowQuickPick(fn: (items: readonly unknown[], options?: unk
   _showQuickPickImpl = fn;
 }
 
+/** Set mock window.showOpenDialog for testing. */
+export function __setShowOpenDialog(
+  fn: (options?: unknown) => Promise<readonly { fsPath: string }[] | undefined>,
+): void {
+  _showOpenDialogImpl = fn;
+}
+
 /** Reset all mock state to defaults. */
 export function __resetAll(): void {
   env.appRoot = "/mock/vscode/app";
@@ -608,6 +617,7 @@ export function __resetAll(): void {
   _configChangeHandlers.length = 0;
   _findFilesImpl = async () => [];
   _showQuickPickImpl = async () => undefined;
+  _showOpenDialogImpl = async () => undefined;
   _themeChangeHandlers.length = 0;
   _activeColorTheme = { kind: ColorThemeKind.Dark };
   _tabChangeHandlers.length = 0;

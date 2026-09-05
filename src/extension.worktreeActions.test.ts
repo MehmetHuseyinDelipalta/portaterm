@@ -8,13 +8,24 @@
 //
 // See: asimov/changes/wire-worktree-navigation-actions/design.md D2, D4.
 
-import { describe, expect, it } from "vitest";
-import { createWorktreeActions, type WorktreeActionDeps } from "./extension";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createWorktreeActions, pickCopyFilePath, type WorktreeActionDeps } from "./extension";
+import { __resetAll, __setShowOpenDialog } from "./test/__mocks__/vscode";
 import type { ExtensionToWebViewMessage } from "./types/messages";
 
 const SIDEBAR = "anywhereTerminal.sidebar";
 const PANEL = "anywhereTerminal.panel";
 const EDITOR = "editor-abc";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolve_) => {
+    resolve = resolve_;
+  });
+  return { promise, resolve };
+}
+
+afterEach(() => __resetAll());
 
 function harness(over: Partial<WorktreeActionDeps> = {}) {
   const commands: Array<[string, ...unknown[]]> = [];
@@ -51,7 +62,7 @@ function harness(over: Partial<WorktreeActionDeps> = {}) {
     ...over,
   };
 
-  return { actions: createWorktreeActions(deps), commands, clipboard, folders, editorPosts, viewPosts, revealed };
+  return { actions: createWorktreeActions(deps), deps, commands, clipboard, folders, editorPosts, viewPosts, revealed };
 }
 
 describe("a focused pane is revealed where it actually lives", () => {
@@ -159,5 +170,165 @@ describe("the session capabilities", () => {
     });
     await expect(h.actions.copyResumeCommand("claude:s1")).rejects.toThrow("unknown-agent");
     expect(h.clipboard).toEqual([]);
+  });
+});
+
+describe("a file picked for this create", () => {
+  const picked = async (
+    over: {
+      selected?: string | null;
+      root?: string;
+      candidates?: readonly (string | null)[];
+      hold?: () => Promise<ReturnType<typeof held> | undefined>;
+      reserve?: boolean;
+      elapsed?: Promise<void>;
+    } = {},
+  ) => {
+    const file = held();
+    const abandon = vi.fn();
+    const hold = vi.fn(over.hold ?? (async () => file));
+    const reserve = vi.fn(() => (over.reserve === false ? undefined : { hold, abandon }));
+    const pool = { charged: 0, reserve, dispose: vi.fn() };
+    const answers = [...(over.candidates ?? ["/private/repo/.env", "/private/repo/.env"])] as Array<string | null>;
+    const actions = createWorktreeActions({
+      ...harnessDeps(),
+      pickFile: async () => (over.selected === null ? undefined : (over.selected ?? "/repo/.env")),
+      heldRegularFiles: pool,
+      resolvedPathDeps: {
+        realpath: async (value) => {
+          if (value === "/repo") {
+            return over.root ?? "/private/repo";
+          }
+          const answer = answers.shift();
+          if (answer === null || answer === undefined) {
+            throw Object.assign(new Error("unresolved"), { code: "EACCES" });
+          }
+          return answer;
+        },
+      },
+      pickCopyDeadline: () => ({
+        elapsed: over.elapsed ?? new Promise<void>(() => {}),
+        expired: false,
+        cancel: vi.fn(),
+      }),
+    } as WorktreeActionDeps);
+    return { actions, file, abandon, hold, reserve };
+  };
+
+  function held() {
+    return { claim: vi.fn(), dispose: vi.fn() };
+  }
+
+  function harnessDeps(): WorktreeActionDeps {
+    return harness().deps;
+  }
+
+  it("opens one file at the repository and returns a cancelled answer unchanged", async () => {
+    const options: unknown[] = [];
+    __setShowOpenDialog(async (given) => {
+      options.push(given);
+      return undefined;
+    });
+
+    expect(await pickCopyFilePath("/repo")).toBeUndefined();
+    expect(options).toEqual([
+      {
+        canSelectFolders: false,
+        canSelectFiles: true,
+        canSelectMany: false,
+        defaultUri: expect.objectContaining({ fsPath: "/repo" }),
+        openLabel: "Add File",
+        title: "Add a file to copy for this create",
+      },
+    ]);
+  });
+
+  it("does not reserve a lifecycle slot when the picker is dismissed", async () => {
+    const h = await picked({ selected: null });
+    const pick = h.actions.pickCopyFile;
+    if (pick === undefined) {
+      throw new Error("picker action missing");
+    }
+
+    await expect(pick("/repo")).resolves.toBeUndefined();
+    expect(h.reserve).not.toHaveBeenCalled();
+  });
+
+  it("returns the held object and canonical POSIX path after matching alias answers", async () => {
+    const h = await picked();
+    const pick = h.actions.pickCopyFile;
+    if (pick === undefined) {
+      throw new Error("picker action missing");
+    }
+
+    await expect(pick("/repo")).resolves.toEqual({
+      path: ".env",
+      canonicalPath: "/private/repo/.env",
+      file: h.file,
+    });
+    expect(h.hold).toHaveBeenCalledWith("/repo/.env");
+    expect(h.file.dispose).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["root equality", ["/private/repo"]],
+    ["an outside path", ["/other/.env"]],
+  ])("refuses %s before holding it", async (_name, candidates) => {
+    const h = await picked({ candidates });
+    const pick = h.actions.pickCopyFile;
+    if (pick === undefined) {
+      throw new Error("picker action missing");
+    }
+
+    await expect(pick("/repo")).resolves.toBeUndefined();
+    expect(h.hold).not.toHaveBeenCalled();
+    expect(h.abandon).toHaveBeenCalledOnce();
+  });
+
+  it("refuses pool exhaustion and an unsupported no-follow hold", async () => {
+    const exhausted = await picked({ reserve: false });
+    const noSlot = exhausted.actions.pickCopyFile;
+    if (noSlot === undefined) {
+      throw new Error("picker action missing");
+    }
+    await expect(noSlot("/repo")).resolves.toBeUndefined();
+
+    const unsupported = await picked({ hold: async () => undefined });
+    const noFile = unsupported.actions.pickCopyFile;
+    if (noFile === undefined) {
+      throw new Error("picker action missing");
+    }
+    await expect(noFile("/repo")).resolves.toBeUndefined();
+    expect(unsupported.abandon).toHaveBeenCalledOnce();
+  });
+
+  it("disposes a held file when the second containment answer drifts", async () => {
+    const h = await picked({ candidates: ["/private/repo/.env", "/private/repo/other.env"] });
+    const pick = h.actions.pickCopyFile;
+    if (pick === undefined) {
+      throw new Error("picker action missing");
+    }
+
+    await expect(pick("/repo")).resolves.toBeUndefined();
+    expect(h.file.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("abandons a stalled hold and disposes its late answer", async () => {
+    const holding = deferred<ReturnType<typeof held>>();
+    const elapsed = deferred<void>();
+    const h = await picked({ hold: () => holding.promise, elapsed: elapsed.promise });
+    const pick = h.actions.pickCopyFile;
+    if (pick === undefined) {
+      throw new Error("picker action missing");
+    }
+    const answer = pick("/repo");
+    await new Promise((resolve) => setImmediate(resolve));
+
+    elapsed.resolve();
+    await expect(answer).resolves.toBeUndefined();
+    expect(h.abandon).toHaveBeenCalledOnce();
+    holding.resolve(h.file);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(h.file.dispose).toHaveBeenCalledOnce();
   });
 });

@@ -28,7 +28,12 @@ import { TerminalEditorProvider } from "./providers/TerminalEditorProvider";
 import { TerminalPanelSerializer } from "./providers/TerminalPanelSerializer";
 import { TerminalViewProvider } from "./providers/TerminalViewProvider";
 import { VaultWatchCoordinator } from "./providers/VaultWatchCoordinator";
-import { createWorktreeHost, type WorktreeActions, type WorktreeSurface } from "./providers/WorktreeHost";
+import {
+  createWorktreeHost,
+  type PickedCopyFile,
+  type WorktreeActions,
+  type WorktreeSurface,
+} from "./providers/WorktreeHost";
 import { loadNodePty } from "./pty/PtyManager";
 import type { MessageSender } from "./session/OutputBuffer";
 import { createPaneEvidenceStore } from "./session/PaneEvidenceStore";
@@ -52,7 +57,13 @@ import type {
 } from "./types/messages";
 import { MAX_SETUP_STEP_CHARS } from "./types/messages";
 import { type AuthorizedDirectory, authorizeDirectory, directoryStillAuthorized } from "./utils/authorizedDirectory";
+import { createHeldRegularFilePool, type HeldRegularFilePool } from "./utils/heldRegularFile";
 import { isPathInside } from "./utils/pathBoundary";
+import {
+  authorizedPathInsideRoot,
+  prepareResolvedRoot,
+  type ResolvedPathInsideDeps,
+} from "./utils/resolvedPathBoundary";
 import { createTrackedPathResolver, ResolvedPathMemo } from "./utils/resolvedPathMemo";
 import { escapePathForShell } from "./utils/shellEscape";
 import { MAX_DETAIL_LIMIT } from "./vault/readers/detail";
@@ -66,7 +77,7 @@ import { VaultLauncher } from "./vault/VaultLauncher";
 import { VaultService } from "./vault/VaultService";
 import { probeAdopt } from "./worktree/adoptProbe";
 import { type AdoptFs, adoptWorktree } from "./worktree/adoptWorktree";
-import { afterDelay } from "./worktree/deadline";
+import { afterDelay, type Deadline } from "./worktree/deadline";
 import { rosterFromDetail } from "./worktree/delegations";
 import { deleteBranch as runDeleteBranch } from "./worktree/deleteBranch";
 import { createGitCommandRunner } from "./worktree/gitCommandRunner";
@@ -133,6 +144,26 @@ export interface WorktreeActionDeps {
   pickFolder(): Promise<string | undefined>;
   /** The setup command the user typed, or `undefined` for a dismissed input. */
   promptSetupStep(current?: string): Promise<string | undefined>;
+  /** Open the extension-owned file picker at this repository. */
+  pickFile?(repoRoot: string): Promise<string | undefined>;
+  /** One activation-scoped pool shared by every picker answer. */
+  heldRegularFiles?: HeldRegularFilePool;
+  /** Test seam for resolved containment; production uses node:fs. */
+  resolvedPathDeps?: ResolvedPathInsideDeps;
+  /** Test seam for the bounded admission deadline. */
+  pickCopyDeadline?(ms: number): Deadline;
+}
+
+export async function pickCopyFilePath(repoRoot: string): Promise<string | undefined> {
+  const picked = await vscode.window.showOpenDialog({
+    canSelectFolders: false,
+    canSelectFiles: true,
+    canSelectMany: false,
+    defaultUri: vscode.Uri.file(repoRoot),
+    openLabel: "Add File",
+    title: "Add a file to copy for this create",
+  });
+  return picked?.[0]?.fsPath;
 }
 
 /**
@@ -143,6 +174,89 @@ export interface WorktreeActionDeps {
  * capability lives on `WorktreeSurface` instead (D2).
  */
 export function createWorktreeActions(deps: WorktreeActionDeps): WorktreeActions {
+  const pickFile = deps.pickFile;
+  const heldRegularFiles = deps.heldRegularFiles;
+  const pickCopyFile =
+    pickFile === undefined || heldRegularFiles === undefined
+      ? undefined
+      : async (repoRoot: string): Promise<PickedCopyFile | undefined> => {
+          let picked: string | undefined;
+          try {
+            picked = await pickFile(repoRoot);
+          } catch {
+            return undefined;
+          }
+          if (picked === undefined) {
+            return undefined;
+          }
+          const reservation = heldRegularFiles.reserve();
+          if (reservation === undefined) {
+            return undefined;
+          }
+          const deadline = (deps.pickCopyDeadline ?? afterDelay)(5_000);
+          let stopped = false;
+          let held: Awaited<ReturnType<typeof reservation.hold>>;
+          let transferred = false;
+          const admission = (async (): Promise<PickedCopyFile | undefined> => {
+            try {
+              const root = await prepareResolvedRoot(repoRoot, deps.resolvedPathDeps);
+              if (root === null || stopped) {
+                return undefined;
+              }
+              const before = await authorizedPathInsideRoot(picked, root, deps.resolvedPathDeps);
+              if (before === null || stopped) {
+                return undefined;
+              }
+              held = await reservation.hold(picked);
+              if (held === undefined || stopped) {
+                return undefined;
+              }
+              const after = await authorizedPathInsideRoot(picked, root, deps.resolvedPathDeps);
+              if (after === null || after !== before || stopped) {
+                return undefined;
+              }
+              const relative = path.relative(root.resolved, after);
+              if (relative.length === 0 || path.isAbsolute(relative) || relative.split(path.sep)[0] === "..") {
+                return undefined;
+              }
+              transferred = true;
+              return {
+                path: relative.split(path.sep).join("/"),
+                canonicalPath: after,
+                file: held,
+              };
+            } finally {
+              if (!transferred) {
+                held?.dispose();
+              }
+            }
+          })();
+          try {
+            const result = await Promise.race([
+              admission.then((value) => ({ kind: "answer" as const, value })),
+              deadline.elapsed.then(() => ({ kind: "timeout" as const })),
+            ]);
+            if (result.kind === "answer") {
+              if (result.value === undefined) {
+                reservation.abandon();
+              }
+              return result.value;
+            }
+            stopped = true;
+            reservation.abandon();
+            held?.dispose();
+            void admission.catch(() => {});
+            return undefined;
+          } catch {
+            stopped = true;
+            reservation.abandon();
+            held?.dispose();
+            return undefined;
+          } finally {
+            deadline.cancel();
+          }
+        };
+
   /** Reveal the surface that HOLDS a pane, then activate the pane inside it. */
   async function focusPane(paneId: string, viewId: string): Promise<void> {
     const activate: ExtensionToWebViewMessage = { type: "worktreeActivatePane", paneId };
@@ -180,6 +294,7 @@ export function createWorktreeActions(deps: WorktreeActionDeps): WorktreeActions
       await deps.executeCommand("revealFileInOS", deps.fileUri(path));
     },
     pickFolder: () => deps.pickFolder(),
+    ...(pickCopyFile === undefined ? {} : { pickCopyFile }),
     promptSetupStep: (current) => deps.promptSetupStep(current),
     copyText: async (text) => {
       await deps.writeClipboard(text);
@@ -549,10 +664,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // how many surfaces show it. See: cache-and-broadcast-worktree-tree design.md D1.
   // Constructed before the host, which needs it for the resume-command capability.
   const vaultLauncher = new VaultLauncher(vaultService);
+  const heldRegularFiles = createHeldRegularFilePool();
+  context.subscriptions.push(heldRegularFiles);
 
   const worktreeActions = createWorktreeActions({
     executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args),
     writeClipboard: (text) => vscode.env.clipboard.writeText(text),
+    pickFile: pickCopyFilePath,
+    heldRegularFiles,
     // The same shape the file tree's Open Folder already uses, so the two
     // pickers in this product ask the same question the same way.
     pickFolder: async () => {

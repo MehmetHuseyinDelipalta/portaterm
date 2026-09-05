@@ -12,7 +12,7 @@
 
 ## 2. Safely hold the picker result
 
-- [ ] 2_1 Return one resolved in-repository holder from the system picker
+- [x] 2_1 Return one resolved in-repository holder from the system picker — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/extension.worktreeActions.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 1_1
   - **Refs**: specs/worktree-panel/spec.md#a-file-can-be-added-to-copy-for-this-create-only; design.md D1
   - **Acceptance**:
