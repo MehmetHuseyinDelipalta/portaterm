@@ -11,6 +11,7 @@
 //
 // So: no fake, no injection. `nodeApplyFsDeps` verbatim, on a temp tree.
 
+import nodeFs from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -29,6 +30,26 @@ let worktree: string;
 let roots: EntryGateRoots;
 
 const unlinkable = process.platform === "win32" ? it.skip : it;
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolve_, reject_) => {
+    resolve = resolve_;
+    reject = reject_;
+  });
+  return { promise, resolve, reject };
+}
+
+async function until(check: () => boolean): Promise<void> {
+  for (let i = 0; i < 100; i += 1) {
+    if (check()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("condition did not settle");
+}
 
 const budget = (over: Partial<ApplyBudget> = {}): ApplyBudget => ({
   maxNodes: 1000,
@@ -712,6 +733,42 @@ describe("held-copy teardown errors", () => {
     expect(lifecycle).toHaveLength(1);
     expect(settled).toBe(false);
     open.mockRestore();
+  });
+
+  it("retains the slot when close bookkeeping precedes a rejected streamed destination close", async () => {
+    const sourcePath = path.join(main, "stream-close-source");
+    await fs.writeFile(sourcePath, "held");
+    const pool = createHeldRegularFilePool({ max: 1 });
+    const source = (await pool.reserve()?.hold(sourcePath))?.claim()?.acquireSource();
+    if (source === undefined) {
+      throw new Error("source was not acquired");
+    }
+    const destinationPath = path.join(worktree, "stream-close");
+    const destination = await fs.open(destinationPath, "wx+");
+    const liveFd = destination.fd;
+    const realClose = destination.close;
+    const closing = deferred<void>();
+    destination.close = () => {
+      Object.defineProperty(destination, "fd", { configurable: true, value: -1 });
+      return closing.promise;
+    };
+    const open = vi.spyOn(fs, "open").mockResolvedValueOnce(destination);
+    const operation = nodeApplyFsDeps.copyHeldFile(source, destinationPath, 0o600);
+    try {
+      await until(() => destination.fd === -1);
+      closing.reject(Object.assign(new Error("close failed"), { code: "EIO" }));
+      await expect(operation).rejects.toThrow("close failed");
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(nodeFs.fstatSync(liveFd).isFile()).toBe(true);
+      expect(pool.charged).toBe(1);
+      expect(pool.reserve()).toBeUndefined();
+    } finally {
+      open.mockRestore();
+      delete (destination as { fd?: number }).fd;
+      destination.close = realClose;
+      await realClose.call(destination);
+    }
   });
 
   it("observes the actual operation even when cancellation was already requested", async () => {

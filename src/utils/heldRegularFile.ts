@@ -5,6 +5,50 @@ import { type Constants, type OpenLike, type OpenRegularFileOptions, openRegular
 
 export const MAX_HELD_REGULAR_FILES = 64;
 
+export interface TrackedFileHandleClose {
+  readonly fulfilled: Promise<boolean>;
+  restore(): void;
+}
+
+/** Observe the close promise before Node eagerly changes FileHandle.fd to -1. */
+export function trackFileHandleClose(handle: FileHandle): TrackedFileHandleClose {
+  const originalClose = handle.close;
+  let started = false;
+  let settle!: (fulfilled: boolean) => void;
+  const fulfilled = new Promise<boolean>((resolve) => {
+    settle = resolve;
+  });
+  const trackedClose = (): Promise<void> => {
+    let closing: Promise<void>;
+    try {
+      closing = originalClose.call(handle);
+    } catch (error) {
+      if (!started) {
+        started = true;
+        settle(false);
+      }
+      throw error;
+    }
+    if (!started) {
+      started = true;
+      void closing.then(
+        () => settle(true),
+        () => settle(false),
+      );
+    }
+    return closing;
+  };
+  handle.close = trackedClose;
+  return {
+    fulfilled,
+    restore: () => {
+      if (!started && handle.close === trackedClose) {
+        handle.close = originalClose;
+      }
+    },
+  };
+}
+
 export interface HeldFileReservation {
   hold(filePath: string): Promise<HeldRegularFile | undefined>;
   abandon(): void;
@@ -99,7 +143,6 @@ class Slot {
   mode = 0;
   size = 0;
   stream: Readable | undefined;
-  streamHandle: FileHandle | undefined;
   streamClosed = false;
   pipelineRegistered = false;
   pipelineDone = false;
@@ -246,26 +289,26 @@ class Slot {
     if (this.state !== "claimed" || !this.handle) {
       return undefined;
     }
+    const trackedClose = trackFileHandleClose(this.handle);
     let stream: Readable;
     try {
       stream = this.handle.createReadStream({ start: 0, autoClose: true });
     } catch {
+      trackedClose.restore();
       this.state = "closing";
       this.requestHandleClose();
       return undefined;
     }
 
-    this.streamHandle = this.handle;
     this.handle = undefined;
     this.state = "source";
     this.stream = stream;
     stream.on("error", () => {});
-    stream.once("close", () => {
-      // Node can emit `close` even when FileHandle.close() rejected. The fd
-      // transition is the positive witness that the stream-owned descriptor
-      // actually closed; ambiguity keeps the lifecycle slot charged.
-      this.streamClosed = this.streamHandle?.fd === -1;
-      this.releaseFinishedSource();
+    void trackedClose.fulfilled.then((fulfilled) => {
+      if (fulfilled) {
+        this.streamClosed = true;
+        this.releaseFinishedSource();
+      }
     });
 
     return {
@@ -345,7 +388,6 @@ class Slot {
       return;
     }
     this.state = "released";
-    this.streamHandle = undefined;
     this.pool.release(this);
   }
 }

@@ -1,3 +1,4 @@
+import nodeFs from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -292,12 +293,15 @@ describe("HeldRegularFilePool", () => {
 });
 
 describe("stream-owned descriptor closure", () => {
-  it("keeps the slot charged when stream close fires but the descriptor remains live", async () => {
+  it("keeps the slot charged when close bookkeeping precedes a rejected source close", async () => {
     const target = await file("held");
     const handle = await fs.open(target, "r");
-    const realClose = handle.close.bind(handle);
-    handle.close = async () => {
-      throw Object.assign(new Error("close failed"), { code: "EIO" });
+    const liveFd = handle.fd;
+    const realClose = handle.close;
+    const closing = deferred<void>();
+    handle.close = () => {
+      Object.defineProperty(handle, "fd", { configurable: true, value: -1 });
+      return closing.promise;
     };
     const pool = createHeldRegularFilePool({
       max: 1,
@@ -312,14 +316,17 @@ describe("stream-owned descriptor closure", () => {
     }
     const work = pipeline(source.stream, new Writable({ write: (_chunk, _encoding, done) => done() }));
     source.finishWhen(work);
+    await until(() => handle.fd === -1);
+    closing.reject(Object.assign(new Error("close failed"), { code: "EIO" }));
     await expect(work).rejects.toThrow("close failed");
     await new Promise((resolve) => setImmediate(resolve));
 
-    expect((await handle.stat()).isFile()).toBe(true);
+    expect(nodeFs.fstatSync(liveFd).isFile()).toBe(true);
     expect(pool.charged).toBe(1);
     expect(pool.reserve()).toBeUndefined();
 
+    delete (handle as { fd?: number }).fd;
     handle.close = realClose;
-    await realClose();
+    await realClose.call(handle);
   });
 });

@@ -31,7 +31,7 @@ import { type Readable, Transform, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ProvisionStepResult } from "../../types/messages";
 import type { AuthorizedDirectory } from "../../utils/authorizedDirectory";
-import type { HeldFileSource } from "../../utils/heldRegularFile";
+import { type HeldFileSource, trackFileHandleClose } from "../../utils/heldRegularFile";
 import { isResolvedPathInsideRoot, type ResolvedPathInsideDeps } from "../../utils/resolvedPathBoundary";
 import type { Deadline } from "../deadline";
 import { messageOf } from "../errorMessage";
@@ -916,7 +916,7 @@ export const nodeApplyFsDeps: ApplyFsDeps & ResolvedPathInsideDeps = {
     });
     const operation = (async (): Promise<number> => {
       let destinationHandle: FileHandle | undefined;
-      let streamed = false;
+      let streamedClose: Promise<boolean> | undefined;
       try {
         if (signal?.aborted) {
           throw abortError(signal);
@@ -929,12 +929,22 @@ export const nodeApplyFsDeps: ApplyFsDeps & ResolvedPathInsideDeps = {
         if (signal?.aborted) {
           throw abortError(signal);
         }
-        output = destinationHandle.createWriteStream();
+        const trackedClose = trackFileHandleClose(destinationHandle);
+        try {
+          output = destinationHandle.createWriteStream();
+        } catch (error) {
+          trackedClose.restore();
+          throw error;
+        }
+        streamedClose = trackedClose.fulfilled;
         destinationHandle = undefined;
-        streamed = true;
         return await copyPipeline(source.stream, output, signal, limit, written);
       } finally {
-        if (destinationHandle === undefined) {
+        if (streamedClose !== undefined) {
+          if (await streamedClose) {
+            finishLifecycle();
+          }
+        } else if (destinationHandle === undefined) {
           finishLifecycle();
         } else {
           try {
@@ -945,9 +955,6 @@ export const nodeApplyFsDeps: ApplyFsDeps & ResolvedPathInsideDeps = {
             // unresolved lifecycle separately retains the held slot because a
             // rejected close does not prove destination teardown.
           }
-        }
-        if (streamed) {
-          finishLifecycle();
         }
       }
     })();
