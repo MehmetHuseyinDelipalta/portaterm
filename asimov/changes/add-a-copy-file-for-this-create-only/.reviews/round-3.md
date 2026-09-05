@@ -105,8 +105,9 @@ A whole-tree rebuild snapshots repository ids before applying the rebuilt tree, 
 - evidence: `forgetDepartedRepos` invokes `retireRepository` once for every departed repository on every surface. Each invocation then fully scans `provisionSwitch`, `provisionBaseline`, `addedSteps`, `addedCopyFiles`, `migrationReading`, and `migrationOffers` at lines 1137-1170. These maps grow with surface/repository state, and repository count has no structural cap; removing D of R repositories therefore repeats whole-map work D times rather than sweeping each map once.
 - impact: A whole-tree rebuild that removes many repositories can perform quadratic synchronous cleanup on the extension host before projection and delivery complete. The ordinary small-workspace path is correct, but large multi-root churn can visibly stall it.
 - suggestedFix: Sweep each state map once using the departed-id set and live surface keys, or store repository-scoped state in structured surface/repository buckets so each departed bucket is removed directly. Preserve the sibling-survival and holder-disposal witness.
-- status: accepted
-- triage: ACCEPTED. This is a new performance regression inside F002's remediation cone: correctness is restored, but the cleanup repeats unbounded full-map scans per departed repository.
+- status: fixed
+- triage: FIXED. `forgetDepartedRepos` now scans each flat repository-scoped state map once against the departed-id set; only direct offer deletions remain per surface/repository pair. The retained lifecycle witness still proves holder disposal and sibling usability, and a non-vacuous structural witness rejects a per-repository scan helper.
+- outcome: fixed in `425c2d89`.
 
 ## Adjudication
 
