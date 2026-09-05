@@ -9138,6 +9138,45 @@ describe("a setup step typed into the host's own input, for this create only", (
     h.dispose();
   });
 
+  it("retires an admitted picked file when its repository leaves while a sibling remains usable", async () => {
+    const departed = pickedFile("departed.env");
+    const remaining = pickedFile("remaining.env");
+    const roots: string[] = [];
+    const h = await opened({
+      sibling: true,
+      pick: async (root) => {
+        roots.push(root);
+        return root === MAIN_PATH ? departed.picked : remaining.picked;
+      },
+    });
+    h.host.handleMessage(h.view, copyAsk());
+    await settle();
+    expect(departed.file.dispose).not.toHaveBeenCalled();
+
+    await h.setFolders([OTHER_ROOT]);
+    expect(departed.file.dispose).toHaveBeenCalledOnce();
+
+    h.host.handleMessage(h.view, {
+      type: "requestWorktreeCreateDefaults",
+      repoId: OTHER_REPO,
+      opening: 1,
+    });
+    await settle();
+    h.host.handleMessage(h.view, {
+      type: "worktreeCopyFileAsk",
+      repoId: OTHER_REPO,
+      opening: 1,
+      switch: ++seq,
+    });
+    await settle();
+
+    expect(roots).toEqual([MAIN_PATH, OTHER_ROOT]);
+    expect(addedCopies(h.view).map((entry) => entry.path)).toEqual(["remaining.env"]);
+    expect(remaining.file.dispose).not.toHaveBeenCalled();
+    h.dispose();
+    expect(remaining.file.dispose).toHaveBeenCalledOnce();
+  });
+
   it("claims before close and retains the claim until an admitted create settles", async () => {
     let finish!: () => void;
     const creating = new Promise<void>((resolve) => {

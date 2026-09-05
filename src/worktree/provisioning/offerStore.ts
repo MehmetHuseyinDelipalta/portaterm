@@ -55,21 +55,6 @@ export interface ProvisionOfferStore {
   ): ProvisionOffer;
   /** The offer this key currently holds, or `undefined` before one is issued. */
   current(key: ProvisionOfferKey): ProvisionOffer | undefined;
-  /**
-   * The model an id names, **for the form that was shown it**, or `undefined`.
-   *
-   * Scoped rather than global. Ids are a monotonic counter, so a global lookup
-   * would let one window resolve another window's model by guessing a small
-   * integer — and a redeemer written against an unscoped signature cannot add
-   * the scope back, because by then the store no longer knows it (round-1 B3).
-   *
-   * Undefined rather than a throw: an unknown, expired or foreign id is an
-   * ordinary outcome with a defined answer — no create and no provisioning,
-   * resolve a fresh model, present it, wait for a second submission (rpc § 2.4).
-   * A throw would make the caller decide that, and there is only one right
-   * answer.
-   */
-  lookup(key: ProvisionOfferKey, offerId: string): ProvisionModel | undefined;
   /** The current offer and its host-private reminted held-file associations. */
   redeem(key: ProvisionOfferKey, offerId: string): RedeemedProvisionOffer | undefined;
   /** Drop what one form holds. Its offers can never be submitted again. */
@@ -175,12 +160,6 @@ export function createProvisionOfferStore(): ProvisionOfferStore {
     },
     current(key) {
       return bySurface.get(key.surface)?.get(key.repoId)?.public;
-    },
-    lookup(key, offerId) {
-      const held = bySurface.get(key.surface)?.get(key.repoId)?.public;
-      // The id must be the one THIS form currently holds. An id that is merely
-      // live somewhere resolves to nothing here, which is the safe answer.
-      return held?.offerId === offerId ? held.model : undefined;
     },
     redeem(key, offerId) {
       const held = bySurface.get(key.surface)?.get(key.repoId)?.redeemed;

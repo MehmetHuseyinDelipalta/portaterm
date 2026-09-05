@@ -62,11 +62,11 @@
 
 ## 6. Close review lifecycle and contract gaps
 
-- [ ] 6_1 Retire departed repository authority and keep one provisioning contract owner
+- [x] 6_1 Retire departed repository authority and keep one provisioning contract owner — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/worktree/provisioning/suggestProvisioning.test.ts src/worktree/provisioning/offerStore.test.ts src/worktree/provisioning/oneOwner.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
   - **Deps**: 5_1
   - **Refs**: design.md D2, D3, D6; .reviews/round-2.md F002, F003, F004
   - **Acceptance**:
-    - Outcome: provisioning retains no authority or duplicate contract owner beyond its live repository
+    - Outcome: departed repositories retain zero provisioning authority
     - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/worktree/provisioning/suggestProvisioning.test.ts src/worktree/provisioning/offerStore.test.ts src/worktree/provisioning/oneOwner.test.ts
   - **Plan**:
     1. In src/providers/WorktreeHost.ts add repository-scoped opening retirement and call it when a repository departs; in src/providers/WorktreeHost.actions.test.ts prove an admitted holder is disposed while another repository can still pick.

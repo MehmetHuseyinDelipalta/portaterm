@@ -471,6 +471,18 @@ export function contendersOf(entries: readonly ProvisionEntry[], favouredSource?
   return groups;
 }
 
+/** Whether a candidate could share a destination with any occupied row. */
+export function conflictsWithProvisionDestination(
+  occupied: readonly ProvisionEntry[],
+  candidate: ProvisionEntry,
+): boolean {
+  const key = identityOf(candidate.path);
+  return (
+    occupied.some((entry) => identityOf(entry.path) === key) ||
+    contendersOf([...occupied, candidate]).some((group) => group.members.includes(candidate.id))
+  );
+}
+
 /**
  * The model an adapter's draft became.
  *

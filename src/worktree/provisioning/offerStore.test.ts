@@ -122,9 +122,9 @@ describe("createProvisionOfferStore", () => {
       contenders: [{ members: ["i1", "i2"], natives: ["i1"] }],
     });
 
-    const redeemed = store.lookup(A, offer.offerId);
+    const redeemed = store.redeem(A, offer.offerId);
     const ticked = new Set(offer.model.contenders[0]?.members ?? []);
-    const selected = (redeemed?.entries ?? []).filter((e) => ticked.has(e.id));
+    const selected = (redeemed?.model.entries ?? []).filter((e) => ticked.has(e.id));
 
     expect(selected.map((e) => [e.path, e.mode])).toEqual([
       ["MixedCase", "copy"],
@@ -136,7 +136,7 @@ describe("createProvisionOfferStore", () => {
     const store = createProvisionOfferStore();
     const offer = store.issue(A, model(".env"));
 
-    expect(store.lookup(A, offer.offerId)).toBe(offer.model);
+    expect(store.redeem(A, offer.offerId)?.model).toBe(offer.model);
     expect(store.current(A)).toEqual(offer);
   });
 
@@ -147,8 +147,8 @@ describe("createProvisionOfferStore", () => {
     const first = store.issue(A, model(".env"));
     const second = store.issue(A, model(".env.local"));
 
-    expect(store.lookup(A, first.offerId)).toBeUndefined();
-    expect(store.lookup(A, second.offerId)).toBe(second.model);
+    expect(store.redeem(A, first.offerId)).toBeUndefined();
+    expect(store.redeem(A, second.offerId)?.model).toBe(second.model);
     expect(first.offerId).not.toBe(second.offerId);
   });
 
@@ -157,7 +157,7 @@ describe("createProvisionOfferStore", () => {
     // re-present — so the store states it rather than making a caller decide.
     const store = createProvisionOfferStore();
 
-    expect(store.lookup(A, "provision-999")).toBeUndefined();
+    expect(store.redeem(A, "provision-999")).toBeUndefined();
     expect(store.current(A)).toBeUndefined();
   });
 
@@ -168,8 +168,8 @@ describe("createProvisionOfferStore", () => {
     const mine = store.issue(A, model("mine"));
     store.issue(B, model("theirs"));
 
-    expect(store.lookup(B, mine.offerId)).toBeUndefined();
-    expect(store.lookup(A, mine.offerId)).toBe(mine.model);
+    expect(store.redeem(B, mine.offerId)).toBeUndefined();
+    expect(store.redeem(A, mine.offerId)?.model).toBe(mine.model);
   });
 
   it("[B3] refuses an id issued for another repository on the same surface", () => {
@@ -177,8 +177,8 @@ describe("createProvisionOfferStore", () => {
     const forRepo = store.issue(A, model("mine"));
     store.issue(A2, model("other"));
 
-    expect(store.lookup(A2, forRepo.offerId)).toBeUndefined();
-    expect(store.lookup(A, forRepo.offerId)).toBe(forRepo.model);
+    expect(store.redeem(A2, forRepo.offerId)).toBeUndefined();
+    expect(store.redeem(A, forRepo.offerId)?.model).toBe(forRepo.model);
   });
 
   it("never reuses an id, so a resubmission cannot land on a later offer", () => {
@@ -200,8 +200,8 @@ describe("createProvisionOfferStore", () => {
     const left = store.issue(A, model("left"));
     const right = store.issue(B, model("right"));
 
-    expect(store.lookup(A, left.offerId)).toBe(left.model);
-    expect(store.lookup(B, right.offerId)).toBe(right.model);
+    expect(store.redeem(A, left.offerId)?.model).toBe(left.model);
+    expect(store.redeem(B, right.offerId)?.model).toBe(right.model);
     expect(store.current(A)).toEqual(left);
   });
 
@@ -210,7 +210,7 @@ describe("createProvisionOfferStore", () => {
     const offer = store.issue(A, model(".env"));
     store.forget(A);
 
-    expect(store.lookup(A, offer.offerId)).toBeUndefined();
+    expect(store.redeem(A, offer.offerId)).toBeUndefined();
     expect(store.current(A)).toBeUndefined();
   });
 
@@ -221,9 +221,9 @@ describe("createProvisionOfferStore", () => {
     const other = store.issue(B, model("other"));
     store.forgetSurface("surface-1");
 
-    expect(store.lookup(A, one.offerId)).toBeUndefined();
-    expect(store.lookup(A2, two.offerId)).toBeUndefined();
-    expect(store.lookup(B, other.offerId)).toBe(other.model);
+    expect(store.redeem(A, one.offerId)).toBeUndefined();
+    expect(store.redeem(A2, two.offerId)).toBeUndefined();
+    expect(store.redeem(B, other.offerId)?.model).toBe(other.model);
   });
 
   it("forgets a key it does not hold without complaint", () => {
@@ -242,7 +242,7 @@ describe("createProvisionOfferStore", () => {
     const offer = store.issue(odd, model("x"));
     store.issue(nastier, model("y"));
 
-    expect(store.lookup(odd, offer.offerId)).toBe(offer.model);
+    expect(store.redeem(odd, offer.offerId)?.model).toBe(offer.model);
   });
 });
 
@@ -396,7 +396,7 @@ describe("private held-file redemption", () => {
     expect(JSON.stringify(offer)).not.toContain("heldFiles");
   });
 
-  it("scopes and expires private redemption exactly like model lookup", () => {
+  it("scopes and expires private redemption with the public offer", () => {
     const original = model(".env");
     const source = held(".env");
     const store = createProvisionOfferStore();
@@ -410,11 +410,10 @@ describe("private held-file redemption", () => {
     expect(store.redeem(A, first.offerId)).toBeUndefined();
   });
 
-  it("returns an empty private sidecar for ordinary offers while lookup stays model-only", () => {
+  it("returns an empty private sidecar for ordinary offers", () => {
     const store = createProvisionOfferStore();
     const offer = store.issue(A, model(".env"));
 
-    expect(store.redeem(A, offer.offerId)?.heldFiles.size).toBe(0);
-    expect(store.lookup(A, offer.offerId)).toBe(offer.model);
+    expect(store.redeem(A, offer.offerId)).toMatchObject({ model: offer.model, heldFiles: new Map() });
   });
 });

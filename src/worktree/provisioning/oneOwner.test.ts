@@ -56,6 +56,36 @@ describe("one owner for the quoting rule", () => {
   });
 });
 
+const DESTINATION_CONFLICT_IMPLEMENTATION =
+  /identityOf\(candidate\.path\)[\s\S]{0,300}?occupied\.some\([\s\S]{0,200}?contendersOf\(\[\.\.\.occupied,\s*candidate\]\)/;
+const DESTINATION_CONFLICT_SOURCES = [...SHIPPED, "../../providers/WorktreeHost.ts"];
+
+describe("one owner for provisioning destination conflicts", () => {
+  it("is providerKit alone", () => {
+    const owners = DESTINATION_CONFLICT_SOURCES.filter((file) =>
+      DESTINATION_CONFLICT_IMPLEMENTATION.test(sourceOf(file)),
+    );
+
+    expect(owners).toEqual(["providerKit.ts"]);
+  });
+
+  it("catches a second implementation", () => {
+    const copied = [
+      "const key = identityOf(candidate.path);",
+      "return occupied.some((entry) => identityOf(entry.path) === key) ||",
+      "  contendersOf([...occupied, candidate]).some((group) => group.members.includes(candidate.id));",
+    ].join("\n");
+
+    expect(DESTINATION_CONFLICT_IMPLEMENTATION.test(copied)).toBe(true);
+  });
+
+  it("does not fire on a caller of the shared predicate", () => {
+    expect(DESTINATION_CONFLICT_IMPLEMENTATION.test("conflictsWithProvisionDestination(occupied, candidate)")).toBe(
+      false,
+    );
+  });
+});
+
 describe("one owner for the model assembly", () => {
   it("is providerKit alone", () => {
     const assemblers = SHIPPED.filter((file) => MODEL_LITERAL.test(sourceOf(file)));

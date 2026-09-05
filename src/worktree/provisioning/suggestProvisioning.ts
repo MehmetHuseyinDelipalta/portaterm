@@ -16,8 +16,8 @@ import { type PreparedRoot, prepareResolvedRoot } from "../../utils/resolvedPath
 import {
   addEntry,
   addSetup,
+  conflictsWithProvisionDestination,
   contained,
-  contendersOf,
   emptyModel,
   identityOf,
   MAX_MODEL_ROWS,
@@ -398,15 +398,6 @@ function freshSuggestionId(budget: ProviderBudget, held: Set<string>): string | 
   return undefined;
 }
 
-/** Whether this candidate could share a destination with any occupied row. */
-function conflictsWith(occupied: readonly ProvisionEntry[], candidate: ProvisionEntry): boolean {
-  const key = identityOf(candidate.path);
-  return (
-    occupied.some((entry) => identityOf(entry.path) === key) ||
-    contendersOf([...occupied, candidate]).some((group) => group.members.includes(candidate.id))
-  );
-}
-
 export async function suggestProvisioning(
   deps: SuggestDeps,
   repoRoot: string,
@@ -447,7 +438,7 @@ export async function suggestProvisioning(
       source: rel,
       suggestion: "May contain secrets.",
     };
-    if (conflictsWith(occupied, candidate)) {
+    if (conflictsWithProvisionDestination(occupied, candidate)) {
       return;
     }
     if (addEntry(draft, candidate)) {

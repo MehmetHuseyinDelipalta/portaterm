@@ -72,7 +72,12 @@ import type {
 import { ACTIVITY_EVIDENCE } from "../worktree/presenceTypes";
 import { NATIVE_PROVIDER_FILE } from "../worktree/provisioning/nativeProvider";
 import { createProvisionOfferStore } from "../worktree/provisioning/offerStore";
-import { contendersOf, identityOf, MAX_MODEL_ROWS, rowsOf } from "../worktree/provisioning/providerKit";
+import {
+  conflictsWithProvisionDestination,
+  identityOf,
+  MAX_MODEL_ROWS,
+  rowsOf,
+} from "../worktree/provisioning/providerKit";
 import {
   claimProvisionMaterials,
   disposeProvisionMaterials,
@@ -875,7 +880,10 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * closes the guard has to be the pass in flight, not the pass that finished.
    */
   const provisionReading = new Map<string, number>();
-  const migrationReading = new Map<string, { sequence: number; sourceWorktreeId: string; sourceGeneration: number }>();
+  const migrationReading = new Map<
+    string,
+    { sequence: number; repoId: string; sourceWorktreeId: string; sourceGeneration: number }
+  >();
   const migrationOffers = new Map<
     string,
     {
@@ -1009,14 +1017,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     problems: model.problems.filter((problem) => problem.file !== SETUP_STEP_ADDED_SOURCE),
   });
 
-  const conflictsWith = (occupied: readonly ProvisionEntry[], candidate: ProvisionEntry): boolean => {
-    const identity = identityOf(candidate.path);
-    return (
-      occupied.some((entry) => identityOf(entry.path) === identity) ||
-      contendersOf([...occupied, candidate]).some((group) => group.members.includes(candidate.id))
-    );
-  };
-
   const privateIdsFor = (offerKey: { surface: string; repoId: string }, model: ProvisionModel): ReadonlySet<string> => {
     const current = offers.current(offerKey);
     if (current?.model !== model) {
@@ -1051,7 +1051,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
         suggestion: "May contain secrets.",
         addedForCreate: true,
       };
-      if (conflictsWith(occupied, entry)) {
+      if (conflictsWithProvisionDestination(occupied, entry)) {
         break;
       }
       candidateCopies.push({ entry, source });
@@ -1121,6 +1121,55 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   const issueWithAdded = (offerKey: { surface: string; repoId: string }, slot: string, model: ProvisionModel) => {
     const composed = withAdded(offerKey, slot, model);
     return offers.issue(offerKey, composed.model, composed.heldFiles);
+  };
+
+  const retireRepository = (key: string, repoId: string): void => {
+    const reading = `${key} ${repoId}`;
+    provisionReading.delete(reading);
+    const surfacePrefix = `${key} `;
+    const belongsToRepository = (slot: string): boolean => {
+      if (!slot.startsWith(surfacePrefix)) {
+        return false;
+      }
+      const openingAt = slot.lastIndexOf(" ");
+      return openingAt >= surfacePrefix.length && slot.slice(surfacePrefix.length, openingAt) === repoId;
+    };
+    for (const slot of [...provisionSwitch.keys()]) {
+      if (belongsToRepository(slot)) {
+        provisionSwitch.delete(slot);
+      }
+    }
+    for (const slot of [...provisionBaseline.keys()]) {
+      if (belongsToRepository(slot)) {
+        provisionBaseline.delete(slot);
+      }
+    }
+    for (const slot of [...addedSteps.keys()]) {
+      if (belongsToRepository(slot)) {
+        addedSteps.delete(slot);
+      }
+    }
+    for (const slot of [...addedCopyFiles.keys()]) {
+      if (!belongsToRepository(slot)) {
+        continue;
+      }
+      for (const added of addedCopyFiles.get(slot) ?? []) {
+        added.file.dispose();
+      }
+      addedCopyFiles.delete(slot);
+    }
+    offers.forget({ surface: key, repoId });
+    openings.delete(`${key}\u0000${repoId}`);
+    for (const [slot, reading] of migrationReading) {
+      if (reading.repoId === repoId && slot.startsWith(`${key}::`)) {
+        migrationReading.delete(slot);
+      }
+    }
+    for (const [offerId, offer] of migrationOffers) {
+      if (offer.surface === key && offer.repoId === repoId) {
+        migrationOffers.delete(offerId);
+      }
+    }
   };
 
   const retireOpening = (key: string): void => {
@@ -1513,13 +1562,15 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     return held?.token === token ? held : undefined;
   };
 
-  /** Drop every opening for repositories the tree no longer carries (round-4 B7). */
-  const forgetDepartedRepos = (): void => {
-    const live = new Set(cache.read().repos.map((r) => r.repoId));
-    for (const key of [...openings.keys()]) {
-      const repoId = key.slice(key.indexOf("\u0000") + 1);
-      if (!live.has(repoId)) {
-        openings.delete(key);
+  /** Retire every per-repository form capability the rebuilt tree no longer carries. */
+  const forgetDepartedRepos = (departed: ReadonlySet<string>): void => {
+    for (const surface of surfaces.keys()) {
+      const key = surfaceKeys.get(surface);
+      if (key === undefined) {
+        continue;
+      }
+      for (const repoId of departed) {
+        retireRepository(key, repoId);
       }
     }
   };
@@ -3444,7 +3495,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
             };
             if (
               record.some((entry) => identityOf(entry.path) === identityOf(picked.path)) ||
-              conflictsWith(occupied, probe)
+              conflictsWithProvisionDestination(occupied, probe)
             ) {
               picked.file.dispose();
               publish();
@@ -3795,7 +3846,12 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
           const reading = migrationReading.get(slot);
           if (reading === undefined) {
             const sourceGeneration = msg.sourceGeneration as number;
-            const mine = { sequence: ++migrationSequence, sourceWorktreeId: msg.sourceWorktreeId, sourceGeneration };
+            const mine = {
+              sequence: ++migrationSequence,
+              repoId: msg.repoId,
+              sourceWorktreeId: msg.sourceWorktreeId,
+              sourceGeneration,
+            };
             migrationReading.set(slot, mine);
             const source = repo.worktrees.find(
               (row) => row.id === msg.sourceWorktreeId && !row.bare && !row.missing && !row.prunable,
@@ -4765,14 +4821,13 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
       return;
     }
     if (scope === WHOLE_TREE_SCOPE) {
+      const before = new Set(cache.read().repos.map((repo) => repo.repoId));
       cache.applyBuild(await buildWorktreeTreeDetailed(options.workspaceFolders(), discoveryDeps));
       built = true;
       treeVersion += 1;
       reconcileWatches();
-      // A repository that left the workspace is never the subject of another
-      // refs request, so nothing else would ever replace its opening record
-      // (round-4 B7).
-      forgetDepartedRepos();
+      const live = new Set(cache.read().repos.map((repo) => repo.repoId));
+      forgetDepartedRepos(new Set([...before].filter((repoId) => !live.has(repoId))));
     } else {
       const root = cache.rootFor(scope);
       if (root) {
