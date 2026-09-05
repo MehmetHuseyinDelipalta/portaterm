@@ -1,5 +1,5 @@
 // The window's answer to "has this session's delegation history been asked for
-// yet" — one answer, shared by the tree and the inspector (design.md D6).
+// yet" — one answer for the whole window (design.md D6).
 
 import { describe, expect, it } from "vitest";
 import { agentRow } from "./worktreeFixtures";

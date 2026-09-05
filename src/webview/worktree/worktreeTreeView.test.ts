@@ -51,10 +51,7 @@ describe("the agent row's preview line", () => {
   });
 });
 
-// -- The options the inspector drawer needs (1_2) ---------------------------
-//
-// Every one defaults to what the tree already did, so the list rows above stay
-// byte-identical; only the drawer opts in.
+// -- Rendering one agent row with overrides (1_2) ---------------------------
 
 function renderWith(over: Partial<WorktreeAgentRow>, opts: Partial<AgentRowOptions>): HTMLElement {
   return renderAgentRow(
@@ -115,7 +112,9 @@ describe("[1_2] the model the list row will not name", () => {
   it("names nothing at all when the model is unknown", () => {
     // A placeholder would claim we asked and were told (§ 3.3).
     expect(renderWith({ title: "t" }, {}).dataset.tip).not.toContain("claude-opus-5");
-    expect(renderWith({ model: "", title: "t" }, {}).dataset.tip?.split("\n")).not.toContain("");
+    // Line COUNT, not membership: an empty model must add no line at all. The
+    // old `not.toContain("")` passed with or without the rule (round-2 F017).
+    expect(renderWith({ model: "", title: "t" }, {}).dataset.tip?.split("\n")).toEqual(["t"]);
   });
 
   it("adds no root child, so the row keeps its seven grid tracks", () => {

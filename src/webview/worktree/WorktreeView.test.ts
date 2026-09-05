@@ -1301,6 +1301,31 @@ describe("the worktree row's own controls", () => {
     expect(actionIn(row, "More actions")).not.toBeNull();
   });
 
+  it("does not open the folder of a directory that is gone", () => {
+    // F006, the fourth door: the button and both menus withdrew on `missing`
+    // while the row still took the gesture. The host drops the request, so the
+    // user got a control that is present and inert (D10).
+    const opened: string[] = [];
+    const { view } = mount({
+      actions: { ...noopActions(), openFolderInNewWindow: (info) => opened.push(info.id) },
+    });
+    const tree = singleRepoTree();
+    const target = tree.repos[0]?.worktrees.find((w) => w.kind === "main");
+    if (!target) {
+      throw new Error("expected a main worktree");
+    }
+    target.missing = true;
+    view.setData({ tree, presence: singleRepoPresence(NOW) });
+    rowFor(view, "main")?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    expect(opened).toEqual([]);
+
+    // Non-vacuous: the same gesture on the same row opens it once it is back.
+    target.missing = false;
+    view.setData({ tree, presence: singleRepoPresence(NOW) });
+    rowFor(view, "main")?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    expect(opened).toEqual([MAIN_PATH]);
+  });
+
   it("offers no launch at all when the capability was not supplied", () => {
     const { view } = mount();
     view.setData(populated());

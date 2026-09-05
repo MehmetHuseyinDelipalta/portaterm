@@ -1432,8 +1432,15 @@
 .wt-rowtools {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 1px;
   flex: 0 0 auto;
+  /* Two 18px controls plus the 1px gap. Fixed, so the `minmax(0, 1fr)` branch
+     column has the SAME width on every row — otherwise a row carrying one
+     control truncates its branch at a different position than its neighbour
+     carrying two (round-2 F015). Reserved, not filled: the controls are
+     `visibility: hidden` until the row is hovered, focused or selected. */
+  min-width: 37px;
 }
 /* `aria-selected`, not a class: a worktree row's selection is that attribute
    plus the wrapper's `.wt-card`; `.is-selected` belongs to AGENT rows, so a rule

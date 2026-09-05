@@ -112,7 +112,6 @@ export class WorktreeContextMenu {
     // Repo-scoped: this menu is the repository's only door to create and prune.
     const items = worktreeActionItems(info, this.actions, {
       prunableCount: this.prunableCount(info),
-      repoScoped: true,
     });
     this.openMenu(items, ev, row, restoreTo);
   }

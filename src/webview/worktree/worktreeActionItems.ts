@@ -22,15 +22,6 @@ import type { WorktreeInfo } from "./worktreeViewTypes";
 export interface WorktreeActionItemOptions {
   /** Registrations this repo could drop right now. Read at build, never cached. */
   prunableCount: number;
-  /**
-   * Whether the surface acts for the whole REPOSITORY as well as this worktree.
-   *
-   * The menu is opened on a row but is the repo's only door to create and prune,
-   * so it says `true`. A surface about ONE worktree says `false`: an action that
-   * silently targeted its repository instead would be the same false claim as an
-   * item that cannot act at all.
-   */
-  repoScoped: boolean;
 }
 
 /**
@@ -95,11 +86,13 @@ export function worktreeActionItems(
     // The main worktree is never removable, so the item is absent, not disabled.
     ...(info.kind === "main" ? [] : menuItem(a.removeWorktree, info, "Remove Worktree…", ICON_TRASH)),
     // Create is repo-scoped, so it is offered from any row of the repo — and
-    // it is the item that makes the whole create path reachable at all.
-    ...(opts.repoScoped ? menuItem(a.createWorktree, info, "New Worktree…", ICON_PLUS) : []),
+    // it is the item that makes the whole create path reachable at all. The
+    // menu is the repo's only door to it, and is now the builder's only
+    // surface, so there is no scope to gate on (round-2 F009).
+    ...menuItem(a.createWorktree, info, "New Worktree…", ICON_PLUS),
     // Absent, not disabled, when nothing is prunable: a disabled item claims
     // the action exists here.
-    ...(opts.repoScoped && opts.prunableCount > 0
+    ...(opts.prunableCount > 0
       ? menuItem(
           a.pruneRepo,
           info,

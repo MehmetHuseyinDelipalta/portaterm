@@ -30,6 +30,7 @@ function setup(): { menu: WorktreeContextMenu; host: HTMLElement; calls: string[
     copyWorktreePath: record("copyWorktreePath"),
     toggleLock: record("toggleLock"),
     removeWorktree: record("removeWorktree"),
+    launchAgentHere: record("launchAgentHere"),
     focusPane: record("focusPane"),
     openPreview: record("openPreview"),
     resumeHere: record("resumeHere"),
@@ -67,6 +68,7 @@ function setupObservingAction(): {
     copyWorktreePath: record("copyWorktreePath"),
     toggleLock: record("toggleLock"),
     removeWorktree: record("removeWorktree"),
+    launchAgentHere: record("launchAgentHere"),
     focusPane: record("focusPane"),
     openPreview: record("openPreview"),
     resumeHere: record("resumeHere"),
@@ -87,6 +89,9 @@ describe("worktree row menu", () => {
       "Add Folder to Workspace",
       "Open Terminal Here",
       "Reveal in Finder",
+      // Inside the openers group, above the destructive pair. Pinned here
+      // because moving it inside `onDisk` also moved it, unremarked (F016).
+      "Start an Agent Here…",
       "Copy Path",
       "Lock Worktree",
       "Remove Worktree…",
@@ -111,6 +116,9 @@ describe("worktree row menu", () => {
     const items = labels(host);
     expect(items).not.toContain("Open Terminal Here");
     expect(items).not.toContain("Reveal in Finder");
+    // The third door. The row toolbar and the `…` both withdraw the launch on a
+    // gone directory; nothing asserted the menu did the same (round-2 F013).
+    expect(items).not.toContain("Start an Agent Here…");
     // Copy Path is how the user goes and looks at what happened to the directory.
     expect(items).toContain("Copy Path");
     expect(items).toContain("Remove Worktree…");
@@ -465,7 +473,7 @@ describe("prune is offered only when there is something to prune", () => {
   });
 });
 
-describe("[1_1] one builder, two surfaces", () => {
+describe("[1_1] one builder, one surface", () => {
   /** Every capability a worktree row can raise, so absence is never the default. */
   const all = (): WorktreeMenuActions => ({
     openFolderInNewWindow: () => {},
@@ -480,39 +488,35 @@ describe("[1_1] one builder, two surfaces", () => {
     launchAgentHere: () => {},
   });
 
-  const built = (repoScoped: boolean, info = worktree({ id: "/wt", branch: "feat/x" })): string[] =>
-    worktreeActionItems(info, all(), { prunableCount: 2, repoScoped })
+  const built = (info = worktree({ id: "/wt", branch: "feat/x" })): string[] =>
+    worktreeActionItems(info, all(), { prunableCount: 2 })
       .filter((i): i is Exclude<typeof i, "sep"> => i !== "sep")
       .map((i) => i.label);
 
-  it("withholds the two repository-targeted items from a worktree-only surface", () => {
-    // The drawer is about ONE worktree. An item that silently acted on its
-    // repository instead is the same false claim as one that cannot act at all.
-    expect(built(false)).not.toContain("New Worktree…");
-    expect(built(false).some((l) => /^Prune /.test(l))).toBe(false);
+  it("offers the repository's own doors, which only this menu has", () => {
+    // `repoScoped` is gone with the drawer that was its only `false` caller
+    // (round-2 F009) — the menu is opened on a row but is the repo's only door
+    // to create and prune.
+    expect(built()).toContain("New Worktree…");
+    expect(built()).toContain("Prune 2 Registrations…");
   });
 
-  it("keeps every worktree-targeted item on that surface", () => {
-    // The withholding above must cost nothing else: the drawer is not a reduced
-    // menu, it is the same menu minus the two items that are not about it.
-    const menuOnly = built(true).filter((l) => l !== "New Worktree…" && !/^Prune /.test(l));
-    expect(built(false)).toEqual(menuOnly);
-    expect(built(false)).toContain("Remove Worktree…");
-    expect(built(false)).toContain("Start an Agent Here…");
+  it("withholds Prune when nothing is prunable rather than disabling it", () => {
+    const none = worktreeActionItems(worktree({ id: "/wt", branch: "feat/x" }), all(), { prunableCount: 0 })
+      .filter((i): i is Exclude<typeof i, "sep"> => i !== "sep")
+      .map((i) => i.label);
+    expect(none.some((l) => /^Prune /.test(l))).toBe(false);
+    expect(none).toContain("New Worktree…");
   });
 
-  it("applies the same withdrawals to both surfaces", () => {
+  it("applies the on-disk and main-worktree withdrawals in the builder itself", () => {
     // The gating rules travel with the builder rather than with the menu — this
     // is the whole reason the extraction happened.
     const gone = worktree({ id: "/wt", branch: "feat/x", missing: true });
-    expect(built(false, gone)).not.toContain("Open Terminal Here");
-    expect(built(false, gone)).toContain("Copy Path");
+    expect(built(gone)).not.toContain("Open Terminal Here");
+    expect(built(gone)).not.toContain("Start an Agent Here…");
+    expect(built(gone)).toContain("Copy Path");
     const main = worktree({ id: "/main", branch: "main", kind: "main" });
-    expect(built(false, main)).not.toContain("Remove Worktree…");
-  });
-
-  it("still offers the repository's own door on the menu", () => {
-    expect(built(true)).toContain("New Worktree…");
-    expect(built(true)).toContain("Prune 2 Registrations…");
+    expect(built(main)).not.toContain("Remove Worktree…");
   });
 });

@@ -196,8 +196,6 @@ const FULL_TREE: Required<WorktreeTree> = {
 const NOT_RENDERED: Record<string, string> = {
   "WorktreePresence.scannedAt": "moves on every rescan; keying it would make the guard buy nothing",
   "WorktreeAgentRow.pid": "no renderer reads it",
-  "WorktreeAgentRow.model":
-    "no list row draws it; the inspector is its home, and it returns to the signature when that draws it",
   "WorktreeAgentRow.titleSourceId":
     "names where a disowned row's title came from, never drawn; `title` is what renders, and it moves on its own",
   "WorktreeSubagentRow.live": "typed as the constant false, so it can never move",
@@ -340,8 +338,8 @@ describe("roster states are distinguishable in the signature", () => {
 
 describe("[1_3] the model is keyed again", () => {
   it("moves the signature when only the model changed", () => {
-    // It left the key when it left the list row (WT-009.2). The inspector draws
-    // it, so a guard blind to it would hold a stale model on screen for ever.
+    // It left the key when it left the visible row (WT-009.2). The row's HINT
+    // draws it now (§ 3.3), so a guard blind to it would hold a stale model.
     const base = agentRow({ rowId: "a", agent: "claude", model: "claude-opus-5" });
     expect(signatureFor([base])).not.toBe(signatureFor([{ ...base, model: "claude-sonnet-5" }]));
   });

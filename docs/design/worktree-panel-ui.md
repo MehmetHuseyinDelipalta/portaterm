@@ -313,7 +313,8 @@ What replaces it is the platform's own tree pattern — the row carries its acti
 | Independence | Both controls stop the gesture — `click`, Enter/Space, **and `dblclick`**, which is a third event the click's `stopPropagation` does not cover and which the row answers by opening the folder in a new window. Pressing one must not also select the row or open anything, or the coupling § 6 removes would reappear one level down |
 | Naming | The row sets its own `aria-label` unconditionally. A `treeitem` with no name computes one from its contents, and the controls' labels are contents — an agentless row otherwise announced as "feature-x Start an agent in feature-x More actions for feature-x". The repo header carries the same rule for the same reason |
 | Focus return | The row is the menu's visual anchor; the **control** is its focus-restore target. Returning to the row would cost a keyboard user a tab stop on every dismissal |
-| Availability of the launch | Gated on one predicate (`canActOnDisk`) shared with the item builder, so the button, the right-click and the `…` cannot disagree about a `missing` worktree |
+| The on-disk rule | One predicate (`canActOnDisk`) gates every door that needs a checkout on disk, so they cannot disagree about a `missing` worktree: the launch button, the menu's whole opener group behind the right-click and the `…`, **and the row's own double-click**. The host drops a request for a gone directory either way, so an ungated gesture is present and inert (D10) |
+| Order in the menu | The launch sits inside the opener group, after "Reveal in Finder" and above the destructive pair — the position follows from the on-disk rule owning that group, and is pinned by the menu's ordering test |
 | Menu placement | The `…` menu is cursor-anchored. A keyboard press reports (0, 0), so the opener substitutes the control's own rect rather than pinning the menu to the panel corner |
 | The path | Keeps the two homes D16 gave it: the row hint, and Copy Path in the menu. It is not on a row (§ 3.2) |
 | The model id | Stays on the agent row's own hint. There was never room for it in the visible row, and there is no longer a second surface with room to spare |
@@ -606,6 +607,7 @@ is four (§ 3.6).
 - [ ] Working the chevron discloses and leaves the selection and the scope alone
 - [ ] A row control fires its action without also selecting the row, and is reachable by Tab once its row is the tree's stop
 - [ ] The launch control is absent for a `missing` directory and when the capability was not supplied — in the row toolbar, the right-click and the `…` alike
+- [ ] A `missing` worktree's row ignores a double-click, the same way its openers are withdrawn
 - [ ] A launch capability arriving or being withdrawn repaints the row controls, with the tree and presence envelope unchanged
 - [ ] A worktree row announces its own name, with its controls' labels excluded from it
 - [ ] Double-clicking a row control fires its action and does not open the folder

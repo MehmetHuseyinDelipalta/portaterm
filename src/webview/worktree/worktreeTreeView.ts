@@ -402,7 +402,9 @@ export function renderWorktreeRow(info: WorktreeInfo, opts: WorktreeRowOptions, 
   }
   // Appended unconditionally: the row declares a fourth grid track, and a row
   // that skipped it still paid the gap before it — so its pills stopped 6px
-  // short of every neighbour's. An empty `.wt-rowtools` is zero-width.
+  // short of every neighbour's. The CSS reserves the two-control width even
+  // when this span is empty, so the branch column is the same width down the
+  // whole list (round-2 F015).
   row.appendChild(tools);
 
   // Selection only. Disclosure belongs to the presence pill below and to the
@@ -415,7 +417,10 @@ export function renderWorktreeRow(info: WorktreeInfo, opts: WorktreeRowOptions, 
       cb.onContextMenu?.(info, ev, row);
     });
   }
-  if (cb.onOpenFolder) {
+  // Gated on the SAME predicate as the launch button above and the menu's whole
+  // `onDisk` branch. A gesture the host will drop is a control that is present
+  // and inert, which is what D10 forbids and what F006 named (round-2 F006).
+  if (cb.onOpenFolder && canActOnDisk(info)) {
     row.addEventListener("dblclick", () => cb.onOpenFolder?.(info));
   }
   return row;
@@ -514,10 +519,6 @@ export interface AgentRowOptions {
    * required only moved that crack one frame up into here.
    */
   now: number;
-  /**
-   * ARIA role. Defaults to `treeitem`, which is only valid inside `role="tree"`;
-   * the tree is the only surface that draws one.
-   */
 }
 
 /**
@@ -537,9 +538,6 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
   // no roster to ask for, and no claim about whether it delegated.
   const hasSession = row.entryId !== undefined;
   const hasChildren = delegated.length > 0;
-  // Two things at once: whether this row OWNS the disclosure, and whether it has
-  // anything to disclose. A surface drawing the history unconditionally owns
-  // neither the chevron nor the expanded state.
   const disclosable = hasSession;
   if (disclosable && opts.expanded) {
     el.classList.add("is-open");
@@ -599,7 +597,9 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
   title.className = "wt-atitle";
   const titleText = agentRowTitle(row);
   title.append(document.createTextNode(titleText));
-  title.dataset.tip = titleText;
+  // Deliberately NO `data-tip` of its own. `Tooltip` resolves `closest('[data-tip]')`,
+  // so a tip here wins over the row's on the widest visible target and hides the
+  // model — the row hint's opening line is this same text (round-2 F014).
   // Keyed off the PRESENTED state: an inference the glyph has already withdrawn
   // must not be re-asserted in present tense beside it. When the state is
   // `unknown` the marker names the failure instead of the inference.
@@ -640,9 +640,10 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
   // first render — without normalizing it on the way past.
   const previewText = presentedPreview(row);
   // The model rides on the hint rather than the row. Absent entirely when
-  // unknown — a placeholder would claim we asked and were told (§ 3.3).
-  const modelText = row.model === undefined || row.model === "" ? undefined : row.model;
-  el.dataset.tip = [titleText, previewText, modelText, confidenceTip].filter(Boolean).join("\n");
+  // unknown — a placeholder would claim we asked and were told (§ 3.3). No
+  // guard of its own: `filter(Boolean)` already drops `""` alongside
+  // `undefined`, and a second spelling of the rule had no way to fail (F017).
+  el.dataset.tip = [titleText, previewText, row.model, confidenceTip].filter(Boolean).join("\n");
 
   // 6 — collapsed child count. Disappears when expanded; the children show instead.
   const count = document.createElement("span");
