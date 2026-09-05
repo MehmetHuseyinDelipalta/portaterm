@@ -290,3 +290,36 @@ describe("HeldRegularFilePool", () => {
     expect(pool.reserve()).toBeUndefined();
   });
 });
+
+describe("stream-owned descriptor closure", () => {
+  it("keeps the slot charged when stream close fires but the descriptor remains live", async () => {
+    const target = await file("held");
+    const handle = await fs.open(target, "r");
+    const realClose = handle.close.bind(handle);
+    handle.close = async () => {
+      throw Object.assign(new Error("close failed"), { code: "EIO" });
+    };
+    const pool = createHeldRegularFilePool({
+      max: 1,
+      openRegularFile: async (_filePath, _openFile, options) => {
+        options?.onOpen?.(handle);
+        return handle;
+      },
+    });
+    const source = (await pool.reserve()?.hold(target))?.claim()?.acquireSource();
+    if (source === undefined) {
+      throw new Error("source was not acquired");
+    }
+    const work = pipeline(source.stream, new Writable({ write: (_chunk, _encoding, done) => done() }));
+    source.finishWhen(work);
+    await expect(work).rejects.toThrow("close failed");
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect((await handle.stat()).isFile()).toBe(true);
+    expect(pool.charged).toBe(1);
+    expect(pool.reserve()).toBeUndefined();
+
+    handle.close = realClose;
+    await realClose();
+  });
+});

@@ -779,26 +779,36 @@ describe("held-file material", () => {
     });
     const copy = vi.spyOn(fs, "copyHeldFile");
 
-    const result = await applyEntry(held.material, roots, budget(), fs, AUTHORITY);
+    const shared: ApplyBudget = budget();
+    const result = await applyEntry(held.material, roots, shared, fs, AUTHORITY);
 
     expect(result.outcome).toMatchObject({ kind: "refused", reason: expect.stringContaining("outside") });
     expect(copy).not.toHaveBeenCalled();
+    expect(shared.spent?.bytes).toBe(0);
     expect(held.source.dispose).toHaveBeenCalledOnce();
   });
 
   it("disposes the acquired source when parent creation throws", async () => {
     const selected = entry("nested/.env");
     const { fs, roots } = await harness(selected);
-    const held = heldMaterial(selected);
+    const held = heldMaterial(selected, { size: 4 });
+    const mkdir = fs.mkdir;
     fs.mkdir = async () => {
       throw new Error("parent refused");
     };
     const copy = vi.spyOn(fs, "copyHeldFile");
+    const shared: ApplyBudget = { ...budget(), maxBytes: 4 };
 
-    const result = await applyEntry(held.material, roots, budget(), fs, AUTHORITY);
+    const result = await applyEntry(held.material, roots, shared, fs, AUTHORITY);
+    expect(shared.spent?.bytes).toBe(0);
+    fs.mkdir = mkdir;
+    fs.nodes.set("/repo/after", { kind: "file", size: 4 });
+    const after = await applyEntry(model(entry("after")), roots, shared, fs, AUTHORITY);
 
     expect(result.outcome).toMatchObject({ kind: "failed", reason: "parent refused" });
     expect(copy).not.toHaveBeenCalled();
+    expect(shared.spent?.bytes).toBe(4);
+    expect(after.outcome.kind).toBe("copied");
     expect(held.source.dispose).toHaveBeenCalledOnce();
   });
 
@@ -861,12 +871,17 @@ describe("held-file material", () => {
     if (roots === null) {
       throw new Error("roots did not prepare");
     }
-    const held = heldMaterial(selected);
+    const held = heldMaterial(selected, { size: 4 });
+    const shared: ApplyBudget = { ...budget(), maxBytes: 4 };
 
-    const result = await applyExclusiveEntry(held.material, roots, budget(), fs, AUTHORITY);
+    const result = await applyExclusiveEntry(held.material, roots, shared, fs, AUTHORITY);
+    fs.nodes.set("/repo/after", { kind: "file", size: 4 });
+    const after = await applyEntry(model(entry("after")), roots, shared, fs, AUTHORITY);
 
     expect(result).toBe(CLAIM_LOST);
     expect(fs.nodes.get("/wt/feature/.env")).toMatchObject({ size: 9 });
+    expect(after.outcome.kind).toBe("copied");
+    expect(shared.spent?.bytes).toBe(4);
     expect(held.source.dispose).toHaveBeenCalledOnce();
   });
 

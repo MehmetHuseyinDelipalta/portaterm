@@ -99,6 +99,7 @@ class Slot {
   mode = 0;
   size = 0;
   stream: Readable | undefined;
+  streamHandle: FileHandle | undefined;
   streamClosed = false;
   pipelineRegistered = false;
   pipelineDone = false;
@@ -254,12 +255,16 @@ class Slot {
       return undefined;
     }
 
+    this.streamHandle = this.handle;
     this.handle = undefined;
     this.state = "source";
     this.stream = stream;
     stream.on("error", () => {});
     stream.once("close", () => {
-      this.streamClosed = true;
+      // Node can emit `close` even when FileHandle.close() rejected. The fd
+      // transition is the positive witness that the stream-owned descriptor
+      // actually closed; ambiguity keeps the lifecycle slot charged.
+      this.streamClosed = this.streamHandle?.fd === -1;
       this.releaseFinishedSource();
     });
 
@@ -340,6 +345,7 @@ class Slot {
       return;
     }
     this.state = "released";
+    this.streamHandle = undefined;
     this.pool.release(this);
   }
 }

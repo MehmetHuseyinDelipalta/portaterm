@@ -238,15 +238,15 @@ function raceCopyTeardown(
         finish(() => reject(error));
       }
     };
+    void actual.then(
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
+    );
     if (signal.aborted) {
       aborted();
       return;
     }
     signal.addEventListener("abort", aborted, { once: true });
-    void actual.then(
-      (value) => finish(() => resolve(value)),
-      (error) => finish(() => reject(error)),
-    );
   });
 }
 
@@ -748,6 +748,9 @@ async function apply(
   }
 
   let heldSource: HeldFileSource | undefined;
+  let heldBytesPrecharged = false;
+  let heldBytesStarted = false;
+  let heldBytesSettled = false;
   try {
     if (material.origin === "held-file") {
       check(1);
@@ -757,6 +760,7 @@ async function apply(
       }
       spend();
       spendBytes(heldSource.size);
+      heldBytesPrecharged = true;
     }
 
     const parents = await ensureParents();
@@ -798,18 +802,22 @@ async function apply(
       try {
         const ceiling = budget.maxBytes - (spent.bytes - source.size);
         await Promise.all([requireSource(), requireDestination()]);
+        heldBytesStarted = true;
         settleBytes(
           source.size,
           await deps.copyHeldFile(source, entryDestination, source.mode, stopping.signal, ceiling),
         );
+        heldBytesSettled = true;
       } catch (error) {
         if (codeOf(error) === "EEXIST") {
           settleBytes(source.size, 0);
+          heldBytesSettled = true;
           return exclusive ? CLAIM_LOST : step({ kind: "skipped", reason: "already there" });
         }
         const forwarded = bytesForwarded(error);
         if (forwarded !== undefined) {
           settleBytes(source.size, forwarded);
+          heldBytesSettled = true;
         }
         throw error;
       }
@@ -832,6 +840,9 @@ async function apply(
     }
     return step({ kind: "failed", reason: messageOf(error) }, reported());
   } finally {
+    if (heldSource !== undefined && heldBytesPrecharged && !heldBytesStarted && !heldBytesSettled) {
+      settleBytes(heldSource.size, 0);
+    }
     heldSource?.dispose();
   }
 }
@@ -899,8 +910,13 @@ export const nodeApplyFsDeps: ApplyFsDeps & ResolvedPathInsideDeps = {
   copyHeldFile: (source, destination, mode, signal, limit) => {
     const written = { value: 0 };
     let output: ReturnType<FileHandle["createWriteStream"]> | undefined;
-    const actual = (async (): Promise<number> => {
+    let finishLifecycle!: () => void;
+    const lifecycle = new Promise<void>((resolve) => {
+      finishLifecycle = resolve;
+    });
+    const operation = (async (): Promise<number> => {
       let destinationHandle: FileHandle | undefined;
+      let streamed = false;
       try {
         if (signal?.aborted) {
           throw abortError(signal);
@@ -915,25 +931,29 @@ export const nodeApplyFsDeps: ApplyFsDeps & ResolvedPathInsideDeps = {
         }
         output = destinationHandle.createWriteStream();
         destinationHandle = undefined;
+        streamed = true;
         return await copyPipeline(source.stream, output, signal, limit, written);
       } finally {
-        if (destinationHandle !== undefined) {
+        if (destinationHandle === undefined) {
+          finishLifecycle();
+        } else {
           try {
             await destinationHandle.close();
+            finishLifecycle();
           } catch {
-            // A rejected close does not prove teardown. Keep `actual` pending so
-            // the held lifecycle slot cannot be reused as though it had closed.
-            await new Promise<void>(() => undefined);
+            // The caller still receives the operation's original failure. The
+            // unresolved lifecycle separately retains the held slot because a
+            // rejected close does not prove destination teardown.
           }
+        }
+        if (streamed) {
+          finishLifecycle();
         }
       }
     })();
-    // Register the unraced operation before exposing its deadline-raced answer.
-    // A stalled open, pipeline or destination close therefore retains the
-    // source's lifecycle slot even after the caller stops waiting.
-    source.finishWhen(actual);
+    source.finishWhen(lifecycle);
     return raceCopyTeardown(
-      actual,
+      operation,
       signal,
       (error) => {
         try {

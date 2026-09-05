@@ -48,3 +48,16 @@
     1. In src/providers/WorktreeHost.ts wrap every current selected offer entry as model material after existing model lookup; update src/providers/WorktreeHost.actions.test.ts to prove marker-like fields remain model provenance.
     2. In src/worktree/worktreeMutationService.ts change create and apply requests to `ProvisionMaterial`, project entries only for existing reports and manifests, await queue completion before cleanup, and update src/worktree/worktreeMutationService.test.ts.
     3. In src/extension.ts route production materials to `applyProvisionMaterials`; update src/extension.worktreeAssembly.test.ts for strict model provenance and unchanged wire messages. Positive held redemption remains exclusively in the dependent picker change.
+
+## 5. Retain failed teardown and exact byte accounting
+
+- [x] 5_1 Close review findings at held source, destination teardown, and pre-copy budget boundaries — verified: VITEST_MAX_THREADS=6 pnpm exec vitest run src/utils/heldRegularFile.test.ts src/worktree/provisioning/applyEntries.test.ts src/worktree/provisioning/applyEntries.node.test.ts src/worktree/provisioning/applyProvisioning.test.ts && pnpm run check-types && VITEST_MAX_THREADS=6 pnpm run test:unit exit 0
+  - **Deps**: 1_1, 3_1, 4_1
+  - **Refs**: design.md D1, D4; .reviews/round-1.md#{f001-a-read-stream-close-failure-still-releases-its-lifecycle-slot, f002-a-parent-refusal-spends-held-bytes-that-were-never-written, f003-a-rejected-destination-close-hides-the-real-error-until-the-deadline, f004-the-already-aborted-race-can-leave-its-actual-rejection-unobserved}
+  - **Acceptance**:
+    - Outcome: held-copy teardown and byte accounting remain exact on every failure
+    - Verify: command VITEST_MAX_THREADS=6 pnpm exec vitest run src/utils/heldRegularFile.test.ts src/worktree/provisioning/applyEntries.test.ts src/worktree/provisioning/applyEntries.node.test.ts src/worktree/provisioning/applyProvisioning.test.ts
+  - **Plan**:
+    1. In src/utils/heldRegularFile.ts retain the transferred handle as a positive close witness and keep ambiguous or rejected stream closure charged; add the close-rejection descriptor witness in src/utils/heldRegularFile.test.ts.
+    2. In src/worktree/provisioning/applyEntries.ts defer held-byte precharge until parent preparation succeeds, observe an already-started operation before an already-aborted race returns, and split caller error settlement from a rejected destination-close lifecycle witness.
+    3. In src/worktree/provisioning/applyEntries.test.ts, src/worktree/provisioning/applyEntries.node.test.ts, and src/worktree/provisioning/applyProvisioning.test.ts cover each pre-copy early exit followed by fitting material, rejected destination close preserving the original error while lifecycle remains charged, and already-aborted copy without unhandled rejection.

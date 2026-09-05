@@ -671,3 +671,74 @@ describe("a held regular source", () => {
     expect(actualSettled).toBe(false);
   });
 });
+
+describe("held-copy teardown errors", () => {
+  it("reports the original operation error while a rejected destination close stays retained", async () => {
+    const open = vi.spyOn(fs, "open");
+    const lifecycle: Promise<unknown>[] = [];
+    const original = new Error("chmod failed");
+    const destination = {
+      chmod: async () => {
+        throw original;
+      },
+      close: async () => {
+        throw new Error("close failed");
+      },
+    };
+    open.mockResolvedValueOnce(destination as never);
+    const source = {
+      stream: Readable.from("held"),
+      mode: 0o600,
+      size: 4,
+      finishWhen: (actual: Promise<unknown>) => {
+        lifecycle.push(actual);
+        void actual.catch(() => undefined);
+      },
+      dispose: vi.fn(),
+    };
+
+    await expect(nodeApplyFsDeps.copyHeldFile(source, "/wt/out", 0o600)).rejects.toBe(original);
+    let settled = false;
+    void lifecycle[0]?.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(lifecycle).toHaveLength(1);
+    expect(settled).toBe(false);
+    open.mockRestore();
+  });
+
+  it("observes the actual operation even when cancellation was already requested", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("already elapsed"));
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.prependListener("unhandledRejection", onUnhandled);
+    try {
+      await expect(
+        nodeApplyFsDeps.copyHeldFile(
+          {
+            stream: Readable.from("held"),
+            mode: 0o600,
+            size: 4,
+            finishWhen: () => undefined,
+            dispose: () => undefined,
+          },
+          "/wt/out",
+          0o600,
+          controller.signal,
+        ),
+      ).rejects.toThrow("already elapsed");
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandled);
+    }
+  });
+});
