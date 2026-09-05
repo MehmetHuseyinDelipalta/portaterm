@@ -948,3 +948,64 @@ describe("createGitDecorationProvider — a workspace folder reached through a s
     }
   });
 });
+
+// A folder path may reach `getDescendantBuckets` spelled with or without its
+// trailing separator — the scan this lookup replaced accepted both, and a
+// filesystem root can only be spelled WITH one. See the `bucketKey` note in
+// gitDecorationProvider.ts.
+describe("createGitDecorationProvider — getDescendantBuckets path spellings", () => {
+  async function withRepo(root: string, files: Array<{ path: string; status: Status }>) {
+    const { repo } = makeRepo(root, files);
+    const { api } = makeApi({ repos: [repo] });
+    const { extObj } = makeExtension({ api });
+    const provider = createGitDecorationProvider({
+      getExtension: () => extObj as never,
+      getWorkspaceFolders: () => [],
+    });
+    await new Promise((r) => setImmediate(r));
+    return provider;
+  }
+
+  it("answers a POSIX folder the same with and without a trailing separator", async () => {
+    const provider = await withRepo("/work/repo", [
+      { path: "/work/repo/src/a.ts", status: Status.MODIFIED },
+      { path: "/work/repo/src/deep/b.ts", status: Status.UNTRACKED },
+    ]);
+    const bare = provider.getDescendantBuckets("/work/repo/src");
+    expect(bare).toEqual({ modified: 1, untracked: 1 });
+    expect(provider.getDescendantBuckets("/work/repo/src/")).toEqual(bare);
+    expect(provider.getDescendantBuckets("/work/repo/")).toEqual(bare);
+    provider.dispose();
+  });
+
+  it("answers the POSIX filesystem root, whose only spelling carries the separator", async () => {
+    const provider = await withRepo("/work/repo", [{ path: "/work/repo/a.ts", status: Status.MODIFIED }]);
+    expect(provider.getDescendantBuckets("/")).toEqual({ modified: 1 });
+    // `//` is a boundary no real path starts with — the scan returned nothing for
+    // it, so stripping must not turn it into the root.
+    expect(provider.getDescendantBuckets("//")).toBeUndefined();
+    provider.dispose();
+  });
+
+  it("answers a Windows folder across separator and case spellings", async () => {
+    const provider = await withRepo("C:\\work\\repo", [
+      { path: "C:\\work\\repo\\src\\a.ts", status: Status.MODIFIED },
+      { path: "C:\\work\\repo\\src\\b.ts", status: Status.INDEX_ADDED },
+    ]);
+    const bare = provider.getDescendantBuckets("C:\\work\\repo\\src");
+    expect(bare).toEqual({ modified: 1, added: 1 });
+    expect(provider.getDescendantBuckets("C:\\work\\repo\\src\\")).toEqual(bare);
+    expect(provider.getDescendantBuckets("c:/work/repo/src/")).toEqual(bare);
+    // The drive root keeps its separator — stripping it would miss the bucket.
+    expect(provider.getDescendantBuckets("C:\\")).toEqual(bare);
+    expect(provider.getDescendantBuckets("C:\\\\")).toBeUndefined();
+    provider.dispose();
+  });
+
+  it("still returns undefined for a folder with no dirty descendants", async () => {
+    const provider = await withRepo("/work/repo", [{ path: "/work/repo/a.ts", status: Status.MODIFIED }]);
+    expect(provider.getDescendantBuckets("/work/other")).toBeUndefined();
+    expect(provider.getDescendantBuckets("/work/other/")).toBeUndefined();
+    provider.dispose();
+  });
+});

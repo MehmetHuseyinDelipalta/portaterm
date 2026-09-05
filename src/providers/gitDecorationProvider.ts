@@ -213,6 +213,131 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
   const revisions = new Map<string, number>();
   let revision = 0;
 
+  // --- Descendant-bucket index (perf) --------------------------------------
+  //
+  // `getDescendantBuckets` used to scan EVERY dirty path in EVERY repo map on
+  // every call, and the RPC handler calls it once per directory row of a
+  // `request-read-directory` response — so one directory expansion cost
+  // O(directories x dirty paths). The index below moves that scan to the
+  // mutation side: each path contributes to its own key and every ancestor
+  // key once, when its merged status changes, and a lookup is O(1).
+  //
+  // Keys are `normalizePathForCompare`d, matching the containment rule the
+  // scan used. `deleted` and `ignored` are not indexed — they don't propagate
+  // (design D6), exactly as the scan skipped them.
+
+  /** Merged, propagating status per path — the value currently folded into `dirBuckets`. */
+  const indexedStatus = new Map<string, GitStatus>();
+  /** Normalized ancestor (and self) key -> descendant status counts. */
+  const dirBuckets = new Map<string, Partial<Record<GitStatus, number>>>();
+
+  function ancestorKeys(absPath: string): string[] {
+    const np = normalizePathForCompare(absPath);
+    const sep = isWindowsAbsPath(absPath) ? "\\" : "/";
+    const keys: string[] = [np];
+    let cursor = np;
+    while (true) {
+      const idx = cursor.lastIndexOf(sep);
+      if (idx < 0) {
+        break;
+      }
+      // The filesystem root keeps its trailing separator (`/`, `c:\`), which is
+      // how the old scan spelled it: a root already ending in the separator IS
+      // the boundary.
+      const parent = idx === 0 ? sep : cursor.slice(0, idx);
+      const rooted = /^[a-z]:$/.test(parent) ? parent + sep : parent;
+      if (rooted === cursor) {
+        break;
+      }
+      keys.push(rooted);
+      cursor = rooted;
+      if (cursor === sep || /^[a-z]:\\$/.test(cursor) === true) {
+        break;
+      }
+    }
+    return keys;
+  }
+
+  /**
+   * The index key a QUERY path resolves to.
+   *
+   * `ancestorKeys` spells every directory without a trailing separator, except a
+   * filesystem root, which keeps its own (`/`, `c:\`). The scan this index
+   * replaced accepted BOTH spellings — it built its boundary as
+   * `normalizedRoot.endsWith(sep) ? normalizedRoot : normalizedRoot + sep` — so a
+   * caller passing `/w/repo/` got the same answer as one passing `/w/repo`.
+   * Without this, the index silently answered `undefined` for the trailing-slash
+   * spelling: no live caller uses it (`fileTreeRpcHandler` builds entry paths with
+   * `path.join`), but a lookup that disagrees with its own producer is a trap for
+   * the next one.
+   *
+   * Exactly one separator is stripped, and only from a path that is not itself a
+   * root: `//` and `c:\\` are boundaries no real path starts with, and the scan
+   * returned nothing for them too.
+   */
+  function bucketKey(folderAbsPath: string): string {
+    const np = normalizePathForCompare(folderAbsPath);
+    const sep = isWindowsAbsPath(folderAbsPath) ? "\\" : "/";
+    if (np === sep || np.endsWith(sep + sep) || /^[a-z]:\\$/.test(np)) {
+      return np;
+    }
+    return np.endsWith(sep) ? np.slice(0, -sep.length) : np;
+  }
+
+  function applyToBuckets(absPath: string, status: GitStatus, delta: 1 | -1): void {
+    for (const key of ancestorKeys(absPath)) {
+      let bucket = dirBuckets.get(key);
+      if (bucket === undefined) {
+        if (delta < 0) {
+          continue;
+        }
+        bucket = {};
+        dirBuckets.set(key, bucket);
+      }
+      const next = (bucket[status] ?? 0) + delta;
+      if (next > 0) {
+        bucket[status] = next;
+      } else {
+        delete bucket[status];
+        // An empty bucket is dropped so the index stays bounded by the set of
+        // directories that currently HAVE dirty descendants, not by every
+        // directory that ever had one.
+        let empty = true;
+        for (const _ in bucket) {
+          empty = false;
+          break;
+        }
+        if (empty) {
+          dirBuckets.delete(key);
+        }
+      }
+    }
+  }
+
+  /**
+   * Re-fold `absPath`'s merged status into the index. Callers that have already
+   * merged the path pass the value so this stays one map read; the delta loops
+   * in `rebuildRepoMap` / `detachRepo` all have it in hand.
+   */
+  function syncIndexedPath(absPath: string, mergedIn?: GitStatus | undefined, haveMerged = false): void {
+    const merged = haveMerged ? mergedIn : computeMergedStatus(absPath);
+    const next = merged === undefined || merged === "deleted" || merged === "ignored" ? undefined : merged;
+    const prev = indexedStatus.get(absPath);
+    if (prev === next) {
+      return;
+    }
+    if (prev !== undefined) {
+      applyToBuckets(absPath, prev, -1);
+    }
+    if (next === undefined) {
+      indexedStatus.delete(absPath);
+    } else {
+      indexedStatus.set(absPath, next);
+      applyToBuckets(absPath, next, 1);
+    }
+  }
+
+
   // Listener side of the public `onDidChange`. We use a tiny in-process emitter
   // instead of `vscode.EventEmitter` so the unit test surface doesn't need to
   // stub that class — the real runtime semantics (subscribe / dispose / fire-
@@ -437,6 +562,7 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
       if (merged === prevMerged) {
         continue;
       }
+      syncIndexedPath(absPath, merged, true);
       changes.push({ path: absPath, status: merged ?? null });
     }
     if (changes.length > 0) {
@@ -508,6 +634,7 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
             })()
           : computeMergedExcludingRepo(absPath, key);
       if (merged !== prevMerged) {
+        syncIndexedPath(absPath, merged, true);
         delta.push({ path: absPath, status: merged ?? null });
       }
     }
@@ -522,6 +649,7 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
       const prevMerged =
         prevOther === undefined ? oldMap.get(absPath) : pickHigherSeverity(oldMap.get(absPath)!, prevOther);
       if (merged !== prevMerged) {
+        syncIndexedPath(absPath, merged, true);
         delta.push({ path: absPath, status: merged ?? null });
       }
     }
@@ -620,39 +748,14 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
     },
     getDescendantBuckets(folderAbsPath: string) {
       flushPendingEmit();
-      // Pre-compute the path-containment boundary once per call. Each
-      // repoMap is then a flat O(M) iteration so total cost is O(N) where
-      // N = sum of dirty paths across all repos.
-      const isWin = isWindowsAbsPath(folderAbsPath);
-      const normalisedRoot = normalizePathForCompare(folderAbsPath);
-      const sep = isWin ? "\\" : "/";
-      const boundary = normalisedRoot.endsWith(sep) ? normalisedRoot : normalisedRoot + sep;
-      // Per-path merge across repos so a path that appears in two overlapping
-      // worktrees uses the higher-severity status (matches `getStatus`).
-      const merged = new Map<string, GitStatus>();
-      for (const m of repoMaps.values()) {
-        for (const [p, s] of m) {
-          const np = normalizePathForCompare(p);
-          if (np !== normalisedRoot && !np.startsWith(boundary)) {
-            continue;
-          }
-          const existing = merged.get(p);
-          merged.set(p, existing === undefined ? s : pickHigherSeverity(existing, s));
-        }
+      // O(1): the counts were folded in on the mutation side.
+      const bucket = dirBuckets.get(bucketKey(folderAbsPath));
+      if (bucket === undefined) {
+        return undefined;
       }
-      let counts: Partial<Record<GitStatus, number>> | undefined;
-      for (const status of merged.values()) {
-        // Mirrors the webview's `isDirtyForPropagation`: `deleted` and
-        // `ignored` are excluded so the badge doesn't light up for them.
-        if (status === "deleted" || status === "ignored") {
-          continue;
-        }
-        if (!counts) {
-          counts = {};
-        }
-        counts[status] = (counts[status] ?? 0) + 1;
-      }
-      return counts;
+      // Copy so callers (which hand this straight to the webview payload and
+      // spread it there) cannot alias the index.
+      return { ...bucket };
     },
     currentRevision() {
       flushPendingEmit();
@@ -680,6 +783,8 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
         }
       }
       repoMaps.clear();
+      indexedStatus.clear();
+      dirBuckets.clear();
       if (cleared.length > 0) {
         emit(cleared);
         flushPendingEmit();
@@ -726,6 +831,8 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
       }
       repoSubs.clear();
       repoMaps.clear();
+      indexedStatus.clear();
+      dirBuckets.clear();
       revisions.clear();
       listeners.clear();
     },
