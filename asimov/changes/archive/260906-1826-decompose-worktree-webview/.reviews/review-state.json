@@ -1,0 +1,14 @@
+{
+  "rounds": [
+    {
+      "round": 1,
+      "mode": "discovery",
+      "blocking": 0,
+      "verdict": "APPROVE",
+      "at": 1788718713279,
+      "elapsedMs": 684431,
+      "specialists": 6
+    }
+  ],
+  "overrides": []
+}
