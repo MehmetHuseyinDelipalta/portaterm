@@ -87,7 +87,7 @@ stops if the count disagrees with design.md D1.
     3. Apply D4's negation rule at every site.
     4. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
-- [ ] 1_7 Extract the provisioning state
+- [x] 1_7 Extract the provisioning state — verified: pnpm exec vitest run src/webview/worktree/createDialog/provisionState.test.ts src/webview/worktree/WorktreeCreateDialog.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_6
   - **Refs**: design.md D1, design.md D1a, design.md § Obligation ledger
   - **Boundary**: the facade holds no reference to `pendingSwitch`, `pendingSave`, `pendingStep`, `pendingCopy`, `addedTickRecord`, `addedCopyTickRecord`, `checkedByOffer`, `drawnModel`, `drawnOfferId` or `switchSeq`
@@ -96,10 +96,11 @@ stops if the count disagrees with design.md D1.
     - Verify: command pnpm exec vitest run src/webview/worktree/createDialog/provisionState.test.ts src/webview/worktree/WorktreeCreateDialog.test.ts
   - **Plan**:
     1. Enumerate in both directions (D1a). The first shape of this change put the count at three; it is ~40, spanning `:1395` to `:3490`. Stop and re-plan if the enumeration disagrees with design.md D1 again.
-    2. Create `src/webview/worktree/createDialog/provisionState.ts` with the four pending maps and their predicates, the two ordinal tick records with the helpers that apply and record them, `drawnModel`, `drawnOfferId`, `checkedByOffer`, `switchSeq`, `settleStep`, `settleCopy` and `settledProvision`.
+    2. Create `src/webview/worktree/createDialog/provisionState.ts` with the four pending maps and their predicates, the two ordinal tick records with the helpers that apply and record them, `drawnModel`, `drawnOfferId`, `checkedByOffer`, `switchSeq`, `settleStep`, `settleCopy` and `settledProvision`, moving them out of `src/webview/worktree/WorktreeCreateDialog.ts`.
     3. Add `src/webview/worktree/createDialog/provisionState.test.ts`. It declares `// @vitest-environment jsdom` if it touches the DOM, and per `asimov/project.md` its Verify is `command pnpm exec vitest run`, never `unit`. Two obligations drive it: a tick set on repo A is not applied to repo B and survives the return (OBL-1), and an UNTICK survives a reminted offer by descriptor (OBL-2) — the existing `:3040-3078` asserts only the tick half.
     4. Apply D4's negation rule at every site.
-    5. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
+    5. Split the two ordinal tick records into `src/webview/worktree/createDialog/tickRecords.ts`; the state module and they came to 544 lines together, over the goal this change exists to meet, and the records are the subject of both obligations.
+    6. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
 - [ ] 1_8 Extract the provisioning view
   - **Deps**: 1_7
