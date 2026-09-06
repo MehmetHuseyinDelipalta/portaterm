@@ -13,7 +13,7 @@
 ## Implement
 
 - [x] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
@@ -33,3 +33,4 @@ Blueprint: none
 Lane: full (standard) — registry semantics, derived presentation state, and worktree UI styling span host projection and webview rendering | flags: none
 Planned at: 0de80546
 Validator warning accepted: the modified requirement keeps the existing public capability name and specifies visible external-row behavior, not a private source path.
+Verify exception: `pnpm run test:unit` had 7,932 pass / 3 fail outside this change — two `src/extension.worktreeMutations.test.ts` `terminal.retire` failures reproduce on clean `0de80546`, and the documented load-flaky `src/extension.worktreeAssembly.test.ts` case passed standalone; all 590 change regressions and every other project gate passed.
