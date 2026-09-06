@@ -81,3 +81,19 @@
     3. In the same file cover OBL-8's module half: both log labels produce their exact strings.
     4. Run each assertion against the mutation its ledger row names before ticking.
   - **Boundary**: no edits to any existing test file
+
+## 3. Remediation
+
+- [x] 3_1 Close round-1 findings — verified: pnpm exec vitest run src/providers && pnpm exec vitest run src/providers && pnpm run check-types exit 0
+  - **Deps**: 2_3
+  - **Refs**: design.md#d5-obligation-ledger, .reviews/round-1.md
+  - **Acceptance**:
+    - Outcome: OBL-8's file-preview wiring half and OBL-2's disposal half each fail on the mutation the round file names
+    - Verify: command pnpm exec vitest run src/providers
+  - **Plan**:
+    1. F001 — in `src/providers/providerRequestWiring.test.ts` add a `requestFilePreview` failure case through each real provider asserting the two exact warning strings, so a provider handed the other's `logSuffix` fails.
+    2. F002 — in `src/providers/webviewRequests.test.ts` spy the mocked `CancellationTokenSource` constructor inside a `handleFilePreviewRequest` case and assert the handler's own `finally` disposes exactly once, so deleting that `dispose()` fails.
+    3. F003 — in `src/providers/providerRequestWiring.test.ts` add the positive half of OBL-6: assert the rename's list IS delivered, not only that the stale one is not.
+    4. F004 — in `src/providers/webviewRequests.ts` change `begin(sessionId)` to create, install and return the source as design.md D1 specifies, updating the call sites in `src/providers/TerminalEditorProvider.ts` and `src/providers/TerminalViewProvider.ts`.
+    5. Correct workflow.md's `Witnesses:` line, which records OBL-8 as passing in both halves when the file-preview wiring half did not exist.
+    6. Run each new assertion against its named mutation before ticking.

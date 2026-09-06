@@ -94,10 +94,13 @@ export class PreviewTokenRegistry {
     }
   }
 
-  /** Supersede any prior request for this session and install a fresh source. */
-  begin(sessionId: string, source: vscode.CancellationTokenSource): void {
+  /** Supersede any prior request for this session and install a fresh source.
+   *  The registry makes the source so no caller can install one it did not. */
+  begin(sessionId: string): vscode.CancellationTokenSource {
     this.cancel(sessionId);
+    const source = new vscode.CancellationTokenSource();
     this.tokens.set(sessionId, source);
+    return source;
   }
 
   /** Drop the entry only if it is STILL ours — a supersession may have replaced
@@ -135,9 +138,8 @@ export async function handleFilePreviewRequest(
   if (!sessionManager.getSession(message.sessionId)) {
     return;
   }
-  const source = new vscode.CancellationTokenSource();
   // Supersede: cancel any prior request for this session, then install ours.
-  tokens.begin(message.sessionId, source);
+  const source = tokens.begin(message.sessionId);
 
   try {
     const allSettings = readHoverPreviewSettings();

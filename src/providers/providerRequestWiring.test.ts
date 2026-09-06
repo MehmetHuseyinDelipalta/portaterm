@@ -14,8 +14,11 @@ import { __resetAll } from "../test/__mocks__/vscode";
 import { pumpTimeoutMacrotasks } from "../test/providerTestUtils";
 import type { VaultListResult } from "../vault/types";
 import type { VaultService } from "../vault/VaultService";
+import { previewFileLink } from "./previewFileLink";
 import { TerminalEditorProvider } from "./TerminalEditorProvider";
 import { TerminalViewProvider } from "./TerminalViewProvider";
+
+vi.mock("./previewFileLink", () => ({ previewFileLink: vi.fn() }));
 
 beforeEach(() => {
   __resetAll();
@@ -175,6 +178,47 @@ describe("OBL-8: each provider's log strings are a wiring fact", () => {
   });
 });
 
+describe("OBL-8: the file-preview log label is a wiring fact too", () => {
+  // Round-1 F001. Without these two, a provider handed the OTHER provider's
+  // `logSuffix` for file preview passes every test in the repository: the
+  // module test supplies the label itself, so it cannot see a swap.
+  const PREVIEW = { type: "requestFilePreview", path: "src/a.ts", sessionId: "s1", requestId: "r1" };
+
+  /** The handler returns early on an unknown session, before it can log. */
+  function withSession(): void {
+    vi.spyOn(SessionManager.prototype, "getSession").mockReturnValue({ id: "s1" } as never);
+    vi.mocked(previewFileLink).mockRejectedValue(new Error("boom"));
+  }
+
+  it("the editor tags its preview failure with (editor)", async () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    withSession();
+    const surface = mountEditor(null);
+
+    surface.send(PREVIEW);
+    await settle();
+
+    const messages = spy.mock.calls.map(([m]) => m);
+    expect(messages).toContain("[AnyWhere Terminal] requestFilePreview failed (editor):");
+    expect(messages).not.toContain("[AnyWhere Terminal] requestFilePreview failed:");
+    surface.dispose();
+  });
+
+  it("the view does not", async () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    withSession();
+    const surface = mountView(null);
+
+    surface.send(PREVIEW);
+    await settle();
+
+    const messages = spy.mock.calls.map(([m]) => m);
+    expect(messages).toContain("[AnyWhere Terminal] requestFilePreview failed:");
+    expect(messages).not.toContain("[AnyWhere Terminal] requestFilePreview failed (editor):");
+    surface.dispose();
+  });
+});
+
 describe("OBL-6: one _vaultRefreshSeq, shared with the rename push", () => {
   it("a rename during an in-flight refresh drops the older list", async () => {
     // The rename push increments the same counter the request holds. A second
@@ -204,6 +248,9 @@ describe("OBL-6: one _vaultRefreshSeq, shared with the rename push", () => {
     const delivered = surface
       .postsOf("vaultSessionsResponse")
       .flatMap(([m]) => (m.result?.entries ?? []).map((e) => e.id));
+    // Both halves. Without the positive one, a wiring break that delivers
+    // NOTHING satisfies the negative assertion too (review round-1 F003).
+    expect(delivered).toContain("claude:renamed");
     expect(delivered).not.toContain("claude:stale");
     surface.dispose();
   });

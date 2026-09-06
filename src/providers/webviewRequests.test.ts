@@ -113,42 +113,40 @@ describe("PreviewTokenRegistry", () => {
     // OBL-1. `end` for the superseded A must not drop B's entry, or a later
     // cancel would find nothing and B's stale result would win.
     const registry = new PreviewTokenRegistry();
-    const a = new CancellationTokenSource() as unknown as vscode.CancellationTokenSource;
-    const b = new CancellationTokenSource() as unknown as vscode.CancellationTokenSource;
 
-    registry.begin("s1", a);
-    registry.begin("s1", b);
+    const a = registry.begin("s1");
+    const b = registry.begin("s1");
     registry.end("s1", a);
     registry.cancel("s1");
 
-    expect(a.token.isCancellationRequested).toBe(true);
+    // Only B is asserted: `begin(b)` already cancelled A, so an A assertion
+    // here would hold under the mutation too (review round-1 chair note).
     expect(b.token.isCancellationRequested).toBe(true);
   });
 
-  it("cancels without disposing, leaving disposal to the owning finally", () => {
-    // OBL-2. Asserted on the dispose CALL COUNT: the VS Code double keeps
-    // `isCancellationRequested` readable after disposal on purpose
+  it("cancel does not dispose", () => {
+    // OBL-2, first half. Asserted on the dispose CALL COUNT: the VS Code double
+    // keeps `isCancellationRequested` readable after disposal on purpose
     // (src/test/__mocks__/vscode.ts:53), so a readability assertion here would
     // pass whether or not `cancel` disposed.
+    //
+    // The second half — that the owning handler DOES dispose, exactly once —
+    // cannot be established here: a `source.dispose()` call written by the test
+    // would be the only thing the spy ever saw (review round-1 F002). It is
+    // asserted against the real handler in `handleFilePreviewRequest` below.
     const registry = new PreviewTokenRegistry();
-    const source = new CancellationTokenSource() as unknown as vscode.CancellationTokenSource;
-    const disposeSpy = vi.spyOn(source, "dispose");
+    const disposeSpy = vi.spyOn(CancellationTokenSource.prototype, "dispose");
 
-    registry.begin("s1", source);
+    registry.begin("s1");
     registry.cancel("s1");
 
     expect(disposeSpy).toHaveBeenCalledTimes(0);
-
-    source.dispose(); // the owning handler's finally
-    expect(disposeSpy).toHaveBeenCalledTimes(1);
   });
 
   it("cancelAll cancels every session present on entry", () => {
     const registry = new PreviewTokenRegistry();
-    const a = new CancellationTokenSource() as unknown as vscode.CancellationTokenSource;
-    const b = new CancellationTokenSource() as unknown as vscode.CancellationTokenSource;
-    registry.begin("s1", a);
-    registry.begin("s2", b);
+    const a = registry.begin("s1");
+    const b = registry.begin("s2");
 
     registry.cancelAll();
 
@@ -158,10 +156,8 @@ describe("PreviewTokenRegistry", () => {
 
   it("end is a no-op once the entry belongs to a newer request", () => {
     const registry = new PreviewTokenRegistry();
-    const a = new CancellationTokenSource() as unknown as vscode.CancellationTokenSource;
-    const b = new CancellationTokenSource() as unknown as vscode.CancellationTokenSource;
-    registry.begin("s1", a);
-    registry.begin("s1", b);
+    const a = registry.begin("s1");
+    const b = registry.begin("s1");
 
     registry.end("s1", a);
     registry.end("s1", b);
@@ -348,6 +344,41 @@ describe("handleFilePreviewRequest", () => {
     });
 
     expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it("disposes its own source exactly once, in its own finally", async () => {
+    // OBL-2, second half — the one the registry test cannot make. The spy is on
+    // the constructor's prototype, so every call it records came from
+    // production code; a `dispose()` written by this test would be
+    // indistinguishable and is deliberately absent (review round-1 F002).
+    const disposeSpy = vi.spyOn(CancellationTokenSource.prototype, "dispose");
+    vi.mocked(previewFileLink).mockResolvedValue({ type: "filePreviewResponse", requestId: "r1" } as never);
+    const { webview } = failingWebview();
+
+    await handleFilePreviewRequest(PREVIEW_MSG, {
+      webview,
+      sessionManager: sessionManagerStub,
+      tokens: new PreviewTokenRegistry(),
+      logSuffix: "",
+    });
+
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("still disposes when the request threw", async () => {
+    const disposeSpy = vi.spyOn(CancellationTokenSource.prototype, "dispose");
+    vi.mocked(previewFileLink).mockRejectedValue(new Error("boom"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { webview } = failingWebview();
+
+    await handleFilePreviewRequest(PREVIEW_MSG, {
+      webview,
+      sessionManager: sessionManagerStub,
+      tokens: new PreviewTokenRegistry(),
+      logSuffix: "",
+    });
+
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
   });
 
   it("posts a result that was never cancelled", async () => {
