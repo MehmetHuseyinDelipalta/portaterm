@@ -857,12 +857,21 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
     };
     // An exited pty reports rule `quiet`, so the exit has to be read from the
     // process itself rather than from the rule that described it.
-    if (pane.exited || reading.rule === "shell-title") {
+    if (pane.exited) {
       return inferred;
     }
     const report = freshTurn(pane, now);
     if (report === undefined) {
       return inferred;
+    }
+    const lifecycle = {
+      ...(report.state === "done" && report.sessionBoundary !== true ? { completionAt: report.stateStartedAt } : {}),
+      ...(report.sessionBoundary === true ? { sessionBoundary: true as const } : {}),
+    };
+    // A reclaimed shell decides current terminal activity, but cannot discard an
+    // authoritative turn completion or session boundary from the fresh report.
+    if (reading.rule === "shell-title") {
+      return { ...inferred, ...lifecycle };
     }
     return {
       activity: TURN_ACTIVITY[report.state],
@@ -870,8 +879,7 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
       rule: reading.rule,
       delegations: reportedDelegations(report),
       ...(report.interactivePrompt === undefined ? {} : { interactivePrompt: report.interactivePrompt }),
-      ...(report.state === "done" && report.sessionBoundary !== true ? { completionAt: report.stateStartedAt } : {}),
-      ...(report.sessionBoundary === true ? { sessionBoundary: true as const } : {}),
+      ...lifecycle,
     };
   }
 

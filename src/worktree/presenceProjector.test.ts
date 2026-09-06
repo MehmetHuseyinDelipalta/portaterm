@@ -1715,15 +1715,39 @@ describe("a reported turn decides activity", () => {
     expect(row.activitySource).not.toBe("hook");
   });
 
-  it("yields to a shell that has reclaimed the pane", async () => {
-    // The agent published `working` and then died without a Stop; the title is
-    // the only evidence that anything changed.
-    const h = makeProjector([pane({ paneId: "a", turn: reported({ state: "working" }) })]);
+  it("lets shell-title reclaim activity without retaining working metadata", async () => {
+    const h = makeProjector([
+      pane({
+        paneId: "a",
+        turn: reported({
+          state: "working",
+          interactivePrompt: '{"approval":{"tool":"Bash"}}',
+          subagents: [{ id: "c1", name: "worker", state: "working", startedAt: clock }],
+        }),
+      }),
+    ]);
     h.setActivity("a", "idle", "shell-title");
 
     const [row] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
 
     expect(row).toMatchObject({ activity: "idle", activitySource: "title" });
+    expect(row.interactivePrompt).toBeUndefined();
+    expect(row.delegations).toBeUndefined();
+  });
+
+  it("keeps shell-title activity precedence while recording an ordinary completion", async () => {
+    const completedAt = clock - 1_000;
+    const h = makeProjector([pane({ paneId: "a", turn: reported({ state: "done", stateStartedAt: completedAt }) })]);
+    h.setActivity("a", "idle", "shell-title");
+
+    const [row] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(row).toMatchObject({
+      activity: "idle",
+      activitySource: "title",
+      stateStartedAt: completedAt,
+      finishedAt: completedAt,
+    });
   });
 
   it("falls back to inference once stale, keeping the identity it carried", async () => {
@@ -1862,6 +1886,18 @@ describe("a reported turn decides activity", () => {
     h.panes[0] = pane({ paneId: "a", turn: reported({ state: "done", sessionBoundary: true }) });
     const [boundary] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
 
+    expect(boundary.finishedAt).toBeUndefined();
+  });
+
+  it("clears a retained completion when a shell-title session boundary lands idle", async () => {
+    const h = makeProjector([pane({ paneId: "a", turn: reported({ state: "done" }) })]);
+    expect((await h.projector.project([WT])).rowsByWorktreeId[WT][0].finishedAt).toBeDefined();
+
+    h.setActivity("a", "idle", "shell-title");
+    h.panes[0] = pane({ paneId: "a", turn: reported({ state: "done", sessionBoundary: true }) });
+    const [boundary] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(boundary).toMatchObject({ activity: "idle", activitySource: "title" });
     expect(boundary.finishedAt).toBeUndefined();
   });
 

@@ -68,3 +68,16 @@
     - Verify: command pnpm exec vitest run src/test/invariants/coverage.test.ts
   - **Plan**:
     1. Update the I3 statement in `src/test/invariants/registry.ts` to describe external scope without falsely requiring running lifecycle state.
+
+
+## 5. Review remediation
+
+- [x] 5_1 Preserve hook completion metadata under shell-title precedence — verified: pnpm exec vitest run src/worktree/presenceProjector.test.ts && pnpm run check-types && pnpm exec biome check src/worktree/presenceProjector.ts src/worktree/presenceProjector.test.ts exit 0
+  - **Deps**: 4_2
+  - **Refs**: design.md#d2-done-is-presentation-derived-from-an-authoritative-completion-fact; .reviews/round-2.md#f002
+  - **Acceptance**:
+    - Outcome: Shell-title inference still decides wire activity while fresh ordinary completion and session-boundary metadata are applied independently.
+    - Verify: command pnpm exec vitest run src/worktree/presenceProjector.test.ts
+  - **Plan**:
+    1. Refine `src/worktree/presenceProjector.ts` so shell-title precedence suppresses report activity, prompt, and delegations without discarding fresh `completionAt` or `sessionBoundary`.
+    2. Add regressions in `src/worktree/presenceProjector.test.ts` for shell-title ordinary done, shell-title boundary clearing, and shell-title working metadata suppression.
