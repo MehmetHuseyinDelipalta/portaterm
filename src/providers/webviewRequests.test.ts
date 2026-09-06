@@ -8,9 +8,28 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
-import type { ExtensionToWebViewMessage } from "../types/messages";
+import type { ExtensionToWebViewMessage, WebViewToExtensionMessage } from "../types/messages";
+import type { SessionManager } from "../session/SessionManager";
 import { CancellationTokenSource, __resetAll } from "../test/__mocks__/vscode";
-import { PreviewTokenRegistry, postOnce, postWithRetry } from "./webviewRequests";
+import type { VaultService } from "../vault/VaultService";
+import { previewFileLink } from "./previewFileLink";
+import { resolveClaudeSession } from "../session/resolveClaudeSession";
+import { resolveSubagentDetail, resolveSubagentDetailByEntryId } from "../vault/readers/subagentLookup";
+import {
+  handleFilePreviewRequest,
+  handleSubagentPreviewRequest,
+  handleVaultSessionsRequest,
+  PreviewTokenRegistry,
+  postOnce,
+  postWithRetry,
+} from "./webviewRequests";
+
+vi.mock("./previewFileLink", () => ({ previewFileLink: vi.fn() }));
+vi.mock("../session/resolveClaudeSession", () => ({ resolveClaudeSession: vi.fn() }));
+vi.mock("../vault/readers/subagentLookup", () => ({
+  resolveSubagentDetail: vi.fn(),
+  resolveSubagentDetailByEntryId: vi.fn(),
+}));
 
 beforeEach(() => {
   __resetAll();
@@ -150,5 +169,209 @@ describe("PreviewTokenRegistry", () => {
 
     // b was ended by its own owner, so the registry holds nothing to cancel.
     expect(b.token.isCancellationRequested).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The shared handlers (task 2_3). These pin the MODULE halves of OBL-4, OBL-5,
+// OBL-7 and OBL-8; the wiring halves — which post function and which log label
+// each provider is handed — live in providerRequestWiring.test.ts and cannot be
+// established from here.
+
+/** A webview whose every post fails, so retry attempts are countable. */
+function failingWebview() {
+  const postMessage = vi.fn((_message: { type?: string; fromCache?: boolean }) => Promise.resolve(false));
+  return { webview: { postMessage } as unknown as vscode.Webview, postMessage };
+}
+
+/** Long enough for two real 50 ms retry sleeps. */
+const settleRetries = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 300));
+
+const sessionManagerStub = {
+  getSession: () => ({ pty: { pid: 1 } }),
+  getInitialCwd: () => "/repo",
+  getCurrentCwd: () => "/repo",
+  getLiveCwd: async () => "/repo",
+} as unknown as SessionManager;
+
+describe("handleSubagentPreviewRequest", () => {
+  // OBL-4 module half. Each of the four reply branches must honour the injected
+  // post — a handler that reached for one of them directly would make the
+  // editor and the view indistinguishable here.
+  const branches: Array<{ name: string; message: WebViewToExtensionMessage; arrange: () => void }> = [
+    {
+      name: "nested drill-down",
+      message: { type: "requestSubagentPreview", terminalId: "t1", requestId: "r", description: "d", entryId: "e1", x: 0, y: 0 },
+      arrange: () => {
+        vi.mocked(resolveSubagentDetailByEntryId).mockResolvedValue({ messages: [] } as never);
+      },
+    },
+    {
+      name: "no live session",
+      message: { type: "requestSubagentPreview", terminalId: "t1", requestId: "r", description: "d", x: 0, y: 0 },
+      arrange: () => {
+        vi.mocked(resolveClaudeSession).mockResolvedValue(undefined as never);
+      },
+    },
+    {
+      name: "detail resolved",
+      message: { type: "requestSubagentPreview", terminalId: "t1", requestId: "r", description: "d", x: 0, y: 0 },
+      arrange: () => {
+        vi.mocked(resolveClaudeSession).mockResolvedValue({ sessionId: "s1", cwd: "/repo" } as never);
+        vi.mocked(resolveSubagentDetail).mockResolvedValue({ messages: [] } as never);
+      },
+    },
+    {
+      name: "read error",
+      message: { type: "requestSubagentPreview", terminalId: "t1", requestId: "r", description: "d", entryId: "e1", x: 0, y: 0 },
+      arrange: () => {
+        vi.mocked(resolveSubagentDetailByEntryId).mockRejectedValue(new Error("boom"));
+      },
+    },
+  ];
+
+  for (const branch of branches) {
+    it(`posts once under postOnce — ${branch.name}`, async () => {
+      branch.arrange();
+      const { webview, postMessage } = failingWebview();
+
+      await handleSubagentPreviewRequest(branch.message as never, {
+        sessionManager: sessionManagerStub,
+        post: (msg) => postOnce(webview, msg),
+      });
+      await settleRetries();
+
+      expect(postMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it(`retries under postWithRetry — ${branch.name}`, async () => {
+      branch.arrange();
+      const { webview, postMessage } = failingWebview();
+
+      await handleSubagentPreviewRequest(branch.message as never, {
+        sessionManager: sessionManagerStub,
+        post: (msg) => {
+          void postWithRetry(webview, msg);
+        },
+      });
+      await settleRetries();
+
+      expect(postMessage).toHaveBeenCalledTimes(3);
+    });
+  }
+});
+
+describe("handleVaultSessionsRequest", () => {
+  const vaultWith = (overrides: Partial<VaultService>): VaultService => overrides as VaultService;
+
+  it("posts the cache once and retries only the fresh list", async () => {
+    // OBL-5. A retried cache post could land after the fresh one and make a
+    // stale list win, so the two phases must not share a delivery policy.
+    const { webview, postMessage } = failingWebview();
+    await handleVaultSessionsRequest({
+      webview,
+      vaultService: vaultWith({
+        listCached: () => ({ entries: [], unreadable: { count: 0, reasons: [] } }) as never,
+        refresh: async () => ({ entries: [], unreadable: { count: 0, reasons: [] } }) as never,
+      }),
+      isCurrent: () => true,
+      logSuffix: "",
+    });
+    await settleRetries();
+
+    const posts = postMessage.mock.calls.map(([m]) => m as unknown as { fromCache?: boolean });
+    expect(posts.filter((m) => m.fromCache === true)).toHaveLength(1);
+    expect(posts.filter((m) => m.fromCache === false)).toHaveLength(3);
+  });
+
+  it("labels the vault-list failure with the caller's suffix and nothing else", async () => {
+    // OBL-8 module half.
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failing = vaultWith({
+      listCached: () => null,
+      refresh: async () => {
+        throw new Error("boom");
+      },
+    });
+    const { webview } = failingWebview();
+
+    await handleVaultSessionsRequest({ webview, vaultService: failing, isCurrent: () => true, logSuffix: " (editor)" });
+    await handleVaultSessionsRequest({ webview, vaultService: failing, isCurrent: () => true, logSuffix: "" });
+    await settleRetries();
+
+    const messages = spy.mock.calls.map(([m]) => m);
+    expect(messages).toContain("[AnyWhere Terminal] Failed to list vault sessions (editor):");
+    expect(messages).toContain("[AnyWhere Terminal] Failed to list vault sessions:");
+  });
+});
+
+describe("handleFilePreviewRequest", () => {
+  const PREVIEW_MSG = {
+    type: "requestFilePreview",
+    sessionId: "s1",
+    requestId: "r1",
+    text: "src/a.ts",
+  } as unknown as Extract<WebViewToExtensionMessage, { type: "requestFilePreview" }>;
+
+  it("drops a result whose request was cancelled while it resolved", async () => {
+    // OBL-7. The webview has already invalidated this requestId; posting the
+    // superseded preview would render it anyway.
+    const tokens = new PreviewTokenRegistry();
+    const { webview, postMessage } = failingWebview();
+    vi.mocked(previewFileLink).mockImplementation(async () => {
+      // A newer request for the same session arrives mid-resolve.
+      tokens.cancel("s1");
+      return { type: "filePreviewResponse", requestId: "r1" } as never;
+    });
+
+    await handleFilePreviewRequest(PREVIEW_MSG, {
+      webview,
+      sessionManager: sessionManagerStub,
+      tokens,
+      logSuffix: "",
+    });
+
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it("posts a result that was never cancelled", async () => {
+    // The companion to the row above: without this, dropping every post would
+    // also satisfy it.
+    const tokens = new PreviewTokenRegistry();
+    const { webview, postMessage } = failingWebview();
+    vi.mocked(previewFileLink).mockResolvedValue({ type: "filePreviewResponse", requestId: "r1" } as never);
+
+    await handleFilePreviewRequest(PREVIEW_MSG, {
+      webview,
+      sessionManager: sessionManagerStub,
+      tokens,
+      logSuffix: "",
+    });
+
+    expect(postMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels the preview failure with the caller's suffix and nothing else", async () => {
+    // OBL-8 module half.
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(previewFileLink).mockRejectedValue(new Error("boom"));
+    const { webview } = failingWebview();
+
+    await handleFilePreviewRequest(PREVIEW_MSG, {
+      webview,
+      sessionManager: sessionManagerStub,
+      tokens: new PreviewTokenRegistry(),
+      logSuffix: " (editor)",
+    });
+    await handleFilePreviewRequest(PREVIEW_MSG, {
+      webview,
+      sessionManager: sessionManagerStub,
+      tokens: new PreviewTokenRegistry(),
+      logSuffix: "",
+    });
+
+    const messages = spy.mock.calls.map(([m]) => m);
+    expect(messages).toContain("[AnyWhere Terminal] requestFilePreview failed (editor):");
+    expect(messages).toContain("[AnyWhere Terminal] requestFilePreview failed:");
   });
 });

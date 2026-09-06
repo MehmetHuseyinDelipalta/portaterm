@@ -69,7 +69,7 @@
     3. In both providers delete the local `subagentResolveDeps` and remove any import left unused.
   - **Boundary**: no edits to any existing test file
 
-- [ ] 2_3 Pin the shared handlers' module-level properties
+- [x] 2_3 Pin the shared handlers' module-level properties — verified: pnpm exec vitest run src/providers/webviewRequests.test.ts && pnpm exec vitest run src/providers && pnpm run check-types exit 0
   - **Deps**: 2_2
   - **Refs**: design.md#d5-obligation-ledger
   - **Acceptance**:
