@@ -37,9 +37,9 @@ import {
   handleSubagentPreviewRequest,
   handleVaultSessionDetailRequest,
   handleVaultSessionsRequest,
+  PreviewTokenRegistry,
   postOnce,
   postWithRetry,
-  PreviewTokenRegistry,
 } from "./webviewRequests";
 
 /**

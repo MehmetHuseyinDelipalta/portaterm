@@ -153,9 +153,7 @@ describe("OBL-8: each provider's log strings are a wiring fact", () => {
     surface.send({ type: "requestVaultSessions" });
     await settle();
 
-    expect(spy.mock.calls.map(([m]) => m)).toContain(
-      "[AnyWhere Terminal] Failed to list vault sessions (editor):",
-    );
+    expect(spy.mock.calls.map(([m]) => m)).toContain("[AnyWhere Terminal] Failed to list vault sessions (editor):");
     surface.dispose();
   });
 

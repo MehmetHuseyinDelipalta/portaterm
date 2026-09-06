@@ -8,13 +8,13 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
-import type { ExtensionToWebViewMessage, WebViewToExtensionMessage } from "../types/messages";
+import { resolveClaudeSession } from "../session/resolveClaudeSession";
 import type { SessionManager } from "../session/SessionManager";
-import { CancellationTokenSource, __resetAll } from "../test/__mocks__/vscode";
+import { __resetAll, CancellationTokenSource } from "../test/__mocks__/vscode";
+import type { ExtensionToWebViewMessage, WebViewToExtensionMessage } from "../types/messages";
+import { resolveSubagentDetail, resolveSubagentDetailByEntryId } from "../vault/readers/subagentLookup";
 import type { VaultService } from "../vault/VaultService";
 import { previewFileLink } from "./previewFileLink";
-import { resolveClaudeSession } from "../session/resolveClaudeSession";
-import { resolveSubagentDetail, resolveSubagentDetailByEntryId } from "../vault/readers/subagentLookup";
 import {
   handleFilePreviewRequest,
   handleSubagentPreviewRequest,
@@ -201,7 +201,15 @@ describe("handleSubagentPreviewRequest", () => {
   const branches: Array<{ name: string; message: WebViewToExtensionMessage; arrange: () => void }> = [
     {
       name: "nested drill-down",
-      message: { type: "requestSubagentPreview", terminalId: "t1", requestId: "r", description: "d", entryId: "e1", x: 0, y: 0 },
+      message: {
+        type: "requestSubagentPreview",
+        terminalId: "t1",
+        requestId: "r",
+        description: "d",
+        entryId: "e1",
+        x: 0,
+        y: 0,
+      },
       arrange: () => {
         vi.mocked(resolveSubagentDetailByEntryId).mockResolvedValue({ messages: [] } as never);
       },
@@ -223,7 +231,15 @@ describe("handleSubagentPreviewRequest", () => {
     },
     {
       name: "read error",
-      message: { type: "requestSubagentPreview", terminalId: "t1", requestId: "r", description: "d", entryId: "e1", x: 0, y: 0 },
+      message: {
+        type: "requestSubagentPreview",
+        terminalId: "t1",
+        requestId: "r",
+        description: "d",
+        entryId: "e1",
+        x: 0,
+        y: 0,
+      },
       arrange: () => {
         vi.mocked(resolveSubagentDetailByEntryId).mockRejectedValue(new Error("boom"));
       },

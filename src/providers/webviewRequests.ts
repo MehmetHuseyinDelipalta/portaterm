@@ -286,9 +286,7 @@ export function subagentResolveDeps(sessionManager: SessionManager): ResolveClau
   return {
     getPtyPid: (id) => sessionManager.getSession(id)?.pty.pid,
     getCwd: async (id) =>
-      (await sessionManager.getLiveCwd(id)) ??
-      sessionManager.getCurrentCwd(id) ??
-      sessionManager.getInitialCwd(id),
+      (await sessionManager.getLiveCwd(id)) ?? sessionManager.getCurrentCwd(id) ?? sessionManager.getInitialCwd(id),
     runningIndex: () => indexRunningSessionsOrEmpty(listRunningClaudeSessions()),
     descendantPids: (pid) => descendantPids(pid),
     sessionMtime: (sessionId) => claudeSessionMtime(sessionId),
