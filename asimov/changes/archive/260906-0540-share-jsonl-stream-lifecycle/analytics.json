@@ -14,7 +14,7 @@
       "windows": [
         {
           "from": 1788670816227,
-          "to": null
+          "to": 1788673200430
         }
       ],
       "phases": [
@@ -24,7 +24,7 @@
         }
       ],
       "firstAt": 1788670816227,
-      "lastAt": 1788673006894,
+      "lastAt": 1788673200208,
       "buckets": [
         {
           "runtime": "claude",
@@ -103,14 +103,14 @@
           "phase": "plan",
           "agent": "main",
           "model": "claude-opus-5",
-          "messages": 107,
-          "inputTokens": 214,
-          "outputTokens": 86137,
-          "reasoningTokens": 23830,
-          "cacheWriteTokens": 524735,
-          "cacheReadTokens": 18473490,
+          "messages": 125,
+          "inputTokens": 250,
+          "outputTokens": 94738,
+          "reasoningTokens": 26288,
+          "cacheWriteTokens": 545093,
+          "cacheReadTokens": 22552872,
           "extra": {
-            "cacheWrite5mTokens": 524735,
+            "cacheWrite5mTokens": 545093,
             "cacheWrite1hTokens": 0,
             "webSearchRequests": 0,
             "webFetchRequests": 0
@@ -139,14 +139,14 @@
           "phase": "plan",
           "agent": "asm-review-master",
           "model": "claude-opus-5",
-          "messages": 20,
-          "inputTokens": 40,
-          "outputTokens": 11600,
+          "messages": 21,
+          "inputTokens": 42,
+          "outputTokens": 13635,
           "reasoningTokens": 10119,
-          "cacheWriteTokens": 142428,
-          "cacheReadTokens": 1963076,
+          "cacheWriteTokens": 142725,
+          "cacheReadTokens": 2106345,
           "extra": {
-            "cacheWrite5mTokens": 142428,
+            "cacheWrite5mTokens": 142725,
             "cacheWrite1hTokens": 0,
             "webSearchRequests": 0,
             "webFetchRequests": 0
@@ -181,7 +181,7 @@
       "windows": [
         {
           "from": 1788670816227,
-          "to": null
+          "to": 1788673200430
         }
       ],
       "phases": [
