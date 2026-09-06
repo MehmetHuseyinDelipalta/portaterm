@@ -108,11 +108,23 @@ Verbatim moves wherever possible. Where not:
   truthy — so every negated site is checked by hand, not by the compiler.
 - `fail(message)` is constructed per-request inside `createWorktree` (`:1099-1104`). The moved
   branches receive it rather than rebuilding it, so the reported `verb`/`repoId` cannot drift.
-- `settled` (`:710`) is pure — `(verb, repoId, result)` in, an outcome out, no closure. It is read by
-  reattach and by removal, so it is lifted to module scope in the facade and imported by both, never
-  copied.
-- `openFailure` (`:1112`) is a `let` in `createWorktree` that the moved branches read. It becomes an
-  accessor pair passed in `deps`, and D4's negation rule applies to every site.
+- `settled` (`:710`) is pure — `(verb, repoId, result)` in, an outcome out, no closure. So is `paths`
+  (`:1638`). Both go to `mutationService/outcomes.ts` and are imported, never copied.
+  **Corrected after build (.reviews/round-1.md F004):** this first read "it is read by reattach and by
+  removal, so it is lifted to module scope in the facade". Two errors. `settled` is read by reattach
+  and by the facade's lock, unlock, prune and create — never by removal, which classifies with
+  `asOutcome` because a removal has a third answer (`indeterminate`) a git result does not, and did
+  not read it at `ef96ea01` either. And module scope in the facade is unavailable: removal.ts and
+  registerExisting.ts are imported BY the facade, so importing a value back is a runtime cycle. A leaf
+  module that imports only types is what resolves it. The sharing that justifies the module is real —
+  `paths` between removal and the facade, `settled` between registerExisting and the facade — so the
+  boundary stands on corrected premises.
+- `openFailure` (`:1112`) is a `let` in `createWorktree` that the moved branches read.
+  **Corrected after build:** it becomes a LOCAL in each handler, not the accessor pair written here.
+  Every read and write of it is inside one branch's coordinator body, and both branches return before
+  create-proper resumes, so it was never shared state in fact — only in scope. An accessor pair would
+  have manufactured a coupling the code does not have. Its `=== null` sites move unchanged, so D4's
+  negation rule has no site here to apply.
 
 ## D5 — What does NOT move
 

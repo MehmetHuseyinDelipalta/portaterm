@@ -28,7 +28,7 @@
   - **Plan**:
     1. Create `src/worktree/mutationService/removal.ts` exporting `createRemoval(deps)` over the `fingerprints` store, `assess`, `issueFingerprint`, `assessRemovalReport` and `removeWorktree`, moving them out of `src/worktree/worktreeMutationService.ts`. `removeWorktree` comes too: five of the nine store reads are inside it (D1a).
     2. Add `forgetAbsent(presentWorktreeIds)` over the fingerprint half of `reconcileFingerprints` (`:726-729`); the facade's member now calls this and 1_1's, and owns nothing itself.
-    3. `settled` (`:710`) is pure and read by removal and by 1_3's reattach, and `paths` (`:1638`) is read by removal and by the lock and unlock members — both go to `src/worktree/mutationService/outcomes.ts` and are imported, never copied (D4). Not module scope in the facade as first written: removal.ts is imported BY the facade, so importing a value back would be a runtime cycle.
+    3. `settled` (`:710`) is pure and read by 1_3's reattach and by the facade's lock, unlock, prune and create — NOT by removal, which classifies with `asOutcome` (.reviews/round-1.md F004). `paths` (`:1638`) is read by removal and by the lock and unlock members. Both — both go to `src/worktree/mutationService/outcomes.ts` and are imported, never copied (D4). Not module scope in the facade as first written: removal.ts is imported BY the facade, so importing a value back would be a runtime cycle.
     4. Add `src/worktree/mutationService/removal.test.ts` driving the module directly: a token is spent by its attempt, and a token issued for one worktree does not authorize removing another. The whole-service suite reaches the store through one worktree only, so neither case is visible there.
     5. Close with the OBL-4 pair from 1_1 step 7, base sha literal.
     4. Add `src/worktree/mutationService/removal.test.ts` covering assess-without-performing and the fingerprint's target scoping.
@@ -60,3 +60,16 @@
   - **Plan**:
     1. Run `pnpm run gate:fs-deletion` and record the printed count in workflow.md Notes beside the pre-change 70. Three production modules, not six — the gate excludes `.test.ts`. A count that did not rise means the new files are outside the scan and the gate is passing on modules it never read.
     2. Run `bun run asm refactor shape` on `src/worktree/worktreeMutationService.ts` and every module this change created; RECORD the output in workflow.md Notes rather than chasing it (design.md Risk Map).
+
+- [x] 1_5 Close round-1 findings — verified: pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/worktree/mutationService/removal.test.ts && pnpm run check-types exit 0
+  - **Deps**: 1_4
+  - **Refs**: .reviews/round-1.md
+  - **Boundary**: no production behaviour changes — F001 and F004 are comments, F002 is a comment, and F003 adds a test and a harness branch only
+  - **Acceptance**:
+    - Outcome: every accepted round-1 finding is closed, and the D15 absent-target exit has a witness in the module that owns the store.
+    - Verify: command pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/worktree/mutationService/removal.test.ts
+  - **Plan**:
+    1. F001 — `src/worktree/worktreeMutationService.ts`: `RemovalReport`'s doc says `atRisk` is in "the same module"; it is now `removal.ts`. Name the removal module.
+    2. F004 — `src/worktree/mutationService/removal.ts` header, `design.md` D4 and this file's 1_2 step 3 all say `settled` is read by removal. It never was: `removeWorktree` used `asOutcome` at `ef96ea01` too. Attribute `settled` to registerExisting and the facade, `paths` to removal and the facade. The `outcomes.ts` boundary is unchanged.
+    3. F002 — `src/worktree/mutationService/removal.test.ts`: the `setPresent` call before the second spend restores identical state, so the comment's recreate is not modelled. Reword to the claim the test actually proves — redemption is one-shot — and drop the no-op call.
+    4. F003 — same file: give the `withTarget` double a `missing` branch mirroring the facade's, and assert that a token issued for a worktree the tree no longer resolves is dead afterwards. `removal.ts:325-334` is the D15 exit and neither suite currently discriminates it; the older suite passes `undefined` in place of the token.

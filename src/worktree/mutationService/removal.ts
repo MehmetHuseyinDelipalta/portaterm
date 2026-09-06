@@ -11,9 +11,13 @@
 // one store with two owners across a module boundary — the exact leak this cut
 // exists to remove. Assessment and removal are one responsibility.
 //
-// `withTarget` and `settled` are NOT this module's. Lock and unlock leave
-// through the same wrapper, so it stays on the facade and arrives here as a
-// dependency; a copy would give two verbs two different report stampings.
+// `withTarget` is NOT this module's. Lock and unlock leave through the same
+// wrapper, so it stays on the facade and arrives here as a dependency; a copy
+// would give two verbs two different report stampings.
+//
+// Of `outcomes.ts` this module reads only `paths`, shared with those same two
+// verbs. It has never read `settled`: a removal is classified by `asOutcome`,
+// which has the third answer — `indeterminate` — that a git result does not.
 
 import type { WorktreeMutationTarget } from "../../providers/WorktreeHost";
 import type { BranchDeleteRequest } from "../../types/messages";

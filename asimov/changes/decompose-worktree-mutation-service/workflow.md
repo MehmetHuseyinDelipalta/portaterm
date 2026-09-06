@@ -14,7 +14,7 @@
 
 - [x] All tasks done (`tasks.md`)
 - [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
-- [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
+- [x] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
 
@@ -44,3 +44,7 @@ Planned at: ef96ea01
 - `asm refactor shape` after 1_3, recorded and NOT chased (design.md Risk Map): facade 1852 → 1135 lines, still `long-function` (`createWorktreeMutationService` 647 lines, 57%); setupExecution.ts 276 → `god-class` 61%; removal.ts 346 → `long-function` 70%; registerExisting.ts 414 → `long-function` 52%; outcomes.ts 26 → `unremarkable`. These are PERCENTAGE heuristics: a factory-per-module file is one big closure by construction, so it fires them at any size. Third change in a row to record this rather than chase it.
 - Witnesses: OBL-1 pass [exit 0] (rotation, 180 tests) and pass [exit 0] (scoping, 9 tests); OBL-2 pass [exit 0]; OBL-3 pass [exit 0]; OBL-4 pass [exit 0]. Every row run by its own `X:`, not inferred from the suite's exit.
 - Real-dependency: none — every task is a behaviour-preserving move within one process; no task crosses a network, filesystem-mutating or spawn boundary this change introduces.
+- Review cycle 1, round 1: APPROVE — 0 blocking, 0 warnings, 4 suggestions, all accepted and fixed under task 1_5. The chair diffed every moved body against `ef96ea01` and confirmed both deliberate deviations (`outcomes.ts` over a facade-scope lift; `openFailure` as a local over an accessor pair). Cycle ends at Re-Verify: no rebuttal open, no accepted BLOCK, nothing for a re-review to arbitrate.
+- F004 was my own error repeated in three places: I wrote that `settled` is read by removal. It never was — `removeWorktree` classifies with `asOutcome`, at `ef96ea01` too. `outcomes.ts` is still justified, on `paths` (removal + facade) and `settled` (registerExisting + facade). Corrected in the module header, design.md D4 and tasks.md 1_2 step 3.
+- F003 was a real hole in a suite I wrote: the harness double never took `withTarget`'s `missing` exit, so `removal.ts`'s D15 token-spend was unreachable from the module's own tests, and the older suite's assertion cannot discriminate it (it passes `undefined` in place of the token). Built rather than deferred, and mutation-checked — dropping the `fingerprints.forget` in that handler turns the new case red.
+- Re-Verify after fixes: check-types clean, `biome check src` clean, 8038/8038 across 322 files.

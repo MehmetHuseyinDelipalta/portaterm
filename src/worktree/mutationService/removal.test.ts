@@ -63,9 +63,15 @@ function harness(over: Partial<RemovalDeps> = {}) {
     assessRemoval: async () => ({ kind: "confirmable" as const, evidence: evidence() }),
     observation: () => 7,
     observeAfter: async () => ({ isRegistered: false, existsOnDisk: false }),
-    withTarget: async (_verb, t, body) => {
+    withTarget: async (_verb, t, body, missing) => {
       const found = deps.resolve(t);
       if (found === null) {
+        // The facade's own shape. Without this branch the module's D15 exit —
+        // the one that spends a confirmation for a worktree already gone — is
+        // simply unreachable from this suite (.reviews/round-1.md F003).
+        if (missing !== undefined) {
+          reported.push(await missing());
+        }
         return;
       }
       reported.push(await body(found, { settle: async () => {} }));
@@ -118,14 +124,34 @@ describe("the confirmation a report issues", () => {
     await h.removal.removeWorktree(target("w1"), fingerprint);
     const gitCalls = vi.mocked(h.runner.run).mock.calls.length;
 
-    // The worktree is back — a recreate at the same location, which is exactly
-    // the case a still-live token would destroy without being asked.
-    h.setPresent(["w1", "w2"]);
+    // The same worktree, still there, and the same token. Redemption CONSUMES
+    // the record whatever the verdict, so one confirmation is one attempt.
+    // (The recreate-at-the-same-location case is the D15 test above; here the
+    // tree never lost the id — .reviews/round-1.md F002.)
     await h.removal.removeWorktree(target("w1"), fingerprint);
 
     expect(h.reported.at(-1)).toMatchObject({ kind: "error" });
     // Refused BEFORE git, not by git: a second `worktree remove` would have run.
     expect(vi.mocked(h.runner.run).mock.calls.length).toBe(gitCalls);
+  });
+
+  it("is dead once the removal finds the worktree already gone (D15)", async () => {
+    const h = harness();
+    const fingerprint = await confirm(h.removal, "w1");
+    h.drop("w1");
+
+    // The id resolves to nothing on the far side of the rebuild, so the body
+    // never runs and the `missing` exit reports instead.
+    await h.removal.removeWorktree(target("w1"), fingerprint);
+    expect(h.reported.at(-1)).toMatchObject({ kind: "error", message: "That worktree is already gone." });
+
+    // And the confirmation went with it. Something recreated at the same
+    // location must be confirmed again — a token that outlived the
+    // disappearance is what would destroy it unasked (round-3 B5).
+    h.setPresent(["w1", "w2"]);
+    await h.removal.removeWorktree(target("w1"), fingerprint);
+    expect(h.reported.at(-1)).toMatchObject({ kind: "error" });
+    expect(h.runner.run).not.toHaveBeenCalled();
   });
 
   it("does not authorize removing a DIFFERENT worktree", async () => {

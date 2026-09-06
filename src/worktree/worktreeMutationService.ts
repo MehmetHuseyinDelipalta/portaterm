@@ -385,7 +385,7 @@ export interface MutationServiceDeps {
  *
  * Every readable non-refused report carries a fingerprint authorizing one
  * confirmed attempt. Git's force mode is derived later from fresh evidence by
- * the same module's single `atRisk` predicate; the panel never chooses it
+ * the removal module's single `atRisk` predicate; the panel never chooses it
  * (design.md D7).
  */
 export type RemovalReport =
