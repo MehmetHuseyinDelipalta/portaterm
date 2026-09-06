@@ -2,7 +2,7 @@
 
 ## 1. WorktreeView collaborators
 
-- [ ] 1_1 Extract the fold state
+- [x] 1_1 Extract the fold state — verified: pnpm exec vitest run src/webview/worktree/worktreeView/foldState.test.ts src/webview/worktree/WorktreeView.test.ts exit 0
   - **Deps**: none
   - **Refs**: design.md D1, design.md D2, design.md D4
   - **Boundary**: `pruneStaleState` and `uncapped` stay on the facade — they are not fold-only

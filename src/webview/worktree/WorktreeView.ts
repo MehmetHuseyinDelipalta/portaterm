@@ -49,6 +49,7 @@ import {
   renderWorktreeRow,
   worktreeEmptyState,
 } from "./worktreeTreeView";
+import { createFoldState, type FoldRepoInput, type FoldState } from "./worktreeView/foldState";
 import type {
   PresenceDegradation,
   ProvisionResultContest,
@@ -234,6 +235,8 @@ export class WorktreeView {
 
   private readonly deps: WorktreeViewDeps;
   private readonly menu: WorktreeContextMenu | null;
+  /** Which repos, worktrees and idle tails are folded (task 1_1). */
+  private readonly fold: FoldState;
 
   private data: WorktreeViewData = { tree: null, presence: null, loading: true };
   /** Armed only while some row can still cross the ceiling; cleared on disposal. */
@@ -247,17 +250,12 @@ export class WorktreeView {
    */
   private readonly autoDismiss = new Map<string, ReturnType<typeof setTimeout> | "held">();
   private disposed = false;
-  private idleSeeded: Set<string>;
   private query = "";
   private signature: string | null = null;
   /** Repo/worktree ids whose children are hidden. */
-  private collapsed: Set<string>;
   /** Agent rowIds whose subagents are shown. */
-  private expandedRows: Set<string>;
   /** Worktree ids whose default collapse has already been decided once. */
-  private readonly seeded: Set<string>;
   /** A persisted set was restored, so the first tree carries no defaults to seed. */
-  private restored: boolean;
   /** Repos the user asked to see past the render cap. */
   private readonly uncapped = new Set<string>();
   private closeDialog: (() => void) | null = null;
@@ -290,15 +288,20 @@ export class WorktreeView {
 
   constructor(deps: WorktreeViewDeps) {
     this.deps = deps;
-    const persisted = deps.getInitialCollapsed?.();
-    this.collapsed = new Set(persisted ?? []);
     // A restored set already carries the user's own decisions — including the
     // expansions it records by omission — so nothing in the first tree is reseeded.
     // Presence of the array is the signal; its length says nothing.
-    this.restored = persisted !== undefined;
-    this.seeded = new Set(this.collapsed);
-    this.expandedRows = new Set(deps.getInitialExpandedRows?.() ?? []);
-    this.idleSeeded = new Set(deps.getInitialIdleSeeded?.() ?? []);
+    this.fold = createFoldState({
+      persisted: deps.getInitialCollapsed?.(),
+      initialExpandedRows: deps.getInitialExpandedRows?.() ?? [],
+      initialIdleSeeded: deps.getInitialIdleSeeded?.() ?? [],
+      idleFoldThreshold: IDLE_FOLD_THRESHOLD,
+      persistCollapsed: (keys) => deps.persistCollapsed?.([...keys]),
+      persistExpandedRows: (ids) => deps.persistExpandedRows?.([...ids]),
+      persistIdleSeeded: (ids) => deps.persistIdleSeeded?.([...ids]),
+      query: () => this.query,
+      repaint: () => this.repaint(),
+    });
     this.element = document.createElement("div");
     this.element.className = "wt-tree";
     this.element.setAttribute("role", "tree");
@@ -804,19 +807,13 @@ export class WorktreeView {
    * not clear any agent row's own expansion, and each persists separately.
    */
   private toggleCollapsed(id: string): void {
-    this.toggleKey(id);
+    this.fold.toggleCollapsed(id);
   }
 
   /** The one place a collapse key flips, so persistence and repaint cannot diverge
    *  between the row kinds that share the set. */
   private toggleKey(key: string): void {
-    if (this.collapsed.has(key)) {
-      this.collapsed.delete(key);
-    } else {
-      this.collapsed.add(key);
-    }
-    this.deps.persistCollapsed?.([...this.collapsed]);
-    this.repaint();
+    this.fold.toggleKey(key);
   }
 
   /** What this row's activation does — see `worktreeActivation`. */
@@ -839,18 +836,12 @@ export class WorktreeView {
   }
 
   private toggleRow(rowId: string): void {
-    if (this.expandedRows.has(rowId)) {
-      this.expandedRows.delete(rowId);
-    } else {
-      this.expandedRows.add(rowId);
-    }
-    this.deps.persistExpandedRows?.([...this.expandedRows]);
-    this.repaint();
+    this.fold.toggleRow(rowId);
   }
 
   /** The set is a real collapsed set, so this is the whole rule. */
   private isExpanded(info: WorktreeInfo): boolean {
-    return !this.collapsed.has(info.id);
+    return this.fold.isExpanded(info.id);
   }
 
   /**
@@ -872,38 +863,11 @@ export class WorktreeView {
     const liveRowIds = new Set<string>();
     const liveRosterKeys = new Set<string>();
     const sessionRowIds = new Set<string>();
-    const collapsed = new Set<string>();
-    const before = [...this.collapsed].join("\0");
-    const seededBefore = [...this.idleSeeded].join("\0");
+    const repos: FoldRepoInput[] = [];
     for (const repo of data.tree.repos) {
       liveIds.add(repo.repoId);
-      if (this.collapsed.has(repo.repoId)) {
-        collapsed.add(repo.repoId);
-      }
-      // The fold key is namespaced, so it survives a rebuild that only recognises
-      // live repo and worktree ids — without this the tail would silently unfold
-      // on every push.
-      const tailKey = idleTailKey(repo.repoId);
-      const idleCount = repo.worktrees.filter((w) => this.isIdleIn(data, w)).length;
-      if (this.idleSeeded.has(repo.repoId)) {
-        if (this.collapsed.has(tailKey)) {
-          collapsed.add(tailKey);
-        }
-      } else if (idleCount >= IDLE_FOLD_THRESHOLD) {
-        // First time this repo has had a tail to present: default it folded, and
-        // record that it HAS been presented. Seeding on the repo rather than on
-        // the first push matters — a repo that gains its fourth idle worktree
-        // later must still meet the tail folded.
-        this.idleSeeded.add(repo.repoId);
-        collapsed.add(tailKey);
-      }
       for (const wt of repo.worktrees) {
         liveIds.add(wt.id);
-        const seen = this.seeded.has(wt.id) || this.restored;
-        this.seeded.add(wt.id);
-        if (seen ? this.collapsed.has(wt.id) : !wt.inWorkspace) {
-          collapsed.add(wt.id);
-        }
         for (const row of data.presence?.rowsByWorktreeId[wt.id] ?? []) {
           liveRowIds.add(row.rowId);
           const key = rosterKey(row);
@@ -913,6 +877,14 @@ export class WorktreeView {
           }
         }
       }
+      repos.push({
+        repoId: repo.repoId,
+        // Counted here rather than in the collaborator: idleness is a presence
+        // question the view owns, and handing the fold state a `data` would give
+        // it the display policy along with it.
+        idleCount: repo.worktrees.filter((w) => this.isIdleIn(data, w)).length,
+        worktrees: repo.worktrees.map((wt) => ({ id: wt.id, inWorkspace: wt.inWorkspace })),
+      });
     }
     // A selection whose worktree LEFT the tree is dropped, and the drop is
     // reported. A worktree reported `missing` is still in the tree and keeps it —
@@ -921,33 +893,7 @@ export class WorktreeView {
       this.selectedWorktreeId = null;
       this.deps.onSelectWorktree?.(null);
     }
-    this.restored = false;
-    for (const id of this.seeded) {
-      if (!liveIds.has(id)) {
-        this.seeded.delete(id);
-      }
-    }
-    this.collapsed = collapsed;
-    if ([...collapsed].join("\0") !== before) {
-      this.deps.persistCollapsed?.([...collapsed]);
-    }
-    for (const id of this.idleSeeded) {
-      if (!liveIds.has(id)) {
-        this.idleSeeded.delete(id);
-      }
-    }
-    if ([...this.idleSeeded].join("\0") !== seededBefore) {
-      this.deps.persistIdleSeeded?.([...this.idleSeeded]);
-    }
-    // Reconciled against the identities presence actually carries, never
-    // accumulated — the same rule the host applies at the other end (D3, D14).
-    // A row that lost its session keeps no expansion: the disclosure that would
-    // collapse it is offered by the session, so the state would be unreachable.
-    const expanded = [...this.expandedRows].filter((id) => liveRowIds.has(id) && sessionRowIds.has(id));
-    if (expanded.length !== this.expandedRows.size) {
-      this.expandedRows = new Set(expanded);
-      this.deps.persistExpandedRows?.(expanded);
-    }
+    this.fold.prune({ repos, liveIds, liveRowIds, sessionRowIds });
     // Dropping the asked-key is what lets a row that left and returned under the
     // same identity ask again — the host evicted its roster, so a view that
     // remembers asking leaves the row on "Reading…" with nothing coming.
@@ -1167,7 +1113,7 @@ export class WorktreeView {
    * matching ones up to the display cap.
    */
   private shownWorktrees(repo: WorktreeRepo, multiRepo: boolean): WorktreeInfo[] {
-    if (multiRepo && this.collapsed.has(repo.repoId)) {
+    if (multiRepo && this.fold.isCollapsed(repo.repoId)) {
       return [];
     }
     // Filter, then partition, then cap — in that order, so the cap's affordance
@@ -1215,18 +1161,12 @@ export class WorktreeView {
     // rule and this one are the same rule, and a later render that puts the disclosure
     // back on screen under a filter would otherwise silently spend the fold — the
     // failure it protects against leaves no trace, only a fold the user did not choose.
-    if (this.query) {
-      return;
-    }
-    this.toggleKey(idleTailKey(repoId));
+    this.fold.toggleIdleTail(repoId);
   }
 
   /** Whether this repo's tail is folded right now — a live filter reveals it. */
   private idleTailFolded(repoId: string): boolean {
-    if (this.query) {
-      return false;
-    }
-    return this.collapsed.has(idleTailKey(repoId));
+    return this.fold.idleTailFolded(repoId);
   }
 
   /**
@@ -1296,7 +1236,7 @@ export class WorktreeView {
     // Only a rendered header can reopen a repo, so a single repo is never honoured
     // as collapsed — a persisted id from a two-repo session would otherwise blank
     // the view with no control to recover it.
-    const collapsed = multiRepo && this.collapsed.has(repo.repoId);
+    const collapsed = multiRepo && this.fold.isCollapsed(repo.repoId);
     if (multiRepo) {
       this.element.appendChild(
         renderRepoHeader(
@@ -1408,7 +1348,7 @@ export class WorktreeView {
       const activity = presentedActivity(row, degraded, now);
       parts.push(
         agentRowFields(row, degraded, now),
-        this.expandedRows.has(row.rowId) ? "1" : "0",
+        this.fold.isRowExpanded(row.rowId) ? "1" : "0",
         // Clock-derived rendered strings — the only render inputs `agentRowFields`
         // does not already hold.
         compactAge(ageTimestamp(row), now),
@@ -1426,7 +1366,7 @@ export class WorktreeView {
     // by the repaint, and `RosterRequests` already dedupes it.
     if (expanded) {
       for (const row of rows) {
-        if (this.expandedRows.has(row.rowId)) {
+        if (this.fold.isRowExpanded(row.rowId)) {
           this.requestSubagents(row);
         }
       }
@@ -1538,7 +1478,7 @@ export class WorktreeView {
 
     container.appendChild(renderAgentsHeader(rows.length, () => this.toggleCollapsed(info.id)));
     for (const row of rows) {
-      const rowExpanded = this.expandedRows.has(row.rowId);
+      const rowExpanded = this.fold.isRowExpanded(row.rowId);
       if (rowExpanded) {
         // Asked from the render rather than the click, so a row restored into
         // the expanded set on open asks too — otherwise it would sit on
