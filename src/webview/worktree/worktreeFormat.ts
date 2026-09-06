@@ -131,7 +131,7 @@ export function worktreeBadges(info: WorktreeInfo): { kind: WorktreeBadgeKind; t
  * the view derives. Presentation only — derived on every render, never stored and
  * never sent.
  */
-export type PresentedActivity = WorktreeActivity | "unknown" | "running-unconfirmed";
+export type PresentedActivity = WorktreeActivity | "unknown" | "running-unconfirmed" | "done";
 
 /**
  * How long an inferred `running` may stand unchanged before it stops claiming to be
@@ -165,7 +165,10 @@ export function presentedActivity(
   if (degradedSources.some((d) => d.source === deciding)) {
     return "unknown";
   }
-  return isUnconfirmed(row, now) ? "running-unconfirmed" : row.activity;
+  if (isUnconfirmed(row, now)) {
+    return "running-unconfirmed";
+  }
+  return row.activity === "idle" && row.finishedAt !== undefined ? "done" : row.activity;
 }
 
 /**
@@ -213,6 +216,7 @@ export const PRESENTED_ORDER: readonly PresentedActivity[] = [
   "running",
   "running-unconfirmed",
   "unknown",
+  "done",
   "idle",
   "exited",
 ];
@@ -232,6 +236,7 @@ export const PRESENTED_STRENGTH: readonly PresentedActivity[] = [
   "running",
   "running-unconfirmed",
   "unknown",
+  "done",
   "idle",
   "exited",
 ];

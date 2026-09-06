@@ -515,15 +515,16 @@ describe("tree structure", () => {
       };
     };
 
-    // Keyed by the presented vocabulary itself, so § 7.2's reserved sixth member
-    // cannot ship without a shape: adding it to `PresentedActivity` fails to
-    // compile here until it also has a rule.
+    // Keyed by the presented vocabulary itself, so a new state cannot ship
+    // without a shape: adding it to `PresentedActivity` fails to compile here
+    // until it also has a rule.
     const STATE_RULES: Record<PresentedActivity, string> = {
       running: "running",
       "running-unconfirmed": "running-unconfirmed",
       waiting: "waiting",
       idle: "idle",
       unknown: "unknown",
+      done: "done",
       exited: "exited",
     };
     const STATES = Object.values(STATE_RULES);

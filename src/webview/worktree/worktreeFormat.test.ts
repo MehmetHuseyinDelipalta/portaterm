@@ -219,7 +219,29 @@ describe("presentedActivity", () => {
     expect(presentedActivity(row, degraded("vault"), NOW)).toBe("running");
   });
 
-  it("passes the activity through when nothing is degraded", () => {
+  it("derives done only from an idle row carrying a completion time", () => {
+    expect(
+      presentedActivity(
+        agentRow({ rowId: "1", activity: "idle", activitySource: "hook", finishedAt: NOW - MINUTE }),
+        [],
+        NOW,
+      ),
+    ).toBe("done");
+    expect(
+      presentedActivity(
+        agentRow({ rowId: "2", activity: "running", activitySource: "hook", finishedAt: NOW - MINUTE }),
+        [],
+        NOW,
+      ),
+    ).toBe("running");
+  });
+
+  it("keeps degraded completion evidence unknown", () => {
+    const row = agentRow({ rowId: "1", activity: "idle", activitySource: "hook", finishedAt: NOW - MINUTE });
+    expect(presentedActivity(row, degraded("hook"), NOW)).toBe("unknown");
+  });
+
+  it("passes the wire activity through when nothing is degraded", () => {
     for (const activity of ["running", "waiting", "idle", "exited"] as const) {
       expect(presentedActivity(agentRow({ rowId: "1", activity }), [], NOW)).toBe(activity);
     }
@@ -242,6 +264,7 @@ describe("the two presented orders", () => {
     running: true,
     "running-unconfirmed": true,
     unknown: true,
+    done: true,
     idle: true,
     exited: true,
   };

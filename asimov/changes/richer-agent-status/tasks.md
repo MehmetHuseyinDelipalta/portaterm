@@ -23,7 +23,7 @@
 
 ## 2. Completion semantics
 
-- [ ] 2_1 Derive done only from an explicit completed turn
+- [x] 2_1 Derive done only from an explicit completed turn — verified: pnpm exec vitest run src/worktree/presenceProjector.test.ts src/webview/worktree/worktreeFormat.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_2
   - **Refs**: specs/worktree-agent-presence/spec.md#{completion-requires-an-explicit-completed-turn, completion-time-survives-only-its-turn}; specs/worktree-panel/spec.md#{strongest-state-wins-and-shape-carries-it, completed-and-idle-are-visually-distinct}; design.md#{d2-done-is-presentation-derived-from-an-authoritative-completion-fact, d3-attention-outranks-execution-evidence-gaps-outrank-history}
   - **Acceptance**:
@@ -32,7 +32,7 @@
   - **Plan**:
     1. Refine completion stamping in `src/worktree/presenceProjector.ts` and `src/worktree/presenceTypes.ts` around non-boundary hook transition time, superseding turns, identities, and boundaries.
     2. Extend `src/webview/worktree/worktreeFormat.ts` with derived done presentation, exhaustive grouping, labels, and the approved precedence.
-    3. Add transition, duplicate-projection, unknown-precedence, summary-membership, age, and non-Claude no-completion tests beside both modules.
+    3. Add transition, duplicate-projection, unknown-precedence, summary-membership, age, and non-Claude no-completion tests beside both modules; update the exhaustive presented-state record in `src/webview/worktree/WorktreeView.test.ts` so the widened presentation type still type-checks.
     4. Correct shell-reclaim and completion terminology in `docs/design/agent-hook-server.md`.
 
 ## 3. Hybrid Orca presentation

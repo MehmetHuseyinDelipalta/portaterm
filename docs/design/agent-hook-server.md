@@ -261,7 +261,7 @@ Precedence and its guards:
 | Stale hook status | Identity only; state falls back to inference, prompt cleared |
 | `sessionBoundary` `done` | Recorded, but does not mark a turn complete |
 | Pty exited | `exited`, regardless of the published state |
-| Shell title (`zsh`/`bash`/`pwsh`) reclaims the pane | Forces `done` even against a published `working` |
+| Shell title (`zsh`/`bash`/`pwsh`) reclaims the pane | Forces idle against a published `working`; does not mark a turn complete |
 | No hook status | Inference path, unchanged |
 
 The staleness window's canonical value lives in [DESIGN.md](../DESIGN.md) § 10. It is

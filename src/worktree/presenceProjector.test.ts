@@ -402,7 +402,7 @@ describe("a row's age describes its agent", () => {
     expect(moved.stateStartedAt).toBe(clock);
   });
 
-  it("stamps finishedAt settling out of work and clears it on the next turn", async () => {
+  it("does not infer completion when output merely settles out of work", async () => {
     const h = makeProjector([pane({ paneId: "a" })]);
     h.setActivity("a", "running");
     await h.projector.project([WT]);
@@ -410,12 +410,8 @@ describe("a row's age describes its agent", () => {
     clock += 1_000;
     h.setActivity("a", "idle");
     const [settled] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
-    expect(settled.finishedAt).toBe(clock);
 
-    clock += 1_000;
-    h.setActivity("a", "running");
-    const [working] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
-    expect(working.finishedAt).toBeUndefined();
+    expect(settled.finishedAt).toBeUndefined();
   });
 
   it("leaves finishedAt unset on a pane that never worked", async () => {
@@ -1821,17 +1817,84 @@ describe("a reported turn decides activity", () => {
     expect(row.finishedAt).toBeUndefined();
   });
 
-  it("still marks a turn complete when an ordinary turn ends", async () => {
-    // The companion to the boundary case: without this, suppressing the finish
-    // time for a boundary could just as well be suppressing it for everything.
+  it("marks an ordinary completed turn at the report transition time", async () => {
     const h = makeProjector([pane({ paneId: "a", turn: reported({ state: "working" }) })]);
     await h.projector.project([WT]);
 
-    h.panes[0] = pane({ paneId: "a", turn: reported({ state: "done" }) });
+    const completedAt = clock - 2_000;
+    h.panes[0] = pane({ paneId: "a", turn: reported({ state: "done", stateStartedAt: completedAt }) });
     const [row] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
 
-    expect(row.activity).toBe("idle");
-    expect(row.finishedAt).toBeDefined();
+    expect(row).toMatchObject({ activity: "idle", stateStartedAt: completedAt, finishedAt: completedAt });
+  });
+
+  it("records an explicit completion even when inference already made the row idle", async () => {
+    const h = makeProjector([pane({ paneId: "a" })]);
+    h.setActivity("a", "idle", "quiet");
+    await h.projector.project([WT]);
+
+    const completedAt = clock - 3_000;
+    h.panes[0] = pane({ paneId: "a", turn: reported({ state: "done", stateStartedAt: completedAt }) });
+    const [row] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(row.finishedAt).toBe(completedAt);
+  });
+
+  it("keeps one completion time stable until a later turn supersedes it", async () => {
+    const completedAt = clock - 4_000;
+    const h = makeProjector([
+      pane({ paneId: "a", turn: reported({ state: "done", stateStartedAt: completedAt }) }),
+    ]);
+
+    const [first] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+    clock += 1_000;
+    const [same] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+    expect(first.finishedAt).toBe(completedAt);
+    expect(same.finishedAt).toBe(completedAt);
+
+    h.panes[0] = pane({ paneId: "a", turn: reported({ state: "working" }) });
+    const [working] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+    expect(working.finishedAt).toBeUndefined();
+  });
+
+  it("clears a retained completion when a later session boundary lands idle", async () => {
+    const h = makeProjector([pane({ paneId: "a", turn: reported({ state: "done" }) })]);
+    expect(((await h.projector.project([WT])).rowsByWorktreeId[WT][0]).finishedAt).toBeDefined();
+
+    h.panes[0] = pane({ paneId: "a", turn: reported({ state: "done", sessionBoundary: true }) });
+    const [boundary] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(boundary.finishedAt).toBeUndefined();
+  });
+
+  it("clears a retained completion when a different session takes the pane", async () => {
+    const h = makeProjector([
+      pane({ paneId: "a", ptyPid: 1, turn: reported({ state: "done", agentSessionId: "sess-1" }) }),
+    ]);
+    h.setReportedSessions({
+      "sess-1": { entryId: "claude:sess-1", agent: "claude", transcriptPath: "/vault/sess-1.jsonl" },
+    });
+    expect(((await h.projector.project([WT])).rowsByWorktreeId[WT][0]).finishedAt).toBeDefined();
+
+    h.panes[0] = pane({ paneId: "a", ptyPid: 2 });
+    h.setLookup(() => ({ kind: "resolved", agent: "claude", sessionId: "sess-2", evidence: "process" }));
+    h.setActivity("a", "idle", "quiet");
+    const [next] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(next.entryId).toBe("claude:sess-2");
+    expect(next.finishedAt).toBeUndefined();
+  });
+
+  it.each(["cursor", "opencode", "codex"] as const)("does not invent completion for inferred %s idleness", async (agent) => {
+    const h = makeProjector([pane({ paneId: "a" })]);
+    h.setLookup(() => ({ kind: "resolved", agent, sessionId: "s1", evidence: "process" }));
+    h.setActivity("a", "running", "working");
+    await h.projector.project([WT]);
+
+    h.setActivity("a", "idle", "quiet");
+    const [row] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(row.finishedAt).toBeUndefined();
   });
 
   it("does not resolve a pane by inference once its report has identified it", async () => {

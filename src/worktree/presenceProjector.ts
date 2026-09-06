@@ -94,6 +94,8 @@ interface Reported {
   activitySource: WorktreeAgentRow["activitySource"];
   interactivePrompt?: string;
   delegations?: DelegationRoster;
+  /** An ordinary reported turn ended at this transition time. */
+  completionAt?: number;
   /**
    * This activity came from a session starting rather than a turn ending, so
    * the `idle` it lands on completed nothing (§ 4.5).
@@ -794,12 +796,7 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
     return rule === "shell-title" ? "title" : "output";
   }
 
-  /**
-   * What the pane's own agent said about its turn, while that still counts.
-   *
-   * Measured from when the window received the report, which is the only clock
-   * available: hook payloads carry none of their own.
-   */
+  /** What the pane's own agent said about its turn, while that still counts. */
   /**
    * The identity a pane's own agent reported, if the store already holds it.
    *
@@ -873,6 +870,7 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
       rule: reading.rule,
       delegations: reportedDelegations(report),
       ...(report.interactivePrompt === undefined ? {} : { interactivePrompt: report.interactivePrompt }),
+      ...(report.state === "done" && report.sessionBoundary !== true ? { completionAt: report.stateStartedAt } : {}),
       ...(report.sessionBoundary === true ? { sessionBoundary: true as const } : {}),
     };
   }
@@ -883,7 +881,7 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
     activity: PaneActivity,
     pane: Pane,
     now: number,
-    sessionBoundary = false,
+    reported: Pick<Reported, "completionAt" | "sessionBoundary"> = {},
   ): void {
     if (state.seen && startsNewEpoch(state.identity, identity)) {
       // A pane outlives the agents inside it. Without this reset a fresh agent
@@ -897,16 +895,21 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
     state.seen = true;
     state.startedAt ??= now;
 
+    if (reported.sessionBoundary === true) {
+      state.finishedAt = undefined;
+    }
+
     if (state.activity !== activity) {
-      // A session that resumed, cleared, or came back from compaction lands
-      // idle without having finished anything, so it earns no finish time —
-      // the boundary flag is the only thing that separates it from a turn that
-      // really did end (§ 4.5, .reviews/round-1.md B5).
-      const settled =
-        !sessionBoundary && activity === "idle" && (state.activity === "running" || state.activity === "waiting");
-      state.finishedAt = settled ? now : undefined;
       state.activity = activity;
       state.stateStartedAt = now;
+      state.finishedAt = undefined;
+    }
+
+    if (reported.completionAt !== undefined) {
+      state.stateStartedAt = reported.completionAt;
+      state.finishedAt = reported.completionAt;
+    } else if (activity !== "idle") {
+      state.finishedAt = undefined;
     }
 
     const evidenceAt = Math.max(pane.lastOutputAt ?? 0, state.stateStartedAt ?? now);
@@ -1038,7 +1041,7 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
       const reading = deps.activityFor(pane.paneId, now) ?? { activity: "idle" as const, rule: "quiet" as const };
       const reported = readActivity(pane, reading, now);
       const activity = reported.activity;
-      stamp(state, identity, activity, pane, now, reported.sessionBoundary === true);
+      stamp(state, identity, activity, pane, now, reported);
 
       const row: WorktreeAgentRow = {
         rowId: `window:${pane.paneId}`,

@@ -133,7 +133,7 @@ export interface WorktreeAgentRow {
   startedAt?: number;
   /** When the current `activity` began — drives the age column. */
   stateStartedAt?: number;
-  /** When the last turn ended; set only while `idle` after work. */
+  /** Explicit non-boundary hook completion time; present only while `idle`. */
   finishedAt?: number;
   /** Newest evidence timestamp — the worktree ordering key. */
   lastActivityAt?: number;
