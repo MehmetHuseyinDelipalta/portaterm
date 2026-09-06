@@ -33,12 +33,18 @@ import type { GitDecorationProvider } from "./gitDecorationProvider";
 import { affectsHoverPreview, readHoverPreviewSettings, updateHoverPreviewSetting } from "./hoverPreviewSettings";
 import { openExternalLink } from "./openExternalLink";
 import { DEFAULT_FIND_FILES_MAX_RESULTS, openFileLink } from "./openFileLink";
-import { previewFileLink } from "./previewFileLink";
 import { isValidPreviewRequest } from "./previewValidation";
-import { readBytesBounded } from "./readBytesBounded";
 import { themeKindFor } from "./TerminalViewProvider";
 import type { WorktreeAttachment, WorktreeHost, WorktreeSurface } from "./WorktreeHost";
 import { getTerminalHtml } from "./webviewHtml";
+import {
+  handleFilePreviewRequest,
+  handleVaultSessionDetailRequest,
+  handleVaultSessionsRequest,
+  postOnce,
+  postWithRetry,
+  PreviewTokenRegistry,
+} from "./webviewRequests";
 
 /**
  * Editor-area terminal provider using WebviewPanel.
@@ -169,7 +175,7 @@ export class TerminalEditorProvider {
   }
 
   /** In-flight hover-preview cancellation tokens, keyed by `sessionId`. See: design.md D9, D10 */
-  private readonly _previewTokens = new Map<string, vscode.CancellationTokenSource>();
+  private readonly _previewTokens = new PreviewTokenRegistry();
 
   /** Stable panel identity persisted via webview `vscode.setState`. See: design.md D2. */
   private readonly _panelId: string;
@@ -503,8 +509,8 @@ export class TerminalEditorProvider {
       for (const d of disposables) {
         d.dispose();
       }
-      // Cancel + dispose any in-flight preview tokens (D10).
-      this.cancelAllPreviewTokens();
+      // Cancel any in-flight preview tokens (D10); the handlers own disposal.
+      this._previewTokens.cancelAll();
       // Permanent for this panel — it leaves `_instances` on the next line — so
       // the root it claimed in the shared path memo is released here. Panels
       // open and close without bound, and a closed one used to leave a dead
@@ -533,83 +539,16 @@ export class TerminalEditorProvider {
     });
   }
 
-  /**
-   * Cancel the in-flight preview token for `sessionId` and remove it from the
-   * map. Does NOT dispose — disposal is owned by the handler's finally block
-   * so in-flight `isCancellationRequested` checks remain safe. See round-1 W6.
-   */
-  private cancelPreviewToken(sessionId: string): void {
-    const prior = this._previewTokens.get(sessionId);
-    if (prior) {
-      try {
-        prior.cancel();
-      } catch {
-        // Best-effort.
-      }
-      this._previewTokens.delete(sessionId);
-    }
-  }
-
-  /** Cancel + dispose ALL in-flight preview tokens. */
-  private cancelAllPreviewTokens(): void {
-    for (const sessionId of [...this._previewTokens.keys()]) {
-      this.cancelPreviewToken(sessionId);
-    }
-  }
-
   /** Handle a hover-preview request. See: design.md D9 */
   private async handleRequestFilePreview(
     message: Extract<WebViewToExtensionMessage, { type: "requestFilePreview" }>,
   ): Promise<void> {
-    // Reject unknown sessionId BEFORE resolution work — see TerminalViewProvider
-    // counterpart + round-2 W3.
-    if (!this.sessionManager.getSession(message.sessionId)) {
-      return;
-    }
-    this.cancelPreviewToken(message.sessionId);
-    const source = new vscode.CancellationTokenSource();
-    this._previewTokens.set(message.sessionId, source);
-    try {
-      const allSettings = readHoverPreviewSettings();
-      const result = await previewFileLink(
-        message,
-        {
-          getInitialCwd: (id) => this.sessionManager.getInitialCwd(id),
-          getCurrentCwd: (id) => this.sessionManager.getCurrentCwd(id),
-          getLiveCwd: (id) => this.sessionManager.getLiveCwd(id),
-          workspaceFolders: vscode.workspace.workspaceFolders,
-          fs: {
-            stat: (uri) => vscode.workspace.fs.stat(uri),
-            readFile: (uri) => vscode.workspace.fs.readFile(uri),
-            readBytes: (uri, maxBytes) => readBytesBounded(uri, maxBytes),
-          },
-          findFiles: (include, exclude, maxResults, token) =>
-            vscode.workspace.findFiles(include, exclude, maxResults, token),
-          uriFactory: { file: vscode.Uri.file },
-          createCancellationTokenSource: () => new vscode.CancellationTokenSource(),
-          directoryFileType: vscode.FileType.Directory,
-          symbolicLinkFileType: vscode.FileType.SymbolicLink,
-          relativePatternFactory: (base, glob) => new vscode.RelativePattern(base, glob),
-          settings: { blockSensitive: allSettings.blockSensitive },
-        },
-        source.token,
-      );
-      if (result && !source.token.isCancellationRequested) {
-        this.safePostMessage(result);
-      }
-    } catch (err) {
-      console.warn("[AnyWhere Terminal] requestFilePreview failed (editor):", err);
-    } finally {
-      if (this._previewTokens.get(message.sessionId) === source) {
-        this._previewTokens.delete(message.sessionId);
-      }
-      // Always dispose our own source — review round-1 W6.
-      try {
-        source.dispose();
-      } catch {
-        // Best-effort.
-      }
-    }
+    await handleFilePreviewRequest(message, {
+      webview: this._panel.webview,
+      sessionManager: this.sessionManager,
+      tokens: this._previewTokens,
+      logSuffix: " (editor)",
+    });
   }
 
   /**
@@ -780,7 +719,7 @@ export class TerminalEditorProvider {
                 if (!proceed) {
                   return;
                 }
-                this.cancelPreviewToken(tabId);
+                this._previewTokens.cancel(tabId);
                 this.sessionManager.destroySession(tabId);
                 this.safePostMessage({
                   type: "tabRemoved",
@@ -802,7 +741,7 @@ export class TerminalEditorProvider {
           // for the pane being closed BEFORE destroying its session.
           if (typeof (message as { sessionId?: unknown }).sessionId === "string") {
             const closeMsg = message as { sessionId: string };
-            this.cancelPreviewToken(closeMsg.sessionId);
+            this._previewTokens.cancel(closeMsg.sessionId);
             this.sessionManager.destroySession(closeMsg.sessionId);
           }
           break;
@@ -931,30 +870,12 @@ export class TerminalEditorProvider {
       return;
     }
     const token = ++this._vaultRefreshSeq;
-    const cached = this.vaultService.listCached();
-    if (cached) {
-      this.safePostMessage({ type: "vaultSessionsResponse", result: cached, fromCache: true });
-    }
-    try {
-      const result = await this.vaultService.refresh();
-      if (token !== this._vaultRefreshSeq) {
-        return;
-      }
-      void this.safeSendWithRetry(
-        { type: "vaultSessionsResponse", result, fromCache: false },
-        2,
-        () => token !== this._vaultRefreshSeq,
-      );
-    } catch (err) {
-      console.error("[AnyWhere Terminal] Failed to list vault sessions (editor):", err);
-      if (!cached) {
-        void this.safeSendWithRetry({
-          type: "error",
-          message: err instanceof Error ? err.message : "Failed to list AI vault sessions",
-          severity: "error",
-        });
-      }
-    }
+    await handleVaultSessionsRequest({
+      webview: this._panel.webview,
+      vaultService: this.vaultService,
+      isCurrent: () => token === this._vaultRefreshSeq,
+      logSuffix: " (editor)",
+    });
   }
 
   /** The overlay's own content. `requestId` is echoed on every reply path — reads
@@ -963,27 +884,13 @@ export class TerminalEditorProvider {
     if (!this.vaultService) {
       return;
     }
-    const echo = requestId !== undefined ? { requestId } : {};
-    try {
-      const detail = await this.vaultService.getDetail(entryId, limit);
-      void this.safeSendWithRetry(
-        detail
-          ? { type: "vaultSessionDetailResponse", entryId, detail, ...echo }
-          : {
-              type: "vaultSessionDetailResponse",
-              entryId,
-              error: "Session not found or could not be read.",
-              ...echo,
-            },
-      );
-    } catch (err) {
-      void this.safeSendWithRetry({
-        type: "vaultSessionDetailResponse",
-        entryId,
-        error: err instanceof Error ? err.message : "Failed to read session detail",
-        ...echo,
-      });
-    }
+    await handleVaultSessionDetailRequest({
+      webview: this._panel.webview,
+      vaultService: this.vaultService,
+      entryId,
+      limit,
+      requestId,
+    });
   }
 
   private async handleRequestSubagentPreview(
@@ -1244,13 +1151,7 @@ export class TerminalEditorProvider {
    * the two senders cannot drift apart again.
    */
   private safePostMessage(message: ExtensionToWebViewMessage): void {
-    try {
-      void (this._panel.webview.postMessage(message) as Thenable<boolean>).then(undefined, () => {
-        // Async rejection — webview may be disposed
-      });
-    } catch {
-      // Sync throw — webview may be disposed
-    }
+    postOnce(this._panel.webview, message);
   }
 
   /**
@@ -1273,24 +1174,6 @@ export class TerminalEditorProvider {
     maxRetries = 2,
     shouldAbort?: () => boolean,
   ): Promise<boolean> {
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      // Bail before every attempt, including before a retry: a late retry must
-      // not overwrite newer data the caller has since posted.
-      if (shouldAbort?.()) {
-        return false;
-      }
-      try {
-        const result = await (this._panel.webview.postMessage(message) as Thenable<boolean>);
-        if (result) {
-          return true;
-        }
-      } catch {
-        // Sync or async failure — will retry
-      }
-      if (attempt < maxRetries) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 50));
-      }
-    }
-    return false;
+    return postWithRetry(this._panel.webview, message, maxRetries, shouldAbort);
   }
 }

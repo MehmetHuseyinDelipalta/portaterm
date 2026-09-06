@@ -42,7 +42,7 @@
 
 ## 2. Move the providers onto it
 
-- [ ] 2_1 Move the three logic-identical handlers
+- [x] 2_1 Move the three logic-identical handlers — verified: pnpm exec vitest run src/providers && pnpm run check-types exit 0
   - **Deps**: 1_2, 1_3
   - **Refs**: design.md#d3-expected-test-moves, design.md#d4-allowed-non-pure-transformations
   - **Acceptance**:
@@ -52,7 +52,9 @@
     1. In `src/providers/webviewRequests.ts` add shared functions for the file-preview, vault-sessions and vault-session-detail requests, each taking the webview, its deps and a `logLabel`, and each receiving the vault token plus an `isCurrent()` predicate rather than owning a counter.
     2. In `src/providers/TerminalEditorProvider.ts` and `src/providers/TerminalViewProvider.ts` replace the six handler bodies with calls to those functions, passing `this._panel.webview` from the editor and the per-call `webview` from the view.
     3. In both providers keep `_vaultRefreshSeq` and its increments where they are, passing the token and predicate down.
-    4. In both providers remove any import left unused by the move.
+    4. In both providers replace the `_previewTokens` map with a `PreviewTokenRegistry`, delete the now-empty `cancelPreviewToken`/`cancelAllPreviewTokens`, and point their other call sites (tab close, session close) at the registry.
+    5. In both providers reduce `safePostMessage`/`safeSendWithRetry` to one-line delegates to `postOnce`/`postWithRetry` — the shared handlers alone would leave the two byte-identical copies standing, which is the duplication this change exists to remove.
+    6. In both providers remove any import left unused by the move.
   - **Boundary**: no edits to any existing test file
 
 - [ ] 2_2 Move subagent preview behind an injected post

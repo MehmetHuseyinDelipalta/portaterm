@@ -39,12 +39,18 @@ import type { GitDecorationProvider } from "./gitDecorationProvider";
 import { affectsHoverPreview, readHoverPreviewSettings, updateHoverPreviewSetting } from "./hoverPreviewSettings";
 import { openExternalLink } from "./openExternalLink";
 import { DEFAULT_FIND_FILES_MAX_RESULTS, openFileLink } from "./openFileLink";
-import { previewFileLink } from "./previewFileLink";
 import { isValidPreviewRequest } from "./previewValidation";
-import { readBytesBounded } from "./readBytesBounded";
 import type { VaultWatchClient, VaultWatchCoordinator } from "./VaultWatchCoordinator";
 import type { WorktreeHost, WorktreeSurface } from "./WorktreeHost";
 import { getTerminalHtml } from "./webviewHtml";
+import {
+  handleFilePreviewRequest,
+  handleVaultSessionDetailRequest,
+  handleVaultSessionsRequest,
+  postOnce,
+  postWithRetry,
+  PreviewTokenRegistry,
+} from "./webviewRequests";
 
 /**
  * Map VSCode's `ColorThemeKind` to the four-way `ThemeChangedMessage["kind"]`
@@ -107,7 +113,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
    *
    * See: asimov/changes/add-hover-file-preview/design.md D9, D10
    */
-  private readonly _previewTokens = new Map<string, vscode.CancellationTokenSource>();
+  private readonly _previewTokens = new PreviewTokenRegistry();
 
   /** Per-resolved-webview vault watcher client owned by the shared coordinator. */
   private _vaultWatchClient: VaultWatchClient | undefined;
@@ -331,8 +337,9 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       for (const d of disposables) {
         d.dispose();
       }
-      // Cancel + dispose any in-flight preview tokens — see design.md D10.
-      this.cancelAllPreviewTokens();
+      // Cancel any in-flight preview tokens — see design.md D10. Disposal is
+      // owned by the handlers.
+      this._previewTokens.cancelAll();
       // Release only the watcher client attached to this resolved webview.
       vaultWatchClient?.dispose();
       if (this._vaultWatchClient === vaultWatchClient) {
@@ -358,89 +365,12 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     message: Extract<WebViewToExtensionMessage, { type: "requestFilePreview" }>,
     webview: vscode.Webview,
   ): Promise<void> {
-    // Reject unknown sessionId BEFORE any resolution work. Without this, a
-    // forged or stale id reaches `previewFileLink` where `trustBasesFor`
-    // returns an empty list — historically that meant the trust check was
-    // skipped entirely. Round-2 W3 plugs that hole on the host side too.
-    if (!this.sessionManager.getSession(message.sessionId)) {
-      return;
-    }
-    // Supersede: cancel + dispose any prior request for this session.
-    this.cancelPreviewToken(message.sessionId);
-    const source = new vscode.CancellationTokenSource();
-    this._previewTokens.set(message.sessionId, source);
-
-    try {
-      const allSettings = readHoverPreviewSettings();
-      const result = await previewFileLink(
-        message,
-        {
-          getInitialCwd: (id) => this.sessionManager.getInitialCwd(id),
-          getCurrentCwd: (id) => this.sessionManager.getCurrentCwd(id),
-          getLiveCwd: (id) => this.sessionManager.getLiveCwd(id),
-          workspaceFolders: vscode.workspace.workspaceFolders,
-          fs: {
-            stat: (uri) => vscode.workspace.fs.stat(uri),
-            readFile: (uri) => vscode.workspace.fs.readFile(uri),
-            readBytes: (uri, maxBytes) => readBytesBounded(uri, maxBytes),
-          },
-          findFiles: (include, exclude, maxResults, token) =>
-            vscode.workspace.findFiles(include, exclude, maxResults, token),
-          uriFactory: { file: vscode.Uri.file },
-          createCancellationTokenSource: () => new vscode.CancellationTokenSource(),
-          directoryFileType: vscode.FileType.Directory,
-          symbolicLinkFileType: vscode.FileType.SymbolicLink,
-          relativePatternFactory: (base, glob) => new vscode.RelativePattern(base, glob),
-          settings: { blockSensitive: allSettings.blockSensitive },
-        },
-        source.token,
-      );
-      // Drop the result if cancelled — webview already invalidated its requestId.
-      if (result && !source.token.isCancellationRequested) {
-        this.safePostMessage(webview, result);
-      }
-    } catch (err) {
-      console.warn("[AnyWhere Terminal] requestFilePreview failed:", err);
-    } finally {
-      // Only remove the entry if it's STILL ours — a supersession may have
-      // replaced the map value before we got here.
-      if (this._previewTokens.get(message.sessionId) === source) {
-        this._previewTokens.delete(message.sessionId);
-      }
-      // ALWAYS dispose our own source — this finally owns `source` exclusively.
-      // Deferred from `cancelPreviewToken` (review round-1 W6) so the token
-      // stays accessible to in-flight `isCancellationRequested` checks.
-      try {
-        source.dispose();
-      } catch {
-        // Best-effort.
-      }
-    }
-  }
-
-  /**
-   * Cancel the in-flight preview token for `sessionId` and remove it from the
-   * map. Does NOT dispose — that's deferred to the owning
-   * `handleRequestFilePreview`'s finally block so its `await`-loop can still
-   * observe `token.isCancellationRequested` safely.
-   */
-  private cancelPreviewToken(sessionId: string): void {
-    const prior = this._previewTokens.get(sessionId);
-    if (prior) {
-      try {
-        prior.cancel();
-      } catch {
-        // Best-effort.
-      }
-      this._previewTokens.delete(sessionId);
-    }
-  }
-
-  /** Cancel ALL in-flight preview tokens (called on webview dispose). Disposal is owned by the handlers. */
-  private cancelAllPreviewTokens(): void {
-    for (const sessionId of [...this._previewTokens.keys()]) {
-      this.cancelPreviewToken(sessionId);
-    }
+    await handleFilePreviewRequest(message, {
+      webview,
+      sessionManager: this.sessionManager,
+      tokens: this._previewTokens,
+      logSuffix: "",
+    });
   }
 
   /**
@@ -454,46 +384,15 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     if (!this.vaultService) {
       return;
     }
+    // Provider-owned: the rename push (`vaultRenameSession`) and the watcher
+    // both drive this same counter, so it cannot move into the shared module.
     const token = ++this._vaultRefreshSeq;
-
-    // Phase 1 — instant render from cache (no store scan). Absent on the first
-    // ever open; then the panel paints immediately on every subsequent open.
-    // Best-effort (NOT retried): a retried cache post could land AFTER the fresh
-    // response and make a stale list win. If the webview isn't ready yet, the
-    // authoritative fresh response below still populates it.
-    const cached = this.vaultService.listCached();
-    if (cached) {
-      this.safePostMessage(webview, { type: "vaultSessionsResponse", result: cached, fromCache: true });
-    }
-
-    // Phase 2 — incremental refresh against the on-disk source of truth.
-    try {
-      const result = await this.vaultService.refresh();
-      if (token !== this._vaultRefreshSeq) {
-        return; // a newer request owns the list now — drop this stale refresh.
-      }
-      // Re-check supersession before EACH delivery attempt (not just here): a
-      // newer request can arrive during safeSendWithRetry's 50ms retry sleep, and
-      // a late retry of this now-stale list would otherwise overwrite the newer
-      // one in the webview (review round-2 F4).
-      void this.safeSendWithRetry(
-        webview,
-        { type: "vaultSessionsResponse", result, fromCache: false },
-        2,
-        () => token !== this._vaultRefreshSeq,
-      );
-    } catch (err) {
-      console.error("[AnyWhere Terminal] Failed to list vault sessions:", err);
-      // Don't clobber a successfully-rendered cache with an error notice; only
-      // surface the error when there was nothing to show.
-      if (!cached) {
-        void this.safeSendWithRetry(webview, {
-          type: "error",
-          message: err instanceof Error ? err.message : "Failed to list AI vault sessions",
-          severity: "error",
-        });
-      }
-    }
+    await handleVaultSessionsRequest({
+      webview,
+      vaultService: this.vaultService,
+      isCurrent: () => token === this._vaultRefreshSeq,
+      logSuffix: "",
+    });
   }
 
   /**
@@ -629,35 +528,13 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     if (!this.vaultService) {
       return;
     }
-    // Echoed verbatim on every reply path — reads complete out of order, so the
-    // webview correlates a nested reply by this token, not by entry id (W15).
-    const echo = requestId !== undefined ? { requestId } : {};
-    try {
-      const detail = await this.vaultService.getDetail(entryId, limit);
-      void this.safeSendWithRetry(
-        webview,
-        detail
-          ? { type: "vaultSessionDetailResponse", entryId, detail, ...echo }
-          : // Two outcomes the reader cannot tell apart here: a session that is
-            // not in the store, and one whose read could not be completed (a
-            // bounded query whose proof failed returns nothing rather than
-            // guessing). Asserting the first states what this branch never
-            // established, and the preview shows the words verbatim.
-            {
-              type: "vaultSessionDetailResponse",
-              entryId,
-              error: "Session not found or could not be read.",
-              ...echo,
-            },
-      );
-    } catch (err) {
-      void this.safeSendWithRetry(webview, {
-        type: "vaultSessionDetailResponse",
-        entryId,
-        error: err instanceof Error ? err.message : "Failed to read session detail",
-        ...echo,
-      });
-    }
+    await handleVaultSessionDetailRequest({
+      webview,
+      vaultService: this.vaultService,
+      entryId,
+      limit,
+      requestId,
+    });
   }
 
   /**
@@ -1261,7 +1138,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
                   return;
                 }
                 // Cancel any in-flight hover-preview for this session before destroying.
-                this.cancelPreviewToken(tabId);
+                this._previewTokens.cancel(tabId);
                 this.sessionManager.destroySession(tabId);
                 this.safePostMessage(webviewView.webview, {
                   type: "tabRemoved",
@@ -1331,7 +1208,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         case "requestCloseSplitPane": {
           if (typeof (message as { sessionId?: unknown }).sessionId === "string") {
             const closeMsg = message as { sessionId: string };
-            this.cancelPreviewToken(closeMsg.sessionId);
+            this._previewTokens.cancel(closeMsg.sessionId);
             this.sessionManager.destroySession(closeMsg.sessionId);
           }
           break;
@@ -1668,13 +1545,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
    * cannot drift apart again.
    */
   private safePostMessage(webview: vscode.Webview, message: ExtensionToWebViewMessage): void {
-    try {
-      void (webview.postMessage(message) as Thenable<boolean>).then(undefined, () => {
-        // Async rejection — webview may be disposed
-      });
-    } catch {
-      // Sync throw — webview may be disposed
-    }
+    postOnce(webview, message);
   }
 
   /**
@@ -1695,27 +1566,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     maxRetries = 2,
     shouldAbort?: () => boolean,
   ): Promise<boolean> {
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      // Bail before every attempt (including before a retry) when the caller
-      // signals this send is superseded — a late retry must not overwrite newer
-      // data the caller has since posted (review round-2 F4).
-      if (shouldAbort?.()) {
-        return false;
-      }
-      try {
-        const result = await (webview.postMessage(message) as Thenable<boolean>);
-        if (result) {
-          return true;
-        }
-      } catch {
-        // Sync or async failure — will retry
-      }
-      // Wait before retrying (skip delay on last attempt)
-      if (attempt < maxRetries) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 50));
-      }
-    }
-    return false;
+    return postWithRetry(webview, message, maxRetries, shouldAbort);
   }
 
   /**
