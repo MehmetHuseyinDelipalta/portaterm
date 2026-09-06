@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "target": {
+    "kind": "change",
+    "id": "decompose-worktree-webview"
+  },
+  "sessions": [
+    {
+      "sessionId": "83708d46-2968-4e5a-988b-f5cd424f1a70",
+      "runtime": "claude",
+      "author": "huybuidac@gmail.com",
+      "attachedAt": 1788715411914,
+      "accounting": 2,
+      "windows": [
+        {
+          "from": 1788715411914,
+          "to": null
+        }
+      ],
+      "phases": [
+        {
+          "phase": "plan",
+          "from": 1788715411914
+        }
+      ],
+      "firstAt": 1788715411914,
+      "lastAt": 1788715423785,
+      "buckets": [
+        {
+          "runtime": "claude",
+          "phase": "plan",
+          "agent": "main",
+          "model": "claude-opus-5",
+          "messages": 1,
+          "inputTokens": 2,
+          "outputTokens": 815,
+          "reasoningTokens": 0,
+          "cacheWriteTokens": 671,
+          "cacheReadTokens": 236803,
+          "extra": {
+            "cacheWrite5mTokens": 671,
+            "cacheWrite1hTokens": 0,
+            "webSearchRequests": 0,
+            "webFetchRequests": 0
+          }
+        }
+      ]
+    }
+  ]
+}
