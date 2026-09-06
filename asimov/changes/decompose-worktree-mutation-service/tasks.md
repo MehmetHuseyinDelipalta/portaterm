@@ -35,7 +35,7 @@
     5. Do not edit `src/worktree/worktreeMutationService.test.ts`.
     6. Close with the OBL-4 pair from 1_1 step 7, base sha literal.
 
-- [ ] 1_3 Extract registering a checkout already on disk
+- [x] 1_3 Extract registering a checkout already on disk — verified: pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/worktree/adoptWorktree.test.ts src/worktree/mutationService/registerExisting.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_2
   - **Refs**: design.md D1, design.md D2, design.md D4
   - **Boundary**: a carried debris clearance is refused BEFORE either branch corroborates anything — the guard does not move past the early return
@@ -44,7 +44,8 @@
     - Verify: command pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/worktree/adoptWorktree.test.ts src/worktree/mutationService/registerExisting.test.ts
   - **Plan**:
     1. Create `src/worktree/mutationService/registerExisting.ts` exporting `createRegisterExisting(deps)` with named `adopt` and `reattach` handlers, moving `src/worktree/worktreeMutationService.ts:1123-1231` and `:1241-1338` into it along with `recordFor`, `holdsStaleRegistration`, `liveHolderOf`, `adoptDeclineReason`, `declineReason` and `residueNote`.
-    2. Both branches read three things declared outside them: `fail` (`:1099`), `openFailure` (`:1112`) and `settled` (`:710`). Pass `fail` in rather than rebuilding it; make `openFailure` an accessor pair and apply D4's negation rule at every site; import `settled` from where 1_2 lifted it.
+    2. Both branches read three things declared outside them: `fail` (`:1099`), `openFailure` (`:1112`) and `settled` (`:710`). Pass `fail` in rather than rebuilding it; import `settled` from `src/worktree/mutationService/outcomes.ts`. `openFailure` becomes a LOCAL in each handler, not the accessor pair first written: every write and every read of it is inside one branch's coordinator body, and both branches return before create-proper resumes — an accessor would put shared mutable state across a module edge where the code has none. Its `=== null` sites move unchanged, so D4's negation rule has no site here to apply.
+    6. The facade at `src/worktree/worktreeMutationService.ts` gives up both branches and the six helpers; it keeps `fail` and calls the two handlers.
     3. Add `src/worktree/mutationService/registerExisting.test.ts` asserting, for BOTH modes, that a debris disposition reports the refusal and that the corroboration dependency was never called. The call count is the assertion — a test on the reported message passes with the guard moved past `:1168` / `:1283`, which is OBL-2's defeater.
     4. Do not edit `src/worktree/worktreeMutationService.test.ts` or `src/worktree/adoptWorktree.test.ts`.
     5. Close with the OBL-4 pair from 1_1 step 7, base sha literal.
