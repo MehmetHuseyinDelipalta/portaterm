@@ -82,7 +82,7 @@
     4. Add `src/providers/worktreeHost/actions/provision.test.ts`: record a baseline on an opening, detach the surface, reattach on the same opening, and assert the save reports the reattached baseline rather than the stale one (design.md OBL-4).
     5. Run `bun run asm refactor shape src/providers/worktreeHost/actions/provision.ts`.
 
-- [ ] 2_4 Move the create arms and their helpers
+- [x] 2_4 Move the create arms and their helpers — verified: pnpm run test:unit exit 0
   - **Deps**: 2_3
   - **Refs**: design.md D1, design.md D2, design.md D4
   - **Acceptance**:
