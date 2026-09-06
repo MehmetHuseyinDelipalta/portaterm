@@ -104,13 +104,37 @@ state — the simpler construct, and nothing in the code yet argues for more.
 
 ## Obligation ledger
 
+Rewritten after the plan attack. Two rows were refuted on their first wording and one witness was
+vacuous; what replaced them is narrower and, in two cases, funds a different task.
+
 | id | claim | semantics | defeater | witness | disposition |
 |---|---|---|---|---|---|
-| OBL-1 | `foldState` holds the SAME sets the class held, by reference | the view's prune path and the render path see one set, not two | `createFoldState` copies a `Set` at the factory boundary; a prune then leaves stale keys visible to render | `X: src/webview/worktree/worktreeView/foldState.test.ts` — prune after wiring, assert the render-side read reflects it; catches a copy at the boundary | unresolved |
-| OBL-2 | keyboard navigation still refuses to focus a row that is not rendered | for every key event, the focused row is one `navRows()` returned at that moment | `focusRow` is called with a stale `HTMLElement` captured before a repaint | `X: src/webview/worktree/worktreeView/keyboardNav.test.ts` — repaint between read and key, assert focus lands on a live row; catches a captured row list | unresolved |
-| OBL-3 | auto-dismiss timers are cleared for results that are gone | no timer outlives the notice it dismisses | `pruneAutoDismiss` reads a copied results array, so a removed result keeps its timer and fires on a detached node | `X: src/webview/worktree/worktreeView/actionNotices.test.ts` — drop a result, advance the clock, assert no dismiss ran | unresolved |
-| OBL-4 | `draftModel` decides the derived path with no DOM | the derivation is a function of the answer state alone | the model reads a DOM value (an input's `.value`, a dataset attribute) so the same answer yields two paths | `X: src/webview/worktree/createDialog/draftModel.test.ts` — run under the node environment, not jsdom; a `document` reference throws | unresolved |
-| OBL-5 | `src/types/messages.ts` is unchanged | byte-identical across the range | an edit made early and reverted late passes an end-of-change check | `X: git diff --exit-code -- src/types/messages.ts` as the closing step of every task | unresolved |
+| OBL-1 | `foldState` is the SOLE owner of the fold sets | after the cut, no path reads `collapsed`/`expandedRows` except through the collaborator | the facade keeps its own copy — it has five direct render-side reads today (`WorktreeView.ts:1170,1299,1411,1429,1541`), and `pruneStaleState` REPLACES both sets (`:930,:948`) rather than mutating them, so a second copy silently stops tracking | `X: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts` — the existing suite is the independent oracle: a retained facade copy means a toggle through the collaborator never reaches render, and the fold assertions go red | supported |
+| OBL-2 | keyboard navigation refuses to focus a row that is not rendered | for every key event, the focused row is one `navRows()` returned at that moment | `navRows()` is read at factory construction rather than at event time (`WorktreeView.ts:1984`), leaving focus on a detached row | `X: src/webview/worktree/worktreeView/keyboardNav.test.ts` — wire against one set of rows, replace the host's children, dispatch a key, assert `document.activeElement` is among the REPLACEMENT host's current rows | supported |
+| OBL-3 | a dropped result's dismiss timer is cancelled, not merely inert | no `setTimeout` handle outlives the notice it would dismiss | `pruneAutoDismiss` (`WorktreeView.ts:1674-1686`) retains the handle; the callback then finds no live result and dismisses nothing, so "nothing ran" stays true while the timer leaked | `X: src/webview/worktree/worktreeView/actionNotices.test.ts` — assert the `autoDismiss` map holds no entry for the dropped result AND that `vi.getTimerCount()` dropped; observing cancellation, not absence of effect | supported |
+| OBL-4 | `draftModel` holds the form's answer with no DOM reference | the module can be loaded and driven under vitest's node environment | the module reads an input's `.value` — destination derivation does exactly this at `WorktreeCreateDialog.ts:3197` and writes `pathInput.value` at `:1457-1504`, which is why that logic is NOT in this cut | `X: src/webview/worktree/createDialog/draftModel.test.ts` with NO `// @vitest-environment` pragma — the root config's default is node and no setup file installs a `document`, so any DOM reference throws | supported |
+| OBL-5 | `src/types/messages.ts` is unchanged across the whole change | byte-identical between the change's base commit and the tree | checking `git diff --exit-code -- src/types/messages.ts` alone compares the tree with `HEAD`, so an edit already COMMITTED passes it | `X: git diff --exit-code <base>..HEAD -- src/types/messages.ts && git diff --exit-code -- src/types/messages.ts` where `<base>` is the parent of this change's first commit; catches a committed protocol edit, which the tree-only form cannot see | supported |
+
+### What the attack changed in the plan
+
+- **`pruneStaleState` does not move** (task 1_1). It reads and clears `selectedWorktreeId` and calls
+  `deps.onSelectWorktree` (`WorktreeView.ts:917-923`), reconciles `RosterRequests` (`:954`) and calls
+  the display policy `isIdleIn` (`:887`). It stays on the facade and calls a fold-only
+  `foldState.prune(...)` for its half.
+- **`uncapped` does not move** (task 1_1). No method in the cluster operates on it; the facade owns
+  it directly at `WorktreeView.ts:1178,1373`.
+- **OBL-1's original claim — "the sets cross by reference" — was refuted**, because the prune
+  REPLACES both sets. Reference identity was never the property; sole ownership is.
+- **Task 2_1 lost the destination derivation.** It reads `nameInput.value` and writes
+  `pathInput.value`, so "move the body verbatim into a headless model" was impossible as written.
+  The cut is now the answer state alone (`WorktreeCreateDialog.ts:1082-1125` plus `closed`), and the
+  derivation stays in the DOM layer reading the model.
+- **Task 1_2 gained two sites**: the constructor's `focusin` delegate (`:317-335`) and render
+  focus restoration (`:1001-1025`) also own roving focus; moving only the nine methods would split
+  that ownership.
+- **Task 1_3 gained one**: `dispose` clears the `autoDismiss` map directly (`:745-758`).
+- **Every new DOM test needs its own `// @vitest-environment jsdom`** — the pragma is per file and
+  the existing suites' does not carry.
 
 ## Risk Map
 
