@@ -15,13 +15,13 @@
 - [x] All tasks done (`tasks.md`)
 - [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [x] Review done _(user-initiated; `[-]` + reason if skipped)_
-- [ ] Gate: implementation approved
-- [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
+- [x] Gate: implementation approved
+- [-] Blueprint sync complete — `Blueprint: none`
 
 ## Archive
 
-- [ ] Apply deltas: `bun run asm change apply`
-- [ ] Archive change: `bun run asm change archive`
+- [x] Apply deltas: `bun run asm change apply`
+- [x] Archive change: `bun run asm change archive`
 
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
 
@@ -53,3 +53,4 @@ OBL-1 witness executed at 2_2, both directions: old predicate + planted fs.rm in
 - Real-dependency: none — the change is behaviour-preserving and adds no dependency boundary; every arm keeps the injected capability it already had.
 - Review cycle 1 ended at Re-Verify: round 1 returned 0 BLOCK, so no verification round was owed. F001/F003/F005 fixed in code and F004 in design.md D3 (task 4_1); F001's witness run both ways — planted `rmSync` in `actions/create.ts` fails the gate naming the line, plant removed passes, scan set 69 -> 70 modules.
 - Audit-backlog: round-1 F002 — `provisionBaseline` is written in `actions/create.ts` and read in `actions/provision.ts`, so the provisioning state machine spans two modules. Non-gating (behaviour identical, OBL-4 independently confirmed). Owner: the follow-up change that splits `create.ts` on the read/commit seam. Trigger: that change reaching Stage 3, where a `seedProvisioning(...)` entry `provision.ts` owns becomes part of its D1.
+- Implementation gate ticked under the fastlane grant in the user's own message ("plan -> oracle attack -> triage/fix -> build -> reivew (max 3 round) -> archive"), which names archive as the terminus. It records that authorization, not a diff the user read.
