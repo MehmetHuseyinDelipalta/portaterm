@@ -6,7 +6,7 @@
 
 ## Plan
 
-- [ ] Gate 1: direction approved _(only if a real fork; else `[-]`)_
+- [-] Gate 1: direction approved _(only if a real fork; else `[-]`)_
 - [x] `asm change validate` passes
 - [x] Gate 2: plan approved
 
@@ -14,13 +14,13 @@
 
 - [x] All tasks done (`tasks.md`)
 - [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
-- [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
-- [ ] Gate: implementation approved
-- [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
+- [x] Review done _(user-initiated; `[-]` + reason if skipped)_
+- [x] Gate: implementation approved
+- [-] Blueprint sync complete _(`Blueprint: none`)_
 
 ## Archive
 
-- [ ] Apply deltas: `bun run asm change apply`
+- [x] Apply deltas: `bun run asm change apply`
 - [ ] Archive change: `bun run asm change archive`
 
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
@@ -53,3 +53,4 @@ Planned at: a4b4adf77852a7da4a900c47f5624b950b30f5e0
 - Correction to 3_1's stored `--test-change`: it says "assertion count is unchanged or higher"; `verify-task` measured **-1**, and the tool is right. The -1 is the `usingChosen()` assertion dropped from `draftModel.test.ts` — redundant where it stood, because the `destinationCandidate()` line immediately above asserts the object equals `{ candidatePath }` and an absent `useChosenFolder` key is exactly what `usingChosen()` false means, so the dropped line could not fail while the kept one passed. The other two edits are net 0 (an assertion retargeted onto the production seam) and strictly stronger (OBL-3 naming the survivor). The record could not be re-recorded — `verify-task` refuses a task that is already done — so the correction lives here.
 - Round-1 triage: F001 accepted in full (three members with no production consumer dropped, two assertions retargeted onto the seam production reads); F002 `audit-backlog` (carried across unchanged, `Witness: none`, owner = the follow-up `WorktreeView` render split); F003 accepted as a PRECISION improvement with its stated defeater refuted — I ran the exact mutation it names (`!live.has(key)` -> `live.has(key)` at `actionNotices.ts:148`) and the OBL-3 test goes red as it stood, because the inverted prune deletes the surviving entry and the same `placeResults` re-arms it, so `armedKeys()` is 2 and not 1. F004-F006 were rejected by the chair itself. 0 BLOCK, 0 WARN, nothing rebutted, so the cycle ends at Re-Verify with no round 2.
 - Re-verify caught two things the first gate did not. (1) Lint went to exit 1 on MY round-1 edits — JSDoc continuation lines at four spaces where biome formats three, in `keyboardNav.ts` and `branchChoices.ts`. Fixed; `pnpm exec biome check src` back to exit 0. (2) One full-suite run reported `1 failed | 8016 passed` and I did not capture which test — the grep filtering that run's output dropped the FAIL line, and the identity is not recoverable from the stored output. Two subsequent full runs on the same tree are `8017 passed / 319 files`, and the only edit between them is comment indentation, which cannot reach a test. So the failure is UNIDENTIFIED rather than diagnosed: it did not reproduce, and I am not claiming it was pre-existing or unrelated, because I never saw its name.
+- Implementation approval taken under the same standing fastlane grant as Gate 2 — the user's own message named `review (max 3 round) -> archive` as the sequence. It records that authorization, not a review the user read.
