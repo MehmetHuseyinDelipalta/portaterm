@@ -48,7 +48,7 @@
 
 ## 2. Create dialog
 
-- [ ] 2_1 Extract the headless draft model
+- [x] 2_1 Extract the headless draft model — verified: pnpm exec vitest run src/webview/worktree/createDialog/draftModel.test.ts src/webview/worktree/WorktreeCreateDialog.test.ts && pnpm exec tsc --noEmit -p tsconfig.json exit 0
   - **Deps**: 1_3
   - **Refs**: design.md D1, design.md D2, design.md D4
   - **Boundary**: `draftModel.ts` references no DOM global — no `document`, no `HTMLElement`, no event type
@@ -56,7 +56,7 @@
     - Outcome: the destination derivation runs and is asserted with no DOM present.
     - Verify: command pnpm exec vitest run src/webview/worktree/createDialog/draftModel.test.ts src/webview/worktree/WorktreeCreateDialog.test.ts
   - **Plan**:
-    1. Create `src/webview/worktree/createDialog/draftModel.ts` exporting `createDraftModel(...)` over `draft`, `pathIsDerived`, `usingChosen`, `supplied`, `afterChoice`, `folderMode` and `closed`.
+    1. Create `src/webview/worktree/createDialog/draftModel.ts` exporting `createDraftModel(...)` over `draft`, `pathIsDerived`, `usingChosen`, `supplied`, `afterChoice`, `folderMode` and `closed`, moving them out of `src/webview/worktree/WorktreeCreateDialog.ts`.
     2. Do NOT move the destination derivation. It reads `nameInput.value` and writes `pathInput.value`, so it cannot be headless; it stays in the DOM layer and reads the model instead. `destExact`, `activeAt` and `listOpen` are DOM presentation and stay too; `pickAsks`/`pickAsked` are request correlation and stay.
     3. Add `src/webview/worktree/createDialog/draftModel.test.ts` with NO environment pragma, so it runs under node and any DOM reference in the module throws (OBL-4).
     4. Do not edit `WorktreeCreateDialog.test.ts`; it is the regression net for this task.

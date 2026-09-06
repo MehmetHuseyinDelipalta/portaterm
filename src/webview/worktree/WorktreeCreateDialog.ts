@@ -27,6 +27,7 @@ import { SETUP_STEP_ADDED_SOURCE } from "../../types/messages";
 import { sanitizeBranchForPath } from "../../worktree/branchSlug";
 import { attachTooltip } from "../ui/Tooltip";
 import { ICON_CHEVRON_DOWN, ICON_CLOSE, ICON_FOLDER, ICON_RENAME } from "../vault/icons";
+import { type AfterChoice, createDraftModel, type DestinationEdit } from "./createDialog/draftModel";
 import { createWorktreeAgentBox, initialSafeAgentId } from "./worktreeAgentBox";
 import { dialogTitle, field, keyHint, openDialogShell, selectControl, textButton } from "./worktreeDialogShell";
 import type {
@@ -159,13 +160,11 @@ function pullRequestChoices(offer: WorktreePullRequestOffer | undefined, query: 
     .map((pr) => ({ kind: "pr", pr }) as const);
 }
 
-/**
- * What the form OFFERS, which is not the wire vocabulary. Opening the folder is
- * one intent with two destinations, and listing them as two peers of "Nothing"
- * made the choice read as four ways to open something. The pair is reached
- * through a secondary control instead; no wire value becomes unreachable.
- */
-type AfterChoice = "none" | "terminal" | "agent" | "folder";
+// `AfterChoice` is the form's own vocabulary and lives with the answer it names
+// (createDialog/draftModel.ts). Opening the folder is one intent with two
+// destinations, and listing them as two peers of "Nothing" made the choice read
+// as four ways to open something. The pair is reached through a secondary
+// control instead; no wire value becomes unreachable.
 
 const AFTER_CHOICES: readonly { value: AfterChoice; label: string }[] = [
   { value: "none", label: "Nothing" },
@@ -1079,24 +1078,9 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   const initialRepo = repos.find((repo) => repo.repoId === initialRepoId) ?? first;
   const safeInitialAgentId = initialSafeAgentId(initialRepo.agents);
   const initialAfterChoice: AfterChoice = safeInitialAgentId === undefined ? "terminal" : "agent";
-  const draft: WorktreeCreateDraft = {
-    repoId: initialRepoId,
-    branchMode: "new",
-    branchName: "",
-    baseRef: "",
-    path: "",
-    openAfter: initialAfterChoice,
-  };
-  /** True until the user edits the path themselves; after that we stop deriving it. */
-  let pathIsDerived = true;
-  /**
-   * The destination is derived inside a folder the HOST offered this form.
-   *
-   * A flag, never a path: the form has no folder to hold that the host did not
-   * give it, and sending one back would create a webview-supplied path to
-   * resolve (design.md D5). Withdrawn by typing and by switching repository.
-   */
-  let usingChosen = false;
+  const model = createDraftModel({ initialRepoId, initialAfterChoice });
+  /** The answer itself, mutated in place by the fields that own their own value. */
+  const draft = model.draft;
   /** How many picks this form has opened. Minted like `recoverAsks` (D7). */
   let pickAsks = 0;
   /**
@@ -1109,20 +1093,6 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
    * the pick. One boolean cannot hold two independent waits (design.md D7).
    */
   let pickAsked: number | null = null;
-  /**
-   * The destination the user typed — the QUESTION, never the answer (D8).
-   *
-   * `draft.path` is what the form states and submits, and once a resolution has
-   * landed that is the resolution's own target. Keeping the candidate here is
-   * what lets the two differ: a candidate the host suffixed past, or refused
-   * because it resolves outside the create root, stays askable and visible in
-   * the field while the create carries the path the host actually answered.
-   */
-  let supplied = "";
-  /** What the user picked, in the form's vocabulary. `draft.openAfter` is derived
-   *  from this and `folderMode` — one wire value, never two sources for it. */
-  let afterChoice: AfterChoice = initialAfterChoice;
-  let folderMode: WorktreeOpenAfter = "addToWorkspace";
 
   const currentRepo = (): WorktreeCreateDefaults => repos.find((r) => r.repoId === draft.repoId) ?? first;
 
@@ -1134,10 +1104,10 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // to be released here too — `disposeAll` is not on that path.
     onDismiss: () => {
       releaseDestTip();
-      // Escape and the scrim never reach `disposeAll`, so setting `closed`
+      // Escape and the scrim never reach `disposeAll`, so closing the model
       // only there left the guard passing on the DOM being gone rather than on
       // the guard firing (round-2 W2).
-      closed = true;
+      model.close();
       deps.onCancel?.();
     },
     // The list owns Escape only while it is open (D7). Asked by the shell
@@ -1169,11 +1139,9 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // with no DOM left. No test can tell the two apart, so none pretends to —
     // the guard is here because writing into a disposed form is wrong, not
     // because a symptom was measured.
-    closed = true;
+    model.close();
     shell.dispose(restoreFocus);
   };
-  /** True once this opening is over. Read by every bound applier. */
-  let closed = false;
 
   shell.dialog.appendChild(dialogTitle("Create worktree", undefined, cancel));
 
@@ -1454,10 +1422,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
    * Clearing the field is not an override of "nowhere" — it is withdrawing the
    * override.
    */
-  const stateDestination = (
-    next: { kind: "typed"; path: string } | { kind: "chosen" } | { kind: "repoChanged" },
-    fromInput = false,
-  ): void => {
+  const stateDestination = (next: DestinationEdit, fromInput = false): void => {
     // The user replacing the destination withdraws any pick they were waiting
     // on — typed, cleared (the `typed` branch with empty text), or the
     // repository switched. An answer to a withdrawn ask changes nothing, which
@@ -1471,29 +1436,10 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     if (next.kind !== "chosen") {
       pickAsked = null;
     }
-    if (next.kind === "chosen") {
-      // No path is held. The form states that it is using the folder; only the
-      // host knows which folder that is, and only the host says what it derives
-      // to (D5). Any typed override is withdrawn — the two are never both live.
-      usingChosen = true;
-      supplied = "";
-      pathIsDerived = true;
-    } else if (next.kind === "typed") {
-      // A typed path names a destination outright, so it retires the folder.
-      usingChosen = false;
-      supplied = next.path;
-      pathIsDerived = next.path.trim() === "";
-      if (!fromInput) {
-        pathInput.value = next.path;
-      }
-    } else {
-      // The form is form-wide across repositories while the host's record is per
-      // repository, so a flag carried across a switch would ask the new
-      // repository to use a folder only its predecessor was given — and it would
-      // fall back to its configured root in silence. A typed override is not
-      // withdrawn here: it names a path, and a path means the same thing in
-      // either repository.
-      usingChosen = false;
+    // The three states and their edges are the model's; this half is the field.
+    model.stateDestination(next);
+    if (next.kind === "typed" && !fromInput) {
+      pathInput.value = next.path;
     }
     // Typing is settled by the field's own `change`; a chosen folder and a
     // repository switch have no such event and nothing more is coming, so each
@@ -2293,10 +2239,10 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   const afterSelect = selectControl(
     "wt-after",
     openAfterOptions(currentRepo().agents.length > 0).map((o) => ({ value: o.value, label: o.label })),
-    afterChoice,
+    model.afterChoice(),
   );
   afterSelect.addEventListener("change", () => {
-    afterChoice = afterSelect.value as AfterChoice;
+    model.setAfterChoice(afterSelect.value as AfterChoice);
     syncOpenAfter();
   });
   const afterNote = document.createElement("span");
@@ -2307,9 +2253,9 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   // agent block is revealed by the agent choice.
   const folderField = field("Where", "wt-folder-mode");
   folderField.classList.add("wt-folder-mode");
-  const folderSelect = selectControl("wt-folder-mode", [...FOLDER_MODES], folderMode);
+  const folderSelect = selectControl("wt-folder-mode", [...FOLDER_MODES], model.folderMode());
   folderSelect.addEventListener("change", () => {
-    folderMode = folderSelect.value as WorktreeOpenAfter;
+    model.setFolderMode(folderSelect.value as WorktreeOpenAfter);
     syncOpenAfter();
   });
   folderField.appendChild(folderSelect);
@@ -2321,7 +2267,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   // launch and launch-here collect the same thing rather than two things that
   // happen to look alike (design.md D7).
   const agentBox = createWorktreeAgentBox(currentRepo().agents, () => syncDerived(), safeInitialAgentId);
-  agentBox.setVisible(afterChoice === "agent");
+  agentBox.setVisible(model.afterChoice() === "agent");
   shell.dialog.appendChild(agentBox.element);
 
   // ── Wait-for-setup — under the setup rows it gates, never in the agent box ─
@@ -2392,7 +2338,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // Hidden where there is nothing it could ever gate; disabled where there
     // is something and it is not ticked — that absence is a consequence of the
     // row above it, and hiding it there would read as a layout change.
-    waitField.hidden = afterChoice !== "agent" || drawnModel === null || drawnModel.setup.length === 0;
+    waitField.hidden = model.afterChoice() !== "agent" || drawnModel === null || drawnModel.setup.length === 0;
     const selected = hasSelectedSetup();
     waitBox.disabled = !selected || anyAsking();
     if (!selected) {
@@ -2517,7 +2463,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       }
       return;
     }
-    const launch = afterChoice === "agent" ? agentBox.read() : {};
+    const launch = model.afterChoice() === "agent" ? agentBox.read() : {};
     // The classification travels WITH the submission, so the owner builds the
     // request from the answer this form was showing rather than from its own
     // second copy of it (round-3 B3).
@@ -2543,7 +2489,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       ...(migrateChanges === undefined ? {} : { migrateChanges }),
       // Only where the control was actually offered — a non-agent create never
       // showed this choice, so nothing here is carried for it.
-      ...(afterChoice === "agent" ? { waitForSetup: waitBox.checked } : {}),
+      ...(model.afterChoice() === "agent" ? { waitForSetup: waitBox.checked } : {}),
     });
     disposeAll();
   }
@@ -2555,13 +2501,13 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
    * to launch" is its own.
    */
   function syncAfterHint(): void {
-    if (afterChoice === "none") {
+    if (model.afterChoice() === "none") {
       afterNote.textContent = "No terminal, folder, or agent opens after creation.";
-    } else if (afterChoice === "terminal") {
+    } else if (model.afterChoice() === "terminal") {
       afterNote.textContent = "Opens a terminal in the worktree.";
-    } else if (afterChoice === "folder") {
+    } else if (model.afterChoice() === "folder") {
       afterNote.textContent =
-        folderMode === "addToWorkspace"
+        model.folderMode() === "addToWorkspace"
           ? "Adds the worktree folder to this workspace."
           : "Opens the worktree folder in a separate window.";
     } else {
@@ -2572,10 +2518,10 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   }
 
   function syncOpenAfter(): void {
-    draft.openAfter = afterChoice === "folder" ? folderMode : afterChoice;
-    agentBox.setVisible(afterChoice === "agent");
+    model.applyOpenAfter();
+    agentBox.setVisible(model.afterChoice() === "agent");
     syncAfterHint();
-    folderField.hidden = afterChoice !== "folder";
+    folderField.hidden = model.afterChoice() !== "folder";
     // The submit gate reads the revealed block, so revealing one has to re-ask
     // it. `syncDerived` does not call back here, so this does not recurse.
     syncDerived();
@@ -2587,9 +2533,10 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // Only a choice the rebuild actually withdrew is reset. The folder choice is
     // always offered, so a repo switch that drops the agent one must leave it —
     // and its secondary selection — exactly where the user put them.
-    if (!offered.some((o) => o.value === afterChoice)) {
-      afterChoice = initialSafeAgentId(currentRepo().agents) === undefined ? "terminal" : "agent";
-    }
+    model.retargetAfterChoice(
+      offered.map((o) => o.value),
+      initialSafeAgentId(currentRepo().agents) === undefined ? "terminal" : "agent",
+    );
     afterSelect.replaceChildren(
       ...offered.map((o) => {
         const opt = document.createElement("option");
@@ -2598,7 +2545,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
         return opt;
       }),
     );
-    afterSelect.value = afterChoice;
+    afterSelect.value = model.afterChoice();
     syncOpenAfter();
   }
 
@@ -2753,13 +2700,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       repoId: draft.repoId,
       branch: draft.branchMode === "detached" ? draft.baseRef : draft.branchName,
       ...(base === undefined ? {} : { base }),
-      // Only an override travels. The derived path is the host's own answer
-      // coming back, and sending it would pin the resolution to the value it
-      // just produced instead of letting it re-derive.
-      ...(pathIsDerived || supplied.trim().length === 0 ? {} : { candidatePath: supplied }),
-      // Never both: typing withdraws the folder and choosing withdraws the
-      // typed path, so the host's tie-break is unreachable from this form.
-      ...(usingChosen ? { useChosenFolder: true as const } : {}),
+      ...model.destinationCandidate(),
     };
   }
 
@@ -3241,13 +3182,12 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       // form would submit the override while the mode carried the repair
       // target. The derivation below then refills the field with that target,
       // so the disabled control shows the directory actually being used.
-      pathIsDerived = true;
-      // The folder goes with it. A typed override is withdrawn for good by the
-      // line above — `selection()` reads `pathIsDerived`, so it never returns —
-      // and a chosen folder that merely went quiet and came back would give the
-      // form two meanings of "withdrawn" and make the destination depend on
-      // history the user cannot see (round-1 F004).
-      usingChosen = false;
+      // The folder goes with it. A typed override is withdrawn for good — the
+      // selection reads `pathIsDerived`, so it never returns — and a chosen
+      // folder that merely went quiet and came back would give the form two
+      // meanings of "withdrawn" and make the destination depend on history the
+      // user cannot see (round-1 F004).
+      model.withdrawDestination();
     }
     // The host's verdict on the base, which only applies where a base applies.
     // Reported BEFORE submit rather than as a git failure after it (D7).
@@ -3345,7 +3285,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     const seedAnswers = !unnamed && (repo.answersBranch ?? "").trim() === activeTarget;
     const resolvedPath = answered ?? (seedAnswers ? repo.resolvedPath : undefined);
     const derived = resolvedPath ?? (slug ? `${repo.pathParent}/${repo.pathPrefix}-${slug}` : "");
-    if (pathIsDerived) {
+    if (model.pathIsDerived()) {
       // Whoever owns the caret owns the text. Guarding the CALLERS was the
       // round-2 fix and it left the other eight unguarded by construction — the
       // answer callback arrives on the host's schedule, so it is the one that can
@@ -3368,10 +3308,10 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // host worked out for the empty name. An override is not one of those: it is
     // the user's own text, and echoing it back as a template would be the form
     // editing what they typed (round-2 F004).
-    const stated = answered ?? (pathIsDerived ? derived : supplied);
+    const stated = answered ?? (model.pathIsDerived() ? derived : model.supplied());
     // ONE value, read by the line and by the submission — the split between them
     // is what let a create display one directory and hand git another.
-    draft.path = stated;
+    model.statePath(stated);
     if (stated) {
       destExact = stated;
       dest.setAttribute("aria-label", stated);
@@ -3409,7 +3349,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       recovered !== undefined
         ? ""
         : effective === null
-          ? pathIsDerived && seedAnswers
+          ? model.pathIsDerived() && seedAnswers
             ? repo.collidedWith
             : ""
           : lastSegment(effective.occupiedCandidate?.path ?? "");
@@ -3484,7 +3424,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // A revealed posture list with nothing selected is an unmade choice, not a
     // default — submitting here would launch under a posture the user never
     // picked, which is the whole point of never preselecting one.
-    const postureMissing = afterChoice === "agent" && agentBox.needsPosture();
+    const postureMissing = model.afterChoice() === "agent" && agentBox.needsPosture();
     // Blocked either way — Create is never offered without a target. What waits
     // is only the SENTENCE: naming the empty field before the user has been in
     // it is the scold, not the disabled button.
@@ -3725,7 +3665,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   // point of the separate message is that the local list never waits for the
   // forge (§ 4.1), and one binding would put them back on one arrival.
   deps.bindPullRequests?.((repoId, offer) => {
-    if (closed) {
+    if (model.closed()) {
       return;
     }
     const at = repoAt.get(repoId);
@@ -3748,7 +3688,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     syncDerived();
   });
   deps.bindRefs?.((repoId, refs) => {
-    if (closed) {
+    if (model.closed()) {
       return;
     }
     const at = repoAt.get(repoId);
@@ -3774,7 +3714,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   // now owns the destination it names, an answer to the same question the
   // defaults reply answers (round-3 B3).
   deps.bindResolution?.((resolution) => {
-    if (closed || resolution.repoId !== draft.repoId) {
+    if (model.closed() || resolution.repoId !== draft.repoId) {
       return;
     }
     // An answer the user has typed past describes a selection that is gone.
@@ -3837,7 +3777,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   // path, and applying one issued for a different path is exactly the confusion
   // the fingerprint exists to stop.
   deps.bindDebrisAuthorization?.((answer) => {
-    if (closed || answer.repoId !== draft.repoId) {
+    if (model.closed() || answer.repoId !== draft.repoId) {
       return;
     }
     const offer = debrisOffer();
