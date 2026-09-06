@@ -50,12 +50,12 @@
     4. Do not edit `src/worktree/worktreeMutationService.test.ts` or `src/worktree/adoptWorktree.test.ts`.
     5. Close with the OBL-4 pair from 1_1 step 7, base sha literal.
 
-- [ ] 1_4 Confirm the destruction gate reads the new modules
+- [x] 1_4 Confirm the destruction gate reads the new modules — verified: pnpm run gate:fs-deletion exit 0
   - **Deps**: 1_3
   - **Refs**: design.md § Obligation ledger
   - **Boundary**: `src/test/invariants/fsDeletionGate.ts` is not edited — the point is that the existing prefix rule already covers the new directory
   - **Acceptance**:
-    - Outcome: the I10 scan reports 73 scoped modules, up from 70.
+    - Outcome: the I10 scan reports 74 scoped modules, up from 70. Four production modules, not the three first written: `outcomes.ts` was added under 1_2 for the reason recorded in its Plan step 3. The claim is that the count RISES by the number of modules created; only the arithmetic moved.
     - Verify: command pnpm run gate:fs-deletion
   - **Plan**:
     1. Run `pnpm run gate:fs-deletion` and record the printed count in workflow.md Notes beside the pre-change 70. Three production modules, not six — the gate excludes `.test.ts`. A count that did not rise means the new files are outside the scan and the gate is passing on modules it never read.
