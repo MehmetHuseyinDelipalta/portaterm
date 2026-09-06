@@ -43,7 +43,7 @@
     3. Re-export `WorktreeSurface`, `WorktreeActions` and `WorktreeHostOptions` from `src/providers/WorktreeHost.ts` so no existing importer changes.
     4. Confirm no import cycle: `hostTypes.ts` imports nothing from `WorktreeHost.ts`.
 
-- [ ] 2_1 Move the thin action arms into a shell action factory
+- [x] 2_1 Move the thin action arms into a shell action factory — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts exit 0
   - **Deps**: 2_0
   - **Refs**: design.md D1, design.md D2, design.md D4
   - **Acceptance**:

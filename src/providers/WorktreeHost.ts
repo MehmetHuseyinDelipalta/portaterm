@@ -41,7 +41,6 @@ import {
 } from "../utils/resolvedPathBoundary";
 import { MAX_CONTINUATION_INSTRUCTION } from "../vault/continuationLimits";
 import type { VaultLaunchTarget } from "../vault/types";
-import type { CreateSessionOptions } from "../vault/VaultLauncher";
 import type { AdoptVerdict } from "../worktree/adoptProbe";
 import { sanitizeBranchForPath } from "../worktree/branchSlug";
 import { resolveCreateRoot, suggestFreePath } from "../worktree/createPath";
@@ -99,6 +98,7 @@ import {
 } from "../worktree/worktreeBlockers";
 import { type WorktreeWatch, watchRepoStructure } from "../worktree/worktreeWatchTargets";
 import type { WatcherPool } from "./fsWatcherPool";
+import { createShellActions } from "./worktreeHost/actions/shell";
 import type {
   AdmittedLaunch,
   LaunchTargetRecord,
@@ -2399,25 +2399,26 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * repository, or the workspace root: an action that did something against an
    * unintended target is worse than one that did nothing (D3).
    */
+  const shell = createShellActions({
+    actionPath,
+    perform,
+    matchedRow,
+    admittedTarget,
+    admissibleLaunch,
+    launchOpts,
+    isKnownSetupOutput,
+    launchTarget,
+  });
+
   function handleAction(surface: WorktreeSurface, msg: WorktreeActionMessage): void {
     const actions = options.actions;
     if (!actions || disposed) {
       return;
     }
     switch (msg.type) {
-      case "worktreeOpenFolder": {
-        // Validated, not trusted: the capability treats anything that is not
-        // `newWindow` as `addToWorkspace`, so a malformed payload would mutate
-        // the workspace instead of failing closed (round-1 W1).
-        if (msg.mode !== "newWindow" && msg.mode !== "addToWorkspace") {
-          return;
-        }
-        const path = actionPath(msg.worktreeId, false);
-        if (path !== undefined) {
-          perform(() => actions.openFolder(path, msg.mode));
-        }
+      case "worktreeOpenFolder":
+        shell.worktreeOpenFolder(surface, msg, actions);
         return;
-      }
       case "worktreeCreate": {
         const create = actions.createWorktree;
         // The last door outside the one-opening contract (round-5 W1): a form
@@ -2656,13 +2657,9 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
         }
         return;
       }
-      case "worktreeSetupViewOutput": {
-        if (!isKnownSetupOutput(msg) || actions.viewSetupOutput === undefined) {
-          return;
-        }
-        perform(() => actions.viewSetupOutput?.(msg.outputId, surface) ?? Promise.resolve());
+      case "worktreeSetupViewOutput":
+        shell.worktreeSetupViewOutput(surface, msg, actions);
         return;
-      }
       case "worktreeRemoveAssess": {
         const assess = actions.assessRemovalReport;
         const assessTarget = msg.worktreeId;
@@ -3662,150 +3659,37 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
         }
         return;
       }
-      case "worktreeRevealInOS": {
-        const path = actionPath(msg.worktreeId, false);
-        if (path !== undefined) {
-          perform(() => actions.revealInOS(path));
-        }
+      case "worktreeRevealInOS":
+        shell.worktreeRevealInOS(surface, msg, actions);
         return;
-      }
-      case "worktreeCopyPath": {
-        const path = actionPath(msg.worktreeId, true);
-        if (path !== undefined) {
-          perform(() => actions.copyText(path));
-        }
+      case "worktreeCopyPath":
+        shell.worktreeCopyPath(surface, msg, actions);
         return;
-      }
-      case "worktreeOpenTerminal": {
-        // Asked of the surface that raised it: a new tab belongs where the user
-        // was, and only a surface can create one at all.
-        const path = actionPath(msg.worktreeId, false);
-        const open = surface.openTerminal;
-        if (path !== undefined && open) {
-          perform(() => open.call(surface, path));
-        }
+      case "worktreeOpenTerminal":
+        shell.worktreeOpenTerminal(surface, msg, actions);
         return;
-      }
-      case "worktreeFocusPane": {
-        // An external row carries no `paneId` at all, so this cannot resolve for
-        // one however it is asked — the innermost of three barriers (D4).
-        const row = matchedRow(msg.rowId, "paneId", msg.paneId);
-        if (row?.paneId !== undefined && row.viewId !== undefined) {
-          perform(() => actions.focusPane(row.paneId as string, row.viewId as string));
-        }
+      case "worktreeFocusPane":
+        shell.worktreeFocusPane(surface, msg, actions);
         return;
-      }
-      case "worktreeOpenPreview": {
-        const row = matchedRow(msg.rowId, "entryId", msg.entryId);
-        if (row?.entryId !== undefined) {
-          // Answered back to the asking surface: the overlay is webview-owned,
-          // and the entry id it gets is the host's, not the one it asked with.
-          surface.post({ type: "worktreeShowPreview", entryId: row.entryId });
-        }
+      case "worktreeOpenPreview":
+        shell.worktreeOpenPreview(surface, msg, actions);
         return;
-      }
-      case "worktreeCopyResumeCommand": {
-        const row = matchedRow(msg.rowId, "entryId", msg.entryId);
-        if (row?.entryId !== undefined) {
-          const entryId = row.entryId;
-          perform(() => actions.copyResumeCommand(entryId));
-        }
+      case "worktreeCopyResumeCommand":
+        shell.worktreeCopyResumeCommand(surface, msg, actions);
         return;
-      }
-      case "worktreeRevealAgentCwd": {
-        const row = matchedRow(msg.rowId, "entryId", msg.entryId);
-        if (row?.entryId !== undefined) {
-          const entryId = row.entryId;
-          perform(() => actions.revealSessionCwd(entryId));
-        }
+      case "worktreeRevealAgentCwd":
+        shell.worktreeRevealAgentCwd(surface, msg, actions);
         return;
-      }
-      case "worktreeCopyAgentPath": {
-        const row = matchedRow(msg.rowId, "entryId", msg.entryId);
-        if (row?.entryId !== undefined) {
-          const entryId = row.entryId;
-          perform(() => actions.copySessionCwd(entryId));
-        }
+      case "worktreeCopyAgentPath":
+        shell.worktreeCopyAgentPath(surface, msg, actions);
         return;
-      }
-      case "worktreeLaunchAgent": {
-        const start = actions.startAgent;
-        const { type: _type, ...fields } = msg;
-        const admitted = admittedTarget(fields);
-        if (!start || admitted === undefined) {
-          return;
-        }
-        // Admission first, and it is the HOST's own answer being checked, not
-        // the registry's: an agent that resolves on this machine but was never
-        // advertised for a fresh start is still not what the panel offered.
-        //
-        // Synchronous, and the generation is read in the same turn as the
-        // message: an admission that awaited would let a rebuild land between
-        // "which worktree was asked for" and "which one was recorded", and
-        // record the replacement as the one the user aimed at (round-4 B5).
-        if (!admissibleLaunch(surface, fields)) {
-          return;
-        }
-        launch(surface, admitted, (target) => start(fields.agent, target.path, launchOpts(fields)));
+      case "worktreeLaunchAgent":
+        shell.worktreeLaunchAgent(surface, msg, actions);
         return;
-      }
-      case "worktreeResumeHere": {
-        const resume = actions.resumeSessionAt;
-        // BOTH doors: the row must still hold this session, and the worktree
-        // must still be the registration the row was published under. A resume
-        // is raised on a rendered row like a launch is chosen from a rendered
-        // list, so it quotes its registration for the same reason and is
-        // refused on the same terms (round-5 B5).
-        const row = matchedRow(msg.rowId, "entryId", msg.entryId);
-        const admitted = admittedTarget(msg);
-        if (!resume || row?.entryId === undefined || admitted === undefined) {
-          return;
-        }
-        const entryId = row.entryId;
-        launch(surface, admitted, (target) => resume(entryId, target.path));
+      case "worktreeResumeHere":
+        shell.worktreeResumeHere(surface, msg, actions);
         return;
-      }
     }
-  }
-
-  /**
-   * Resolve a launch, then hand the resolved command to the surface that asked.
-   *
-   * Deliberately NOT `perform`: that swallows a rejection into a log, which is
-   * right for a copy or a reveal and wrong here. A launch the user asked for and
-   * did not get has to say so — "agent executable not found" is the whole error
-   * surface this action has (worktree-actions.md § 5).
-   */
-  function launch(
-    surface: WorktreeSurface,
-    admitted: AdmittedLaunch,
-    resolve: (target: AdmittedLaunch) => Promise<CreateSessionOptions>,
-  ): void {
-    const open = surface.launchAgent;
-    if (!open) {
-      return;
-    }
-    void resolve(admitted)
-      .then((launchOptions) => {
-        // Asked again at the handoff, not only at the request: executable
-        // resolution awaits, and neither a worktree removed while it ran nor a
-        // different one recreated at the same id may receive the session. One
-        // lookup answers both halves, so the path used is always the path the
-        // compared registration belongs to.
-        const now = launchTarget(admitted.worktreeId);
-        if (now === undefined || now.generation !== admitted.generation) {
-          return undefined;
-        }
-        const path = now.path;
-        // Re-resolved rather than reusing the pre-await path: git's own display
-        // string for the registration that is there now.
-        return { ...launchOptions, cwd: path };
-      })
-      .then((options) => (options === undefined ? undefined : open.call(surface, options)))
-      .catch((err: unknown) => {
-        const reason = err instanceof Error ? err.message : "The agent could not be started.";
-        surface.post({ type: "error", message: reason, severity: "error" });
-      });
   }
 
   /**
