@@ -97,7 +97,7 @@
 
 ## 3. Pattern
 
-- [ ] 3_1 Replace the two-map opening representation with a tagged-union reducer
+- [x] 3_1 Replace the two-map opening representation with a tagged-union reducer — verified: pnpm exec vitest run src/providers/worktreeHost/openingLifecycle.test.ts src/providers/WorktreeHost.actions.test.ts exit 0
   - **Deps**: 2_4
   - **Refs**: design.md D5, design.md D2
   - **Boundary**: behaviour of every existing opening transition is preserved; this task adds no new message type
@@ -106,7 +106,7 @@
     - Verify: command pnpm exec vitest run src/providers/worktreeHost/openingLifecycle.test.ts src/providers/WorktreeHost.actions.test.ts
   - **Plan**:
     1. Create `src/providers/worktreeHost/openingLifecycle.ts` with a tagged union over the three phases — pristine, live, retired — and a module-level reducer over the five events: initial open, repeat, supersede, close, detach reset. No class (design.md D5).
-    2. Replace the `liveOpening` and `openingHighWater` maps declared at `src/providers/WorktreeHost.ts:915` and `957` with one map of reducer states, and route `retireOpening` and `forgetSurfaceOpenings` (1126-1231) through the reducer.
-    3. Route the close and supersede arms now living in `src/providers/worktreeHost/actions/create.ts` through the same reducer so phase is derived in one place rather than through 20 `liveOpening.get` calls.
+    2. In `src/providers/WorktreeHost.ts`, replace the `liveOpening` and `openingHighWater` maps with one `createOpeningLifecycle()` store, and route `retireOpening` and `forgetSurfaceOpenings` through it.
+    3. Route the arms in `src/providers/worktreeHost/actions/create.ts` and `src/providers/worktreeHost/actions/provision.ts` through the same store, so phase is derived in one place rather than through 20 `liveOpening.get` calls.
     4. Add `src/providers/worktreeHost/openingLifecycle.test.ts` driving all five transitions, including a stale replay and a detach-to-same-token reset, asserting none of the three invalid combinations is constructible (design.md OBL-5).
     5. Run `pnpm run test:unit` and confirm 7947 tests still green.

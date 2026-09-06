@@ -34,6 +34,7 @@ import type { WorktreeRepo } from "../../../worktree/types";
 import type { WorktreeHostOptions } from "../../WorktreeHost";
 import type { PickedCopyFile, WorktreeSurface } from "../hostTypes";
 import { isKnownCopyFileAsk, isKnownSave, isKnownStepAsk, isKnownSwitch } from "../messageGuards";
+import type { OpeningLifecycle } from "../openingLifecycle";
 
 /**
  * A save that did not happen, said on the model the section is already showing.
@@ -150,7 +151,7 @@ export interface ProvisionDeps {
   readonly addedSteps: Map<string, readonly string[]>;
   readonly provisionBaseline: Map<string, string>;
   readonly provisionSwitch: Map<string, number>;
-  readonly liveOpening: Map<string, number>;
+  readonly lifecycle: Pick<OpeningLifecycle, "isLive">;
   readonly offers: ProvisionOfferStore;
   readonly cache: { read(): { repos: readonly WorktreeRepo[] } };
   readonly options: Pick<WorktreeHostOptions, "actions" | "readProvisioning" | "writeNativeConfig">;
@@ -197,7 +198,7 @@ export function createProvisionActions(deps: ProvisionDeps) {
     disposed,
     hasSurface,
     issueWithAdded,
-    liveOpening,
+    lifecycle,
     offers,
     options,
     previewProvisioning,
@@ -222,7 +223,7 @@ export function createProvisionActions(deps: ProvisionDeps) {
     const key = surfaceKey(surface);
     // A retired or never-seen opening has no authority to spend. Nothing is
     // read and nothing is published for a form the user has closed.
-    if (liveOpening.get(key) !== msg.opening) {
+    if (!lifecycle.isLive(key, msg.opening)) {
       return;
     }
     const offerKey = { surface: key, repoId: msg.repoId };
@@ -262,7 +263,7 @@ export function createProvisionActions(deps: ProvisionDeps) {
         // written out because "publish only for the opening still being
         // served" is the invariant, and a future change to the sweep must
         // not silently remove it.
-        if (provisionSwitch.get(slot) !== mine || liveOpening.get(key) !== msg.opening) {
+        if (provisionSwitch.get(slot) !== mine || !lifecycle.isLive(key, msg.opening)) {
           return;
         }
         const previewed = await previewProvisioning(repo, model);
@@ -270,7 +271,7 @@ export function createProvisionActions(deps: ProvisionDeps) {
           disposed() ||
           !hasSurface(surface) ||
           provisionSwitch.get(slot) !== mine ||
-          liveOpening.get(key) !== msg.opening
+          !lifecycle.isLive(key, msg.opening)
         ) {
           return;
         }
@@ -307,7 +308,7 @@ export function createProvisionActions(deps: ProvisionDeps) {
       return;
     }
     const key = surfaceKey(surface);
-    if (liveOpening.get(key) !== msg.opening) {
+    if (!lifecycle.isLive(key, msg.opening)) {
       return;
     }
     const offerKey = { surface: key, repoId: msg.repoId };
@@ -326,7 +327,7 @@ export function createProvisionActions(deps: ProvisionDeps) {
       !disposed() &&
       hasSurface(surface) &&
       provisionSwitch.get(slot) === mine &&
-      liveOpening.get(key) === msg.opening &&
+      lifecycle.isLive(key, msg.opening) &&
       cache.read().repos.some((current) => current.repoId === repo.repoId && current.mainPath === repo.mainPath);
     const publish = (): void => {
       if (!stillMine()) {
@@ -403,7 +404,7 @@ export function createProvisionActions(deps: ProvisionDeps) {
     const key = surfaceKey(surface);
     // A retired or never-seen opening has no authority to spend: no input
     // is opened and nothing is published for a form the user has closed.
-    if (liveOpening.get(key) !== msg.opening) {
+    if (!lifecycle.isLive(key, msg.opening)) {
       return;
     }
     const offerKey = { surface: key, repoId: msg.repoId };
@@ -436,7 +437,7 @@ export function createProvisionActions(deps: ProvisionDeps) {
       ordinal = at < 0 ? undefined : at;
     }
     const stillMine = (): boolean =>
-      !disposed() && hasSurface(surface) && provisionSwitch.get(slot) === mine && liveOpening.get(key) === msg.opening;
+      !disposed() && hasSurface(surface) && provisionSwitch.get(slot) === mine && lifecycle.isLive(key, msg.opening);
     void (async () => {
       const record = addedSteps.get(slot) ?? [];
       let next = record;
@@ -501,7 +502,7 @@ export function createProvisionActions(deps: ProvisionDeps) {
     // A retired or never-seen opening has no authority to spend, exactly as
     // for a switch: nothing is written and nothing is published for a form
     // the user has closed.
-    if (liveOpening.get(key) !== msg.opening) {
+    if (!lifecycle.isLive(key, msg.opening)) {
       return;
     }
     const offerKey = { surface: key, repoId: msg.repoId };
@@ -533,7 +534,7 @@ export function createProvisionActions(deps: ProvisionDeps) {
     const publish = async (model: ProvisionModel): Promise<void> => {
       // Checked AGAIN, after whatever this save did. A save is slower than a
       // switch and this is the window D8 exists for.
-      if (provisionSwitch.get(slot) !== mine || liveOpening.get(key) !== msg.opening) {
+      if (provisionSwitch.get(slot) !== mine || !lifecycle.isLive(key, msg.opening)) {
         return;
       }
       const previewed = await previewProvisioning(repo, model);
@@ -541,7 +542,7 @@ export function createProvisionActions(deps: ProvisionDeps) {
         disposed() ||
         !hasSurface(surface) ||
         provisionSwitch.get(slot) !== mine ||
-        liveOpening.get(key) !== msg.opening
+        !lifecycle.isLive(key, msg.opening)
       ) {
         return;
       }

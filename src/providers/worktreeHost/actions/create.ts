@@ -45,6 +45,7 @@ import {
   isKnownSetupRetry,
   namedOpening,
 } from "../messageGuards";
+import type { OpeningLifecycle } from "../openingLifecycle";
 
 /** One arm, once the dispatcher has proved `actions` is there. */
 type Arm<T extends WorktreeActionMessage["type"]> = (
@@ -74,8 +75,7 @@ interface MigrationOffer {
  */
 export interface CreateDeps {
   readonly cache: ReturnType<typeof createWorktreeCache>;
-  readonly liveOpening: Map<string, number>;
-  readonly openingHighWater: Map<string, number>;
+  readonly lifecycle: OpeningLifecycle;
   readonly openings: Map<string, Opening>;
   readonly migrationOffers: Map<string, MigrationOffer>;
   readonly migrationReading: Map<
@@ -130,12 +130,11 @@ export function createCreateActions(deps: CreateDeps) {
     deliver,
     disposed,
     issueWithAdded,
-    liveOpening,
+    lifecycle,
     migrationOffers,
     migrationReading,
     offers,
     openingFor,
-    openingHighWater,
     openingKey,
     openings,
     options,
@@ -692,7 +691,7 @@ export function createCreateActions(deps: CreateDeps) {
     // live when it lands; spending the opening here would be a new rule
     // about how many submits an opening is worth. `namedOpening` is the
     // same defence in depth as at the refs door, unkillable alone.
-    if (!namedOpening(msg.opening) || liveOpening.get(surfaceKey(surface)) !== msg.opening) {
+    if (!namedOpening(msg.opening) || !lifecycle.isLive(surfaceKey(surface), msg.opening)) {
       return;
     }
     // Validated at RUNTIME, not merely typed. The unions make a bad request
@@ -806,7 +805,7 @@ export function createCreateActions(deps: CreateDeps) {
         offered.opening !== msg.opening ||
         offered.repoId !== msg.repoId ||
         !isDeepStrictEqual(currentMigrationRegistration(msg.repoId), offered.binding.registration) ||
-        liveOpening.get(surfaceKey(surface)) !== msg.opening ||
+        !lifecycle.isLive(surfaceKey(surface), msg.opening) ||
         source === undefined ||
         options.probeMigrationSource === undefined
       ) {
@@ -1008,7 +1007,7 @@ export function createCreateActions(deps: CreateDeps) {
     // malformed value, and no test can tell the two apart. It is here
     // because reading an unvalidated field as an identity is wrong, not
     // because a symptom was measured.
-    if (!namedOpening(msg.opening) || liveOpening.get(key) !== msg.opening) {
+    if (!namedOpening(msg.opening) || !lifecycle.isLive(key, msg.opening)) {
       return;
     }
     // What the opening issued goes with it (D5). A create citing an evicted
@@ -1064,8 +1063,8 @@ export function createCreateActions(deps: CreateDeps) {
       // everything this surface has ever named. Anything else is a replay of
       // a spent form or a delayed predecessor, and adopting either put the
       // host back onto a conversation the user had already ended (B1).
-      const repeat = liveOpening.get(key) === msg.opening;
-      if (!repeat && msg.opening <= (openingHighWater.get(key) ?? 0)) {
+      const admission = lifecycle.admitOpen(key, msg.opening);
+      if (!admission.admitted) {
         return;
       }
       // A DIFFERENT opening retires the last one whole — every read slot it
@@ -1073,12 +1072,11 @@ export function createCreateActions(deps: CreateDeps) {
       // happens to re-ask about. Rewriting only the slots it touches left a
       // read for another repository still holding its predecessor, and that
       // read published an offer for a form that no longer existed.
-      if (!repeat) {
+      if (admission.supersedes) {
         retireOpening(key);
       }
-      liveOpening.set(key, msg.opening);
-      openingHighWater.set(key, msg.opening);
-    } else if (liveOpening.get(key) !== msg.opening) {
+      lifecycle.markOpen(key, msg.opening);
+    } else if (!lifecycle.isLive(key, msg.opening)) {
       return;
     }
     if (
@@ -1120,7 +1118,7 @@ export function createCreateActions(deps: CreateDeps) {
               if (
                 disposed() ||
                 !surfaces.has(surface) ||
-                liveOpening.get(key) !== msg.opening ||
+                !lifecycle.isLive(key, msg.opening) ||
                 currentReading?.sequence !== mine.sequence ||
                 currentReading.sourceWorktreeId !== mine.sourceWorktreeId ||
                 currentReading.sourceGeneration !== mine.sourceGeneration ||
@@ -1193,7 +1191,7 @@ export function createCreateActions(deps: CreateDeps) {
           // the actual invariant — publish only for the opening still being
           // served. Mutating either alone is therefore NOT caught by the
           // suite; mutating both is.
-          if (provisionReading.get(reading) !== mine || liveOpening.get(key) !== mine) {
+          if (provisionReading.get(reading) !== mine || !lifecycle.isLive(key, mine)) {
             return;
           }
           // The source this opening starts on, recorded once, from the first
@@ -1209,7 +1207,7 @@ export function createCreateActions(deps: CreateDeps) {
             disposed() ||
             !surfaces.has(surface) ||
             provisionReading.get(reading) !== mine ||
-            liveOpening.get(key) !== mine
+            !lifecycle.isLive(key, mine)
           ) {
             return;
           }
@@ -1288,17 +1286,17 @@ export function createCreateActions(deps: CreateDeps) {
     // mint a form's identity.
     //
     // `namedOpening` here is defence in depth and no test can kill it on its
-    // own: `liveOpening` only ever holds values that already passed it on the
+    // own: the lifecycle only ever serves tokens that already passed it on the
     // defaults channel, so the equality alone rejects `0`, a fraction and a
     // string too. Kept because the shape check is what makes the equality's
     // guarantee legible at this door rather than three hundred lines away —
     // the same call the close-side guard makes.
     const refsKey = surfaceKey(surface);
-    if (!namedOpening(msg.token) || liveOpening.get(refsKey) !== msg.token) {
+    if (!namedOpening(msg.token) || !lifecycle.isLive(refsKey, msg.token)) {
       return;
     }
     /** Still the opening this read belongs to, checked after every await. */
-    const refsLive = (): boolean => liveOpening.get(refsKey) === msg.token;
+    const refsLive = (): boolean => lifecycle.isLive(refsKey, msg.token);
     const repo = cache.readRepo(msg.repoId);
     if (repo === undefined) {
       return;

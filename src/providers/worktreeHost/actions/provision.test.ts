@@ -56,7 +56,7 @@ function harness() {
     addedSteps: new Map(),
     provisionBaseline,
     provisionSwitch: new Map(),
-    liveOpening: new Map([["s1", OPENING]]),
+    lifecycle: { isLive: (key, token) => key === "s1" && token === OPENING },
     offers,
     cache: { read: () => ({ repos: [{ repoId: REPO_ID, mainPath: "/repo" }] as never }) },
     options: {

@@ -79,6 +79,7 @@ import type {
   WorktreeMutationTarget,
   WorktreeSurface,
 } from "./worktreeHost/hostTypes";
+import { createOpeningLifecycle } from "./worktreeHost/openingLifecycle";
 
 // Re-exported so no existing importer moved when these types did (task 2_0).
 export type {
@@ -591,10 +592,15 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    *
    * Written synchronously inside the handler turn, before any await — the
    * property the round-1 provisioning guard got wrong, kept explicit here.
-   * Absent means this surface holds no live opening, and a request naming one
-   * is answered with nothing rather than adopting it.
+   * `pristine` means this surface holds no live opening, and a request naming
+   * one is answered with nothing rather than adopting it.
+   *
+   * One store rather than the liveness and high-water maps it replaces: those
+   * two answered different questions ("which is being served", "which are
+   * spent") and could disagree, so the union holds both in one value and the
+   * three ways they used to disagree are unrepresentable (design.md D5).
    */
-  const liveOpening = new Map<string, number>();
+  const lifecycle = createOpeningLifecycle();
   /**
    * An `opening` the host is willing to reason about at all.
    *
@@ -620,21 +626,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * about every repository in the workspace, so retiring by surface alone is
    * the only sweep that covers them.
    */
-  /**
-   * The highest opening each surface has ever named.
-   *
-   * Liveness alone could not say "this one is OVER": `retireOpening` deletes the
-   * entry, so a replay of the closed form's own request found no entry and was
-   * adopted as a fresh opening — the retirement undone by the message that
-   * preceded it. A delayed opening N arriving after N+1 did the same thing
-   * backwards, moving the surface onto a form the user had already left
-   * (.reviews/round-1.md B1).
-   *
-   * Kept beside `liveOpening` rather than replacing it: they answer different
-   * questions. This one says which openings are spent; that one says which is
-   * being served. Both are per surface, and both go when the surface does.
-   */
-  const openingHighWater = new Map<string, number>();
   /**
    * The highest switch sequence each form has seen.
    *
@@ -804,7 +795,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   };
 
   const retireOpening = (key: string): void => {
-    liveOpening.delete(key);
+    lifecycle.close(key);
     const reading = `${key} `;
     for (const slot of [...provisionReading.keys()]) {
       if (slot.startsWith(reading)) {
@@ -867,7 +858,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   /** Drop a surface's opening history too. Only detach may do this. */
   const forgetSurfaceOpenings = (key: string): void => {
     retireOpening(key);
-    openingHighWater.delete(key);
+    lifecycle.detach(key);
   };
 
   /**
@@ -1691,7 +1682,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     addedSteps,
     provisionBaseline,
     provisionSwitch,
-    liveOpening,
+    lifecycle,
     offers,
     cache,
     options,
@@ -1709,8 +1700,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
 
   const create = createCreateActions({
     cache,
-    liveOpening,
-    openingHighWater,
+    lifecycle,
     openings,
     migrationOffers,
     migrationReading,
