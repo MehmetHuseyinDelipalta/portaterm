@@ -14,7 +14,7 @@
 
 - [x] All tasks done (`tasks.md`)
 - [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
-- [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
+- [x] Review done _(round 1: APPROVE, 0 blocking; F001-F003 accepted and fixed, F004 audit-backlog)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
 
@@ -42,4 +42,6 @@ Oracle triage: 5 of 9 first-draft ledger rows accepted as refuted/unresolved and
 Wave 3 built solo, not fanned out to fillers: its five tasks have disjoint leases but one decision thread (the same preservation rules), and the risk here is semantic — a suite passing for the wrong reason — which leases do not prevent.
 Witnesses: OBL-4 pass exit 0; OBL-5 pass exit 0; OBL-6 pass exit 0; OBL-10 pass exit 0; OBL-11 pass exit 0.
 Verify gate: check-types clean; biome check exit 0 (14 warnings, all pre-existing — the two this change introduced were fixed); gate:fs-deletion ok; test:unit 305 files / 7862 tests, growth purely additive over the 304 / 7845 baseline (+1 file, +17 tests, all in the new sessionMocks.test.ts).
+Review round 1 (34a7680d..a4b5e61e): APPROVE, 0 blocking / 0 warn / 4 suggest. F001 (dead `data?` guard), F002 (unpinned backed async write), F003 (unpinned onWrite/cb order) accepted and fixed; both new tests mutation-checked — swapping the callback order and dropping the backed async store each fail exactly one test. F004 (unexercised OutputBuffer surface in the two provider suites) → audit-backlog: Reach none, D1's superset rule accepts it, and dropping `flush` would reach all 18 consumers; reactivates when OutputBuffer wiring lands in either provider. Review also corrected D6's generation-bookkeeping evidence, which argued only the two overriding suites and not the four that do not override — conclusion unchanged, wording fixed.
+Post-fix gate: check-types clean, biome exit 0, gate:fs-deletion ok, 305 files / 7865 tests (the 3 added tests are F002's two and F003's one).
 D2 shape re-run: `sessionMocks.ts` now fires `test-bloat` at 252 lines, where it was `unremarkable` at 101. Judged not a recreated defect — the tool's own remedy for that shape is "share fixtures and factories", which is what this change did, and the file holds fixtures, not assertions. Left as a WARN for review to overrule if it disagrees. Result: 724 duplicated fixture lines removed across 13 suites against 151 added to the shared module.

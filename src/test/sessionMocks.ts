@@ -138,8 +138,8 @@ export function sessionStorageMock(options: SessionStorageMockOptions = {}) {
   };
 
   return {
-    commitBufferSync: vi.fn((id: string, data?: string) => {
-      if (backed && data !== undefined) {
+    commitBufferSync: vi.fn((id: string, data: string) => {
+      if (backed) {
         buffers.set(id, data);
       }
       bumpBuffer(id);

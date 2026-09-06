@@ -126,6 +126,20 @@ describe("headlessFactories — write sink (OBL-6)", () => {
     expect(callbacks).toBe(2);
   });
 
+  it("has already recorded the payload by the time the callback runs", () => {
+    const writes: string[] = [];
+    const fx = headlessFactories({ onWrite: (d) => writes.push(d) });
+
+    // exit.test.ts's deleted copy pushed before calling cb. A consumer that
+    // reads the sink from inside the callback must still see its own write.
+    let seenInsideCallback: string[] = [];
+    fx.headless(80, 24).write("alpha", () => {
+      seenInsideCallback = [...writes];
+    });
+
+    expect(seenInsideCallback).toEqual(["alpha"]);
+  });
+
   it("still fires the callback when no sink is passed", () => {
     const fx = headlessFactories();
 
@@ -166,6 +180,26 @@ describe("sessionStorageMock — buffer read-back default", () => {
     storage.dropBuffer("s1");
     expect(storage.readBufferFile("s1")).toBeNull();
     expect(storage.listBufferFiles()).toEqual([]);
+  });
+
+  it("lands an async commit's payload in backed mode, not just its outcome", async () => {
+    const storage = sessionStorageMock({ buffers: {} });
+
+    storage.commitBufferSync("s1", "v1");
+
+    await expect(storage.commitBufferAsync("s1", "v2", storage.currentBufferGen("s1"))).resolves.toBe("renamed");
+    expect(storage.readBufferFile("s1")).toBe("v2");
+  });
+
+  it("leaves the stored payload alone when an async commit is stale", async () => {
+    const storage = sessionStorageMock({ buffers: {} });
+
+    storage.commitBufferSync("s1", "v1");
+    const stale = storage.currentBufferGen("s1");
+    storage.commitBufferSync("s1", "v2");
+
+    await expect(storage.commitBufferAsync("s1", "v3", stale)).resolves.toBe("stale-skipped");
+    expect(storage.readBufferFile("s1")).toBe("v2");
   });
 
   it("serves a seeded buffer without a commit", () => {
