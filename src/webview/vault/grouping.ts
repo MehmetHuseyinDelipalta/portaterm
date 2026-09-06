@@ -4,6 +4,7 @@
 
 import type { VaultSessionEntry } from "../../vault/types";
 import { getAgentAccent, getAgentDisplayName, type VaultAccent } from "./agentIcons";
+import { leafSegment } from "./format";
 
 export type GroupMode = "recent" | "agent" | "folder";
 
@@ -23,13 +24,6 @@ export interface VaultGroup {
 
 function byModifiedDesc(a: VaultSessionEntry, b: VaultSessionEntry): number {
   return b.modified - a.modified;
-}
-
-/** Last path segment for a Folder-group label. */
-function folderLabel(cwd: string): string {
-  const trimmed = cwd.replace(/[/\\]+$/, "");
-  const parts = trimmed.split(/[/\\]/);
-  return parts[parts.length - 1] || trimmed || cwd;
 }
 
 /**
@@ -68,7 +62,7 @@ export function groupEntries(entries: VaultSessionEntry[], mode: GroupMode): Vau
             hideCwd: false,
             entries: groupEntriesList,
           }
-        : { mode, key, label: folderLabel(key), hideCwd: true, entries: groupEntriesList },
+        : { mode, key, label: leafSegment(key), hideCwd: true, entries: groupEntriesList },
     );
   }
 

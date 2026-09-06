@@ -57,6 +57,7 @@ describe("renderTabBar", () => {
     const deps = createMockDeps();
     renderTabBar(deps);
     expect(deps.tabBarEl.classList.contains("visible")).toBe(false);
+    expect(deps.tabBarEl.querySelectorAll(".tab-item")).toHaveLength(0);
     // Should still have the "+" button
     expect(deps.tabBarEl.querySelector(".tab-add")).toBeTruthy();
   });
@@ -230,33 +231,6 @@ describe("renderTabBar", () => {
     expect(onAddClick).toHaveBeenCalled();
   });
 
-  // ─── Tab bar after removal ──────────────────────────────────────
-
-  it("hides tab bar after removal leaves 1 tab", () => {
-    const terminals = new Map<string, { name: string }>([["tab-1", { name: "Terminal 1" }]]);
-    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-1" });
-    renderTabBar(deps);
-    expect(deps.tabBarEl.classList.contains("visible")).toBe(false);
-  });
-
-  it("shows tab bar after removal leaves 2 tabs", () => {
-    const terminals = new Map<string, { name: string }>([
-      ["tab-1", { name: "Terminal 1" }],
-      ["tab-2", { name: "Terminal 2" }],
-    ]);
-    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-1" });
-    renderTabBar(deps);
-    expect(deps.tabBarEl.classList.contains("visible")).toBe(true);
-  });
-
-  it("handles empty terminals map (0 tabs)", () => {
-    const deps = createMockDeps();
-    renderTabBar(deps);
-    const tabs = deps.tabBarEl.querySelectorAll(".tab-item");
-    expect(tabs.length).toBe(0);
-    expect(deps.tabBarEl.classList.contains("visible")).toBe(false);
-  });
-
   // ─── Exited State ──────────────────────────────────────────────────
 
   it("applies tab-exited class when exited is true", () => {
@@ -293,18 +267,6 @@ describe("renderTabBar", () => {
     const tabs = deps.tabBarEl.querySelectorAll(".tab-item");
     expect(tabs[0].classList.contains("tab-exited")).toBe(false);
     expect(tabs[1].classList.contains("tab-exited")).toBe(false);
-  });
-
-  it("renders updated tab names from OSC title changes", () => {
-    const terminals = new Map<string, { name: string }>([
-      ["tab-1", { name: "user@host:~/dir" }],
-      ["tab-2", { name: "node index.js" }],
-    ]);
-    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-1" });
-    renderTabBar(deps);
-    const tabs = deps.tabBarEl.querySelectorAll(".tab-item");
-    expect(tabs[0].querySelector(".tab-name")?.textContent).toBe("user@host:~/dir");
-    expect(tabs[1].querySelector(".tab-name")?.textContent).toBe("node index.js");
   });
 
   it("renders running, idle, and exited status indicators", () => {
@@ -933,17 +895,6 @@ describe("a scoped tab bar hides only what it can prove belongs elsewhere", () =
       renderTabBar(deps);
       expect(deps.tabBarEl.classList.contains("visible"), `size ${size}, scoped ${scoped}`).toBe(visible);
     }
-  });
-
-  it("leaves the unscoped visibility rule exactly where it was at two tabs", () => {
-    const deps = createMockDeps({
-      terminals: new Map([
-        ["a", { name: "a" }],
-        ["b", { name: "b" }],
-      ]),
-    });
-    renderTabBar(deps);
-    expect(deps.tabBarEl.classList.contains("visible")).toBe(true);
   });
 });
 

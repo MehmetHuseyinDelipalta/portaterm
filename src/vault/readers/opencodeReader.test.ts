@@ -5,10 +5,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SqliteResult } from "../sqlite";
-import { lookupOpenCodeEntry, readOpenCodeEntry, readOpenCodeSessions } from "./opencodeReader";
+import { lookupOpenCodeEntry, readOpenCodeSessions } from "./opencodeReader";
 
 function stubSqlite(result: SqliteResult) {
   return vi.fn(async (_dbPath: string, _sql: string) => result);
+}
+
+async function openCodeEntry(sessionId: string, options?: Parameters<typeof lookupOpenCodeEntry>[1]) {
+  const found = await lookupOpenCodeEntry(sessionId, options);
+  return found.status === "found" ? found.entry : null;
 }
 
 const ROWS: Record<string, unknown>[] = [
@@ -53,6 +58,12 @@ describe("readOpenCodeSessions", () => {
     expect(s1.modified).toBe(5000);
     expect(s1.flags.model).toBe("anthropic/claude-opus-4-7");
     expect(s1.flags.agent).toBe("build");
+  });
+
+  it("does not coerce SQLite timestamp strings", async () => {
+    const fn = stubSqlite({ status: "ok", rows: [{ ...ROWS[0], time_updated: "5000" }] });
+    const { entries } = await readOpenCodeSessions({ dataDir: "/x/oc", readSqliteFn: fn });
+    expect(entries[0].modified).toBe(0);
   });
 
   it("still lists a session whose assistant JSON is malformed (model/agent undefined)", async () => {
@@ -127,10 +138,10 @@ describe("readOpenCodeSessions", () => {
   });
 });
 
-describe("readOpenCodeEntry: single-entry resolve", () => {
+describe("lookupOpenCodeEntry: single-entry resolve", () => {
   it("resolves one session by id (point lookup, no parent_id list filter)", async () => {
     const fn = stubSqlite({ status: "ok", rows: [ROWS[0]] });
-    const entry = await readOpenCodeEntry("s1", { dataDir: "/x/oc", readSqliteFn: fn });
+    const entry = await openCodeEntry("s1", { dataDir: "/x/oc", readSqliteFn: fn });
     const [dbPath, sql] = fn.mock.calls[0];
     expect(dbPath).toBe("/x/oc/opencode.db");
     expect(sql).toContain("WHERE s.id = 's1'");
@@ -141,13 +152,13 @@ describe("readOpenCodeEntry: single-entry resolve", () => {
 
   it("returns null for an unsafe id without touching the db", async () => {
     const fn = stubSqlite({ status: "ok", rows: [] });
-    expect(await readOpenCodeEntry("../etc/passwd", { dataDir: "/x/oc", readSqliteFn: fn })).toBeNull();
+    expect(await openCodeEntry("../etc/passwd", { dataDir: "/x/oc", readSqliteFn: fn })).toBeNull();
     expect(fn).not.toHaveBeenCalled();
   });
 
   it("returns null when no row matches", async () => {
     const fn = stubSqlite({ status: "ok", rows: [] });
-    expect(await readOpenCodeEntry("ghost", { dataDir: "/x/oc", readSqliteFn: fn })).toBeNull();
+    expect(await openCodeEntry("ghost", { dataDir: "/x/oc", readSqliteFn: fn })).toBeNull();
   });
 });
 
@@ -245,10 +256,5 @@ describe("lookupOpenCodeEntry: absent only from a query that ran", () => {
     expect(await lookupOpenCodeEntry("../escape", { dataDir: "/x/oc", readSqliteFn: fn })).toEqual({
       status: "absent",
     });
-  });
-
-  it("keeps readOpenCodeEntry nullable for callers that cannot act on the difference", async () => {
-    const fn = stubSqlite({ status: "query-error", rows: [], error: "boom" });
-    expect(await readOpenCodeEntry(ID, { dataDir: "/x/oc", readSqliteFn: fn })).toBeNull();
   });
 });

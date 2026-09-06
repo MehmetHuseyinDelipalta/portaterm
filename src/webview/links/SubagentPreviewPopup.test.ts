@@ -176,9 +176,12 @@ describe("SubagentPreviewPopup: nested drill-down", () => {
     popup.open("req-n2", "Explore", "outer", 10, 10, "term-1");
     popup.setContent("req-n2", nestedDetail());
     head().click();
+    const body = popupEl()?.querySelector<HTMLElement>(".vault-preview-subagent-body");
+    expect(body).not.toBeNull();
+    const beforeDispose = body?.textContent;
     popup.dispose();
-    expect(() => popup.handleNestedResponse(CHILD, childDetail())).not.toThrow();
-    expect(popupEl()).toBeNull();
+    popup.handleNestedResponse(CHILD, childDetail());
+    expect(body?.textContent).toBe(beforeDispose);
   });
 });
 

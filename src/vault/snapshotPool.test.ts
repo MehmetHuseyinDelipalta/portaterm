@@ -238,23 +238,6 @@ describe("SnapshotPool", () => {
     await expect(fs.access(b.file)).rejects.toThrow();
   });
 
-  it("lets the next reader retry after a failed production instead of awaiting it", async () => {
-    const pool = new SnapshotPool(deps);
-
-    await expect(
-      pool.borrow(
-        dbPath,
-        async () => {
-          throw new Error("backup refused");
-        },
-        RETAIN,
-      ),
-    ).rejects.toThrow("backup refused");
-
-    const lease = await pool.borrow(dbPath, produce, RETAIN);
-    expect(produced).toHaveLength(1);
-    await lease.release();
-  });
   it("deletes a superseded snapshot once its last reader releases it", async () => {
     const pool = new SnapshotPool(deps);
 

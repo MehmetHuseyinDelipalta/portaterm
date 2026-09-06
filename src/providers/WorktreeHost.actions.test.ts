@@ -10,6 +10,7 @@
 // See: asimov/changes/wire-worktree-navigation-actions/design.md D2, D3, D4.
 
 import { describe, expect, it, vi } from "vitest";
+import { pumpImmediateMacrotasks } from "../test/providerTestUtils";
 import {
   type ExtensionToWebViewMessage,
   type ProvisionModel,
@@ -211,11 +212,7 @@ async function publishTo(host: WorktreeHost, view: ReturnType<typeof surface>): 
   currentOffer = (answers[answers.length - 1] as { offerId?: string } | undefined)?.offerId;
 }
 
-async function settle(): Promise<void> {
-  for (let i = 0; i < 8; i += 1) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-}
+const settle = (): Promise<void> => pumpImmediateMacrotasks(8);
 
 function windowRow(over: Partial<WorktreeAgentRow> = {}): WorktreeAgentRow {
   return {

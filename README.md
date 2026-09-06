@@ -45,7 +45,7 @@ Claude Code, Codex, OpenCode, and Cursor Agent all keep local session data in di
 
 ![AI Vault panel](images/ai-vault.png)
 
-- **Preview first, then choose an action** — click, Enter, or Space opens every supported row preview. Resume or fork Claude Code / Codex / OpenCode where supported; Cursor Resume is an explicit action available only for validated CLI chats. Cursor IDE and project-mirror entries are non-resumable, and Cursor fork is unavailable.
+- **Preview first, then choose an action** — click, Enter, or Space opens every supported row preview. Resume Claude Code / Codex / OpenCode sessions; Cursor Resume is an explicit action available only for validated CLI chats. Cursor IDE and project-mirror entries are non-resumable.
 - **Group your way** — **Recent**, **Agent**, or **Folder** grouping (persisted), with Claude / Codex / OpenCode / Cursor identity and per-agent accents.
 - **Find it fast** — client-side search plus a **"This folder only"** filter scoped to the focused terminal's working directory.
 - **Right-click for more** — provider-supported actions such as Resume in New Tab, Reveal in Finder/Explorer, Copy File Path or Resume Command, and Open Working Directory.
@@ -107,7 +107,8 @@ The built-in terminal is awkward to reposition and can't live in the sidebar. An
 | `Cmd+K` | Clear terminal |
 | `Cmd+Backspace` | Kill input line |
 | `Shift+Enter` | Insert newline |
-| `F2` | Rename the focused tab |
+
+Rename a root tab by double-clicking its label, choosing **Rename Tab…** from the tab context menu, or running **AnyWhere Terminal: Rename Tab…** from the Command Palette. No default rename keybinding is shipped.
 
 > Replace `Cmd` with `Ctrl` on non-macOS (Windows/Linux support in progress).
 

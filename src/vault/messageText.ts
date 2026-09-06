@@ -1,6 +1,7 @@
 // src/vault/messageText.ts — recover the human turn's own text from a resolved
 // record, so a continue handoff quotes the untruncated message (D7).
 
+import { asRecord } from "../utils/record";
 import { classifyUserRecord } from "./readers/userRecord";
 
 /**
@@ -32,18 +33,18 @@ export function resolveAssistantMessageRef(agent: string, record: string, reques
     return null;
   }
   if (agent === "claude") {
-    const message = asObject(rec.message);
+    const message = asRecord(rec.message);
     return rec.type === "assistant" && message?.role === "assistant" && typeof rec.uuid === "string" && rec.uuid
       ? rec.uuid
       : null;
   }
   if (agent === "codex") {
-    const payload = asObject(rec.payload);
+    const payload = asRecord(rec.payload);
     const ordinal = /^#0*(\d+)$/.exec(requestedRef)?.[1];
     return rec.type === "event_msg" && payload?.type === "agent_message" && ordinal ? `#${Number(ordinal)}` : null;
   }
   if (agent === "opencode") {
-    const message = asObject(rec.message);
+    const message = asRecord(rec.message);
     const id = message?.id;
     return parseData(message?.data)?.role === "assistant" && typeof id === "string" && id ? id : null;
   }
@@ -52,7 +53,7 @@ export function resolveAssistantMessageRef(agent: string, record: string, reques
 
 function parseRecord(record: string): Record<string, unknown> | undefined {
   try {
-    return asObject(JSON.parse(record));
+    return asRecord(JSON.parse(record));
   } catch {
     return undefined;
   }
@@ -66,7 +67,7 @@ function fromClaude(rec: Record<string, unknown>): string | undefined {
 }
 
 function fromCodex(rec: Record<string, unknown>): string | undefined {
-  const payload = asObject(rec.payload);
+  const payload = asRecord(rec.payload);
   if (payload?.type !== "user_message" || typeof payload.message !== "string") {
     return undefined;
   }
@@ -74,14 +75,14 @@ function fromCodex(rec: Record<string, unknown>): string | undefined {
 }
 
 function fromOpenCode(rec: Record<string, unknown>): string | undefined {
-  const message = asObject(rec.message);
+  const message = asRecord(rec.message);
   if (parseData(message?.data)?.role !== "user") {
     return undefined;
   }
   const parts = Array.isArray(rec.parts) ? rec.parts : [];
   const texts: string[] = [];
   for (const part of parts) {
-    const data = parseData(asObject(part)?.data);
+    const data = parseData(asRecord(part)?.data);
     if (!data) {
       return undefined; // a part we cannot read may be text — quoting the rest would drop it silently
     }
@@ -92,17 +93,13 @@ function fromOpenCode(rec: Record<string, unknown>): string | undefined {
   return texts.join(" ");
 }
 
-function asObject(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-}
-
 /** OpenCode stores each row's payload as a JSON string in a `data` column. */
 function parseData(value: unknown): Record<string, unknown> | undefined {
   if (typeof value !== "string") {
-    return asObject(value);
+    return asRecord(value);
   }
   try {
-    return asObject(JSON.parse(value));
+    return asRecord(JSON.parse(value));
   } catch {
     return undefined;
   }

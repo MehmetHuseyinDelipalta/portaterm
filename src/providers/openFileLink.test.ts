@@ -32,7 +32,6 @@ function makeDeps(overrides: Partial<OpenFileLinkDeps> = {}): OpenFileLinkDeps {
     stat: makeStat(new Set()),
     findFiles: vi.fn(async () => []),
     showWarning: vi.fn(),
-    showError: vi.fn(),
     showTextDocument: vi.fn(),
     showQuickPick: vi.fn(async () => undefined),
     ...overrides,
@@ -59,7 +58,6 @@ describe("openFileLink: resolution chain", () => {
     await openFileLink(msg({ path: "/abs/foo.ts" }), deps);
     expect(deps.showTextDocument).toHaveBeenCalledTimes(1);
     expect(deps.showWarning).not.toHaveBeenCalled();
-    expect(deps.showError).not.toHaveBeenCalled();
   });
 
   it("resolves a relative path via PTY initial cwd", async () => {
@@ -117,7 +115,6 @@ describe("openFileLink: file-not-found", () => {
       stat: makeStat(new Set()),
     });
     await openFileLink(msg({ path: "src/missing.ts" }), deps);
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 });
@@ -301,7 +298,6 @@ describe("openFileLink: liveCwd resolution (step 2)", () => {
       stat: makeStat(new Set(["/init/src/foo.ts"])),
       findFiles: vi.fn(async () => []),
       showWarning: vi.fn(),
-      showError: vi.fn(),
       showTextDocument: vi.fn(),
       showQuickPick: vi.fn(async () => undefined) as unknown as OpenFileLinkDeps["showQuickPick"],
     };
@@ -442,7 +438,6 @@ describe("openFileLink: findFiles fallback", () => {
       findFiles: vi.fn(async () => []),
     });
     await openFileLink(msg({ path: "src/missing.ts" }), deps);
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 
@@ -479,7 +474,6 @@ describe("openFileLink: findFiles fallback", () => {
     });
     await openFileLink(msg({ path: "src/foo.ts" }), deps);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("findFiles fallback failed"), expect.any(Error));
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -529,7 +523,6 @@ describe("openFileLink: findFiles fallback", () => {
     await vi.advanceTimersByTimeAsync(2000);
     await pending;
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("findFiles fallback failed"), expect.any(Error));
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
     warn.mockRestore();
     vi.useRealTimers();
@@ -543,7 +536,6 @@ describe("openFileLink: findFiles fallback", () => {
     });
     await openFileLink(msg({ path: "/abs/missing.ts" }), deps);
     expect(findFiles).not.toHaveBeenCalled();
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 
@@ -555,7 +547,6 @@ describe("openFileLink: findFiles fallback", () => {
     });
     await openFileLink(msg({ path: "../etc/passwd" }), deps);
     expect(findFiles).not.toHaveBeenCalled();
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 
@@ -724,7 +715,6 @@ describe("openFileLink: findFiles without a workspace open", () => {
     });
     await openFileLink(msg({ path: "foo.ts" }), deps);
     expect(findFiles).not.toHaveBeenCalled();
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 
@@ -811,7 +801,6 @@ describe("openFileLink: quickPick disambiguation", () => {
       showQuickPick: vi.fn(async () => undefined) as unknown as OpenFileLinkDeps["showQuickPick"],
     });
     await openFileLink(msg({ path: "util.ts" }), deps);
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 
@@ -879,7 +868,6 @@ describe("openFileLink: trailing-slash path", () => {
     await openFileLink(msg({ path: "external-research/" }), deps);
     expect(deps.stat).not.toHaveBeenCalled();
     expect(findFiles).not.toHaveBeenCalled();
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 
@@ -891,7 +879,6 @@ describe("openFileLink: trailing-slash path", () => {
     });
     await openFileLink(msg({ path: "src\\providers\\" }), deps);
     expect(deps.stat).not.toHaveBeenCalled();
-    expect(deps.showError).not.toHaveBeenCalled();
   });
 });
 
@@ -904,7 +891,6 @@ describe("openFileLink: directory click", () => {
       findFiles,
     });
     await openFileLink(msg({ path: "src/providers" }), deps);
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
     expect(findFiles).not.toHaveBeenCalled();
   });
@@ -918,7 +904,6 @@ describe("openFileLink: directory click", () => {
       findFiles,
     });
     await openFileLink(msg({ path: "src/providers" }), deps);
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
     expect(findFiles).not.toHaveBeenCalled();
   });
@@ -931,7 +916,6 @@ describe("openFileLink: directory click", () => {
       stat: makeStat(new Set(["/ws/src/foo.ts"]), new Set(["/cwd/src/foo.ts"])),
     });
     await openFileLink(msg({ path: "src/foo.ts" }), deps);
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).toHaveBeenCalledTimes(1);
     const calls = (deps.showTextDocument as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls[0][0]).toMatchObject({ fsPath: "/ws/src/foo.ts" });
@@ -944,7 +928,6 @@ describe("openFileLink: directory click", () => {
       findFiles: vi.fn(async () => []),
     });
     await openFileLink(msg({ path: "src/missing.ts" }), deps);
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 });
@@ -954,7 +937,6 @@ describe("openFileLink: defensive", () => {
     const deps = makeDeps({ stat: makeStat(new Set()) });
     await openFileLink(msg({ path: "" }), deps);
     expect(deps.stat).not.toHaveBeenCalled();
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 
@@ -989,7 +971,6 @@ describe("openFileLink: cwd-suffix fan-out (bug #1)", () => {
     const calls = (deps.showTextDocument as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls).toHaveLength(1);
     expect(calls[0][0]).toMatchObject({ fsPath: "/x/y/a/file.md" });
-    expect(deps.showError).not.toHaveBeenCalled();
   });
 
   it("liveCwd=/x/y/a + click a/file.md, file at /x/y/a/a/file.md → first (deeper) candidate wins", async () => {
@@ -1075,7 +1056,6 @@ describe("openFileLink: tilde + file:// (design D4, D5)", () => {
     // bogus glob like `**/file:[/][/]garbage` — fixed by the `malformed` gate.)
     expect(deps.stat).not.toHaveBeenCalled();
     expect(deps.findFiles).not.toHaveBeenCalled();
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 
@@ -1088,7 +1068,6 @@ describe("openFileLink: tilde + file:// (design D4, D5)", () => {
     await openFileLink(msg({ path: "file://attacker.example.com/share/x.md" }), deps);
     expect(deps.stat).not.toHaveBeenCalled();
     expect(deps.findFiles).not.toHaveBeenCalled();
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 
@@ -1099,7 +1078,6 @@ describe("openFileLink: tilde + file:// (design D4, D5)", () => {
     });
     await openFileLink(msg({ path: "file:///abs/foo.md?x=1" }), deps);
     expect(deps.stat).not.toHaveBeenCalled();
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 });
@@ -1242,7 +1220,6 @@ describe("openFileLink: symlink-to-directory bit mask (design D7)", () => {
     // Should NOT open it as a text doc, should NOT show "File not found" toast
     // (directory click → silent abort), should NOT run findFiles.
     expect(deps.showTextDocument).not.toHaveBeenCalled();
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.findFiles).not.toHaveBeenCalled();
   });
 });
@@ -1337,7 +1314,6 @@ describe("openFileLink: absolute path short-circuit (design D8)", () => {
     expect(calledPaths).toEqual(["/Users/huybuidac/Projects/gmi/arco-contract/arco-audit.md"]);
     // findFiles was skipped because msg.path is absolute (per spec).
     expect(deps.findFiles).not.toHaveBeenCalled();
-    expect(deps.showError).not.toHaveBeenCalled();
     expect(deps.showTextDocument).not.toHaveBeenCalled();
   });
 });

@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Tab rename is now discoverable.** The existing root-tab rename command is contributed to the Command Palette and to the clicked tab's context menu. Double-click remains available; no default keybinding is shipped.
 - **Claude hook installation v1.** On macOS and Linux, the opt-in Claude observer now reconciles one frozen fail-open command into the currently resolved `settings.json`, preserving user hooks and refusing ambiguous ownership rather than guessing. Disabling or using the removal command cleans only that current destination; no historical-location ledger or sweep is retained. Windows remains unsupported with zero configuration I/O until a real Windows Claude Code spike validates the boundary.
 
 ### Removed
@@ -109,7 +110,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
-- **README rebuilt around the AI Coding Vault.** The README now leads with the AI Vault and the coding-agent feature set — resume/fork Claude Code · Codex · OpenCode sessions, the floating session preview, clickable paths, and file/image hover previews — with new screenshots of the Vault panel and the session preview. The vault privacy note was corrected: a non-authoritative, owner-only metadata cache (bounded session titles + working directories) is persisted under VS Code storage for an instant open, while full session content is read on demand and nothing leaves your machine. The OpenCode fork minimum version is corrected to ≥ 1.1.54.
+- **README rebuilt around the AI Coding Vault.** The README now leads with the AI Vault and the coding-agent feature set — resume Claude Code · Codex · OpenCode sessions, the floating session preview, clickable paths, and file/image hover previews — with new screenshots of the Vault panel and the session preview. The vault privacy note was corrected: a non-authoritative, owner-only metadata cache (bounded session titles + working directories) is persisted under VS Code storage for an instant open, while full session content is read on demand and nothing leaves your machine. The OpenCode fork minimum version is corrected to ≥ 1.1.54.
 - **Marketplace discovery keywords.** Added `ai`, `ai agent`, `coding agent`, `claude code`, `codex`, `opencode`, `windsurf`, and `antigravity` so the extension surfaces for AI-CLI searches on the VS Code Marketplace and Open VSX.
 
 ## [0.17.2] — 2026-06-04
@@ -155,7 +156,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **AI Coding Vault** — a collapsible panel stacked above the file tree that lists your recent local AI-CLI sessions (Claude Code, Codex, OpenCode) and lets you **resume or fork** any of them in a new terminal. Sessions are read live from each tool's own store on every open — metadata only (a bounded, never-persisted title preview; nothing is cached or sent off the machine). Includes client-side search and a **"This folder only"** filter scoped to the focused terminal's folder. Fork is offered only where supported (OpenCode ≥ 1.14.50). Open it from the file-tree header button or the `AI Vault: Open` command.
+- **AI Coding Vault** — a collapsible panel stacked above the file tree that lists your recent local AI-CLI sessions (Claude Code, Codex, OpenCode) and lets you **resume** them in a new terminal. Sessions are read live from each tool's own store on every open — metadata only (a bounded, never-persisted title preview; nothing is cached or sent off the machine). Includes client-side search and a **"This folder only"** filter scoped to the focused terminal's folder. Open it from the file-tree header button or the `AI Vault: Open` command.
 - **Cross-platform session reading (Windows, Linux, macOS).** Store locations resolve per-OS from the home directory plus each tool's env overrides (`CLAUDE_CONFIG_DIR`, `CODEX_HOME` / `CODEX_SQLITE_HOME`, `XDG_DATA_HOME`). When the `sqlite3` CLI is missing (typically Windows), reads fall back to the built-in `node:sqlite` engine — no native dependency. A missing store or missing tooling degrades to an empty list, never an error.
 
 ### Changed
@@ -328,7 +329,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **Tab rename.** Give any terminal tab a meaningful name via double-click on the tab label (inline input), right-click → `Rename Tab…`, command palette `AnyWhere Terminal: Rename Tab`, or `F2` when a terminal webview is focused. The custom name persists across window reloads (workspace-scoped). Clear the name (empty input) to revert to the live process title. OSC title updates continue to track the shell process but are subordinated to the custom name when one is set. Rename applies to root tabs only; split-pane process names are suppressed while a custom root name is active.
+- **Tab rename.** Give any terminal tab a meaningful name by double-clicking the tab label (inline input). The custom name persists across window reloads (workspace-scoped). Clear the name (empty input) to revert to the live process title. OSC title updates continue to track the shell process but are subordinated to the custom name when one is set. Rename applies to root tabs only; split-pane process names are suppressed while a custom root name is active.
 
 ### Fixed
 

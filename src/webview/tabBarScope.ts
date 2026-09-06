@@ -172,15 +172,6 @@ export class TabBarScopeCoordinator {
   }
 
   /**
-   * Panes presence says are waiting. The badge unions this with the surface's own
-   * tracked status, which has different coverage (design.md D2) — exposed rather
-   * than counted here, so there is exactly one definition of the count.
-   */
-  waitingPanes(): ReadonlySet<string> {
-    return this.waiting;
-  }
-
-  /**
    * Whether this scope can prove the pane belongs elsewhere. THE predicate — the
    * bar filters by it and the selection navigates by it, and two copies is how
    * they come to disagree about which panes a scope holds.

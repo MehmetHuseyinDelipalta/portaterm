@@ -10,6 +10,7 @@ import {
   createSpawnIdCollector,
   type DetailParts,
   finalizeDetail,
+  finiteNumberOrZero,
   limitedDetail,
   MAX_ACTIVITY_STEPS,
   MAX_DETAIL_LIMIT,
@@ -53,6 +54,15 @@ function assistantTool(name: string, input: Rec, usage?: Rec): Rec {
   }
   return { type: "assistant", message };
 }
+
+describe("finiteNumberOrZero", () => {
+  it("preserves finite numbers and maps every other value to zero", () => {
+    expect(finiteNumberOrZero(2.5)).toBe(2.5);
+    expect(finiteNumberOrZero(Number.NaN)).toBe(0);
+    expect(finiteNumberOrZero(Number.POSITIVE_INFINITY)).toBe(0);
+    expect(finiteNumberOrZero("2.5")).toBe(0);
+  });
+});
 
 describe("truncate", () => {
   it("collapses whitespace and trims", () => {
@@ -237,6 +247,14 @@ describe("classifyClaudeStyleEvents — injected records", () => {
 });
 
 describe("classifyClaudeStyleEvents", () => {
+  it("rejects decimal-string and non-finite transcript timestamps", () => {
+    const out = classifyClaudeStyleEvents([
+      userText("legacy-looking", { timestamp: "1750000000000" }),
+      assistantText("non-finite", { timestamp: Number.POSITIVE_INFINITY }),
+    ]);
+    expect(out.timeline.filter((item) => item.kind === "message").map((item) => item.timestamp)).toEqual([0, 0]);
+  });
+
   it("captures the first prompt independently of the 12-step activity cap", () => {
     const records: Rec[] = [userText("the very first prompt")];
     for (let i = 0; i < 20; i++) {

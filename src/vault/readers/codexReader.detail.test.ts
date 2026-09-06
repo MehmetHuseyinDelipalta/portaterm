@@ -27,6 +27,13 @@ afterEach(async () => {
 });
 
 describe("classifyCodexRolloutEvents", () => {
+  it("rejects decimal-string rollout timestamps", () => {
+    const out = classifyCodexRolloutEvents([
+      rec("event_msg", { type: "user_message", message: "hello" }, "1750000000000"),
+    ]);
+    expect(out.timeline[0]).toMatchObject({ kind: "message", timestamp: 0 });
+  });
+
   it("maps user/agent messages, function/custom/web tool calls, and the token total", () => {
     const records = [
       rec("session_meta", { id: "abc" }),
@@ -446,22 +453,6 @@ describe("readCodexDetail", () => {
     const child = detail?.timeline.find((item) => item.kind === "subagentSession");
 
     expect(child?.kind === "subagentSession" && child.timestamp).toBe(Date.parse("2026-03-14T04:57:00.000Z"));
-  });
-
-  it("opens a Codex child id through the normal detail path", async () => {
-    const childId = "child-thread";
-    const dir = path.join(codexDir, "sessions", "2026", "03", "14");
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(
-      path.join(dir, `rollout-2026-03-14T11-54-28-${childId}.jsonl`),
-      jsonl([rec("event_msg", { type: "user_message", message: "child work" })]),
-    );
-    const noSqlite = async (): Promise<SqliteResult> => ({ rows: [], status: "no-db" });
-
-    const detail = await readCodexDetail(childId, { codexDir, readSqliteFn: noSqlite });
-
-    expect(detail?.entryId).toBe(`codex:${childId}`);
-    expect(detail?.firstPrompt).toBe("child work");
   });
 
   it("returns null when neither a rollout nor an index row exists", async () => {

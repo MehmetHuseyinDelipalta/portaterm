@@ -8,7 +8,9 @@
 // recent-activity tail, and synthetic / sidechain records are excluded so the
 // preview reflects the main conversation.
 
+import { asRecord } from "../../utils/record";
 import type { VaultActivityStep, VaultMessageTokens, VaultSessionDetail, VaultTimelineItem } from "../types";
+import { parseStoredTimestamp } from "./timestamp";
 import { classifyUserRecord } from "./userRecord";
 
 /** ~600-char cap per text field (D5). */
@@ -286,7 +288,7 @@ export type QuestionPair = Extract<VaultTimelineItem, { kind: "question" }>["que
 export function buildQuestionOptions(rawOptions: unknown[], picked: Set<string>): NonNullable<QuestionPair["options"]> {
   const options: NonNullable<QuestionPair["options"]> = [];
   for (const o of rawOptions) {
-    const opt = o && typeof o === "object" && !Array.isArray(o) ? (o as Record<string, unknown>) : undefined;
+    const opt = asRecord(o);
     const label = str(opt?.label);
     if (!label) {
       continue;
@@ -305,17 +307,13 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
 }
 
-function asObj(v: unknown): Rec | undefined {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Rec) : undefined;
-}
-
-function num(v: unknown): number {
-  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+export function finiteNumberOrZero(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 /** Concise primary argument for a tool call (D6). */
 export function toolLabel(name: string, input: unknown): string | undefined {
-  const obj = asObj(input) ?? {};
+  const obj = asRecord(input) ?? {};
   switch (name) {
     case "Read":
     case "Edit":
@@ -456,15 +454,7 @@ function msgRefOf(rec: Rec): { msgRef?: string } {
 }
 
 function parseTimestamp(rec: Rec): number {
-  const t = rec.timestamp;
-  if (typeof t === "number") {
-    return Number.isFinite(t) ? t : 0;
-  }
-  if (typeof t === "string") {
-    const ms = Date.parse(t);
-    return Number.isNaN(ms) ? 0 : ms;
-  }
-  return 0;
+  return parseStoredTimestamp(rec.timestamp) ?? 0;
 }
 
 /** Cheap diff stat from an Edit's old/new strings (newline delta only). */
@@ -488,8 +478,8 @@ function lineDelta(oldStr: unknown, newStr: unknown): { added: number; removed: 
 function collectQuestionAnswers(records: Rec[]): Map<string, Record<string, string>> {
   const map = new Map<string, Record<string, string>>();
   for (const rec of records) {
-    const answers = asObj(asObj(rec?.toolUseResult)?.answers);
-    const content = asObj(rec?.message)?.content;
+    const answers = asRecord(asRecord(rec?.toolUseResult)?.answers);
+    const content = asRecord(rec?.message)?.content;
     if (!answers || !Array.isArray(content)) {
       continue;
     }
@@ -501,7 +491,7 @@ function collectQuestionAnswers(records: Rec[]): Map<string, Record<string, stri
       }
     }
     for (const b of content) {
-      const id = asObj(b)?.type === "tool_result" ? str(asObj(b)?.tool_use_id) : undefined;
+      const id = asRecord(b)?.type === "tool_result" ? str(asRecord(b)?.tool_use_id) : undefined;
       if (id) {
         map.set(id, norm);
       }
@@ -520,10 +510,10 @@ function buildClaudeQuestionItem(
   answers: Record<string, string> | undefined,
   ts: number,
 ): Extract<VaultTimelineItem, { kind: "question" }> | null {
-  const questions = Array.isArray(asObj(input)?.questions) ? (asObj(input)?.questions as unknown[]) : [];
+  const questions = Array.isArray(asRecord(input)?.questions) ? (asRecord(input)?.questions as unknown[]) : [];
   const pairs: QuestionPair[] = [];
   for (const q of questions) {
-    const qObj = asObj(q);
+    const qObj = asRecord(q);
     const qText = str(qObj?.question);
     const prompt = qText ?? str(qObj?.header);
     if (!prompt) {
@@ -575,12 +565,12 @@ export function createSpawnIdCollector(includeSidechain: boolean): {
       if (rec.isMeta === true || rec.type !== "assistant") {
         return;
       }
-      const content = asObj(rec.message)?.content;
+      const content = asRecord(rec.message)?.content;
       if (!Array.isArray(content)) {
         return;
       }
       for (const b of content) {
-        const block = asObj(b);
+        const block = asRecord(b);
         if (block?.type !== "tool_use") {
           continue;
         }
@@ -653,7 +643,7 @@ export function classifyClaudeStyleEvents(records: Rec[], opts: ClassifyOptions 
     if (type !== "user" && type !== "assistant") {
       continue; // summary / last-prompt / system / … are not conversation
     }
-    const msg = asObj(rec.message);
+    const msg = asRecord(rec.message);
     if (!msg) {
       continue;
     }
@@ -728,14 +718,14 @@ export function classifyClaudeStyleEvents(records: Rec[], opts: ClassifyOptions 
     // only; attached to each text item emitted below. `input` is the context/prompt
     // size (input + cache read/creation), `output` the generated tokens.
     const msgModel = str(msg.model);
-    const usageForMsg = asObj(msg.usage);
+    const usageForMsg = asRecord(msg.usage);
     const msgTokens: VaultMessageTokens | undefined = usageForMsg
       ? {
           input:
-            num(usageForMsg.input_tokens) +
-            num(usageForMsg.cache_read_input_tokens) +
-            num(usageForMsg.cache_creation_input_tokens),
-          output: num(usageForMsg.output_tokens),
+            finiteNumberOrZero(usageForMsg.input_tokens) +
+            finiteNumberOrZero(usageForMsg.cache_read_input_tokens) +
+            finiteNumberOrZero(usageForMsg.cache_creation_input_tokens),
+          output: finiteNumberOrZero(usageForMsg.output_tokens),
         }
       : undefined;
     const msgMeta = {
@@ -747,7 +737,7 @@ export function classifyClaudeStyleEvents(records: Rec[], opts: ClassifyOptions 
       // Walk the content blocks in order so thinking / text / tool calls land in
       // the timeline in the sequence the assistant produced them.
       for (const b of content) {
-        const block = asObj(b);
+        const block = asRecord(b);
         if (!block) {
           continue;
         }
@@ -772,7 +762,7 @@ export function classifyClaudeStyleEvents(records: Rec[], opts: ClassifyOptions 
           const input = block.input;
           if (name === "Task" || name === "Agent") {
             spawnCalls++;
-            const inObj = asObj(input) ?? {};
+            const inObj = asRecord(input) ?? {};
             const sub = str(inObj.subagent_type) ?? str(inObj.agent) ?? "subagent";
             const prompt = str(inObj.prompt) ?? str(inObj.description);
             // Fold in a stored subagent transcript as a lazy nested block; else
@@ -813,7 +803,7 @@ export function classifyClaudeStyleEvents(records: Rec[], opts: ClassifyOptions 
               timeline.push(question);
             } else {
               const label = toolLabel(name, input);
-              const inObj = asObj(input) ?? {};
+              const inObj = asRecord(input) ?? {};
               const diff =
                 name === "Edit" || name === "MultiEdit" ? lineDelta(inObj.old_string, inObj.new_string) : undefined;
               const step: VaultActivityStep = {
@@ -832,14 +822,16 @@ export function classifyClaudeStyleEvents(records: Rec[], opts: ClassifyOptions 
       timeline.push({ kind: "message", role: "assistant", text: normalizeRich(text), timestamp: ts, ...msgMeta });
     }
 
-    const usage = asObj(msg.usage);
+    const usage = asRecord(msg.usage);
     if (usage) {
       sawUsage = true;
-      outputTokens += num(usage.output_tokens);
+      outputTokens += finiteNumberOrZero(usage.output_tokens);
       // Last turn's context ≈ input + cache. Overwritten each turn so it's the
       // final context size, not a (double-counting) cumulative input sum (D7).
       lastContextTokens =
-        num(usage.input_tokens) + num(usage.cache_read_input_tokens) + num(usage.cache_creation_input_tokens);
+        finiteNumberOrZero(usage.input_tokens) +
+        finiteNumberOrZero(usage.cache_read_input_tokens) +
+        finiteNumberOrZero(usage.cache_creation_input_tokens);
     }
   }
 

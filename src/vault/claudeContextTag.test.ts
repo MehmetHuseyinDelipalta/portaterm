@@ -35,7 +35,6 @@ function entry(over: Partial<VaultSessionEntry> = {}): VaultSessionEntry {
     cwd: "/Users/me/proj",
     modified: 1,
     flags: {},
-    canFork: false,
     ...over,
   };
 }

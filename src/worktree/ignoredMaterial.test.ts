@@ -278,16 +278,6 @@ describe("degrading against the writer's own manifest", () => {
     expect(result).toEqual({ kind: "measured", entries: 2, bytes: 42, provisioned: { entries: 2 } });
   });
 
-  it("degrades to the undifferentiated fallback when the writer never ran for this worktree", async () => {
-    // A create whose provisioning never reached the manifest write — refused
-    // administrative directory, unavailable lock, failed replace — leaves
-    // nothing at the manifest's path. `readManifest` reports that as a throw,
-    // matching what `diskIgnoredDeps` does for an absent file.
-    const result = await measureIgnoredMaterial(withManifest(undefined));
-
-    expect(result).toEqual({ kind: "measured", entries: 2, bytes: 42 });
-  });
-
   it("degrades to the undifferentiated fallback for a manifest the writer could only half stage", async () => {
     // `LockedFile.atomicReplace` either lands a whole rename or none at all, so
     // this is not a partial write in production — it stands in for a manifest

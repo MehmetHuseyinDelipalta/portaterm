@@ -360,7 +360,6 @@ async function buildClaudeEntry(
       permissionMode: tail.permissionMode ?? fields.permissionMode,
       configDir,
     },
-    canFork: false, // resolved by VaultService (task 2_5)
     // File-backed → the webview shows file-targeting context-menu items;
     // the host re-derives this path by id, never trusting it (D9).
     sessionPath: filePath,
@@ -458,18 +457,9 @@ export async function readClaudeSessions(
   return { entries, unreadable, cache: { kind: "files", files } };
 }
 
-/** The entry-or-nothing view, for callers that cannot act on the difference. */
-export async function readClaudeEntry(
-  sessionId: string,
-  options: ClaudeReaderOptions = {},
-): Promise<VaultSessionEntry | null> {
-  const found = await lookupClaudeEntry(sessionId, options);
-  return found.status === "found" ? found.entry : null;
-}
-
 /**
  * Resolve ONE Claude session by id — the single-entry counterpart to
- * readClaudeSessions, used by VaultService for fast resume/fork (no full-store
+ * readClaudeSessions, used by VaultService for fast stored-session launch (no full-store
  * scan; D3). Answers conclusively: `absent` only from an exhaustive scan that did
  * not find the file, `unknown` from any scan or build that failed.
  */

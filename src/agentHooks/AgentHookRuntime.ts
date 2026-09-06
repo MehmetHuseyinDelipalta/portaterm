@@ -187,7 +187,6 @@ export interface AgentHookRuntimeDependencies {
   now?: () => number;
   setTimer?: (callback: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
-  randomToken?: () => string;
   onStatus?: (update: AgentActivityUpdate) => void;
   onReasonCode?: (reason: AgentHookReasonCode, sessionSuffix: string) => void;
 }
@@ -228,7 +227,6 @@ export class AgentHookRuntime implements SessionEnvironmentContributor {
   private readonly now: () => number;
   private readonly setTimer: (callback: () => void, ms: number) => unknown;
   private readonly clearTimer: (handle: unknown) => void;
-  private readonly randomToken: () => string;
   private readonly onStatus: (update: AgentActivityUpdate) => void;
   private readonly onReasonCode: (reason: AgentHookReasonCode, sessionSuffix: string) => void;
 
@@ -247,7 +245,6 @@ export class AgentHookRuntime implements SessionEnvironmentContributor {
     this.now = dependencies.now ?? Date.now;
     this.setTimer = dependencies.setTimer ?? ((callback, ms) => setTimeout(callback, ms));
     this.clearTimer = dependencies.clearTimer ?? ((handle) => clearTimeout(handle as NodeJS.Timeout));
-    this.randomToken = dependencies.randomToken ?? (() => randomBytes(32).toString("hex"));
     this.onStatus = dependencies.onStatus ?? (() => undefined);
     this.onReasonCode = dependencies.onReasonCode ?? (() => undefined);
 
@@ -339,7 +336,7 @@ export class AgentHookRuntime implements SessionEnvironmentContributor {
     if (existing) {
       this.clearSessionState(sessionId, existing);
     }
-    const token = this.randomToken();
+    const token = randomBytes(32).toString("hex");
     const session: SessionState = { token, entitled: new Map() };
     this.sessions.set(sessionId, session);
 

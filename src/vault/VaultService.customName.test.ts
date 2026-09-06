@@ -11,7 +11,7 @@ import { VaultService } from "./VaultService";
 
 function entry(id: string, title: string): VaultSessionEntry {
   const [agent, sessionId] = id.split(":");
-  return { id, agent, sessionId, title, cwd: "/x", modified: 1, flags: {}, canFork: false };
+  return { id, agent, sessionId, title, cwd: "/x", modified: 1, flags: {} };
 }
 
 function docWith(entries: VaultSessionEntry[]): VaultListCacheFileV1 {

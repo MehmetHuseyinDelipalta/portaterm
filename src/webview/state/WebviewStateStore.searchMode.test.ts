@@ -30,24 +30,9 @@ describe("WebviewStateStore — FileTreeState.searchMode", () => {
     const store = new WebviewStateStore(api);
     const state = store.getState();
     expect(state.fileTreeByLocation?.sidebar?.searchMode).toBeUndefined();
-    // Consumers apply `?? 'filter'` at read site — the SHAPE is additive.
-    const resolved = state.fileTreeByLocation?.sidebar?.searchMode ?? "filter";
-    expect(resolved).toBe("filter");
   });
 
   it("searchMode round-trips through updateState", () => {
-    const api = createMockVsCodeApi();
-    const store = new WebviewStateStore(api);
-    store.updateState({
-      fileTreeByLocation: {
-        sidebar: { position: "left", expandedPaths: [], searchMode: "highlight" },
-      },
-    });
-    const state = store.getState();
-    expect(state.fileTreeByLocation?.sidebar?.searchMode).toBe("highlight");
-  });
-
-  it("searchMode is independent per location bucket", () => {
     const api = createMockVsCodeApi();
     const store = new WebviewStateStore(api);
     store.updateState({

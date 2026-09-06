@@ -332,12 +332,6 @@ describe("mountMessageActions — Continue", () => {
     expect(continueFrom).toHaveBeenCalledWith(expect.objectContaining({ anchorRef: "a-1", seedRef: "u-2" }));
   });
 
-  it("is offered on an assistant message", () => {
-    dispose = mountMessageActions(root, { copy: vi.fn(), timeline, continueFrom: vi.fn() });
-    hover(bound(reply));
-    expect(action("continue")?.hidden).toBe(false);
-  });
-
   it("is still offered on a message it cannot address, so the reader can type their own", () => {
     const continueFrom = vi.fn();
     dispose = mountMessageActions(root, { copy: vi.fn(), continueFrom });

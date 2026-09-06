@@ -9,10 +9,10 @@ The system SHALL define typed discriminated-union messages in `src/types/message
 
 The system SHALL handle `RequestReadDirectory` in the extension host by invoking `vscode.workspace.fs.readDirectory(uri)`, mapping the result to `FileEntry[]`, and posting `ReadDirectoryResponse` back with the current `rootGeneration`. Errors SHALL be caught and returned as `error: { code, message }` rather than thrown.
 
-#### Scenario: Path outside workspace
+#### Scenario: Absolute path outside workspace
 
-- **WHEN** the webview requests a directory whose resolved absolute path is not contained in any `vscode.workspace.workspaceFolders[i].uri.fsPath` (or under it)
-- **THEN** the extension SHALL respond with `error: { code: 'OUT_OF_WORKSPACE', message: <human text> }` and SHALL NOT read the directory
+- **WHEN** the webview requests an absolute directory path outside the current workspace folders
+- **THEN** the extension SHALL read that directory; the operating system remains the access boundary
 
 #### Scenario: Stale request after workspace folder change
 
@@ -56,9 +56,9 @@ The system SHALL handle `RequestFileTreeSearchMessage` in the extension host by 
 - **WHEN** `findFiles` returns exactly `maxResults` items
 - **THEN** the response SHALL set `truncated: true`; otherwise `truncated: false`
 
-### Requirement: Scope path validation
+### Requirement: Absolute search scope
 
-The system SHALL respond with `error: { code: 'OUT_OF_WORKSPACE', message: <human text> }` if `scopePath` is not inside any `vscode.workspace.workspaceFolders[i].uri.fsPath`. Symlinks resolved outside the workspace SHALL be treated as out-of-workspace.
+The system SHALL accept an absolute `scopePath` outside the current workspace folders and use it as the `RelativePattern` base. The operating system remains the access boundary.
 
 ### Requirement: Cancellation and token lifecycle
 

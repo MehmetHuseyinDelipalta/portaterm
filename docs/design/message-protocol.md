@@ -29,8 +29,8 @@ contract; every row below anchors to a line in it.
 
 | Union | Members | Declared |
 |-------|---------|----------|
-| `WebViewToExtensionMessage` | 47 | `src/types/messages.ts:606-653` |
-| `ExtensionToWebViewMessage` | 42 | `src/types/messages.ts:1225-1267` |
+| `WebViewToExtensionMessage` | 79 | `src/types/messages.ts:606-653` |
+| `ExtensionToWebViewMessage` | 56 | `src/types/messages.ts:1225-1267` |
 
 ### Reference
 - Flow control behind `ack` / `output`: [output-buffering.md](output-buffering.md) §4
@@ -93,7 +93,7 @@ graph TB
         TEP["TerminalEditorProvider.handleMessage<br>:420-665 — editor"]
         FTH["FileTreeHost.handleMessage<br>fileTreeHost.ts:239"]
     end
-    MR -->|"41 of 42 E to W types"| WV
+    MR -->|"55 of 56 E to W types"| WV
     MAIN -->|"init only"| WV
     TVP -->|"delegates 10 file-tree types"| FTH
     TEP -->|"delegates the same 10"| FTH
@@ -154,13 +154,12 @@ line in `src/types/messages.ts`.
 | `tabRenamed` | E→W | Host-normalized name | `:747` | MR:144 |
 | `splitPane` | E→W | Command-initiated split | `:799` | MR:156 |
 | `splitPaneCreated` | E→W | Reply to `requestSplitSession` (posted TVP:1169) | `:806` | MR:159 |
-| `closeSplitPane` | E→W | Close the focused pane | `:819` | MR:162 |
 | `closeSplitPaneById` | E→W | Close a named pane | `:824` | MR:165 |
 | `splitPaneAt` | E→W | Split a named pane | `:830` | MR:168 |
 | `flashPane` | E→W | Flash a leaf so the user sees which pane exports; no-op when unmounted (`:1269-1274`) | `:1275` | MR:222 |
 
 `renameTab` is emitted **only** by the inline dblclick-overlay rename. Host-side triggers
-(context menu, command palette, F2) call `SessionManager.renameSession` directly and
+(context menu and command palette) call `SessionManager.renameSession` directly and
 never round-trip. The host owns normalization: trim → empty becomes `null` → truncate 80.
 
 ### 4.3 File tree
@@ -221,7 +220,7 @@ therefore cannot widen its own reach — it can only name a path, never a base.
 
 ### 4.6 Vault and agent status
 
-All fifteen vault requests are handled **only** by `TerminalViewProvider` (bodies at
+All fourteen vault requests are handled **only** by `TerminalViewProvider` (bodies at
 `TVP:373-867`) — see §8.1.
 
 | Type | Dir | Purpose | Defined | Handled |
@@ -230,7 +229,6 @@ All fifteen vault requests are handled **only** by `TerminalViewProvider` (bodie
 | `vaultRenameSession` | W→E | Rename a session | `:489` | TVP:1023 |
 | `vaultWatchSession` | W→E | Follow a session live | `:501` | TVP:1029 |
 | `vaultResume` | W→E | Resume into a terminal | `:378` | TVP:1035 |
-| `vaultFork` | W→E | Fork a session | `:385` | TVP:1041 |
 | `requestVaultSessionDetail` | W→E | Load a transcript | `:397` | TVP:1047 |
 | `vaultContinueSession` | W→E | Continue the latest session | `:433` | TVP:1058 |
 | `requestVaultLaunchTargets` | W→E | Available agents to launch | `:449` | TVP:1064 |
@@ -259,7 +257,6 @@ another pane (`:1204-1212`).
 
 | Type | Dir | Purpose | Defined | Handled |
 |------|-----|---------|---------|---------|
-| `persistPanelId` | W→E | Ack that the webview stored the panelId | `:663` | **none — §8.1** |
 | `configUpdate` | E→W | New `TerminalConfig` (`:10`) | `:775` | MR:150 |
 | `themeChanged` | E→W | One of four theme kinds (`:935`) | `:929` | MR:183 |
 | `ctxClear` | E→W | Context-menu clear | `:837` | MR:171 |
@@ -386,22 +383,21 @@ Verified by grep against the union and both dispatch sites. Recorded, not fixed.
 
 | # | Gap | Evidence |
 |---|-----|----------|
-| 1 | `persistPanelId` has **no host handler** at all. The webview sends it; nothing consumes it. The editor persists the id itself via `setState`, so the ack is dead protocol | Union `:633`; sender `webview/main.ts:700`; `grep -rn persistPanelId src --include="*.ts"` returns only those two |
-| 2 | `requestSplitSession` is editor-blind, but the path is **unreachable**, not a live drop: the webview only sends it in reply to `splitPane` / `splitPaneAt`, and both are posted through view-provider-only helpers. The adjacent real bug is that a right-click split on an editor-hosted session resolves to no provider and falls back to the focused view, so the new pane appears in the **wrong surface** | Handled TVP:1144 only; senders `webview/main.ts:575`, `:610` are `onSplitPane` / `onSplitPaneAt` reactions; posters `extension.ts:403-409` and `:577-583` take a `TerminalViewProvider`; `getProviderBySessionId` scans only sidebar + panel (`extension.ts:553`) |
-| 3 | `focus` is editor-blind **and live** — it is sent from a `focusin` listener on `document`, so every focus in an editor-hosted terminal posts a message nothing handles | Handled TVP:1197 only; sender is a DOM listener at `webview/main.ts:1298-1321`, independent of host messages |
-| 4 | All 15 vault requests are editor-blind except `requestSubagentPreview` | `TEP:420-665` has no `vault*` cases; the sole overlap is TEP:639 |
-| 5 | `OUT_OF_WORKSPACE` is a documented-but-dead error code — no emitter exists, and reads are deliberately not workspace-restricted | Documented `:968`, `:987`; emitters are `STALE_ROOT`/`FS_ERROR` (`fileTreeRpcHandler.ts:148,174`) and `STALE_ROOT`/`INTERNAL`; removal recorded in `src/test/fileTreeRpc.integration.test.ts:151` |
-| 6 | `filePreviewResult.truncated` doc says "200 KB / 500-line cap"; the line cap is 1000 | Doc `:876-877`; `readFileForPreview.ts:29` records the 500 → 1000 bump |
-| 7 | `FileTreeHost.handleMessage` returns a boolean its own doc comment shows being branched on, but both callers discard it | Doc `fileTreeHost.ts:228-238`; callers TVP:1255, TEP:602 |
+| 1 | `requestSplitSession` is editor-blind, but the path is **unreachable**, not a live drop: the webview only sends it in reply to `splitPane` / `splitPaneAt`, and both are posted through view-provider-only helpers. The adjacent real bug is that a right-click split on an editor-hosted session resolves to no provider and falls back to the focused view, so the new pane appears in the **wrong surface** | Handled TVP:1144 only; senders `webview/main.ts:575`, `:610` are `onSplitPane` / `onSplitPaneAt` reactions; posters `extension.ts:403-409` and `:577-583` take a `TerminalViewProvider`; `getProviderBySessionId` scans only sidebar + panel (`extension.ts:553`) |
+| 2 | `focus` is editor-blind **and live** — it is sent from a `focusin` listener on `document`, so every focus in an editor-hosted terminal posts a message nothing handles | Handled TVP:1197 only; sender is a DOM listener at `webview/main.ts:1298-1321`, independent of host messages |
+| 3 | All 15 vault requests are editor-blind except `requestSubagentPreview` | `TEP:420-665` has no `vault*` cases; the sole overlap is TEP:639 |
+| 4 | `OUT_OF_WORKSPACE` is a documented-but-dead error code — no emitter exists, and reads are deliberately not workspace-restricted | Documented `:968`, `:987`; emitters are `STALE_ROOT`/`FS_ERROR` (`fileTreeRpcHandler.ts:148,174`) and `STALE_ROOT`/`INTERNAL`; removal recorded in `src/test/fileTreeRpc.integration.test.ts:151` |
+| 5 | `filePreviewResult.truncated` doc says "200 KB / 500-line cap"; the line cap is 1000 | Doc `:876-877`; `readFileForPreview.ts:29` records the 500 → 1000 bump |
+| 6 | `FileTreeHost.handleMessage` returns a boolean its own doc comment shows being branched on, but both callers discard it | Doc `fileTreeHost.ts:228-238`; callers TVP:1255, TEP:602 |
 
-**The E→W side has no gaps** — the router covers all 42 members.
+**The E→W side has no gaps** — the router handles 55 members and `main.ts` handles `init`.
 
 ### 8.2 Declaration placement
 
-Cosmetic, not defects: eight interfaces sit on the "wrong" side of the file relative to
-the union that references them — `ScrollbackDumpMessage` `:1349` and
-`PersistPanelIdMessage` `:663` (W→E, declared late); `OsClipboardPasteMissMessage` `:567`
-and `ClipboardImagePreviewMessage` `:573` (E→W, declared in the W→E region); and
+Cosmetic, not defects: seven interfaces sit on the "wrong" side of the file relative to
+the union that references them — `ScrollbackDumpMessage` `:1349` (W→E, declared late);
+`OsClipboardPasteMissMessage` `:567` and `ClipboardImagePreviewMessage` `:573` (E→W,
+declared in the W→E region); and
 `FlashPaneMessage` `:1275`, `SetPanelIdMessage` `:1287`, `RestoreFromSnapshotMessage`
 `:1301`, `RequestScrollbackDumpMessage` `:1329` (declared after their union).
 

@@ -191,12 +191,13 @@ describe("readTerminalSettings — shell resolution", () => {
   });
 
   it("uses detected args when custom args are empty", () => {
+    vi.stubEnv("SHELL", "/bin/zsh");
     __setConfigValues({
       "anywhereTerminal.shell.macOS": "",
       "anywhereTerminal.shell.args": [],
     });
     const settings = readTerminalSettings("darwin");
-    expect(settings.shellArgs).toBeDefined();
+    expect(settings.shellArgs).toEqual(["--login"]);
   });
 });
 

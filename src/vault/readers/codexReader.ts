@@ -13,6 +13,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import { provesAbsence } from "../../utils/fsPresence";
+import { asRecord } from "../../utils/record";
 import { isResolvedPathInside } from "../../utils/resolvedPathBoundary";
 import type { ReaderListCache, ReaderResultWithState } from "../cacheTypes";
 import { boundedPreview } from "../preview";
@@ -34,6 +35,7 @@ import {
   createBoundedRecordBuffer,
   type DetailParts,
   finalizeDetail,
+  finiteNumberOrZero,
   MAX_MESSAGE_TEXT,
   mergeTimestampedItems,
   normalizeRich,
@@ -43,6 +45,7 @@ import {
   truncateRich,
 } from "./detail";
 import { findRecordLine, type RecordLineResult } from "./recordLine";
+import { parseEpochMilliseconds, parseStoredTimestamp } from "./timestamp";
 
 /** Bound the SQLite read so the vault list stays cheap (D2). */
 const ROW_LIMIT = 500;
@@ -153,7 +156,7 @@ function mapThreadRow(row: Record<string, unknown>): VaultSessionEntry | null {
     sessionId,
     title: boundedPreview(title),
     cwd: asString(row.cwd) ?? "",
-    modified: Number(row.updated_at_ms) || 0,
+    modified: parseEpochMilliseconds(row.updated_at_ms) ?? 0,
     gitBranch: asString(row.git_branch),
     flags: {
       model: asString(row.model),
@@ -161,7 +164,6 @@ function mapThreadRow(row: Record<string, unknown>): VaultSessionEntry | null {
       sandbox: parseSandbox(row.sandbox_policy),
       reasoningEffort: asString(row.reasoning_effort),
     },
-    canFork: false, // resolved by VaultService (task 2_5)
     // File-backed iff a rollout transcript exists (UI hint only, D9). The host
     // re-derives this path by id; it never trusts a webview-supplied path.
     sessionPath: asString(row.rollout_path),
@@ -216,10 +218,10 @@ function parseCodexSourceMeta(raw: unknown): CodexSourceMeta | undefined {
   if (!source) {
     return undefined;
   }
-  const subagent = objField(source.subagent);
+  const subagent = asRecord(source.subagent);
   const containers = [subagent, source].filter((value): value is Record<string, unknown> => !!value);
   for (const container of containers) {
-    const spawn = objField(container.thread_spawn) ?? objField(source.thread_spawn);
+    const spawn = asRecord(container.thread_spawn) ?? asRecord(source.thread_spawn);
     const parentThreadId = asString(spawn?.parent_thread_id) ?? asString(spawn?.parentThreadId);
     if (!parentThreadId) {
       continue;
@@ -243,7 +245,7 @@ async function readCodexJsonlMeta(filePath: string): Promise<CodexJsonlMeta | nu
     return null;
   }
   const obj = JSON.parse(first) as Record<string, unknown>;
-  const payload = objField(obj.payload) ?? {};
+  const payload = asRecord(obj.payload) ?? {};
   const sessionId = asString(payload.id) ?? path.basename(filePath, ".jsonl");
   if (!isSafeCodexId(sessionId)) {
     return null;
@@ -420,7 +422,6 @@ async function buildCodexJsonlEntry(filePath: string, sessionIdOverride?: string
     cwd: meta.cwd ?? "",
     modified: meta.timestamp ?? stat.mtimeMs,
     flags: {},
-    canFork: false,
     sessionPath: filePath, // the rollout jsonl backs this session (UI hint)
   };
 }
@@ -566,7 +567,7 @@ export async function readCodexSessions(
 /**
  * Resolve ONE Codex session to its launch entry by id — the single-entry
  * counterpart to readCodexSessions, used by VaultService.getEntry for fast
- * resume/fork (a `threads` point lookup, not the full-store scan; D3). Falls back
+ * stored-session launch (a `threads` point lookup, not the full-store scan; D3). Falls back
  * to the rollout jsonl (located by its filename uuid) when no SQLite DB exists.
  * Answers conclusively: `absent` only from a query that ran or a rollout walk
  * that completed, `unknown` from anything that failed to look.
@@ -632,23 +633,8 @@ export async function readCodexEntry(
 
 const PARTIAL_LIMITED_REASON = "No transcript file for this Codex session — showing index only.";
 
-function objField(v: unknown): Record<string, unknown> | undefined {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
-}
-
-function num(v: unknown): number {
-  return typeof v === "number" && Number.isFinite(v) ? v : 0;
-}
-
-function parseTs(v: unknown): number {
-  if (typeof v === "number") {
-    return Number.isFinite(v) ? v : 0;
-  }
-  if (typeof v === "string") {
-    const ms = Date.parse(v);
-    return Number.isNaN(ms) ? 0 : ms;
-  }
-  return 0;
+function parseTs(value: unknown): number {
+  return parseStoredTimestamp(value) ?? 0;
 }
 
 /** Session ids are uuids; reject anything that could escape a filename/SQL. */
@@ -662,12 +648,12 @@ function codexFunctionLabel(args: unknown): string | undefined {
   let obj: Record<string, unknown> | undefined;
   if (typeof args === "string") {
     try {
-      obj = objField(JSON.parse(args));
+      obj = asRecord(JSON.parse(args));
     } catch {
       obj = undefined;
     }
   } else {
-    obj = objField(args);
+    obj = asRecord(args);
   }
   if (obj) {
     for (const k of ["cmd", "command", "file_path", "path", "query", "pattern"]) {
@@ -689,10 +675,10 @@ function codexFunctionLabel(args: unknown): string | undefined {
 /** Parse a Codex JSON-string field (`arguments` / `output`) into an object, else undefined. */
 function parseJsonObj(v: unknown): Record<string, unknown> | undefined {
   if (typeof v !== "string") {
-    return objField(v);
+    return asRecord(v);
   }
   try {
-    return objField(JSON.parse(v));
+    return asRecord(JSON.parse(v));
   } catch {
     return undefined;
   }
@@ -718,7 +704,7 @@ function buildCodexQuestionItem(
   const questions = Array.isArray(parseJsonObj(args)?.questions) ? (parseJsonObj(args)?.questions as unknown[]) : [];
   const pairs: QuestionPair[] = [];
   for (const q of questions) {
-    const qObj = objField(q);
+    const qObj = asRecord(q);
     const prompt = asString(qObj?.question) ?? asString(qObj?.header);
     if (!prompt) {
       continue;
@@ -756,12 +742,12 @@ function buildCodexQuestionItem(
 function collectCodexQuestionAnswers(records: Record<string, unknown>[]): Map<string, Record<string, unknown>> {
   const map = new Map<string, Record<string, unknown>>();
   for (const rec of records) {
-    const payload = objField(objField(rec)?.payload);
+    const payload = asRecord(asRecord(rec)?.payload);
     if (payload?.type !== "function_call_output") {
       continue;
     }
     const callId = asString(payload.call_id);
-    const answers = objField(parseJsonObj(payload.output)?.answers);
+    const answers = asRecord(parseJsonObj(payload.output)?.answers);
     if (callId && answers) {
       map.set(callId, answers);
     }
@@ -772,7 +758,7 @@ function collectCodexQuestionAnswers(records: Record<string, unknown>[]): Map<st
 /** The raw answer entries for one question from a `request_user_input` answer entry
  *  (`{ answers: [label | "user_note: …", …] }`). */
 function codexAnswerEntries(entry: unknown): string[] {
-  const list = objField(entry)?.answers;
+  const list = asRecord(entry)?.answers;
   if (!Array.isArray(list)) {
     return [];
   }
@@ -804,7 +790,7 @@ function codexReasoningText(payload: Record<string, unknown>): string | undefine
   if (Array.isArray(summary)) {
     const parts: string[] = [];
     for (const s of summary) {
-      const t = asString(objField(s)?.text);
+      const t = asString(asRecord(s)?.text);
       if (t) {
         parts.push(t);
       }
@@ -876,7 +862,7 @@ export function classifyCodexRolloutEvents(
       lastAssistantItem = undefined;
       continue;
     }
-    const payload = objField(rec.payload);
+    const payload = asRecord(rec.payload);
     if (!payload) {
       continue;
     }
@@ -926,19 +912,19 @@ export function classifyCodexRolloutEvents(
           lastAssistantItem = item;
         }
       } else if (ptype === "token_count") {
-        const info = objField(payload.info);
-        const tot = objField(info?.total_token_usage);
-        const n = tot ? num(tot.total_tokens) : 0;
+        const info = asRecord(payload.info);
+        const tot = asRecord(info?.total_token_usage);
+        const n = tot ? finiteNumberOrZero(tot.total_tokens) : 0;
         if (n > 0) {
           totalTokens = n; // last token_count is the cumulative session total (D7)
         }
         // Backfill this turn's usage onto its assistant message (arrives after it).
-        const last = objField(info?.last_token_usage);
+        const last = asRecord(info?.last_token_usage);
         if (last && lastAssistantItem) {
-          const ctx = info ? num(info.model_context_window) : 0;
+          const ctx = info ? finiteNumberOrZero(info.model_context_window) : 0;
           lastAssistantItem.tokens = {
-            input: num(last.input_tokens) + num(last.cached_input_tokens),
-            output: num(last.output_tokens),
+            input: finiteNumberOrZero(last.input_tokens) + finiteNumberOrZero(last.cached_input_tokens),
+            output: finiteNumberOrZero(last.output_tokens),
             ...(ctx > 0 ? { contextWindow: ctx } : {}),
           };
           // Consume the reference: a later token_count with no intervening
@@ -993,7 +979,7 @@ export function classifyCodexRolloutEvents(
         timeline.push(step);
       } else if (ptype === "web_search_call") {
         toolCount++;
-        const q = asString(objField(payload.action)?.query);
+        const q = asString(asRecord(payload.action)?.query);
         const step: VaultActivityStep = { kind: "tool", tool: "WebSearch", detail: q ? truncate(q) : undefined };
         activity.push(step);
         timeline.push(step);
@@ -1167,7 +1153,8 @@ function codexChildStubFromRow(row: Record<string, unknown>): CodexChildStub | n
   const source = parseCodexSourceMeta(row.source);
   const firstMessage = asString(row.first_user_message);
   const title = asString(row.title);
-  const timestamp = parseTs(row.created_at_ms) || parseTs(row.updated_at_ms);
+  const timestamp =
+    (parseEpochMilliseconds(row.created_at_ms) ?? 0) || (parseEpochMilliseconds(row.updated_at_ms) ?? 0);
   return {
     childThreadId,
     ...(title ? { title: boundedPreview(title) } : {}),
@@ -1291,7 +1278,7 @@ function codexChildTimelineItem(
  */
 /** The two payloads the timeline emits as messages (and stamps a locator on). */
 function isCodexMessageRecord(rec: Record<string, unknown>): boolean {
-  const ptype = objField(rec.payload)?.type;
+  const ptype = asRecord(rec.payload)?.type;
   return rec.type === "event_msg" && (ptype === "user_message" || ptype === "agent_message");
 }
 

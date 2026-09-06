@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { asRecord } from "../../utils/record";
 import { type SqliteSnapshot, withSqliteSnapshot } from "../sqlite";
 import type { VaultActivityStep, VaultTimelineItem } from "../types";
 import {
@@ -81,10 +82,6 @@ function limited(): CursorStoreResult {
 
 function identityContradicted(): CursorStoreResult {
   return { status: "limited", reason: LIMITED_REASON, identityContradicted: true };
-}
-
-function asObject(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
 function decodeHex(value: unknown, maxChars: number): Buffer | undefined {
@@ -359,7 +356,7 @@ async function readCursorStoreProfile(snapshot: SqliteSnapshot): Promise<CursorS
   }
   let meta: Record<string, unknown> | undefined;
   try {
-    meta = asObject(JSON.parse(metaBytes.toString("utf8")));
+    meta = asRecord(JSON.parse(metaBytes.toString("utf8")));
   } catch {
     return undefined;
   }

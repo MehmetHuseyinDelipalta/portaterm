@@ -1,13 +1,12 @@
-// src/vault/VaultService.test.ts — Unit tests for aggregation + fork resolution.
+// src/vault/VaultService.test.ts — Unit tests for session aggregation and lookup.
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   type ReaderListCache,
   type ReaderResultWithState,
   VAULT_CACHE_VERSION,
   type VaultListCacheFileV1,
 } from "./cacheTypes";
-import { __resetForkSupportCache, canForkOpenCode, gte, parseFirstSemver } from "./forkSupport";
 import type { CursorDetailReaderOptions } from "./readers/cursorReader";
 import type { VaultSessionDetail, VaultSessionEntry } from "./types";
 import type { VaultCacheStore } from "./VaultCacheStore";
@@ -27,7 +26,6 @@ function entry(agent: string, sessionId: string, modified: number): VaultSession
     cwd: "/x",
     modified,
     flags: {},
-    canFork: false,
   };
 }
 
@@ -70,7 +68,7 @@ describe("VaultService.list: aggregation", () => {
       codex: async () => result([entry("codex", "x1", 300)]),
       opencode: async () => result([entry("opencode", "o1", 200)]),
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => true });
+    const svc = new VaultService({ readers });
     const { entries } = await svc.list();
     expect(entries.map((e) => e.id)).toEqual(["codex:x1", "opencode:o1", "claude:c1"]);
   });
@@ -80,7 +78,7 @@ describe("VaultService.list: aggregation", () => {
       claude: async () => result([entry("claude", "c1", 1)], 2),
       codex: async () => result([], 1),
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers });
     const { unreadable } = await svc.list();
     expect(unreadable.count).toBe(3);
   });
@@ -92,7 +90,7 @@ describe("VaultService.list: aggregation", () => {
       },
       codex: async () => result([entry("codex", "x1", 5)]),
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers });
     const { entries, unreadable } = await svc.list();
     expect(entries.map((e) => e.id)).toEqual(["codex:x1"]);
     expect(unreadable.count).toBe(1);
@@ -105,56 +103,10 @@ describe("VaultService.list: aggregation", () => {
       },
       codex: async () => result([entry("codex", "x1", 5)]),
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers });
     const { entries, unreadable } = await svc.list();
     expect(entries.map((e) => e.id)).toEqual(["codex:x1"]);
     expect(unreadable.count).toBe(1);
-  });
-});
-
-describe("VaultService.list: fork resolution", () => {
-  it("claude + codex are forkable (forkCommand present, no version gate)", async () => {
-    const readers = makeReaders({
-      claude: async () => result([entry("claude", "c1", 2)]),
-      codex: async () => result([entry("codex", "x1", 1)]),
-    });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
-    const { entries } = await svc.list();
-    expect(entries.every((e) => e.canFork)).toBe(true);
-  });
-
-  it("opencode canFork follows the version probe (true)", async () => {
-    const readers = makeReaders({ opencode: async () => result([entry("opencode", "o1", 1)]) });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => true });
-    const { entries } = await svc.list();
-    expect(entries[0].canFork).toBe(true);
-  });
-
-  it("opencode canFork is false when the probe says so", async () => {
-    const probe = vi.fn(async () => false);
-    const readers = makeReaders({ opencode: async () => result([entry("opencode", "o1", 1)]) });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: probe });
-    const { entries } = await svc.list();
-    expect(entries[0].canFork).toBe(false);
-    expect(probe).toHaveBeenCalledWith("1.1.54");
-  });
-
-  it("opencode canFork is false when the probe rejects", async () => {
-    const probe = vi.fn(async () => {
-      throw new Error("probe failed");
-    });
-    const readers = makeReaders({ opencode: async () => result([entry("opencode", "o1", 1)]) });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: probe });
-    const { entries } = await svc.list();
-    expect(entries[0].canFork).toBe(false);
-  });
-
-  it("does NOT spawn the opencode probe when there are no opencode entries", async () => {
-    const probe = vi.fn(async () => true);
-    const readers = makeReaders({ claude: async () => result([entry("claude", "c1", 1)]) });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: probe });
-    await svc.list();
-    expect(probe).not.toHaveBeenCalled();
   });
 });
 
@@ -166,7 +118,6 @@ describe("VaultService.getEntry: single-entry resolve", () => {
     const cursor = vi.fn(async () => null);
     const svc = new VaultService({
       entryReaders: { claude, codex, opencode, cursor },
-      canForkOpenCodeFn: async () => false,
     });
     const e = await svc.getEntry("claude:c1");
     expect(e?.id).toBe("claude:c1");
@@ -178,7 +129,7 @@ describe("VaultService.getEntry: single-entry resolve", () => {
 
   it("says absent for an id no store could carry — an unknown agent or a malformed id", async () => {
     // The two the service itself decides, before any reader is consulted.
-    const svc = new VaultService({ entryReaders: makeEntryReaders(), canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ entryReaders: makeEntryReaders() });
     for (const id of ["bogus:x", "no-colon"]) {
       expect(await svc.lookupEntry(id)).toEqual({ status: "absent" });
       expect(await svc.getEntry(id)).toBeNull();
@@ -188,7 +139,7 @@ describe("VaultService.getEntry: single-entry resolve", () => {
   it("still rejects a synthetic nesting id, which vault-session-launch requires", async () => {
     // Its status stays `unknown` until the reader tasks classify their own safety
     // check; what the accepted requirement pins is the null, and that is unchanged.
-    const svc = new VaultService({ entryReaders: makeEntryReaders(), canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ entryReaders: makeEntryReaders() });
     for (const id of ["claude:c1:subagent:2", "claude:m1:turn:3"]) {
       expect(await svc.getEntry(id)).toBeNull();
     }
@@ -199,7 +150,6 @@ describe("VaultService.getEntry: single-entry resolve", () => {
     // of anything. Reporting `absent` would let a consumer retire a live row.
     const svc = new VaultService({
       entryReaders: makeEntryReaders({ codex: vi.fn(async () => null) }),
-      canForkOpenCodeFn: async () => false,
     });
     expect(await svc.lookupEntry("codex:missing")).toEqual({ status: "unknown" });
     expect(await svc.getEntry("codex:missing")).toBeNull();
@@ -211,65 +161,17 @@ describe("VaultService.getEntry: single-entry resolve", () => {
     const cursor = vi.fn(async () => null);
     const svc = new VaultService({
       entryReaders: makeEntryReaders({ cursor }),
-      canForkOpenCodeFn: async () => false,
     });
     expect(await svc.lookupEntry("cursor:child:never-issued")).toEqual({ status: "unknown" });
     expect(cursor).not.toHaveBeenCalled();
   });
 
-  it("carries the enriched entry on the found branch", async () => {
+  it("carries the resolved entry on the found branch", async () => {
     const svc = new VaultService({
       entryReaders: makeEntryReaders({ opencode: vi.fn(async () => entry("opencode", "o1", 1)) }),
-      canForkOpenCodeFn: async () => true,
     });
     const found = await svc.lookupEntry("opencode:o1");
-    expect(found.status).toBe("found");
-    expect(found.status === "found" && found.entry.canFork).toBe(true);
-  });
-
-  it("returns null for an unknown agent or a malformed id", async () => {
-    const svc = new VaultService({ entryReaders: makeEntryReaders(), canForkOpenCodeFn: async () => false });
-    expect(await svc.getEntry("bogus:x")).toBeNull();
-    expect(await svc.getEntry("no-colon")).toBeNull();
-  });
-
-  it("returns null when the agent reader can't resolve the session", async () => {
-    const svc = new VaultService({
-      entryReaders: makeEntryReaders({ codex: vi.fn(async () => null) }),
-      canForkOpenCodeFn: async () => false,
-    });
-    expect(await svc.getEntry("codex:missing")).toBeNull();
-  });
-
-  it("resolves canFork for claude WITHOUT spawning the opencode probe", async () => {
-    const probe = vi.fn(async () => true);
-    const svc = new VaultService({
-      entryReaders: makeEntryReaders({ claude: vi.fn(async () => entry("claude", "c1", 1)) }),
-      canForkOpenCodeFn: probe,
-    });
-    const e = await svc.getEntry("claude:c1");
-    expect(e?.canFork).toBe(true);
-    expect(probe).not.toHaveBeenCalled();
-  });
-
-  it("opencode canFork follows the probe (and only opencode triggers it)", async () => {
-    const probe = vi.fn(async () => true);
-    const svc = new VaultService({
-      entryReaders: makeEntryReaders({ opencode: vi.fn(async () => entry("opencode", "o1", 1)) }),
-      canForkOpenCodeFn: probe,
-    });
-    const e = await svc.getEntry("opencode:o1");
-    expect(e?.canFork).toBe(true);
-    expect(probe).toHaveBeenCalledWith("1.1.54");
-  });
-
-  it("opencode canFork is false when the probe says so", async () => {
-    const svc = new VaultService({
-      entryReaders: makeEntryReaders({ opencode: vi.fn(async () => entry("opencode", "o1", 1)) }),
-      canForkOpenCodeFn: async () => false,
-    });
-    const e = await svc.getEntry("opencode:o1");
-    expect(e?.canFork).toBe(false);
+    expect(found).toMatchObject({ status: "found", entry: { id: "opencode:o1" } });
   });
 });
 
@@ -440,7 +342,7 @@ describe("VaultService cache: listCached + refresh", () => {
   }
 
   it("listCached returns null without a cache store", () => {
-    const svc = new VaultService({ readers: makeReaders(), canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers: makeReaders() });
     expect(svc.listCached()).toBeNull();
   });
 
@@ -448,7 +350,6 @@ describe("VaultService cache: listCached + refresh", () => {
     const { store } = makeCacheStore(cacheDoc([entry("claude", "c1", 7)]));
     const svc = new VaultService({
       readers: makeReaders(),
-      canForkOpenCodeFn: async () => false,
       cacheStore: store as unknown as VaultCacheStore,
     });
     expect(svc.listCached()?.entries.map((e) => e.id)).toEqual(["claude:c1"]);
@@ -464,7 +365,6 @@ describe("VaultService cache: listCached + refresh", () => {
     });
     const svc = new VaultService({
       readers,
-      canForkOpenCodeFn: async () => false,
       cacheStore: store as unknown as VaultCacheStore,
     });
     const { entries } = await svc.refresh();
@@ -480,13 +380,12 @@ describe("VaultService cache: listCached + refresh", () => {
     const { store } = makeCacheStore(null);
     const svc = new VaultService({
       readers: makeReaders({ claude }),
-      canForkOpenCodeFn: async () => false,
       cacheStore: store as unknown as VaultCacheStore,
     });
     await svc.refresh();
     await svc.refresh();
     // First call: no prior cache (undefined). Second: the cache the reader returned
-    // last time, carried back as `prev` (canFork already resolved on the entry).
+    // last time, carried back as `prev`.
     expect(claude.mock.calls[0][0]).toBeUndefined();
     const prev = claude.mock.calls[1][0];
     expect(prev?.kind).toBe("store");
@@ -501,7 +400,6 @@ describe("VaultService cache: listCached + refresh", () => {
     const cache = makeCacheStore(null);
     const svc = new VaultService({
       readers: { claude, codex, opencode, cursor },
-      canForkOpenCodeFn: async () => false,
       cacheStore: cache.store as unknown as VaultCacheStore,
     });
     const seeded = await svc.refresh();
@@ -533,7 +431,7 @@ describe("VaultService cache: listCached + refresh", () => {
       opencode: vi.fn(async () => result([entry("opencode", "o1", 2)])),
       cursor: vi.fn(async () => result([entry("cursor", "chat", 1)])),
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers });
 
     const refreshed = await svc.refresh({
       hint: { agent: "cursor", paths: ["/cursor/a/chat/meta.json"] },
@@ -557,7 +455,7 @@ describe("VaultService cache: listCached + refresh", () => {
       cursor,
       claude: vi.fn(async () => result([entry("claude", "complete", 2)])),
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers });
     await svc.refresh();
     for (const reader of Object.values(readers)) {
       vi.mocked(reader).mockClear();
@@ -590,7 +488,7 @@ describe("VaultService cache: listCached + refresh", () => {
       .mockResolvedValueOnce(result([entry("cursor", "seed", 1)]))
       .mockImplementationOnce(() => activeRead.promise)
       .mockResolvedValueOnce(result([entry("cursor", "follow-up", 3)]));
-    const svc = new VaultService({ readers: makeReaders({ cursor }), canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers: makeReaders({ cursor }) });
     await svc.refresh();
     cursor.mockClear();
 
@@ -618,7 +516,7 @@ describe("VaultService cache: listCached + refresh", () => {
       cursor,
       claude: vi.fn(() => completeClaude.promise),
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers });
 
     const complete = svc.refresh();
     await vi.waitFor(() => expect(cursor).toHaveBeenCalledTimes(1));
@@ -642,7 +540,6 @@ describe("VaultService cache: listCached + refresh", () => {
     const { store } = makeCacheStore(null);
     const svc = new VaultService({
       readers,
-      canForkOpenCodeFn: async () => false,
       cacheStore: store as unknown as VaultCacheStore,
     });
     await svc.refresh();
@@ -697,7 +594,6 @@ describe("VaultService cache: listCached + refresh", () => {
     const { store } = makeCacheStore(cacheDoc([]));
     const svc = new VaultService({
       readers,
-      canForkOpenCodeFn: async () => false,
       cacheStore: store as unknown as VaultCacheStore,
     });
 
@@ -732,7 +628,7 @@ describe("VaultService cache: listCached + refresh", () => {
       cursor,
       claude: vi.fn(async () => result([entry("claude", "complete", 3)])),
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers });
     await svc.refresh();
     for (const reader of Object.values(readers)) {
       vi.mocked(reader).mockClear();
@@ -764,7 +660,6 @@ describe("VaultService cache: listCached + refresh", () => {
     const { store } = makeCacheStore(cacheDoc([]));
     const svc = new VaultService({
       readers,
-      canForkOpenCodeFn: async () => false,
       cacheStore: store as unknown as VaultCacheStore,
     });
 
@@ -784,7 +679,6 @@ describe("VaultService cache: listCached + refresh", () => {
     const { store } = makeCacheStore(null);
     const svc = new VaultService({
       readers: makeReaders({ claude }),
-      canForkOpenCodeFn: async () => false,
       cacheStore: store as unknown as VaultCacheStore,
     });
     await Promise.all([svc.refresh(), svc.refresh()]);
@@ -803,7 +697,6 @@ describe("VaultService cache: listCached + refresh", () => {
     const { store } = makeCacheStore(null);
     const svc = new VaultService({
       readers: makeReaders({ claude, codex: async () => result([entry("codex", "x1", 50)]) }),
-      canForkOpenCodeFn: async () => false,
       cacheStore: store as unknown as VaultCacheStore,
     });
     await svc.refresh(); // first read succeeds → claude:c1 cached
@@ -830,7 +723,6 @@ describe("VaultService cache: listCached + refresh", () => {
         },
         codex: async () => result([entry("codex", "x1", 50)]),
       }),
-      canForkOpenCodeFn: async () => false,
       cacheStore: store as unknown as VaultCacheStore,
     });
     const res = await svc.refresh();
@@ -848,46 +740,10 @@ describe("VaultService cache: listCached + refresh", () => {
     };
     const svc = new VaultService({
       readers: makeReaders({ claude: async () => result([entry("claude", "c1", 1)]) }),
-      canForkOpenCodeFn: async () => false,
       cacheStore: store as unknown as VaultCacheStore,
     });
     const { entries } = await svc.refresh();
     expect(entries.map((e) => e.id)).toEqual(["claude:c1"]);
-  });
-});
-
-describe("forkSupport helpers", () => {
-  beforeEach(() => __resetForkSupportCache());
-
-  it("parseFirstSemver extracts the first X.Y.Z", () => {
-    expect(parseFirstSemver("opencode 1.14.50 (build)")).toEqual([1, 14, 50]);
-    expect(parseFirstSemver("no version here")).toBeUndefined();
-  });
-
-  it("gte compares semvers", () => {
-    expect(gte([1, 14, 50], [1, 14, 50])).toBe(true);
-    expect(gte([1, 14, 51], [1, 14, 50])).toBe(true);
-    expect(gte([1, 14, 49], [1, 14, 50])).toBe(false);
-    expect(gte([2, 0, 0], [1, 99, 99])).toBe(true);
-  });
-
-  it("canForkOpenCode is true when the probe reports a high-enough version", async () => {
-    const deps = { exec: vi.fn(async () => ({ stdout: "1.20.0", stderr: "" })) };
-    expect(await canForkOpenCode("1.14.50", deps)).toBe(true);
-  });
-
-  it("canForkOpenCode is false for an older version", async () => {
-    const deps = { exec: vi.fn(async () => ({ stdout: "1.10.0", stderr: "" })) };
-    expect(await canForkOpenCode("1.14.50", deps)).toBe(false);
-  });
-
-  it("canForkOpenCode is false when the probe throws (binary missing)", async () => {
-    const deps = {
-      exec: vi.fn(async () => {
-        throw new Error("not found");
-      }),
-    };
-    expect(await canForkOpenCode("1.14.50", deps)).toBe(false);
   });
 });
 
@@ -939,7 +795,7 @@ describe("VaultService.refresh: force bypasses in-flight (write-vault-rename-to-
         return result([entry("claude", call === 1 ? "old" : "new", call)]);
       }),
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers });
 
     const p1 = svc.refresh({ hint: { agent: "claude", paths: ["/claude/old.jsonl"] } });
     const forced = await svc.refresh({ force: true }); // waits for hinted run1, then reads "new"
@@ -958,7 +814,7 @@ describe("VaultService.refresh: force bypasses in-flight (write-vault-rename-to-
       .mockImplementationOnce(() => activeRead.promise)
       .mockImplementationOnce(() => queuedRead.promise)
       .mockResolvedValueOnce(result([entry("claude", "forced", 3)]));
-    const svc = new VaultService({ readers: makeReaders({ claude }), canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers: makeReaders({ claude }) });
 
     const active = svc.refresh({ hint: { agent: "claude", paths: ["/claude/a.jsonl"] } });
     const queued = svc.refresh({ hint: { agent: "claude", paths: ["/claude/b.jsonl"] } });
@@ -984,7 +840,7 @@ describe("VaultService.refresh: force bypasses in-flight (write-vault-rename-to-
       .mockImplementationOnce(() => activeRead.promise)
       .mockImplementationOnce(() => forcedRead.promise)
       .mockImplementationOnce(() => followUpRead.promise);
-    const svc = new VaultService({ readers: makeReaders({ cursor }), canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers: makeReaders({ cursor }) });
     await svc.refresh();
     cursor.mockClear();
 
@@ -1021,7 +877,7 @@ describe("VaultService.refresh: force bypasses in-flight (write-vault-rename-to-
         return result([entry("claude", "c", call)]);
       }),
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers });
 
     const [a, b] = await Promise.all([svc.refresh(), svc.refresh()]);
     expect(call).toBe(1);
@@ -1041,7 +897,7 @@ describe("VaultService.refresh: force bypasses in-flight (write-vault-rename-to-
         return result([entry("claude", `r${++call}`, call)]);
       }),
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers });
 
     const p0 = svc.refresh(); // seed one in-flight read
     const [f1, f2] = await Promise.all([svc.refresh({ force: true }), svc.refresh({ force: true })]);

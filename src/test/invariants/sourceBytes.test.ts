@@ -36,6 +36,14 @@ function offenders(): string[] {
 }
 
 describe("source hygiene — raw control bytes", () => {
+  it("recognizes prohibited control bytes", () => {
+    expect(hasControlByte(Buffer.from([0x00, 0x1f]))).toBe(true);
+  });
+
+  it("allows tabs, line endings and printable bytes", () => {
+    expect(hasControlByte(Buffer.from([TAB, LF, CR, FIRST_PRINTABLE]))).toBe(false);
+  });
+
   it("leaves no source unreadable to a grep-based tool", () => {
     expect(offenders()).toEqual([]);
   });

@@ -84,7 +84,6 @@ function cursorEntry(sessionId: string, source?: "cli" | "ide") {
     cwd: "/work",
     modified: 10,
     flags: {},
-    canFork: false,
     canResume: source === "cli",
     ...(source ? { source } : {}),
   };
@@ -104,7 +103,6 @@ function doc(overrides: Partial<VaultListCacheFileV1> = {}): VaultListCacheFileV
         cwd: "/work",
         modified: 10,
         flags: {},
-        canFork: false,
       },
     ],
     unreadable: { count: 0, reasons: [] },
@@ -149,61 +147,10 @@ describe("VaultCacheStore", () => {
     expect(store.load()).toBeNull();
   });
 
-  it("discards an unrecognized version (→ full rebuild)", () => {
-    harness.files.set(CACHE_FILE, JSON.stringify({ ...doc(), version: VAULT_CACHE_VERSION + 1 }));
-    expect(store.load()).toBeNull();
-  });
-
-  it.each([5, 6])("discards stale version %s Cursor cache derivations", (version) => {
+  // Versions 1 and 3 predate the Codex root-row and Claude permission-mode corrections.
+  // Versions 5 and 6 predate the current Cursor derivation; future versions are unsupported.
+  it.each([1, 3, 5, 6, 8, VAULT_CACHE_VERSION + 1])("discards version %s", (version) => {
     harness.files.set(CACHE_FILE, JSON.stringify({ ...doc(), version }));
-    expect(store.load()).toBeNull();
-  });
-
-  it("discards stale version 1 caches that could contain old Codex root rows", () => {
-    harness.files.set(
-      CACHE_FILE,
-      JSON.stringify({
-        ...doc({
-          entries: [
-            {
-              id: "codex:child-thread",
-              agent: "codex",
-              sessionId: "child-thread",
-              title: "stale child",
-              cwd: "/work",
-              modified: 10,
-              flags: {},
-              canFork: false,
-            },
-          ],
-        }),
-        version: 1,
-      }),
-    );
-    expect(store.load()).toBeNull();
-  });
-
-  it("discards stale version 3 caches whose Claude entries hold a first-wins permissionMode", () => {
-    harness.files.set(
-      CACHE_FILE,
-      JSON.stringify({
-        ...doc({
-          entries: [
-            {
-              id: "claude:sess",
-              agent: "claude",
-              sessionId: "sess",
-              title: "stale mode",
-              cwd: "/work",
-              modified: 10,
-              flags: { permissionMode: "bypassPermissions" },
-              canFork: false,
-            },
-          ],
-        }),
-        version: 3,
-      }),
-    );
     expect(store.load()).toBeNull();
   });
 

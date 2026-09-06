@@ -8,6 +8,7 @@
 
 import * as os from "node:os";
 import * as path from "node:path";
+import { asRecord } from "../../utils/record";
 import type { ReaderListCache, ReaderResultWithState } from "../cacheTypes";
 import { boundedPreview } from "../preview";
 import {
@@ -33,6 +34,7 @@ import {
   buildQuestionOptions,
   type DetailParts,
   finalizeDetail,
+  finiteNumberOrZero,
   MAX_MESSAGE_TEXT,
   normalizeRich,
   type QuestionPair,
@@ -41,6 +43,7 @@ import {
   truncateRich,
 } from "./detail";
 import { MAX_RECORD_BYTES, type RecordLineResult } from "./recordLine";
+import { parseEpochMilliseconds } from "./timestamp";
 
 /** Bound the read so the vault list stays cheap (D2). */
 const ROW_LIMIT = 500;
@@ -59,7 +62,7 @@ const CHILD_LIMIT = 100;
 
 // Shared SELECT (columns + correlated title/first-prompt subqueries). The list
 // adds the top-level `parent_id` filter + ordering/limit; the single-entry resolve
-// (readOpenCodeEntry) adds `WHERE s.id = ?` and keeps no filter so a child session
+// The point lookup adds `WHERE s.id = ?` and keeps no filter so a child session
 // is still resolvable by id for resume.
 const OPENCODE_SESSION_SELECT = `SELECT s.id, s.title, s.directory, s.time_updated, (
     SELECT data FROM message
@@ -178,9 +181,8 @@ function mapSessionRow(row: Record<string, unknown>): VaultSessionEntry | null {
     sessionId,
     title: boundedPreview(title),
     cwd: asString(row.directory) ?? "",
-    modified: Number(row.time_updated) || 0,
+    modified: parseEpochMilliseconds(row.time_updated) ?? 0,
     flags: { model, agent },
-    canFork: false, // resolved by VaultService (task 2_5)
   };
 }
 
@@ -283,7 +285,7 @@ export async function readOpenCodeSessions(
 /**
  * Resolve ONE OpenCode session to its launch entry by id — the single-entry
  * counterpart to readOpenCodeSessions, used by VaultService.getEntry for fast
- * resume/fork (a point lookup, not the full-store scan; D3). No `parent_id`
+ * stored-session launch (a point lookup, not the full-store scan; D3). No `parent_id`
  * filter so a child (subagent) session is still resolvable by id. Returns null
  * for an unsafe id or a missing row.
  */
@@ -313,15 +315,6 @@ export async function lookupOpenCodeEntry(
   return result.status === "no-db" ? { status: "absent" } : { status: "unknown" };
 }
 
-/** The entry-or-nothing view, for callers that cannot act on the difference. */
-export async function readOpenCodeEntry(
-  sessionId: string,
-  options: OpenCodeReaderOptions = {},
-): Promise<VaultSessionEntry | null> {
-  const found = await lookupOpenCodeEntry(sessionId, options);
-  return found.status === "found" ? found.entry : null;
-}
-
 // ── On-demand session detail (redesign-vault-panel-ui 2_3) ──────────────────
 
 /** A parsed `message` row for the pure mapper. */
@@ -344,14 +337,6 @@ function isSafeOpenCodeId(id: string): boolean {
 
 function strField(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
-}
-
-function objField(v: unknown): Record<string, unknown> | undefined {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
-}
-
-function num(v: unknown): number {
-  return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
 
 /** Concise primary argument for an OpenCode tool call (lowercase tool names, `filePath` inputs). */
@@ -387,13 +372,13 @@ function opencodeToolLabel(tool: string, input: Record<string, unknown>): string
  * not `completed`, or no answer recorded) so the preview shows "awaiting answer".
  */
 function opencodeQuestionPairs(state: Record<string, unknown>): QuestionPair[] {
-  const input = objField(state.input) ?? {};
+  const input = asRecord(state.input) ?? {};
   const questions = Array.isArray(input.questions) ? input.questions : [];
-  const meta = objField(state.metadata) ?? {};
+  const meta = asRecord(state.metadata) ?? {};
   const answers = Array.isArray(meta.answers) ? meta.answers : [];
   const pairs: QuestionPair[] = [];
   for (let i = 0; i < questions.length; i++) {
-    const q = objField(questions[i]);
+    const q = asRecord(questions[i]);
     const prompt = strField(q?.question) ?? strField(q?.header);
     if (!prompt) {
       continue;
@@ -413,7 +398,7 @@ function opencodeQuestionPairs(state: Record<string, unknown>): QuestionPair[] {
 
 /** Count added/removed lines from a unified-diff string (cheap, best-effort). */
 function diffStat(metadata: unknown): { added: number; removed: number } | undefined {
-  const d = objField(metadata)?.diff;
+  const d = asRecord(metadata)?.diff;
   if (typeof d !== "string") {
     return undefined;
   }
@@ -494,18 +479,22 @@ export function mapOpencodeRows(
       const providerID = strField(m.data.providerID);
       const modelID = strField(m.data.modelID);
       msgModel = providerID && modelID ? `${providerID}/${modelID}` : (modelID ?? providerID);
-      const tokens = objField(m.data.tokens);
+      const tokens = asRecord(m.data.tokens);
       if (tokens) {
         sawTokens = true;
-        const cache = objField(tokens.cache) ?? {};
+        const cache = asRecord(tokens.cache) ?? {};
         tokenCount +=
-          num(tokens.input) + num(tokens.output) + num(tokens.reasoning) + num(cache.read) + num(cache.write);
+          finiteNumberOrZero(tokens.input) +
+          finiteNumberOrZero(tokens.output) +
+          finiteNumberOrZero(tokens.reasoning) +
+          finiteNumberOrZero(cache.read) +
+          finiteNumberOrZero(cache.write);
         // "context" size = prompt tokens (input + cache read/creation); output =
         // generated. OpenCode records reasoning separately, but Claude/Codex fold it
         // into their output — add it here so `output` means the same across agents.
         msgTokens = {
-          input: num(tokens.input) + num(cache.read) + num(cache.write),
-          output: num(tokens.output) + num(tokens.reasoning),
+          input: finiteNumberOrZero(tokens.input) + finiteNumberOrZero(cache.read) + finiteNumberOrZero(cache.write),
+          output: finiteNumberOrZero(tokens.output) + finiteNumberOrZero(tokens.reasoning),
         };
       }
     }
@@ -546,7 +535,7 @@ export function mapOpencodeRows(
     if (type === "tool") {
       toolCount++;
       const tool = strField(p.data.tool) ?? "tool";
-      const state = objField(p.data.state) ?? {};
+      const state = asRecord(p.data.state) ?? {};
       // AskUserQuestion is a user decision point, not plumbing — surface it as a
       // first-class question item (the Q + the user's answer) rather than a bare
       // "Question" tool chip that would collapse inside a run. An ERRORED question
@@ -559,7 +548,7 @@ export function mapOpencodeRows(
           continue;
         }
       }
-      const input = objField(state.input) ?? {};
+      const input = asRecord(state.input) ?? {};
       const label = opencodeToolLabel(tool, input);
       const diff = tool === "edit" ? diffStat(state.metadata) : undefined;
       const step: VaultActivityStep = {
@@ -716,7 +705,7 @@ export async function readOpenCodeMessageRecord(
   if (!row) {
     return { ok: false, reason: "not-found" };
   }
-  if (num(row.source_bytes) > maxBytes) {
+  if (finiteNumberOrZero(row.source_bytes) > maxBytes) {
     return { ok: false, reason: "too-large" };
   }
   if (typeof row.record_json !== "string") {
@@ -930,7 +919,7 @@ function buildChildStubs(rows: Record<string, unknown>[]): { timestamp: number; 
     // `strField` trims + treats a whitespace-only column as absent, so a blank
     // `agent` column falls through to the agent recovered from the title suffix.
     const agent = strField(row.agent) ?? split?.agent;
-    const timestamp = Number(row.time_created) || 0;
+    const timestamp = parseEpochMilliseconds(row.time_created) ?? 0;
     stubs.push({
       timestamp,
       item: {
@@ -948,10 +937,10 @@ function buildChildStubs(rows: Record<string, unknown>[]): { timestamp: number; 
 
 function parseJsonData(raw: unknown): Record<string, unknown> | null {
   if (typeof raw !== "string") {
-    return objField(raw) ?? null;
+    return asRecord(raw) ?? null;
   }
   try {
-    return objField(JSON.parse(raw)) ?? null;
+    return asRecord(JSON.parse(raw)) ?? null;
   } catch {
     return null;
   }
@@ -976,7 +965,7 @@ function parseMessageRows(rows: Record<string, unknown>[]): OcMessageRow[] {
     const id = strField(row.id);
     const data = parseJsonData(row.data);
     if (id && data) {
-      out.push({ id, timeCreated: num(row.time_created), data });
+      out.push({ id, timeCreated: parseEpochMilliseconds(row.time_created) ?? 0, data });
     }
   }
   return out;
@@ -988,7 +977,7 @@ function parsePartRows(rows: Record<string, unknown>[]): OcPartRow[] {
     const messageId = strField(row.message_id);
     const data = parseJsonData(row.data);
     if (messageId && data) {
-      out.push({ messageId, timeCreated: num(row.time_created), data });
+      out.push({ messageId, timeCreated: parseEpochMilliseconds(row.time_created) ?? 0, data });
     }
   }
   return out;

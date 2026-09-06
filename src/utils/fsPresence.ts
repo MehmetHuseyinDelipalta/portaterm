@@ -18,6 +18,11 @@ export function presenceFromAccessError(err: unknown): FsPresence {
   return code === "ENOENT" || code === "ENOTDIR" ? "absent" : "unreachable";
 }
 
+/** True only when an operation failed because the named entry was not found. */
+export function isNotFound(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === "ENOENT";
+}
+
 /** True only for a failure that PROVES absence — the guard a scan uses to decide
  *  whether it may still call itself exhaustive. */
 export function provesAbsence(err: unknown): boolean {

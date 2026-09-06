@@ -33,7 +33,7 @@ export interface VaultAgentAdapter {
   /** On-demand single-session detail. `limit` bounds the returned timeline
    *  (most-recent kept) so the webview can load older messages incrementally. */
   detail: (sessionId: string, limit?: number) => Promise<VaultSessionDetail | null>;
-  /** Resolve ONE launch entry by id, with no full scan — the resume/fork fast path.
+  /** Resolve ONE launch entry by id, with no full scan — the stored-session launch fast path.
    *  Answers conclusively: a session that is not there is `absent`, a lookup that
    *  could not find out is `unknown` (tell-an-absent-session-from-an-unknown-one D1). */
   entry: (sessionId: string) => Promise<VaultEntryLookup>;

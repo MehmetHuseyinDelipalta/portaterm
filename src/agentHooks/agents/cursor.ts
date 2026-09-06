@@ -4,8 +4,6 @@
 
 import type { AgentHookChannel, AgentHookRegistration, AgentHookSession } from "../AgentHookRuntime";
 
-export type CursorSemanticState = "working" | "idle";
-
 export const CURSOR_HOOK_QUIET_WINDOW_MS = 1_500;
 export const CURSOR_HOOK_FRESHNESS_MS = 30 * 60 * 1000;
 

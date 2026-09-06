@@ -24,7 +24,6 @@ function entry(id: string): VaultSessionEntry {
     cwd: "/repo",
     modified: 1_700_000_000_000,
     flags: {},
-    canFork: true,
   } as VaultSessionEntry;
 }
 

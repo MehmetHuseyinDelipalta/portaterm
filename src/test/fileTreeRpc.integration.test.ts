@@ -5,7 +5,7 @@
 //   1. valid generation + in-workspace path  → entries populated, echo
 //                                               current rootGeneration, no error.
 //   2. stale generation                       → error.code = "STALE_ROOT".
-//   3. out-of-workspace path                  → error.code = "OUT_OF_WORKSPACE".
+//   3. absolute path outside workspace        → entries populated; the OS is the boundary.
 //
 // Uses a real temp directory (node:fs + node:os) so `vscode.workspace.fs`
 // can be a thin pass-through to node's fs. The handler accepts injected
@@ -57,9 +57,7 @@ const minimalUri = {
 
 // Cast helpers — the handler's signature pins these to the real vscode types
 // but only uses the structural subset above.
-// biome-ignore lint/suspicious/noExplicitAny: structural-only test shim
 const fsArg = minimalFs as any;
-// biome-ignore lint/suspicious/noExplicitAny: structural-only test shim
 const uriArg = minimalUri as any;
 
 // ─── Temp workspace fixture ─────────────────────────────────────────

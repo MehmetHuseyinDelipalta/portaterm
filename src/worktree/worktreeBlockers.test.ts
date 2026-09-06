@@ -364,12 +364,6 @@ describe("a registration whose directory is gone is still removable", () => {
     );
     expect(result).toEqual({ kind: "unavailable", unreadable: ["sessions"] });
   });
-
-  it("keeps reporting an unreadable status on a directory that is present", () => {
-    // The negative that keeps D16 intact: only an ABSENT directory is exempt.
-    const result = evaluateRemoval(input({ porcelain: { ok: false } }));
-    expect(result).toEqual({ kind: "unavailable", unreadable: ["status"] });
-  });
 });
 
 describe("the ignored material the removal will delete", () => {

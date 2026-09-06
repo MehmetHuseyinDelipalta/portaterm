@@ -6,7 +6,7 @@ description:
 
 # AGENTS.md
 
-For tech stack, architecture, and code conventions, see `cyberk-flow/project.md`.
+For tech stack, architecture, and code conventions, see `asimov/project.md`.
 
 ## Content Rules
 

@@ -10,7 +10,7 @@ import { vi } from "vitest";
 import type { MessageSender } from "../session/OutputBuffer";
 
 /** Registered by every mocked PtySession so a test can drive its callbacks. */
-export interface MockPtyHandle {
+interface MockPtyHandle {
   id: string;
   onData: ((data: string) => void) | undefined;
   onExit: ((code: number) => void) | undefined;

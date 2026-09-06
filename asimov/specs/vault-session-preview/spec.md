@@ -199,7 +199,7 @@ The mirror SHALL NOT be read when the canonical store is readable and claims a d
 
 A compatible Cursor IDE detail request SHALL render its local Composer conversation through the same bounded Vault timeline used by other providers.
 
-The preview SHALL identify the source as Cursor IDE and SHALL NOT expose Resume, Copy Resume Command, or Fork actions.
+The preview SHALL identify the source as Cursor IDE and SHALL NOT expose Resume or Copy Resume Command actions.
 
 ### Requirement: Cursor transcript capability fallback
 
@@ -431,3 +431,15 @@ retiring a session from that retention SHALL NOT license a second attempt agains
 - **THEN** the count of outstanding reads stays at or below that retention rather than growing with
   each cadence tick
 
+
+### Requirement: Provider Timestamp Boundaries
+
+Every timestamp emitted in a Vault entry or timeline SHALL be a finite integer epoch-millisecond number. Claude and Codex transcript JSONL timestamps SHALL accept provider-profile strings (uppercase `T`, uppercase `Z` or a numeric offset, seconds `00`–`59`) or numeric epoch milliseconds; decimal strings SHALL NOT be reinterpreted as epochs. Codex SQLite `_ms` fields and OpenCode SQLite `time_*` fields SHALL accept numbers only. Invalid values SHALL preserve the caller's existing missing-value sentinel rather than rejecting the containing record.
+
+Claude workflow-manifest `startTime` is the sole legacy exception: it SHALL accept an unpadded 13-digit decimal epoch-millisecond string as well as the current numeric representation.
+
+#### Scenario: A numeric-looking transcript timestamp is not a date
+
+- **WHEN** a transcript record carries `"1750000000000"` as its timestamp
+- **THEN** the timestamp is treated as missing rather than as epoch milliseconds
+- **AND** the record remains available with the source-specific missing timestamp value

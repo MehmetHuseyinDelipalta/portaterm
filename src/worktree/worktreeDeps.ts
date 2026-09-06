@@ -1,7 +1,7 @@
 // src/worktree/worktreeDeps.ts — The production wiring for worktree discovery.
 // See: asimov/changes/cache-and-broadcast-worktree-tree/design.md D9
 //
-// `buildWorktreeTree` injects every dependency it has, which kept WT-001.1
+// `buildWorktreeTreeDetailed` injects every dependency it has, which kept WT-001.1
 // testable but left no production caller. This is that caller: one place where
 // the real git, the real filesystem, and the real platform are bound, so the
 // host takes assembled deps and tests drive it with fakes.
@@ -10,13 +10,11 @@ import * as fs from "node:fs/promises";
 import { authorizeDirectory } from "../utils/authorizedDirectory";
 import { createTrackedPathResolver, type ResolvedPathMemo } from "../utils/resolvedPathMemo";
 import { createGitCapabilities } from "./gitCapabilities";
-import { createGitCommandRunner, type GitCommandRunnerOptions } from "./gitCommandRunner";
+import { createGitCommandRunner } from "./gitCommandRunner";
 import { normalizeWorktreePath } from "./normalizePath";
 import type { WorktreeTreeDeps } from "./WorktreeDiscovery";
 
 export interface CreateWorktreeTreeDepsOptions {
-  /** Forwarded to the git runner — mainly to shorten the timeout in tests. */
-  git?: GitCommandRunnerOptions;
   /**
    * Where the window's paths resolve. Absent — discovery matches repositories
    * lexically, exactly as before. Supplied in production from the window's one
@@ -32,7 +30,7 @@ export interface CreateWorktreeTreeDepsOptions {
  * probes shared across every repository.
  */
 export function createWorktreeTreeDeps(options: CreateWorktreeTreeDepsOptions = {}): WorktreeTreeDeps {
-  const runner = createGitCommandRunner(options.git ?? {});
+  const runner = createGitCommandRunner({});
   return {
     runner,
     capabilities: createGitCapabilities(runner),

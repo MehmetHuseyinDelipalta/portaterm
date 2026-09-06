@@ -45,7 +45,7 @@ SHALL treat it as absent and perform a full rebuild — never crash and never se
 
 WHEN a refreshed list is equivalent to the list currently displayed — same entries, in the same order, with
 identical values for every field the row, the folder filter, and the row actions read (`id`, `agent`,
-`title`, `cwd`, `modified`, `canFork`, `sessionPath`, `flags`) — the webview SHALL NOT re-render the list, so
+`title`, `cwd`, `modified`, `canResume`, `source`, `sessionPath`, `flags`) — the webview SHALL NOT re-render the list, so
 an open preview, scroll position, and selection are undisturbed. WHEN the refreshed list differs in any such
 field, the webview SHALL update to it. The webview SHALL keep its in-memory entry list current on every
 response (even when the DOM is left untouched) so client-side search/filter never operate on stale data.

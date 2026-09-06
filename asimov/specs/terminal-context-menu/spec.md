@@ -73,3 +73,13 @@ Each handler MUST operate on the **active pane's terminal** in the current tab (
 - **When** webview receives `{ type: "ctxPaste" }` message
 - **Then** `handlePaste(terminal, clipboard)` is called on the active terminal
 
+
+### Requirement: Root Tab Rename Context Menu
+
+`package.json` SHALL contribute `anywhereTerminal.renameTab` to `webview/context` only when `webviewSection == 'terminalTab'`, in group `tab@1`. The tab element SHALL provide its root `tabId` through `data-vscode-context`; split-pane context menus SHALL NOT receive the rename entry.
+
+#### Scenario: Rename targets the clicked root tab
+
+- **WHEN** the user opens the context menu on a root tab
+- **THEN** `Rename Tab…` is offered for that tab id
+- **AND** opening a pane context menu does not offer the tab rename command

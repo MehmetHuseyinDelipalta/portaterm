@@ -1,5 +1,5 @@
 // src/vault/VaultLauncher.ts — Resolve a vault entry into createSession options.
-// See: specs/vault-session-launch/spec.md (Resume; Fork when supported),
+// See: specs/vault-session-launch/spec.md (Resume; Continue),
 //      design.md D5,D9.
 //
 // This resolves an entry id to the exact `{ shell, shellArgs, cwd, env }` shape
@@ -52,10 +52,6 @@ export class VaultLauncher {
     cwd?: string,
   ): Promise<CreateSessionOptions> {
     const entry = await this.resolveLaunchable(entryId, mode);
-    if (mode === "fork" && !entry.canFork) {
-      throw new VaultLaunchError(`Fork is not supported for ${entryId}`, "fork-unsupported");
-    }
-
     const executable = await resolveLaunchExecutable(entry, mode, target);
     const contextTag = await resolveContextTag(
       entry,
@@ -122,7 +118,7 @@ export class VaultLauncher {
     // `list()` over every agent store — launching must not block on scanning the
     // whole session index (e.g. the multi-GB opencode db).
     if (mode !== "resume") {
-      // Continue/Fork need no store-identity proof, and only getEntry resolves
+      // Continue needs no store-identity proof, and only getEntry resolves
       // every launchable Cursor source — the launch target below is CLI-only, so
       // routing these through it broke IDE and issued-child Continue (B18).
       const entry = await this.vaultService.getEntry(entryId);

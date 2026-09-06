@@ -65,11 +65,8 @@ describe("FileTreeHost.handleMessage", () => {
     const handled = host.handleMessage(msg, (m) => posted.push(m));
     expect(handled).toBe(true);
 
-    // Allow the inner promise to resolve. Without a workspace folder set the
-    // host falls into the `OUT_OF_WORKSPACE` branch and posts an error —
-    // the exact response content isn't the point. We're asserting that the
-    // message TYPE was claimed by the host (the dispatch wiring is the
-    // regression target).
+    // Allow the inner promise to resolve. The exact response content is not
+    // the point; this asserts that the host claimed the message type.
     await waitFor(() => posted.length > 0);
     expect(posted.length).toBe(1);
     expect((posted[0] as { type?: string }).type).toBe("file-tree-search-response");

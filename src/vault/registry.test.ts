@@ -7,7 +7,6 @@ import {
   AGENT_REGISTRY,
   agentKindForExecutable,
   CLAUDE_AUTH_ENV_ALLOWLIST,
-  detectContinuationTargets,
   detectLaunchTargets,
   getAgentDefinition,
   VAULT_AGENT_IDS,
@@ -21,16 +20,8 @@ function staticTokens(t: CommandTemplate): string[] {
 describe("AGENT_REGISTRY", () => {
   it("ships records for claude, codex, opencode, and cursor", () => {
     expect(Object.keys(AGENT_REGISTRY).sort()).toEqual(["claude", "codex", "cursor", "opencode"]);
+    // AGENT_DEFINITIONS is derived from VAULT_AGENT_IDS, so this pins the single source and its order.
     expect(AGENT_DEFINITIONS.map((d) => d.id)).toEqual(["claude", "codex", "opencode", "cursor"]);
-  });
-
-  it("every VAULT_AGENT_IDS entry has a registry definition (single source, no gap)", () => {
-    expect([...VAULT_AGENT_IDS]).toEqual(["claude", "codex", "opencode", "cursor"]);
-    for (const id of VAULT_AGENT_IDS) {
-      expect(getAgentDefinition(id)).toBeDefined();
-    }
-    // AGENT_DEFINITIONS is derived from VAULT_AGENT_IDS, so order tracks it.
-    expect(AGENT_DEFINITIONS.map((d) => d.id)).toEqual([...VAULT_AGENT_IDS]);
   });
 
   it("each record's id equals its registry key (W2 — satisfies checks keys, not id===key)", () => {
@@ -74,11 +65,10 @@ describe("AGENT_REGISTRY", () => {
     expect(CLAUDE_AUTH_ENV_ALLOWLIST).toHaveLength(8);
   });
 
-  it("claude resume injects model + permission-mode flags; fork uses --fork-session", () => {
+  it("claude resume injects model + permission-mode flags", () => {
     const claude = getAgentDefinition("claude");
     expect(claude?.resumeCommand.args).toContainEqual({ flag: "--model", from: "model" });
     expect(claude?.resumeCommand.args).toContainEqual({ flag: "--permission-mode", from: "permissionMode" });
-    expect(staticTokens(claude?.forkCommand as CommandTemplate)).toContain("--fork-session");
   });
 
   it("codex resume preserves flag order m,a,s and templates reasoning effort", () => {
@@ -93,10 +83,8 @@ describe("AGENT_REGISTRY", () => {
     expect(staticTokens(codex?.resumeCommand as CommandTemplate)).toEqual(["resume", "{{sessionId}}"]);
   });
 
-  it("opencode carries forkMinVersion 1.1.54 and a --fork command", () => {
+  it("opencode resume preserves the captured agent flag", () => {
     const opencode = getAgentDefinition("opencode");
-    expect(opencode?.forkMinVersion).toBe("1.1.54");
-    expect(staticTokens(opencode?.forkCommand as CommandTemplate)).toContain("--fork");
     expect(opencode?.resumeCommand.args).toContainEqual({ flag: "--agent", from: "agent" });
   });
 
@@ -109,11 +97,6 @@ describe("AGENT_REGISTRY", () => {
     });
     expect(cursor?.sessionStore.format).toBe("metadata-json");
     expect(cursor?.resumeCommand).toEqual({ executable: "{{executable}}", args: ["--resume", "{{sessionId}}"] });
-    expect(cursor?.forkCommand).toBeUndefined();
-  });
-
-  it("codex has no forkMinVersion (fork supported whenever a command exists)", () => {
-    expect(getAgentDefinition("codex")?.forkMinVersion).toBeUndefined();
   });
 
   it("getAgentDefinition returns undefined for unknown agents", () => {
@@ -177,7 +160,7 @@ describe("permissionChoices", () => {
   });
 });
 
-describe("detectContinuationTargets", () => {
+describe("detectLaunchTargets — continue", () => {
   it("lists only agents whose executable passes its probe, with their choices", async () => {
     const exec = vi.fn(async (file: string, args: string[]) => {
       if (file === "opencode") {
@@ -191,7 +174,7 @@ describe("detectContinuationTargets", () => {
       }
       return { stdout: "1.0.0", stderr: "" };
     });
-    const targets = await detectContinuationTargets({ exec });
+    const targets = await detectLaunchTargets("continue", { exec });
     expect(targets.map((t) => t.agent)).toEqual(["claude", "codex", "cursor"]);
     expect(targets[0]).toMatchObject({ displayName: "Claude Code" });
     expect(targets[0].permissionChoices.length).toBeGreaterThan(0);
@@ -208,7 +191,7 @@ describe("detectContinuationTargets", () => {
       return { stdout: "1.0.0", stderr: "" };
     });
 
-    const targets = await detectContinuationTargets({ exec });
+    const targets = await detectLaunchTargets("continue", { exec });
     expect(targets.map((target) => target.agent)).toEqual(["claude", "codex", "opencode"]);
   });
 
@@ -216,7 +199,7 @@ describe("detectContinuationTargets", () => {
     const exec = vi.fn(async () => {
       throw new Error("command not found");
     });
-    expect(await detectContinuationTargets({ exec })).toEqual([]);
+    expect(await detectLaunchTargets("continue", { exec })).toEqual([]);
   });
 });
 

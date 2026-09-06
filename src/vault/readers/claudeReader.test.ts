@@ -5,13 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import {
-  listClaudeWorkflowStubs,
-  lookupClaudeEntry,
-  readClaudeDetail,
-  readClaudeEntry,
-  readClaudeSessions,
-} from "./claudeReader";
+import { listClaudeWorkflowStubs, lookupClaudeEntry, readClaudeDetail, readClaudeSessions } from "./claudeReader";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = path.join(here, "..", "__fixtures__", "claude");
@@ -23,9 +17,14 @@ const TEAM_FIXTURE_ROOT = path.join(here, "..", "__fixtures__", "claude-teams");
 const WF_FIXTURE_ROOT = path.join(here, "..", "__fixtures__", "claude-workflows");
 const PERMISSION_MODE_FIXTURE_ROOT = path.join(here, "..", "__fixtures__", "claude-permission-mode");
 
+async function claudeEntry(sessionId: string, options?: Parameters<typeof lookupClaudeEntry>[1]) {
+  const found = await lookupClaudeEntry(sessionId, options);
+  return found.status === "found" ? found.entry : null;
+}
+
 describe("readClaudeSessions: permission mode is the LATEST recorded mode", () => {
   const modeOf = async (sessionId: string): Promise<string | undefined> =>
-    (await readClaudeEntry(sessionId, { configDir: PERMISSION_MODE_FIXTURE_ROOT }))?.flags.permissionMode;
+    (await claudeEntry(sessionId, { configDir: PERMISSION_MODE_FIXTURE_ROOT }))?.flags.permissionMode;
 
   it("takes the mode from a later permission-mode record over the earlier one", async () => {
     expect(await modeOf("sess-changed")).toBe("default");
@@ -58,7 +57,6 @@ describe("readClaudeSessions", () => {
     expect(e.flags.permissionMode).toBe("acceptEdits");
     expect(e.flags.configDir).toBe(FIXTURE_ROOT);
     expect(e.modified).toBeGreaterThan(0);
-    expect(e.canFork).toBe(false);
   });
 
   it("falls back to the first user message when there is no ai-title", async () => {
@@ -106,7 +104,7 @@ describe("readClaudeSessions", () => {
     expect(entries.some((e) => e.sessionId === "sess-empty")).toBe(false);
     // Hidden from the LIST only — a single-entry resolve still returns it (a real,
     // launchable session), mirroring the team-member rule.
-    const entry = await readClaudeEntry("sess-empty", { configDir: CMDS_FIXTURE_ROOT });
+    const entry = await claudeEntry("sess-empty", { configDir: CMDS_FIXTURE_ROOT });
     expect(entry?.id).toBe("claude:sess-empty");
   });
 
@@ -123,9 +121,9 @@ describe("readClaudeSessions", () => {
   });
 });
 
-describe("readClaudeEntry: single-entry resolve", () => {
+describe("lookupClaudeEntry: single-entry resolve", () => {
   it("resolves one session by id with the same fields as the list scan", async () => {
-    const entry = await readClaudeEntry("sess-valid", { configDir: FIXTURE_ROOT });
+    const entry = await claudeEntry("sess-valid", { configDir: FIXTURE_ROOT });
     expect(entry?.id).toBe("claude:sess-valid");
     expect(entry?.sessionId).toBe("sess-valid");
     expect(entry?.cwd).toBe("/Users/me/proj");
@@ -135,11 +133,7 @@ describe("readClaudeEntry: single-entry resolve", () => {
   });
 
   it("returns null for an unsafe id (path traversal)", async () => {
-    expect(await readClaudeEntry("../../escape", { configDir: FIXTURE_ROOT })).toBeNull();
-  });
-
-  it("returns null for a session that does not exist", async () => {
-    expect(await readClaudeEntry("nope-not-here", { configDir: FIXTURE_ROOT })).toBeNull();
+    expect(await claudeEntry("../../escape", { configDir: FIXTURE_ROOT })).toBeNull();
   });
 });
 
@@ -191,7 +185,7 @@ describe("team-member exclusion from the top-level list (D5)", () => {
   });
 
   it("still resolves a member by explicit id (a member is a real, launchable session)", async () => {
-    const entry = await readClaudeEntry("member-a", { configDir: TEAM_FIXTURE_ROOT });
+    const entry = await claudeEntry("member-a", { configDir: TEAM_FIXTURE_ROOT });
     expect(entry).not.toBeNull();
     expect(entry?.sessionId).toBe("member-a");
     expect(entry?.id).toBe("claude:member-a");
@@ -235,7 +229,7 @@ describe("workflow nesting (2_1 / 2_2 / 2_3)", () => {
     expect(stubs[0].entryId).toBe("claude:wfparent:workflow:wf_test123");
     expect(stubs[0].description).toBe("Workflow: design-audit · completed");
     expect(stubs[0].isGroup).toBe(true);
-    expect(stubs[0].timestamp).toBe(1780072409110); // startTime numeric string coerced
+    expect(stubs[0].timestamp).toBe(1780072409110); // legacy startTime decimal string accepted
   });
 
   it("2_1: returns [] for a parent with no workflows dir", async () => {
@@ -309,6 +303,56 @@ describe("workflow board from manifest workflowProgress (1_2)", () => {
     expect(detail?.stats.subagentCount).toBe(2);
   });
 
+  it("leaves a directly opened workflow board undated when manifest timestamp is numeric", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "claude-workflow-timestamp-"));
+    const configDir = path.join(root, "config");
+    try {
+      await fsp.cp(WF_FIXTURE_ROOT, configDir, { recursive: true });
+      const manifestPath = path.join(configDir, "projects", "-Users-me-wf", "wfboard", "workflows", "wf_board1.json");
+      const manifest = JSON.parse(await fsp.readFile(manifestPath, "utf8"));
+      manifest.startTime = "invalid";
+      manifest.timestamp = 1_750_000_000_000;
+      await fsp.writeFile(manifestPath, JSON.stringify(manifest));
+      const detail = await readClaudeDetail("wfboard:workflow:wf_board1", { configDir });
+      expect(detail?.timeline[0]).toMatchObject({ kind: "workflowBoard" });
+      expect(detail?.timeline[0]).not.toHaveProperty("timestamp");
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects impossible manifest dates in direct boards, parent composition, and fallback stubs", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "claude-workflow-impossible-date-"));
+    const configDir = path.join(root, "config");
+    try {
+      await fsp.cp(WF_FIXTURE_ROOT, configDir, { recursive: true });
+      const boardPath = path.join(configDir, "projects", "-Users-me-wf", "wfboard", "workflows", "wf_board1.json");
+      const boardManifest = JSON.parse(await fsp.readFile(boardPath, "utf8"));
+      boardManifest.startTime = "invalid";
+      boardManifest.timestamp = "2026-02-30T01:02:03Z";
+      await fsp.writeFile(boardPath, JSON.stringify(boardManifest));
+      const boardMtime = (await fsp.stat(boardPath)).mtimeMs;
+
+      const stubPath = path.join(configDir, "projects", "-Users-me-wf", "wfempty", "workflows", "wf_empty1.json");
+      const stubManifest = JSON.parse(await fsp.readFile(stubPath, "utf8"));
+      stubManifest.startTime = "invalid";
+      stubManifest.timestamp = "2026-02-30T01:02:03Z";
+      await fsp.writeFile(stubPath, JSON.stringify(stubManifest));
+
+      const direct = await readClaudeDetail("wfboard:workflow:wf_board1", { configDir });
+      expect(direct?.timeline[0]).not.toHaveProperty("timestamp");
+
+      const parent = await readClaudeDetail("wfboard", { configDir });
+      const board = parent?.timeline.find((item) => item.kind === "workflowBoard");
+      expect(board).toMatchObject({ kind: "workflowBoard", timestamp: boardMtime });
+
+      const stubs = await listClaudeWorkflowStubs("wfempty", { configDir });
+      expect(stubs[0]).not.toHaveProperty("timestamp");
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("resolves phase detail positionally without an off-by-one (1-based index → 0-based phases[])", async () => {
     const detail = await readClaudeDetail("wfboard:workflow:wf_board1", { configDir: WF_FIXTURE_ROOT });
     const board = detail?.timeline[0];
@@ -339,6 +383,24 @@ describe("workflow board from manifest workflowProgress (1_2)", () => {
     expect(kinds).not.toContain("workflowBoard");
     expect(kinds).toEqual(["subagentSession"]);
     expect(detail?.firstPrompt).toBe("A run whose manifest has an empty workflowProgress");
+  });
+
+  it("leaves a fallback stub undated when manifest timestamp is numeric", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "claude-workflow-stub-timestamp-"));
+    const configDir = path.join(root, "config");
+    try {
+      await fsp.cp(WF_FIXTURE_ROOT, configDir, { recursive: true });
+      const manifestPath = path.join(configDir, "projects", "-Users-me-wf", "wfempty", "workflows", "wf_empty1.json");
+      const manifest = JSON.parse(await fsp.readFile(manifestPath, "utf8"));
+      manifest.startTime = "invalid";
+      manifest.timestamp = 1_750_000_000_000;
+      await fsp.writeFile(manifestPath, JSON.stringify(manifest));
+
+      const stubs = await listClaudeWorkflowStubs("wfempty", { configDir });
+      expect(stubs[0]).not.toHaveProperty("timestamp");
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true });
+    }
   });
 
   it("inlines a progress-bearing run as a self-collapsing board in the PARENT timeline (one layer, #1)", async () => {
@@ -664,9 +726,5 @@ describe("lookupClaudeEntry: absent is proven, everything else is unknown", () =
     const root = await makeStore();
     await fsp.writeFile(path.join(root, "projects", "proj-a", "broken.jsonl"), "not json at all\n");
     expect(await lookupClaudeEntry("broken", { configDir: root })).toEqual({ status: "unknown" });
-  });
-
-  it("keeps readClaudeEntry nullable for the callers that cannot act on the difference", async () => {
-    expect(await readClaudeEntry("no-such-session", { configDir: PERMISSION_MODE_FIXTURE_ROOT })).toBeNull();
   });
 });

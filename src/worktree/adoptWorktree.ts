@@ -9,7 +9,9 @@
 
 import { basename, resolve } from "node:path";
 import { type FileIdentity, sameIdentity } from "../utils/fileIdentity";
+import { provesAbsence } from "../utils/fsPresence";
 import { readsAsFlag } from "../utils/readsAsFlag";
+import { messageOf } from "./errorMessage";
 import type { GitCommandRunner } from "./gitCommandRunner";
 import { gitdirOf } from "./reattachProbe";
 import { repairWorktree, resetMixedIndex } from "./worktreeMutations";
@@ -244,7 +246,7 @@ export async function adoptWorktree(
   } catch (error) {
     return {
       ok: false,
-      message: `That directory's git link could not be read, so nothing was written: ${reasonOf(error)}`,
+      message: `That directory's git link could not be read, so nothing was written: ${messageOf(error)}`,
     };
   }
   /**
@@ -286,7 +288,7 @@ export async function adoptWorktree(
     }
     opening = await link.readAt(0);
   } catch (error) {
-    return refuse(`That directory's git link could not be read, so nothing was written: ${reasonOf(error)}`);
+    return refuse(`That directory's git link could not be read, so nothing was written: ${messageOf(error)}`);
   }
   if (opening !== request.staleLink) {
     return refuse("That directory's git link is not the one this adoption was offered on, so nothing was written.");
@@ -424,7 +426,7 @@ export async function adoptWorktree(
       // An entry that is GONE leaves nothing to unlock and nothing to say.
       // Folding that into "not ours" reported a residue over a directory that
       // no longer exists (round-1 F005).
-      return readsAsAbsent(error);
+      return provesAbsence(error);
     }
     return fs
       .removeFile(`${entryPath}/${LOCK_MARKER}`)
@@ -548,7 +550,7 @@ export async function adoptWorktree(
     await fs.createFile(`${entryPath}/commondir`, COMMON_DIR_ROUTE);
     await fs.createFile(`${entryPath}/HEAD`, `ref: refs/heads/${request.branch}\n`);
   } catch (error) {
-    return failed(reasonOf(error));
+    return failed(messageOf(error));
   }
 
   // Between the mkdir and here the entry could have been collected and remade
@@ -559,7 +561,7 @@ export async function adoptWorktree(
       return failed("The administrative entry was replaced while it was being written.");
     }
   } catch (error) {
-    return failed(reasonOf(error));
+    return failed(messageOf(error));
   }
 
   // LAST. Until this lands the entry links nowhere, so git neither lists it nor
@@ -619,7 +621,7 @@ export async function adoptWorktree(
       return failed("That directory's git link was replaced while it was being re-registered.");
     }
   } catch (error) {
-    return failed(reasonOf(error));
+    return failed(messageOf(error));
   }
 
   const repaired = await repairWorktree(runner, { repoPath: request.repoPath, worktreePath: request.worktreePath });
@@ -680,7 +682,7 @@ async function createEntry(request: AdoptRequest, fs: AdoptFs): Promise<CreatedE
     // Said as itself. A permission wall and a hundred taken names are different
     // problems with different recoveries, and both used to report the second
     // one (round-1 F011).
-    return { ok: false, message: `The administrative directory could not be prepared: ${reasonOf(error)}` };
+    return { ok: false, message: `The administrative directory could not be prepared: ${messageOf(error)}` };
   }
   for (let attempt = 1; attempt <= MAX_ID_ATTEMPTS; attempt++) {
     const id = attempt === 1 ? stem : `${stem}-${attempt}`;
@@ -693,7 +695,7 @@ async function createEntry(request: AdoptRequest, fs: AdoptFs): Promise<CreatedE
       // retrying it ninety-nine times ends in a message about names being
       // unavailable that says the wrong thing about what went wrong.
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-        return { ok: false, message: `The administrative entry could not be created: ${reasonOf(error)}` };
+        return { ok: false, message: `The administrative entry could not be created: ${messageOf(error)}` };
       }
       continue;
     }
@@ -705,7 +707,7 @@ async function createEntry(request: AdoptRequest, fs: AdoptFs): Promise<CreatedE
       // captured — the undo is built from it (round-1 F004).
       return {
         ok: false,
-        message: `The administrative entry at ${entryPath} was created but could not be read back: ${reasonOf(error)}`,
+        message: `The administrative entry at ${entryPath} was created but could not be read back: ${messageOf(error)}`,
         leftBehind: { entryPath, link: "restored" },
       };
     }
@@ -716,13 +718,3 @@ async function createEntry(request: AdoptRequest, fs: AdoptFs): Promise<CreatedE
 type CreatedEntry =
   | { ok: true; entryPath: string; id: string; identity: FileIdentity }
   | { ok: false; message: string; leftBehind?: AdoptResidue };
-
-/** The one errno that MEANS the path is not there. Everything else is an unread answer. */
-function readsAsAbsent(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException).code;
-  return code === "ENOENT" || code === "ENOTDIR";
-}
-
-function reasonOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}

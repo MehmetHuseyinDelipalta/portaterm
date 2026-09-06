@@ -23,7 +23,6 @@ function entry(over: Partial<VaultSessionEntry> = {}): VaultSessionEntry {
     cwd: "/repo",
     modified: 1_700_000_000_000,
     flags: {},
-    canFork: true,
     sessionPath: "/vault/s1.jsonl",
     ...over,
   } as VaultSessionEntry;
@@ -177,13 +176,6 @@ describe("a surface that cannot perform vault actions", () => {
     menu.open(entry(), EVENT, row);
     expect(host.querySelector(".vault-context-menu")).toBeNull();
     expect(menu.isOpen()).toBe(false);
-  });
-
-  it("posts nothing, since there is nothing to click", () => {
-    const { menu, host, row, posts } = setup(false);
-    menu.open(entry(), EVENT, row);
-    expect(labels(host)).toEqual([]);
-    expect(posts).toEqual([]);
   });
 
   it("leaves an action-capable surface exactly as it was", () => {

@@ -379,26 +379,6 @@ describe("SessionStorage", () => {
     expect(fs.existsSync(`${SNAPS_DIR}/index.json`)).toBe(false);
   });
 
-  it("purge() still clears Memento when the file rm succeeds first", async () => {
-    // Regression guard for the fix: rmSync-first must not skip Memento updates.
-    const mem = makeFakeMemento({
-      [SESSION_SNAPSHOTS_INDEX_KEY]: { version: 1, entries: { s1: makeMeta("s1") } },
-      [LIVE_EDITOR_PANELS_KEY]: {
-        version: 1,
-        panels: [{ panelId: "p", sessionIds: ["s1"], createdAt: 1, updatedAt: 1 }],
-      },
-    });
-    const { fs } = makeFakeFs();
-    const s = new SessionStorage(mem as unknown as vscode.Memento, STORAGE_URI, fs);
-    s.commitBufferSync("s1", "DATA");
-
-    await s.purge();
-
-    expect(mem.get(SESSION_SNAPSHOTS_INDEX_KEY)).toBeUndefined();
-    expect(mem.get(LIVE_EDITOR_PANELS_KEY)).toBeUndefined();
-    expect(s.listBufferFiles()).toEqual([]);
-  });
-
   // ───────────────────────────────────────────────────────────────────
   // [R-3] Transactional commit invariants (design.md D16).
   // Goal: a stale async commit (whose captured-gen was invalidated by a

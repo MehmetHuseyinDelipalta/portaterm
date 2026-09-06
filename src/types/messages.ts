@@ -127,7 +127,7 @@ export interface CloseTabMessage {
 /**
  * Inline-edit dblclick path for tab rename. Host normalizes (trim / empty→null /
  * truncate to 80 chars) and persists via `SessionManager.renameSession`. The host-
- * side triggers (right-click, command palette, F2) invoke `renameSession` directly
+ * side triggers (right-click and command palette) invoke `renameSession` directly
  * — they do NOT send this message.
  */
 export interface RenameTabMessage {
@@ -381,13 +381,6 @@ export interface RequestVaultSessionsMessage {
 /** Webview → Extension: resume the given vault session in a new terminal. */
 export interface VaultResumeMessage {
   type: "vaultResume";
-  /** `<agent>:<sessionId>` id from a `VaultSessionEntry`. */
-  entryId: string;
-}
-
-/** Webview → Extension: fork the given vault session in a new terminal. */
-export interface VaultForkMessage {
-  type: "vaultFork";
   /** `<agent>:<sessionId>` id from a `VaultSessionEntry`. */
   entryId: string;
 }
@@ -670,9 +663,6 @@ export interface WorktreeOpenFolderMessage {
   worktreeId: string;
   mode: "newWindow" | "addToWorkspace";
 }
-
-/** After-creation modes create ships with. */
-export type WorktreeOpenAfterMode = "none" | "terminal" | "agent" | "newWindow" | "addToWorkspace";
 
 /**
  * What a launch runs: which agent, under which posture, seeded with what.
@@ -1809,11 +1799,9 @@ export type WebViewToExtensionMessage =
   | FileTreeCopyRelativePathMessage
   | FileTreeDeleteMessage
   | UpdateHoverPreviewSettingMessage
-  | PersistPanelIdMessage
   | ScrollbackDumpMessage
   | RequestVaultSessionsMessage
   | VaultResumeMessage
-  | VaultForkMessage
   | RequestVaultSessionDetailMessage
   | RequestVaultMessageRecordMessage
   | RequestVaultLaunchTargetsMessage
@@ -1949,19 +1937,6 @@ export type WorktreeActionMessage = Exclude<
 /** Does this message belong to the worktree host? One test, both providers. */
 export function isWorktreeMessage(msg: WebViewToExtensionMessage): msg is WorktreeInboundMessage {
   return (WORKTREE_MESSAGE_TYPES as readonly string[]).includes(msg.type);
-}
-
-/**
- * Webview → Extension. Sent by the editor webview after it has merged the
- * extension-supplied panelId into `vscode.setState({...})`. Lets the editor
- * provider know it is safe to assume VS Code will include the panelId in any
- * subsequent `WebviewPanelSerializer.deserializeWebviewPanel` payload.
- *
- * See: asimov/changes/restore-terminal-sessions/design.md D2.
- */
-export interface PersistPanelIdMessage {
-  type: "persistPanelId";
-  panelId: string;
 }
 
 // ─── Extension → WebView Messages ───────────────────────────────────
@@ -2101,7 +2076,7 @@ export interface TabCreatedMessage {
 
 /**
  * Host pushes the normalized custom name after any rename trigger (inline-edit,
- * context menu, command palette, F2). The webview mirrors it into
+ * context menu, and command palette). The webview mirrors it into
  * `TerminalInstance.customName` and re-renders the tab bar.
  */
 export interface TabRenamedMessage {
@@ -2173,11 +2148,6 @@ export interface SplitPaneCreatedMessage {
   newSessionName: string;
   /** Direction of the split */
   direction: "horizontal" | "vertical";
-}
-
-/** Close the active split pane in the webview. */
-export interface CloseSplitPaneMessage {
-  type: "closeSplitPane";
 }
 
 /** Close a specific split pane by session ID (from context menu). */
@@ -2325,9 +2295,8 @@ export interface UpdateHoverPreviewSettingMessage {
  * current generation so the webview can drop responses bound to a stale root.
  *
  * Error codes:
- *   - `OUT_OF_WORKSPACE`: requested path is outside the current workspace folder.
  *   - `STALE_ROOT`: request's `rootGeneration` no longer matches the host.
- *   - any other code: filesystem error from `vscode.workspace.fs.readDirectory`.
+ *   - `FS_ERROR`: filesystem error from `vscode.workspace.fs.readDirectory`.
  */
 export interface ReadDirectoryResponseMessage {
   type: "read-directory-response";
@@ -2344,7 +2313,6 @@ export interface ReadDirectoryResponseMessage {
  * the response when `rootGeneration` no longer matches its current value.
  *
  * Error codes:
- *   - `OUT_OF_WORKSPACE`: requested scopePath outside the active workspace.
  *   - `STALE_ROOT`: request's `rootGeneration` no longer matches the host.
  *   - `INTERNAL`: filesystem / findFiles error.
  *
@@ -3090,7 +3058,6 @@ export type ExtensionToWebViewMessage =
   | ViewShowMessage
   | SplitPaneMessage
   | SplitPaneCreatedMessage
-  | CloseSplitPaneMessage
   | CloseSplitPaneByIdMessage
   | SplitPaneAtMessage
   | CtxClearMessage

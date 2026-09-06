@@ -17,7 +17,7 @@ The registry MUST ship definitions for `claude`, `codex`, `opencode`, and `curso
 
 ### Requirement: Registry-driven launch extension
 
-Adding an agent's resume, fork, or continuation behavior SHALL require registry data rather than launcher control-flow edits.
+Adding an agent's resume or continuation behavior SHALL require registry data rather than launcher control-flow edits.
 
 A new history format MAY additionally require a small reader using the shared defensive file or SQLite substrate.
 
@@ -28,17 +28,17 @@ A new history format MAY additionally require a small reader using the shared de
 
 ### Requirement: Claude launch templates
 
-Claude resume SHALL use `claude --resume {{sessionId}} [--model <m>] [--permission-mode <p>]`; fork SHALL use `claude --resume {{sessionId}} --fork-session`.
+Claude resume SHALL use `claude --resume {{sessionId}} [--model <m>] [--permission-mode <p>]`.
 
 ### Requirement: Codex launch templates
 
-Codex resume SHALL use `codex resume {{sessionId}} [-m <m>] [-a <approval>] [-s <sandbox>] [-c model_reasoning_effort=<e>]`; fork SHALL use `codex fork {{sessionId}}`.
+Codex resume SHALL use `codex resume {{sessionId}} [-m <m>] [-a <approval>] [-s <sandbox>] [-c model_reasoning_effort=<e>]`.
 
 ### Requirement: OpenCode launch templates
 
-OpenCode resume SHALL use `opencode --session {{sessionId}} [-m <model>] [--agent <agent>]`; fork SHALL use `opencode --session {{sessionId}} --fork` only at version 1.1.54 or newer.
+OpenCode resume SHALL use `opencode --session {{sessionId}} [-m <model>] [--agent <agent>]`.
 
 ### Requirement: Cursor launch template
 
-Cursor resume SHALL use `{{executable}} --resume {{sessionId}}`; Cursor SHALL expose no fork template in this compatibility target.
+Cursor resume SHALL use `{{executable}} --resume {{sessionId}}`.
 

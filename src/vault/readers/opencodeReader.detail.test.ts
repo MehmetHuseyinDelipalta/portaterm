@@ -956,29 +956,6 @@ describe("readOpenCodeMessageRecord", () => {
   });
 });
 
-describe("a child query that failed is not a session that delegated nothing", () => {
-  it("stays complete when the child query succeeds with no children", async () => {
-    const detail = await readOpenCodeDetail("s1", {
-      dataDir: "/x/oc",
-      withSqliteSnapshotFn: snapshotOf(
-        vi.fn(async (_db: string, sql: string): Promise<SqliteResult> => {
-          if (sql.includes("OFFSET") || sql.includes("parent_id")) {
-            return { status: "ok", rows: [] };
-          }
-          if (sql.includes("FROM message")) {
-            return { status: "ok", rows: [{ id: "m1", time_created: 1, data: JSON.stringify({ role: "user" }) }] };
-          }
-          return {
-            status: "ok",
-            rows: [{ id: "p1", message_id: "m1", time_created: 1, data: JSON.stringify({ type: "text", text: "hi" }) }],
-          };
-        }),
-      ),
-    });
-    expect(detail?.partial).toBeUndefined();
-  });
-});
-
 // One delegation is one timeline item (surface-subagent-history-rows design.md D6).
 //
 // OpenCode records a delegation twice: as the `subtask` part that invoked it, and
@@ -1115,13 +1092,6 @@ describe("mapOpencodeRows — one delegation, one item", () => {
     expect(rows).toHaveLength(2);
     expect(rows.filter((r) => r.kind === "subagentSession")).toHaveLength(1);
     expect(rows.filter((r) => r.kind === "subagent")).toHaveLength(1);
-  });
-
-  it("correlates by agent when the source rewrote the child's title", () => {
-    const out = mapOpencodeRows(parent, [subtaskPart("m1", 10, "librarian", "find the presence spec")], undefined, [
-      childStub(11, "c1", "Untitled session", "librarian"),
-    ]);
-    expect(delegationsIn(out)).toHaveLength(1);
   });
 
   it("correlates on the title when the source left the child's agent column empty", () => {

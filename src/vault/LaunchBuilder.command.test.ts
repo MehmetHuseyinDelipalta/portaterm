@@ -18,7 +18,6 @@ function entry(over: Partial<VaultSessionEntry> = {}): VaultSessionEntry {
     cwd: "/x",
     modified: 1,
     flags: {},
-    canFork: false,
     ...over,
   };
 }

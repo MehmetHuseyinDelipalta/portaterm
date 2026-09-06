@@ -12,6 +12,7 @@
 import * as path from "node:path";
 import type * as vscode from "vscode";
 import type { FsLike } from "../session/SessionStorage";
+import { isRecord } from "../utils/record";
 import {
   isSafeCursorChatId,
   isValidCursorLocationIndex,
@@ -44,7 +45,6 @@ function isValidCachedEntry(e: unknown): e is VaultSessionEntry {
     !("contentKind" in v) &&
     !("limitedReason" in v) &&
     !("stats" in v) &&
-    typeof v.canFork === "boolean" &&
     (v.canResume === undefined || typeof v.canResume === "boolean") &&
     (v.source === undefined || v.source === "cli" || v.source === "ide") &&
     typeof v.flags === "object" &&
@@ -68,10 +68,6 @@ function isValidStamp(s: unknown): boolean {
   return isFiniteNumber(v.mtimeMs) && isFiniteNumber(v.size);
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return !!v && typeof v === "object" && !Array.isArray(v);
-}
-
 function isValidCursorEntry(
   value: unknown,
   sessionId: string,
@@ -86,8 +82,7 @@ function isValidCursorEntry(
     value.id === `cursor:${sessionId}` &&
     value.sessionId === sessionId &&
     value.source === source &&
-    value.canResume === canResume &&
-    value.canFork === false
+    value.canResume === canResume
   );
 }
 

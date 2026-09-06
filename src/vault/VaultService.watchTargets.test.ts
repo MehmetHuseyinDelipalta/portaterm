@@ -15,31 +15,15 @@ const svc = new VaultService();
 describe("VaultService.getStoreWatchTargets", () => {
   const targets = svc.getStoreWatchTargets();
 
-  it("covers existing stores with change-catching globs", () => {
-    // Claude projects tree (append-grows via **/*.jsonl).
-    const claude = targets.find((t) => t.baseDir.endsWith(path.join(".claude", "projects")));
-    expect(claude?.glob).toBe("**/*.jsonl");
-
-    // Codex: SQLite index (+ -wal/-shm via trailing *) AND the rollout JSONL tree.
-    const codexDb = targets.find((t) => t.glob === "state_5.sqlite*");
-    expect(codexDb).toBeDefined();
-    const codexSessions = targets.find((t) => t.baseDir.endsWith("sessions") && t.glob === "**/*.jsonl");
-    expect(codexSessions).toBeDefined();
-
-    // OpenCode WAL DB (db + -wal/-shm).
-    const opencode = targets.find((t) => t.glob === "opencode.db*");
-    expect(opencode?.baseDir.endsWith("opencode")).toBe(true);
-  });
-
   it("declares exactly four non-Cursor targets, by shape and not by path alone", () => {
-    // `find`-by-glob above passes even if a target grew a stray field, lost its
-    // agent scoping, or was silently duplicated. Pin the whole set instead.
+    // A find-by-glob check passes even if a target grows a stray field, loses its
+    // agent scoping, or is silently duplicated. Pin the whole set instead.
     const other = targets.filter((target) => target.agent === undefined);
     expect(other).toEqual([
       { baseDir: expect.stringContaining(path.join(".claude", "projects")), glob: "**/*.jsonl" },
       { baseDir: expect.any(String), glob: "state_5.sqlite*" },
-      { baseDir: expect.stringContaining("sessions"), glob: "**/*.jsonl" },
-      { baseDir: expect.stringContaining("opencode"), glob: "opencode.db*" },
+      { baseDir: expect.stringMatching(/sessions$/), glob: "**/*.jsonl" },
+      { baseDir: expect.stringMatching(/opencode$/), glob: "opencode.db*" },
     ]);
     expect(targets).toHaveLength(8);
   });

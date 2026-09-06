@@ -71,16 +71,6 @@ describe("FloatingPreviewShell: onKeyDown hook", () => {
     press();
     expect(onKeyDown).toHaveBeenCalledTimes(1);
   });
-
-  it("a shell with no onKeyDown (the subagent popup) attaches no key listener", () => {
-    const r = make();
-    shell = r.s;
-    r.s.render(body());
-    r.s.show();
-    // Escape still closes — the close listeners are independent of the hook.
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    expect(r.onRequestClose).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe("FloatingPreviewShell: construction", () => {

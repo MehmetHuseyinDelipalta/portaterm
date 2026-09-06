@@ -12,9 +12,6 @@
 import { escapePathForShell } from "../utils/shellEscape";
 import { FILE_TREE_DRAG_MIME } from "./fileTree/ReadOnlyFileRenderer";
 
-// Re-export for backward compat with tests that import from this module
-export { escapePathForShell } from "../utils/shellEscape";
-
 // ─── Path Extraction ────────────────────────────────────────────────
 
 /**

@@ -10,6 +10,7 @@
 // JSDOM (see `src/test/vendor-import.test.ts`).
 
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { installListViewPolyfills } from "../../test/listViewTestkit";
 import type {
   CancelFileTreeSearchMessage,
   FileTreeCopyPathMessage,
@@ -24,25 +25,7 @@ import { FileTreePanel } from "./FileTreePanel";
 import type { FileNode } from "./IFileSystemProvider";
 
 beforeAll(() => {
-  if (typeof globalThis.ResizeObserver === "undefined") {
-    globalThis.ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    } as unknown as typeof ResizeObserver;
-  }
-  if (typeof globalThis.matchMedia === "undefined") {
-    globalThis.matchMedia = (() => ({
-      matches: false,
-      media: "",
-      onchange: null,
-      addListener: () => {},
-      removeListener: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      dispatchEvent: () => false,
-    })) as unknown as typeof matchMedia;
-  }
+  installListViewPolyfills();
 });
 
 type AnyMsg =

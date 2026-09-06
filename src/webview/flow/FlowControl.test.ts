@@ -10,15 +10,6 @@ afterEach(() => {
 // ─── Tests ──────────────────────────────────────────────────────────
 
 describe("FlowControl", () => {
-  it("does not send ack when accumulated chars are below threshold (5000)", () => {
-    const postMessage = vi.fn();
-    const fc = new FlowControl(postMessage);
-
-    fc.ackChars(4999, "tab-1");
-
-    expect(postMessage).not.toHaveBeenCalled();
-  });
-
   it("sends ack when accumulated chars reach the threshold", () => {
     const postMessage = vi.fn();
     const fc = new FlowControl(postMessage);

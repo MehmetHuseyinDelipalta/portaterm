@@ -5,6 +5,8 @@
 // webview like the session preview does. Mirrors the mount/dispose contract of
 // src/webview/vault/ContinueDialog.ts rather than inventing a second one.
 
+import { createFocusTrap } from "../ui/focusTrap";
+
 export interface DialogShell {
   scrim: HTMLElement;
   dialog: HTMLElement;
@@ -60,14 +62,7 @@ export function openDialogShell(root: HTMLElement, opts: DialogShellOptions): Di
   const actions = document.createElement("div");
   actions.className = "wt-dialog-actions";
 
-  const focusable = (): HTMLElement[] =>
-    Array.from(
-      dialog.querySelectorAll<HTMLElement>(
-        'textarea:not([readonly]), input, select, button, [tabindex]:not([tabindex="-1"])',
-      ),
-    ).filter((el) => !el.closest("[hidden]") && !(el instanceof HTMLButtonElement && el.disabled));
-
-  let controls = focusable();
+  const focusTrap = createFocusTrap(dialog, dialog);
   let disposed = false;
 
   const dispose = (restoreFocus = true): void => {
@@ -95,21 +90,7 @@ export function openDialogShell(root: HTMLElement, opts: DialogShellOptions): Di
       dispose();
       return;
     }
-    if (ev.key !== "Tab") {
-      return;
-    }
-    controls = focusable();
-    const first = controls[0];
-    const last = controls[controls.length - 1];
-    if (!first || !last) {
-      ev.preventDefault();
-      return;
-    }
-    const active = document.activeElement;
-    if (ev.shiftKey ? active === first || !dialog.contains(active) : active === last || !dialog.contains(active)) {
-      ev.preventDefault();
-      (ev.shiftKey ? last : first).focus();
-    }
+    focusTrap.handleKeyDown(ev);
   }
 
   if (opts.dismissOnScrim) {
@@ -126,11 +107,8 @@ export function openDialogShell(root: HTMLElement, opts: DialogShellOptions): Di
     dialog,
     actions,
     dispose,
-    refreshFocusTrap: () => (controls = focusable()),
-    focusInitial: (preferred) => {
-      controls = focusable();
-      (preferred ?? controls[0])?.focus();
-    },
+    refreshFocusTrap: focusTrap.refresh,
+    focusInitial: focusTrap.focusInitial,
   };
 }
 

@@ -12,6 +12,7 @@
 // (design.md D6).
 
 import { parse as parseYaml } from "yaml";
+import { isRecord } from "../../utils/record";
 import { messageOf } from "../errorMessage";
 import {
   type AdapterRead,
@@ -167,10 +168,9 @@ export const orcaAdapter: ProviderAdapter = {
         report(draft, `\`${ORCA_YAML_FILE}\``, problem(YAML, "malformed", messageOf(error)));
         parsed = null;
       }
-      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        const record = parsed as Record<string, unknown>;
-        await readSharedDirectories(record, deps, repoRoot, root, nextId, draft);
-        readSetup(record, nextId, draft);
+      if (isRecord(parsed)) {
+        await readSharedDirectories(parsed, deps, repoRoot, root, nextId, draft);
+        readSetup(parsed, nextId, draft);
         // Every other key is orca's business. Reporting them would make each
         // orca repository look misconfigured by this extension (D6).
       } else if (parsed !== null && parsed !== undefined) {

@@ -499,7 +499,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   /**
    * Resolve a vault entry into createSession options and launch it as a new
    * VISIBLE terminal — mirrors the `createTab` flow (createSession + post
-   * `tabCreated`) so the resumed/forked agent appears as a selectable tab. A
+   * `tabCreated`) so the resumed agent appears as a selectable tab. A
    * resolve/launch failure surfaces an error notice rather than a broken
    * terminal (D5/D6).
    */
@@ -1163,12 +1163,6 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           }
           break;
 
-        case "vaultFork":
-          if (typeof message.entryId === "string") {
-            void this.handleVaultLaunch(message.entryId, "fork", webviewView.webview);
-          }
-          break;
-
         case "requestVaultSessionDetail":
           if (typeof message.entryId === "string") {
             void this.handleRequestVaultSessionDetail(
@@ -1371,7 +1365,6 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
               findFiles: (include, exclude, maxResults, token) =>
                 vscode.workspace.findFiles(include, exclude, maxResults, token),
               showWarning: vscode.window.showWarningMessage,
-              showError: vscode.window.showErrorMessage,
               showTextDocument: vscode.window.showTextDocument,
               showQuickPick: vscode.window.showQuickPick,
               getFileSearchMaxResults: () =>

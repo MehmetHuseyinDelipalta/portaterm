@@ -87,9 +87,6 @@ describe("markdownRenderer — rendering", () => {
     theme = "dark";
     const elDark = renderer.render("```ts\nconst x = 1;\n```");
     expect(elDark.querySelector("pre")).toBeTruthy();
-    // The two theme renders produce different colored output — non-strict assertion:
-    // both contain Shiki output, theme switching is exercised via getTheme().
-    expect(elLight.innerHTML).toMatch(/shiki/);
-    expect(elDark.innerHTML).toMatch(/shiki/);
+    expect(elLight.innerHTML).not.toBe(elDark.innerHTML);
   });
 });

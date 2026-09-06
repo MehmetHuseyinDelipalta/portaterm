@@ -3,6 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetAll, __setAppRoot, __setWorkspaceFolders } from "../test/__mocks__/vscode";
+import { mockExtensionContext as createMockContext } from "../test/providerTestUtils";
 
 vi.mock("../pty/PtyManager", () => ({
   loadNodePty: vi.fn(() => ({
@@ -66,14 +67,6 @@ vi.mock("../session/OutputBuffer", () => {
 import { SessionManager } from "../session/SessionManager";
 import type { PendingSnapshot } from "../session/SessionSnapshot";
 import { TerminalEditorProvider } from "./TerminalEditorProvider";
-
-function createMockContext() {
-  return {
-    extensionUri: { fsPath: "/mock/ext" },
-    workspaceState: { get: () => undefined, update: () => Promise.resolve() } as any,
-    subscriptions: [],
-  } as unknown as import("vscode").ExtensionContext;
-}
 
 function pendingSnap(sessionId: string, panelId: string): PendingSnapshot {
   return {

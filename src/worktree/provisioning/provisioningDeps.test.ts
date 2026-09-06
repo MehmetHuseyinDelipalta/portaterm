@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readAsimovProvisioning } from "./asimovProvider";
+import type { ProvisionModel } from "../../types/messages";
+import { asimovAdapter } from "./asimovProvider";
 import { newBudget } from "./providerKit";
 import { createProvisioningDeps, MAX_PROVIDER_BYTES } from "./provisioningDeps";
 import { suggestProvisioning } from "./suggestProvisioning";
@@ -29,7 +30,13 @@ describe("createProvisioningDeps", () => {
   });
 
   const write = (rel: string, text: string) => writeFile(path.join(root, rel), text, "utf8");
-  const read = () => readAsimovProvisioning(createProvisioningDeps(), root);
+  const read = async (): Promise<ProvisionModel> => {
+    const result = await asimovAdapter.read(createProvisioningDeps(), root, newBudget());
+    if (result === null) {
+      throw new Error("expected Asimov provider file");
+    }
+    return result.model;
+  };
 
   it("reads a real provider file and expands a real glob", async () => {
     await write("asimov/worktree.yaml", "copy:\n  - .env\n  - docs/*.md\nsetup:\n  - pnpm install\n");
@@ -45,11 +52,8 @@ describe("createProvisioningDeps", () => {
     expect(model.problems).toEqual([]);
   });
 
-  it("returns an empty model for a checkout with no provider file", async () => {
-    const model = await read();
-
-    expect(model.problems).toEqual([]);
-    expect(model.providers).toEqual([]);
+  it("returns null for a checkout with no provider file", async () => {
+    expect(await asimovAdapter.read(createProvisioningDeps(), root, newBudget())).toBeNull();
   });
 
   it("refuses an in-repository manifest symlink before it can read secret bytes", async () => {

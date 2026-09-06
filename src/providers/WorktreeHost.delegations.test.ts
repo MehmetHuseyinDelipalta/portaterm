@@ -10,6 +10,7 @@
 // See: asimov/changes/surface-subagent-history-rows/design.md D1, D2, D3, D8, D11.
 
 import { describe, expect, it, vi } from "vitest";
+import { pumpImmediateMacrotasks } from "../test/providerTestUtils";
 import type { ExtensionToWebViewMessage } from "../types/messages";
 import { createGitCapabilities } from "../worktree/gitCapabilities";
 import type { GitCommandResult, GitCommandRunner } from "../worktree/gitCommandRunner";
@@ -70,11 +71,7 @@ const clock: RebuildGateClock = {
   clearTimeout: () => {},
 };
 
-async function settle(): Promise<void> {
-  for (let i = 0; i < 8; i += 1) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-}
+const settle = (): Promise<void> => pumpImmediateMacrotasks(8);
 
 function agentRow(over: Partial<WorktreeAgentRow> = {}): WorktreeAgentRow {
   return {

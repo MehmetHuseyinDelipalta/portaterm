@@ -135,7 +135,6 @@ describe("Cursor IDE Composer list", () => {
       cwd: "/Users/me/project",
       modified: 2000,
       canResume: false,
-      canFork: false,
       source: "ide",
     });
   });

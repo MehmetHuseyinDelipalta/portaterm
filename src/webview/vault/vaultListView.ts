@@ -41,7 +41,7 @@ export function cursorSourceLabel(entry: VaultSessionEntry): string | undefined 
 
 /**
  * Single-line CSS-grid row: badge | title | cwd-chip | time, with an icon-only
- * Resume revealed on hover/focus (no fork — D8).
+ * Resume is revealed on hover/focus.
  */
 export function renderRow(
   entry: VaultSessionEntry,

@@ -159,7 +159,6 @@ export interface AgentVaultDefinition {
   sessionIdSource: string;
   /** Tokens: `{{sessionId}}` `{{sessionPath}}` `{{executable}}`. */
   resumeCommand: CommandTemplate;
-  forkCommand?: CommandTemplate;
   /** Starts a NEW session seeded with `{{prompt}}` (Continue in New Session).
    *  Absent → the action is unavailable for that agent. */
   continueCommand?: CommandTemplate;
@@ -169,8 +168,6 @@ export interface AgentVaultDefinition {
    * target rather than offered and failing at spawn.
    */
   startCommand?: CommandTemplate;
-  /** Minimum agent `--version` for fork support (e.g. opencode "1.1.54"). */
-  forkMinVersion?: string;
   /** MVP: always launch in the session's recorded cwd. */
   cwdPolicy: "preserve";
   /** Env var names propagated to the spawned process (claude auth/config). */
@@ -237,8 +234,6 @@ export interface VaultSessionEntry {
   /** epoch ms; list sorted desc. */
   modified: number;
   flags: VaultSessionFlags;
-  /** Resolved against `forkMinVersion` at list time. */
-  canFork: boolean;
   /** False only when the reader has not proven this entry's id works with selected Resume. */
   canResume?: boolean;
   /** Cursor storage domain; omitted for providers and legacy cached entries without source variants. */

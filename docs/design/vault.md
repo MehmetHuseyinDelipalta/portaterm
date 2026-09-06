@@ -77,7 +77,6 @@ CSS accent step is not compile-enforced.
 VaultSessionEntry {                        // types.ts:171 — the list row
   id, agent, sessionId, title, cwd, modified
   flags:        Record<string,string>      // permissionMode, sandbox …
-  canFork:      boolean
   canResume?:   boolean                    // explicit false hides Resume
   source?:      "cli" | "ide"              // Cursor storage domain
   sessionPath?: string                     // UI HINT ONLY, never an action target
@@ -122,7 +121,7 @@ declared `satisfies Record<VaultAgentId, …>` (`:195`), so omitting one is a co
 |--|--|--|--|--|
 | Store | jsonl under `projects/<encoded-cwd>/` | `state_5.sqlite`, jsonl fallback | `opencode.db` | `chats/<bucket>/<id>/` |
 | Session id from | filename stem | `threads.id` | `session.id` | chat dir name |
-| Resume / fork | `--resume` / `--fork-session` | `resume` / `fork` | `--session` / version-gated ≥ 1.1.54 | `--resume` / none |
+| Resume | `--resume` | `resume` | `--session` | `--resume` |
 | Permission choices | 4 (ids **are** `--permission-mode` values) | 3 (sandbox) | none | 3 |
 | Executable probe | name | name | name | help-token proof (§ 7.1) |
 
@@ -208,14 +207,14 @@ The webview honours the distinction structurally: a `metadata-only` detail rende
 transcript, no per-message actions, and an unanchored "Continue in New Session"
 (`PreviewController.ts:785,803-811,821`).
 
-## 7. Launch: Resume, Fork, Continue
+## 7. Launch: Resume and Continue
 
 ```mermaid
 graph LR
-    A["vaultResume / vaultFork / vaultContinueSession"] --> B["VaultLauncher.resolve<br>VaultLauncher.ts:44"]
+    A["vaultResume / vaultContinueSession"] --> B["VaultLauncher.resolve<br>VaultLauncher.ts:44"]
     B --> C{mode}
     C -->|resume| D["getLaunchTarget<br>then target.verify()"]
-    C -->|fork / continue| E["getEntry"]
+    C -->|continue| E["getEntry"]
     D --> F["resolve executable<br>LaunchBuilder.ts:219"]
     E --> F
     F --> G["resolve context tag<br>LaunchBuilder.ts:155"]
@@ -226,7 +225,6 @@ graph LR
 | Mode | Gate | Why |
 |------|------|-----|
 | `resume` | `canResume !== false`; Cursor also needs CLI source **and** a passing identity proof (`VaultLauncher.ts:100-113`, `cursorCapabilities.ts:23`) | one resolution per action, so discovery cannot run twice and land on a different candidate |
-| `fork` | `entry.canFork` (`:51`) | OpenCode's flag is version-probed and memoized; any probe failure ⇒ false (`forkSupport.ts:63`) |
 | `continue` | none — starts a **new** session seeded with a handoff prompt | the stored session is never touched, so a continuation cannot corrupt history |
 
 `isAgentLaunch: true` (`VaultLauncher.ts:71`) arms the shell-fallback respawn, so a

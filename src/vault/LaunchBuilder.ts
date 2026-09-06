@@ -1,5 +1,5 @@
-// src/vault/LaunchBuilder.ts — Synthesize a resume/fork launch as an argv array.
-// See: specs/vault-session-launch/spec.md (Resume; Fork; Preserve Claude
+// src/vault/LaunchBuilder.ts — Synthesize a resume/continue launch as an argv array.
+// See: specs/vault-session-launch/spec.md (Resume; Continue; Preserve Claude
 //      auth/config; Injection-safe construction), design.md D5,D6,D9.
 //
 // Output is an argv array — `file` + `args[]` — never a shell string, so a
@@ -15,7 +15,7 @@ import { isCursorCliResumableEntry } from "./cursorCapabilities";
 import { getAgentDefinition } from "./registry";
 import type { AgentVaultDefinition, CommandTemplate, VaultSessionEntry, VaultSessionFlags } from "./types";
 
-export type LaunchMode = "resume" | "fork" | "continue";
+export type LaunchMode = "resume" | "continue";
 
 export interface LaunchSpec {
   file: string;
@@ -30,8 +30,6 @@ export class VaultLaunchError extends Error {
     message: string,
     readonly code:
       | "unknown-agent"
-      | "no-fork-command"
-      | "fork-unsupported"
       | "resume-unsupported"
       | "unknown-entry"
       | "no-continue-command"
@@ -103,12 +101,6 @@ function expandArgs(
 
 function assertLaunchCapability(entry: VaultSessionEntry, mode: LaunchMode): void {
   if (mode === "continue") {
-    return;
-  }
-  if (mode === "fork") {
-    if (!entry.canFork) {
-      throw new VaultLaunchError(`Fork is not supported for ${entry.id}`, "fork-unsupported");
-    }
     return;
   }
   if (entry.agent === "cursor") {
@@ -302,7 +294,7 @@ export async function resolveLaunchExecutable(
   if (!def) {
     return undefined;
   }
-  const template = mode === "continue" ? def.continueCommand : mode === "fork" ? def.forkCommand : def.resumeCommand;
+  const template = mode === "continue" ? def.continueCommand : def.resumeCommand;
   return resolveProbedExecutable(def, template);
 }
 
@@ -361,7 +353,7 @@ function buildContinue(
 }
 
 /**
- * Build the argv + env + cwd for resuming/forking `entry`. `hostEnv` is the
+ * Build the argv + env + cwd for launching `entry`. `hostEnv` is the
  * extension-host environment (typically `process.env`); only Claude's allowlist
  * is forwarded from it (D6) — other agents inherit the host env via the normal
  * spawn path, so their override is empty.
@@ -387,10 +379,7 @@ export function build(
     const spec = buildContinue(entry, hostEnv, prompt, target, resolvedExecutable, contextTag);
     return cwd === undefined ? spec : { ...spec, cwd };
   }
-  const template = mode === "fork" ? def.forkCommand : def.resumeCommand;
-  if (!template) {
-    throw new VaultLaunchError(`Agent ${entry.agent} has no fork command`, "no-fork-command");
-  }
+  const template = def.resumeCommand;
 
   const env = def.id === "claude" ? buildClaudeEnv(def, entry.flags.configDir, hostEnv) : {};
   const executable = resolveTemplateExecutable(template, resolvedExecutable);

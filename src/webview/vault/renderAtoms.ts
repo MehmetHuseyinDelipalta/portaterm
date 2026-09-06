@@ -202,11 +202,6 @@ export function actionSourceOf(el: HTMLElement): VaultActionSource | undefined {
   return actionSources.get(el);
 }
 
-export function messageSourceOf(el: HTMLElement): Extract<VaultTimelineItem, { kind: "message" }> | undefined {
-  const source = actionSourceOf(el);
-  return source?.kind === "message" ? source : undefined;
-}
-
 export function previewMessage(
   kind: string,
   roleLabel: string,

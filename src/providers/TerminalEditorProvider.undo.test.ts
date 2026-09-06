@@ -15,15 +15,8 @@ vi.mock("../session/OutputBuffer", async () => (await import("../test/sessionMoc
 import { createPaneEvidenceStore, type PaneEvidenceStore } from "../session/PaneEvidenceStore";
 import { SessionManager } from "../session/SessionManager";
 import { __resetAll, __setAppRoot, __setWorkspaceFolders } from "../test/__mocks__/vscode";
+import { mockExtensionContext as createMockContext } from "../test/providerTestUtils";
 import { TerminalEditorProvider } from "./TerminalEditorProvider";
-
-function createMockContext() {
-  return {
-    extensionUri: { fsPath: "/mock/ext" },
-    workspaceState: { get: () => undefined, update: () => Promise.resolve() },
-    subscriptions: [],
-  } as unknown as import("vscode").ExtensionContext;
-}
 
 interface Disposal {
   viewId: string;

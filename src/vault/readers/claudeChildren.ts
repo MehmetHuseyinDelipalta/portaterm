@@ -5,6 +5,7 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { asRecord } from "../../utils/record";
 import { boundedPreview } from "../preview";
 import { formatEntryId, type VaultSessionDetail, type VaultTimelineItem } from "../types";
 import { formatWorkflowAgentSessionId, formatWorkflowSessionId } from "./claudeChildIds";
@@ -19,7 +20,7 @@ import {
   WORKFLOW_AGENT_STEM_RE,
   WORKFLOW_ID_RE,
 } from "./claudePaths";
-import { coerceTimestamp, readFirstUserRecord, readManifestJson, streamClaudeRecords } from "./claudeRecords";
+import { readFirstUserRecord, readManifestJson, streamClaudeRecords } from "./claudeRecords";
 import {
   type ClaudeChildStub,
   classifyClaudeStyleEvents,
@@ -30,6 +31,7 @@ import {
   synthesizeGroupDetail,
   truncate,
 } from "./detail";
+import { parseProviderTimestampString, parseWorkflowStartTime } from "./timestamp";
 
 /** A subagent's own detail: its records are all `isSidechain` (that IS the
  *  conversation here), so classify with `includeSidechain`. It ALSO embeds this
@@ -67,7 +69,7 @@ export async function readClaudeSubagentDetail(
 type ManifestObj = Record<string, unknown>;
 
 function asObj(v: unknown): ManifestObj | undefined {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as ManifestObj) : undefined;
+  return asRecord(v) as ManifestObj | undefined;
 }
 function manifestString(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
@@ -238,7 +240,7 @@ function buildWorkflowBoardItem(
   const totalTokens = manifestNumber(manifest.totalTokens);
   const totalToolCalls = manifestNumber(manifest.totalToolCalls);
   const model = manifestString(manifest.defaultModel);
-  const timestamp = coerceTimestamp(manifest.startTime) ?? coerceTimestamp(manifest.timestamp);
+  const timestamp = parseWorkflowStartTime(manifest.startTime) ?? parseProviderTimestampString(manifest.timestamp);
 
   return {
     kind: "workflowBoard",
@@ -425,7 +427,7 @@ export async function listClaudeWorkflowNodes(
       const wfName = typeof manifest.workflowName === "string" ? manifest.workflowName : wfId;
       const status = typeof manifest.status === "string" ? manifest.status : "";
       const summary = typeof manifest.summary === "string" ? manifest.summary : undefined;
-      const ts = coerceTimestamp(manifest.startTime) ?? coerceTimestamp(manifest.timestamp);
+      const ts = parseWorkflowStartTime(manifest.startTime) ?? parseProviderTimestampString(manifest.timestamp);
       const label = `Workflow: ${wfName}${status ? ` · ${status}` : ""}`;
       stubs.push({
         entryId: formatEntryId("claude", formatWorkflowSessionId(parentId, wfId)),

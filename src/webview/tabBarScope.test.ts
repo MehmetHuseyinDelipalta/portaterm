@@ -353,12 +353,6 @@ describe("what counts as a reason to redraw", () => {
     expect(ask(scope, layouts("tab-1", "tab-2", "tab-3"))).toBe(false);
   });
 
-  it("exposes the waiting panes for the badge to count with its own second source", () => {
-    const scope = scoped();
-    scope.setAttribution(report(new Map([["tab-2", ELSEWHERE]]), ["tab-2"]));
-    expect([...scope.waitingPanes()]).toEqual(["tab-2"]);
-  });
-
   it("draws when a split gains or loses a leaf", () => {
     // Membership decides which panes a tab is judged by, so the join keeps the
     // old answer unless the signature notices.

@@ -51,7 +51,6 @@ const ENTRY = {
   cwd: "/work/proj",
   modified: 1,
   flags: {},
-  canFork: false,
   sessionPath: "/store/s1.jsonl",
 };
 
