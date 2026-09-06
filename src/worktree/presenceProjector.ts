@@ -23,7 +23,6 @@ import { isPathInside, normalizePathForCompare } from "../utils/pathBoundary";
 import type { RunningClaudeSession, RunningSessionsOutcome } from "../vault/readers/runningSessions";
 import { formatEntryId, type VaultAgentId } from "../vault/types";
 import { resolveAgentIdentity, type SessionLookup } from "./agentIdentity";
-import { registrySessionActivity } from "./registrySessionActivity";
 import type {
   DelegationRoster,
   PresenceDegradation,
@@ -31,6 +30,7 @@ import type {
   WorktreePresence,
   WorktreeSubagentRow,
 } from "./presenceTypes";
+import { registrySessionActivity } from "./registrySessionActivity";
 
 /** One pane as the store hands it over. */
 export type Pane = PaneEvidence & { paneId: string };

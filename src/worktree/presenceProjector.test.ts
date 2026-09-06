@@ -1842,9 +1842,7 @@ describe("a reported turn decides activity", () => {
 
   it("keeps one completion time stable until a later turn supersedes it", async () => {
     const completedAt = clock - 4_000;
-    const h = makeProjector([
-      pane({ paneId: "a", turn: reported({ state: "done", stateStartedAt: completedAt }) }),
-    ]);
+    const h = makeProjector([pane({ paneId: "a", turn: reported({ state: "done", stateStartedAt: completedAt }) })]);
 
     const [first] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
     clock += 1_000;
@@ -1859,7 +1857,7 @@ describe("a reported turn decides activity", () => {
 
   it("clears a retained completion when a later session boundary lands idle", async () => {
     const h = makeProjector([pane({ paneId: "a", turn: reported({ state: "done" }) })]);
-    expect(((await h.projector.project([WT])).rowsByWorktreeId[WT][0]).finishedAt).toBeDefined();
+    expect((await h.projector.project([WT])).rowsByWorktreeId[WT][0].finishedAt).toBeDefined();
 
     h.panes[0] = pane({ paneId: "a", turn: reported({ state: "done", sessionBoundary: true }) });
     const [boundary] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
@@ -1874,7 +1872,7 @@ describe("a reported turn decides activity", () => {
     h.setReportedSessions({
       "sess-1": { entryId: "claude:sess-1", agent: "claude", transcriptPath: "/vault/sess-1.jsonl" },
     });
-    expect(((await h.projector.project([WT])).rowsByWorktreeId[WT][0]).finishedAt).toBeDefined();
+    expect((await h.projector.project([WT])).rowsByWorktreeId[WT][0].finishedAt).toBeDefined();
 
     h.panes[0] = pane({ paneId: "a", ptyPid: 2 });
     h.setLookup(() => ({ kind: "resolved", agent: "claude", sessionId: "sess-2", evidence: "process" }));
@@ -1885,7 +1883,11 @@ describe("a reported turn decides activity", () => {
     expect(next.finishedAt).toBeUndefined();
   });
 
-  it.each(["cursor", "opencode", "codex"] as const)("does not invent completion for inferred %s idleness", async (agent) => {
+  it.each([
+    "cursor",
+    "opencode",
+    "codex",
+  ] as const)("does not invent completion for inferred %s idleness", async (agent) => {
     const h = makeProjector([pane({ paneId: "a" })]);
     h.setLookup(() => ({ kind: "resolved", agent, sessionId: "s1", evidence: "process" }));
     h.setActivity("a", "running", "working");

@@ -48,3 +48,14 @@
     2. Update `src/webview/worktree/worktreePanel.css` and `src/webview/worktree/worktreeFixtures.ts` for the hybrid shapes, theme tokens, motion, and reduced-motion behavior.
     3. Extend `src/webview/worktree/WorktreeView.test.ts` to prove every shape, colour-independent distinction, summary state, animation restriction, and agent-neutral rendering.
     4. Reconcile the vocabulary, precedence, external status, and completion rules in `docs/DESIGN.md`, `docs/design/worktree-panel-ui.md`, and `docs/design/worktree-agent-presence.md`; keep the lifecycle parser edit in `src/vault/readers/runningSessions.ts` formatter-clean for the final gate.
+
+## 4. Verification cleanup
+
+- [x] 4_1 Normalize completion-path formatting — verified: pnpm exec biome check src/worktree/presenceProjector.ts src/worktree/presenceProjector.test.ts && pnpm run check-types exit 0
+  - **Deps**: 3_1
+  - **Refs**: design.md#d2-done-is-presentation-derived-from-an-authoritative-completion-fact
+  - **Acceptance**:
+    - Outcome: Completion-path source and tests pass the repository formatter/import-order checks.
+    - Verify: command pnpm exec biome check src/worktree/presenceProjector.ts src/worktree/presenceProjector.test.ts
+  - **Plan**:
+    1. Apply formatter-equivalent import ordering and wrapping in `src/worktree/presenceProjector.ts` and `src/worktree/presenceProjector.test.ts` without changing behavior.
