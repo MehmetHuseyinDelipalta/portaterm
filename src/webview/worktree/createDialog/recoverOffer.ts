@@ -42,7 +42,7 @@ export interface RecoverOfferDeps {
   /** Read, never held: the draft's repository and mode both move under this form. */
   readonly draft: WorktreeCreateDraft;
   /** The resolution currently in force, or null while one is in flight. */
-  effective(): WorktreeCreateResolutionMessage | null;
+  resolution(): WorktreeCreateResolutionMessage | null;
   targetOf(resolution: WorktreeCreateResolutionMessage): string;
   /** Both halves, or the offer is a control nothing can answer. */
   onAuthorizeDebris?: (request: { repoId: string; ask: number; path: string }) => void;
@@ -107,7 +107,7 @@ export function createRecoverOffer(deps: RecoverOfferDeps): RecoverOffer {
       // cannot be acted on.
       return null;
     }
-    const resolution = deps.effective();
+    const resolution = deps.resolution();
     if (resolution === null) {
       return null;
     }

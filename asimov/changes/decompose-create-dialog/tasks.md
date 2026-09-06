@@ -74,7 +74,7 @@ stops if the count disagrees with design.md D1.
     4. Apply D4's negation rule at every site.
     5. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
-- [ ] 1_6 Extract the resolution asks
+- [x] 1_6 Extract the resolution asks — verified: pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_5
   - **Refs**: design.md D1, design.md D1a, design.md D4
   - **Boundary**: the facade holds no reference to `askedFor`, `defaultsAskedFor`, `outstanding`, `effective` or `resolutionOutstanding`
@@ -83,7 +83,7 @@ stops if the count disagrees with design.md D1.
     - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts
   - **Plan**:
     1. Enumerate in both directions (D1a).
-    2. Create `src/webview/worktree/createDialog/resolutionAsks.ts` with `askKey`, `askForDestination`, `selection`, `probeBase`, `targetOf`, `heldBranch`, `deriveChoice` and the five `let` bindings.
+    2. Create `src/webview/worktree/createDialog/resolutionAsks.ts` with `askKey`, `askForDestination`, `selection`, `probeBase`, `targetOf`, `heldBranch`, `deriveChoice` and the five `let` bindings, moving them out of `src/webview/worktree/WorktreeCreateDialog.ts`.
     3. Apply D4's negation rule at every site.
     4. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
