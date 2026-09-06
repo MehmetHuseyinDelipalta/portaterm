@@ -16,7 +16,6 @@
 import type {
   DebrisAuthorization,
   ProbeBase,
-  PullRequestOffer,
   ResolvedMode,
   WorktreeCreateResolutionMessage,
   WorktreeDebrisAuthorizedMessage,
@@ -27,6 +26,7 @@ import { SETUP_STEP_ADDED_SOURCE } from "../../types/messages";
 import { sanitizeBranchForPath } from "../../worktree/branchSlug";
 import { attachTooltip } from "../ui/Tooltip";
 import { ICON_CHEVRON_DOWN, ICON_CLOSE, ICON_FOLDER, ICON_RENAME } from "../vault/icons";
+import { CREATE_ROW_LABEL, createBranchChoices, partialListText } from "./createDialog/branchChoices";
 import { type AfterChoice, createDraftModel, type DestinationEdit } from "./createDialog/draftModel";
 import { createWorktreeAgentBox, initialSafeAgentId } from "./worktreeAgentBox";
 import { dialogTitle, field, keyHint, openDialogShell, selectControl, textButton } from "./worktreeDialogShell";
@@ -63,101 +63,6 @@ function shortPath(path: string): string {
 
 function lastSegment(path: string): string {
   return segments(path).at(-1) ?? path;
-}
-
-/**
- * One row of the branch list: an existing ref, or the always-present entry that
- * creates the typed name.
- *
- * The create-new row is a member rather than a special case below the list —
- * it is what makes a repository whose enumeration failed still usable, so it
- * cannot be something the list's presence gates.
- */
-type BranchChoice =
-  | { kind: "existing"; ref: WorktreeRef }
-  | { kind: "pr"; pr: PullRequestOffer }
-  | { kind: "prsUnavailable" }
-  | { kind: "new" };
-
-/** How many characters of a typed name the create-new row echoes back. */
-const CREATE_ROW_LABEL = "Create branch";
-
-/**
- * Ordered by what the typed text most likely means: the exact match, then the
- * prefixes, then create-new. With nothing typed every ref is offered.
- *
- * Refs that neither match exactly nor by prefix are dropped — the list is a
- * filter over one dataset, which is the whole reason § 4.1 rejected tabs.
- */
-function orderChoices(
-  refs: readonly WorktreeRef[],
-  typed: string,
-  pullRequests?: WorktreePullRequestOffer,
-): BranchChoice[] {
-  const query = typed.trim();
-  const exact: BranchChoice[] = [];
-  const prefixed: BranchChoice[] = [];
-  for (const ref of refs) {
-    if (query.length === 0 || ref.name === query) {
-      (query.length === 0 ? prefixed : exact).push({ kind: "existing", ref });
-    } else if (ref.name.startsWith(query)) {
-      prefixed.push({ kind: "existing", ref });
-    }
-  }
-  return [...exact, ...prefixed, ...pullRequestChoices(pullRequests, query), { kind: "new" }];
-}
-
-/**
- * The pull-request part of the one list, between the prefix matches and
- * create-new (§ 4.1).
- *
- * `undefined` is "not asked yet" and contributes nothing — the form must not
- * claim a forge state it has not been told. `available: false` contributes the
- * single quiet row § 5 asks for, whatever the reason was.
- *
- * Matching is on the number and on the title, because those are what a user
- * has in hand. Never on `headRefName`: the branch a create mints is
- * `pr/<number>` and offering to match the fork's own branch name would suggest
- * that is what gets checked out.
- *
- * The title matches ANYWHERE, where a ref matches only by prefix. That
- * asymmetry is deliberate: a branch name is hierarchical and a prefix is what
- * someone is completing, while a title is prose and a prefix rule would make
- * titles effectively unsearchable.
- */
-/**
- * What a capped list says about itself.
- *
- * Branches and pull requests are capped independently and answer the typed text
- * differently: a branch past the cap can still be reached by typing, because the
- * host re-reads on the query, while pull requests are filtered locally out of
- * the one page that was fetched. So the two are not one sentence with a
- * substituted noun (.reviews/round-1.md B3).
- */
-function partialListText(refsPartial: boolean, prsPartial: boolean): string {
-  const parts: string[] = [];
-  if (refsPartial) {
-    parts.push("Showing part of this repository's branches — type to find others.");
-  }
-  if (prsPartial) {
-    parts.push("Showing part of this repository's open pull requests; the rest are not searchable here.");
-  }
-  return parts.join(" ");
-}
-
-function pullRequestChoices(offer: WorktreePullRequestOffer | undefined, query: string): BranchChoice[] {
-  if (offer === undefined) {
-    return [];
-  }
-  if (!offer.available) {
-    return [{ kind: "prsUnavailable" }];
-  }
-  const needle = query.toLowerCase();
-  return offer.list
-    .filter(
-      (pr) => needle.length === 0 || String(pr.number).startsWith(needle) || pr.title.toLowerCase().includes(needle),
-    )
-    .map((pr) => ({ kind: "pr", pr }) as const);
 }
 
 // `AfterChoice` is the form's own vocabulary and lives with the answer it names
@@ -1183,21 +1088,11 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   partialNote.id = "wt-branch-partial";
   partialNote.hidden = true;
 
-  /** What the user picked, and the ONLY source of new-versus-existing (D4). */
-  let choice: BranchChoice = { kind: "new" };
-  /**
-   * The fork head of the pull request currently selected, and which selection it
-   * describes.
-   *
-   * Carried WITH its repository and branch rather than as a bare flag: the note
-   * is a claim about one create, and the same rule the resolutions follow
-   * applies — an answer the user has typed past describes a selection that is
-   * gone, so it is withdrawn by not matching rather than by every caller
-   * remembering to clear it.
-   */
-  let forkHead: { repoId: string; branch: string; owner: string } | null = null;
-  /** Rows the list is currently offering, in order. Index into `listBox`. */
-  let choices: BranchChoice[] = [];
+  const branches = createBranchChoices({
+    refs: () => offeredRefs(),
+    repoId: () => draft.repoId,
+    pullRequests: () => currentRepo().pullRequests,
+  });
   /** Which row is active while the list is open; -1 when none is. */
   let activeAt = -1;
   let listOpen = false;
@@ -1387,7 +1282,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       // re-derives the still-present text as an ordinary branch and would
       // otherwise resurrect a statement nobody re-selected (.reviews/round-2.md
       // B2).
-      forkHead = null;
+      branches.clearForkHead();
     }
     // Leaving detached hands the mode back to the box, which has to re-ask the
     // question: refs may have landed while detached was on, and `choice` was
@@ -2820,8 +2715,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
    */
   function deriveChoice(): void {
     const typed = nameInput.value.trim();
-    const exact = typed.length === 0 ? undefined : offeredRefs().find((r) => r.name === typed);
-    choice = exact === undefined ? { kind: "new" } : { kind: "existing", ref: exact };
+    branches.derive(typed);
     if (draft.branchMode === "detached") {
       return;
     }
@@ -2835,7 +2729,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     if ((draft.branchMode === "adopt" || draft.branchMode === "reattach") && effective?.query.trim() === typed) {
       return;
     }
-    draft.branchMode = choiceMode(choice);
+    draft.branchMode = branches.mode();
   }
 
   /**
@@ -2879,11 +2773,6 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     adopt: "This re-registers a checkout that is already on disk, so it keeps the commit it is on.",
   };
 
-  /** The wire mode a choice means. `detached` is the toggle's and never a row's. */
-  function choiceMode(c: BranchChoice): WorktreeBranchMode {
-    return c.kind === "existing" ? "existing" : "new";
-  }
-
   /** The refs the current repository was told about; empty until it is told. */
   function offeredRefs(): readonly WorktreeRef[] {
     return currentRepo().refs?.list ?? [];
@@ -2910,9 +2799,9 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
 
   /** Redraw the rows for the text currently typed. Does not open or close. */
   function renderList(): void {
-    choices = orderChoices(offeredRefs(), nameInput.value, currentRepo().pullRequests);
+    const offered = branches.offer(nameInput.value);
     listBox.replaceChildren();
-    choices.forEach((c, at) => {
+    offered.forEach((c, at) => {
       const row = document.createElement("li");
       row.id = `wt-branch-opt-${at}`;
       row.className = "wt-branch-opt";
@@ -2961,7 +2850,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       });
       listBox.appendChild(row);
     });
-    setActive(Math.min(activeAt, choices.length - 1));
+    setActive(Math.min(activeAt, offered.length - 1));
   }
 
   function openList(): void {
@@ -2999,52 +2888,28 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     shell.refreshFocusTrap();
   }
 
-  /**
-   * What a pull request names as a branch: `pr/<number>` and nothing else (D4).
-   *
-   * Not the title, not `headRefName` — both belong to the pull request's author
-   * and both can be renamed. A worktree that changes identity when someone edits
-   * a title is not the same worktree tomorrow.
-   */
-  function branchOfPullRequest(pr: PullRequestOffer): string {
-    return `pr/${pr.number}`;
-  }
-
   /** Take row `at` as the selection, close the list, and re-derive. */
   function commit(at: number): void {
-    const row = choices[at];
-    if (row === undefined || row.kind === "prsUnavailable") {
+    const decided = branches.commit(at);
+    if (decided.kind === "ignored") {
       return;
     }
-    // A pull request is a SOURCE, not a third kind of branch. It names a branch
-    // and a base, and from there it is the same question a typed name asks — so
-    // it is decided here against the same refs, and below by the same
-    // resolution: reuse, held-by and collision stay answered in one place.
-    const named = row.kind === "pr" ? branchOfPullRequest(row.pr) : undefined;
-    const already = named === undefined ? undefined : offeredRefs().find((ref) => ref.name === named);
-    const picked: BranchChoice =
-      named === undefined ? row : already === undefined ? { kind: "new" } : { kind: "existing", ref: already };
-    if (picked.kind === "existing" && picked.ref.heldBy !== undefined) {
-      // Refused, and SAID. Silence here is indistinguishable from a dropped
-      // keypress, and the explanation already exists (round-1 S2).
-      nameError.textContent = `${picked.ref.name} is checked out in ${picked.ref.heldBy}`;
+    if (decided.kind === "refused") {
+      nameError.textContent = decided.message;
       nameError.hidden = false;
       return;
     }
-    choice = picked;
-    if (picked.kind === "existing") {
-      nameInput.value = picked.ref.name;
+    // `syncDerived` reads both fields back into the draft, so stating them here
+    // is the whole of what feeds the existing path — there is no second
+    // resolution for pull requests.
+    if (decided.branchName !== undefined) {
+      nameInput.value = decided.branchName;
     }
-    if (named !== undefined && row.kind === "pr") {
-      // The two fields the pull request answers. `syncDerived` reads both back
-      // into the draft, so writing them here is the whole of what feeds the
-      // existing path — there is no second resolution for pull requests.
-      nameInput.value = named;
-      baseInput.value = row.pr.baseRefName;
-      forkHead = row.pr.fromFork ? { repoId: draft.repoId, branch: named, owner: row.pr.headOwner } : null;
+    if (decided.baseRef !== undefined) {
+      baseInput.value = decided.baseRef;
     }
     if (draft.branchMode !== "detached") {
-      draft.branchMode = choiceMode(choice);
+      draft.branchMode = branches.mode();
     }
     closeList();
     nameInput.focus();
@@ -3230,20 +3095,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     draft.branchName = nameInput.value;
     draft.baseRef = baseInput.value;
 
-    // Only while it still describes THIS selection, on THIS repository, under a
-    // mode that still uses the pull request as its source. Detached submits a
-    // base and no branch at all, so the pull request is not what it creates
-    // from and the statement would describe a different operation
-    // (.reviews/round-1.md B2). Entering detached also CLEARS `forkHead`, which
-    // is what stops the note coming back on the way out (round-2 B2); this
-    // condition stays so the note is off under detached whatever set the state.
-    const forkStated =
-      forkHead !== null &&
-      forkHead.repoId === draft.repoId &&
-      forkHead.branch === nameInput.value.trim() &&
-      draft.branchMode !== "detached"
-        ? forkHead
-        : null;
+    const forkStated = branches.forkStated(nameInput.value, draft.branchMode);
     forkNote.hidden = forkStated === null;
     // What is TRUE, not what would be convenient. Configuring the remote is a
     // repository-level write no part of this create performs (D5), and a
@@ -3499,9 +3351,9 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       if (!listOpen) {
         openList();
       }
-      if (choices.length > 0) {
+      if (branches.rows().length > 0) {
         const step = ev.key === "ArrowDown" ? 1 : -1;
-        setActive((activeAt + step + choices.length) % choices.length);
+        setActive((activeAt + step + branches.rows().length) % branches.rows().length);
       }
       return;
     }

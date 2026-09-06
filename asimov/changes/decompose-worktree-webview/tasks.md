@@ -62,7 +62,7 @@
     4. Do not edit `WorktreeCreateDialog.test.ts`; it is the regression net for this task.
     5. Close with `git diff --exit-code -- src/types/messages.ts` (OBL-5).
 
-- [ ] 2_2 Extract the branch choice list
+- [x] 2_2 Extract the branch choice list — verified: pnpm exec vitest run src/webview/worktree/createDialog src/webview/worktree/WorktreeCreateDialog.test.ts && pnpm exec tsc --noEmit -p tsconfig.json exit 0
   - **Deps**: 2_1
   - **Refs**: design.md D1, design.md D2, design.md D4
   - **Boundary**: the choice list's ORDER and its fork-head resolution are unchanged
@@ -71,6 +71,6 @@
     - Verify: command pnpm exec vitest run src/webview/worktree/createDialog src/webview/worktree/WorktreeCreateDialog.test.ts
   - **Plan**:
     1. Move `choice`, `choices` and `forkHead` and the functions that maintain them out of `src/webview/worktree/WorktreeCreateDialog.ts` into a sibling `src/webview/worktree/createDialog/branchChoices.ts`. `activeAt` and `listOpen` are the dropdown's presentation and stay with the DOM.
-    2. Add cases to `src/webview/worktree/createDialog/draftModel.test.ts` pinning the list order and the fork-head resolution.
+    2. Add `src/webview/worktree/createDialog/branchChoices.test.ts` pinning the list order and the fork-head resolution. Its own file rather than cases appended to `draftModel.test.ts`: the two modules hold different state and a shared suite would let one's harness stand in for the other's. No environment pragma, for the same reason `draftModel.test.ts` has none.
     3. Run `bun run asm refactor shape` on both targets and every destination; RECORD the output in workflow.md Notes rather than chasing it (design.md Risk Map).
     4. Close with `git diff --exit-code -- src/types/messages.ts` (OBL-5).
