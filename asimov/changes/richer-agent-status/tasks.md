@@ -59,3 +59,12 @@
     - Verify: command pnpm exec biome check src/worktree/presenceProjector.ts src/worktree/presenceProjector.test.ts
   - **Plan**:
     1. Apply formatter-equivalent import ordering and wrapping in `src/worktree/presenceProjector.ts` and `src/worktree/presenceProjector.test.ts` without changing behavior.
+
+- [x] 4_2 Reconcile the external-row invariant registry — verified: pnpm exec vitest run src/test/invariants/coverage.test.ts && pnpm run check-types exit 0
+  - **Deps**: 4_1
+  - **Refs**: specs/worktree-agent-presence/spec.md#surface-agents-running-outside-this-window
+  - **Acceptance**:
+    - Outcome: The executable invariant registry matches the canonical external-row wording.
+    - Verify: command pnpm exec vitest run src/test/invariants/coverage.test.ts
+  - **Plan**:
+    1. Update the I3 statement in `src/test/invariants/registry.ts` to describe external scope without falsely requiring running lifecycle state.

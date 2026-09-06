@@ -38,7 +38,7 @@ export const INVARIANTS: readonly InvariantRow[] = [
   },
   {
     id: "I3",
-    statement: "An `external` row is never focusable and is always labelled as running outside this window",
+    statement: "An `external` row is never focusable and is always labelled as outside this window",
     owners: ["WT-004.2"],
     stimulus: "Offer activation or a Focus Pane menu item on a row whose scope is external",
     status: "covered",
