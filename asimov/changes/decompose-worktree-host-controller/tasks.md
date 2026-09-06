@@ -68,7 +68,7 @@
     4. Plant a temporary `fs.rm` call in `src/providers/worktreeHost/actions/removal.ts`, run `pnpm run gate:fs-deletion`, record that it fails, remove the plant, and confirm it passes (design.md OBL-1).
     5. Run `pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts`.
 
-- [ ] 2_3 Move the provisioning arms and pin baseline identity across detach
+- [x] 2_3 Move the provisioning arms and pin baseline identity across detach — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/worktreeHost/actions/provision.test.ts exit 0
   - **Deps**: 2_2
   - **Refs**: design.md D1, design.md D2, design.md D4
   - **Boundary**: no map or cache is copied at the factory boundary — references only
@@ -77,7 +77,7 @@
     - Verify: command pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/worktreeHost/actions/provision.test.ts
   - **Plan**:
     1. Create `src/providers/worktreeHost/actions/provision.ts` exporting `ProvisionDeps` and `createProvisionActions(deps)`, naming `offers`, `provisionSwitch`, `provisionBaseline`, `provisionReading`, `addedSteps`, `addedCopyFiles`, `migrationOffers`, `migrationReading`, `surfaces`, `cache`, `previewProvisioning`, `issueWithAdded`, `withoutAdded`, `privateIdsFor`, `perform`, `options`, `disposed: () => boolean` and `bumpMigrationSequence: () => number`.
-    2. Move the arms for `worktreeProvisionSwitch`, `worktreeCopyFileAsk`, `worktreeSetupStepAsk` and `worktreeProvisionSave` (`src/providers/WorktreeHost.ts:3338-3753`) into it, and spread its handlers into the action table.
+    2. Move the arms for `worktreeProvisionSwitch`, `worktreeCopyFileAsk`, `worktreeSetupStepAsk` and `worktreeProvisionSave` out of `src/providers/WorktreeHost.ts` into it, and route those cases through the action table.
     3. Pass every map and the cache by reference; pass `disposed` and `migrationSequence` as accessor functions, since a `let` binding cannot be shared through an object field (design.md D4).
     4. Add `src/providers/worktreeHost/actions/provision.test.ts`: record a baseline on an opening, detach the surface, reattach on the same opening, and assert the save reports the reattached baseline rather than the stale one (design.md OBL-4).
     5. Run `bun run asm refactor shape src/providers/worktreeHost/actions/provision.ts`.
