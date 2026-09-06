@@ -143,7 +143,7 @@ stops if the count disagrees with design.md D1.
     6. Apply D4's negation rule at every site.
     7. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
-- [ ] 1_10 Extract the host bindings, and confirm every file is under 500
+- [x] 1_10 Extract the host bindings, and confirm every file is under 500 — verified: pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_9b
   - **Refs**: design.md D1, design.md § Obligation ledger
   - **Boundary**: `src/webview/worktree/WorktreeCreateDialog.ts` and every file under `src/webview/worktree/createDialog/` is under 500 lines
@@ -152,7 +152,13 @@ stops if the count disagrees with design.md D1.
     - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts
   - **Plan**:
     1. Enumerate in both directions (D1a).
-    2. Create `src/webview/worktree/createDialog/hostBindings.ts` with the `deps.bind*` channels.
+    2. Create `src/webview/worktree/createDialog/hostBindings.ts` with the `deps.bind*` channels, moving them out of `src/webview/worktree/WorktreeCreateDialog.ts`.
+    2b. Keep cutting until the facade is under 500. Each is a subject, and the Boundary below is what says when to stop:
+        - `src/webview/worktree/createDialog/dialogDeps.ts` — the channels the host offers this form.
+        - `src/webview/worktree/createDialog/destinationField.ts` — where the worktree goes, and which pick is being waited on.
+        - `src/webview/worktree/createDialog/submission.ts` — what a submit carries, and when a field's emptiness became the user's answer.
+        - `src/webview/worktree/createDialog/sections.ts` — the after-create, agent, wait-for-setup and advanced blocks, and the actions row.
+        - `src/webview/worktree/createDialog/formFields.ts` — takes `explain`/`labelOf`, which three of the cuts above need.
     3. Record `wc -l` for the facade and every module under `src/webview/worktree/createDialog/` in workflow.md Notes. Any file at 500 or above means the cut is unfinished — split it before ticking, do not tick and defer.
     4. Confirm OBL-5 by grep: every identifier a task moved returns zero hits in the facade.
     5. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.

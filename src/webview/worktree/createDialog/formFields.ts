@@ -31,6 +31,26 @@ import { field } from "../worktreeDialogShell";
  * `.value` off it. Derived from the factory rather than declared beside it, so
  * the two cannot drift.
  */
+/**
+ * A git term of art, explained where it is used.
+ *
+ * `title` is the hover; the same words go on `aria-description` because a screen
+ * reader announces `title` only for a control it can focus, and two of the three
+ * places this is used sit on a plain `<label>`.
+ */
+export function explain(el: HTMLElement | null, text: string): void {
+  if (!el) {
+    return;
+  }
+  el.setAttribute("title", text);
+  el.setAttribute("aria-description", text);
+}
+
+/** The label inside a field wrapper, which is what `explain` is usually given. */
+export function labelOf(wrap: HTMLElement): HTMLElement | null {
+  return wrap.querySelector(".wt-flabel");
+}
+
 export type FormFields = ReturnType<typeof createFormFields>;
 
 export function createFormFields() {
