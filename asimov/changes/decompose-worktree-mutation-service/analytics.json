@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "target": {
+    "kind": "change",
+    "id": "decompose-worktree-mutation-service"
+  },
+  "sessions": [
+    {
+      "sessionId": "83708d46-2968-4e5a-988b-f5cd424f1a70",
+      "runtime": "claude",
+      "author": "huybuidac@gmail.com",
+      "attachedAt": 1788719208472,
+      "accounting": 2,
+      "windows": [
+        {
+          "from": 1788719208472,
+          "to": null
+        }
+      ],
+      "phases": [
+        {
+          "phase": "plan",
+          "from": 1788719208472
+        }
+      ],
+      "firstAt": 1788719208472,
+      "lastAt": 1788719799353,
+      "buckets": [
+        {
+          "runtime": "claude",
+          "phase": "plan",
+          "agent": "asm-oracle",
+          "model": "gpt-5.6-sol",
+          "messages": 8,
+          "inputTokens": 76852,
+          "outputTokens": 10768,
+          "reasoningTokens": 0,
+          "cacheWriteTokens": 0,
+          "cacheReadTokens": 458624,
+          "extra": {
+            "cacheWrite5mTokens": 0,
+            "cacheWrite1hTokens": 0,
+            "webSearchRequests": 0,
+            "webFetchRequests": 0
+          }
+        },
+        {
+          "runtime": "claude",
+          "phase": "plan",
+          "agent": "main",
+          "model": "claude-opus-5",
+          "messages": 19,
+          "inputTokens": 38,
+          "outputTokens": 15894,
+          "reasoningTokens": 3839,
+          "cacheWriteTokens": 23412,
+          "cacheReadTokens": 5290727,
+          "extra": {
+            "cacheWrite5mTokens": 23412,
+            "cacheWrite1hTokens": 0,
+            "webSearchRequests": 0,
+            "webFetchRequests": 0
+          }
+        }
+      ]
+    }
+  ]
+}
