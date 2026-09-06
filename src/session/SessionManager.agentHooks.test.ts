@@ -76,7 +76,7 @@ vi.mock("../pty/PtySession", () => {
   return { PtySession: MockPtySession };
 });
 
-import { type HeadlessFactory, type SerializeAddonFactory, SessionManager } from "./SessionManager";
+import { SessionManager } from "./SessionManager";
 
 const makeFactories = () => headlessFactories({ serialize: () => "OUT" });
 

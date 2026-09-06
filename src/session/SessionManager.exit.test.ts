@@ -11,7 +11,7 @@ vi.mock("../pty/PtyManager", async () => (await import("../test/sessionMocks")).
 vi.mock("../pty/PtySession", async () => (await import("../test/sessionMocks")).ptySessionMock());
 vi.mock("./OutputBuffer", async () => (await import("../test/sessionMocks")).outputBufferMock());
 
-import { type HeadlessFactory, type SerializeAddonFactory, SessionManager } from "./SessionManager";
+import { SessionManager } from "./SessionManager";
 
 function makeFactories() {
   const writes: string[] = [];
