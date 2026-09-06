@@ -12,8 +12,8 @@
 
 ## Implement
 
-- [ ] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [x] All tasks done (`tasks.md`)
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
@@ -54,3 +54,4 @@ Planned at: fe49091f
 - 1_10 OBL-5 (Plan step 4): the facade declares exactly one `let` — `repoSelect`, the element it builds itself. Every moved binding (`choice`, `forkHead`, `activeAt`, `listOpen`, `pathIsDerived`, `usingChosen`, `recoverGrant`, `recoverAsks`, `checkedByOffer`, `waitChoice`, `drawnMigrationOfferId`, `pickAsks`, `pickAsked`, `disposeDestTip`, `nameLeft`, `baseLeft`, `nameTyped`, `baseTyped`) returns zero declarations there.
 - 1_10 mutation checks on the three new seams: `nameBlurred` no-op → 3 of 386 fail; the pick withdrawal in `stateDestination` removed → 3 fail; `waitChoice` ignored in favour of always-recommended → 2 fail. Each restored and re-run green.
 - 1_10 `hostBindings.ts` now names `WorktreeCreateDialogDeps` instead of restating eight of its fields structurally — the second copy of that contract is gone with the type's move to `dialogDeps.ts`.
+- Witnesses: OBL-1 pass [exit 0]; OBL-2 pass [exit 0]; OBL-3 pass [exit 0]; OBL-4 pass [exit 0]; OBL-5 pass [exit 0, grep returns 0 declarations].
