@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionEnvironmentContributor } from "../agentHooks/AgentHookRuntime";
 import { __resetAll, __setAppRoot, __setWorkspaceFolders } from "../test/__mocks__/vscode";
-import { mockWebview } from "../test/sessionMocks";
+import { headlessFactories, mockWebview } from "../test/sessionMocks";
 
 // ─── Local PtySession mock (adds throw-on-next-spawn control the shared
 // sessionMocks helper doesn't need) ─────────────────────────────────────
@@ -78,23 +78,7 @@ vi.mock("../pty/PtySession", () => {
 
 import { type HeadlessFactory, type SerializeAddonFactory, SessionManager } from "./SessionManager";
 
-function makeFactories() {
-  const headless: HeadlessFactory = (cols, rows) => ({
-    cols,
-    rows,
-    write(_d: string, cb?: () => void) {
-      cb?.();
-    },
-    resize() {},
-    dispose() {},
-    loadAddon() {},
-  });
-  const serialize: SerializeAddonFactory = () => ({
-    serialize: () => "OUT",
-    dispose() {},
-  });
-  return { headless, serialize };
-}
+const makeFactories = () => headlessFactories({ serialize: () => "OUT" });
 
 function newSM(agentHookContributor?: SessionEnvironmentContributor) {
   const fx = makeFactories();

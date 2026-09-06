@@ -50,7 +50,7 @@
     2. In `src/session/SessionManager.shutdownLifecycle.test.ts` delete the local `makeStorageMock` and `makeFactories`; call `sessionStorageMock()`, and keep the suite's `serializeCount` and `nextSerialize` variables locally, passing a closure that returns `nextSerialize` once when set and `` `BUF#${++serializeCount}` `` otherwise, so `setNextSerialize` stays a local control the suite still returns.
     3. In both files leave every existing `storage.commitBufferAsync.mockImplementation(...)` and `storage.commitIndexAsync.mockImplementation(...)` call untouched — they override the shared double's generation decision deliberately, and they are what these suites actually assert on.
 
-- [ ] 2_3 Move the backing-store and write-sink suites onto the shared factories
+- [x] 2_3 Move the backing-store and write-sink suites onto the shared factories — verified: pnpm exec vitest run src/session/SessionManager.hydrate.test.ts src/session/SessionManager.agentHooks.test.ts src/session/SessionManager.exit.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_2
   - **Refs**: design.md#d3-expected-test-moves, design.md#d5-obligation-ledger
   - **Acceptance**:

@@ -3,6 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetAll, __setAppRoot, __setWorkspaceFolders } from "../test/__mocks__/vscode";
+import { sessionStorageMock } from "../test/sessionMocks";
 import type { LiveEditorPanelsRecord, SessionSnapshotMetadata, SessionSnapshotsIndex } from "./SessionSnapshot";
 
 vi.mock("../pty/processCwd", async () => (await import("../test/sessionMocks")).processCwdMock());
@@ -35,52 +36,8 @@ function meta(sessionId: string, overrides: Partial<SessionSnapshotMetadata> = {
   };
 }
 
-function makeStorageMock(initial: { buffers?: Record<string, string> } = {}) {
-  const buffers = new Map(Object.entries(initial.buffers ?? {}));
-  const bufferGens = new Map<string, number>();
-  let sidecarGen = 0;
-  return {
-    readBufferFile: vi.fn((id: string) => (buffers.has(id) ? buffers.get(id)! : null)),
-    listBufferFiles: vi.fn(() => Array.from(buffers.keys())),
-    bufferFilePath: (id: string) => `/tmp/${id}.snapshot.ans`,
-    bufferFileRelativePath: (id: string) => `snapshots/${id}.snapshot.ans`,
-    commitBufferSync: vi.fn((id: string, data: string) => {
-      buffers.set(id, data);
-      bufferGens.set(id, (bufferGens.get(id) ?? 0) + 1);
-    }),
-    commitBufferAsync: vi.fn(async (id: string, data: string, capturedGen: number) => {
-      if ((bufferGens.get(id) ?? 0) !== capturedGen) {
-        return "stale-skipped" as const;
-      }
-      buffers.set(id, data);
-      return "renamed" as const;
-    }),
-    commitIndexSync: vi.fn(() => {
-      sidecarGen += 1;
-    }),
-    commitIndexAsync: vi.fn(async (_idx: unknown, capturedGen: number) => {
-      if (sidecarGen !== capturedGen) {
-        return "stale-skipped" as const;
-      }
-      return "renamed" as const;
-    }),
-    dropBuffer: vi.fn((id: string) => {
-      buffers.delete(id);
-      bufferGens.set(id, (bufferGens.get(id) ?? 0) + 1);
-    }),
-    currentBufferGen: vi.fn((id: string) => bufferGens.get(id) ?? 0),
-    currentSidecarGen: vi.fn(() => sidecarGen),
-    cleanupOrphanTemps: vi.fn(),
-    scheduleLivePanelsWrite: vi.fn(),
-    writeIndexAwaited: vi.fn(async () => {}),
-    writeLivePanelsAwaited: vi.fn(async () => {}),
-    loadIndex: () => undefined,
-    loadLivePanels: () => undefined,
-    cancelPendingIndex: vi.fn(),
-    purge: vi.fn(async () => {}),
-    _buffers: buffers,
-  };
-}
+const makeStorageMock = (initial: { buffers?: Record<string, string> } = {}) =>
+  sessionStorageMock({ buffers: initial.buffers ?? {} });
 
 beforeEach(() => {
   __resetAll();

@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetAll, __setAppRoot, __setWorkspaceFolders } from "../test/__mocks__/vscode";
-import { mockPtySessions, mockWebview } from "../test/sessionMocks";
+import { headlessFactories, mockPtySessions, mockWebview } from "../test/sessionMocks";
 import type { MessageSender } from "./OutputBuffer";
 
 vi.mock("../pty/processCwd", async () => (await import("../test/sessionMocks")).processCwdMock());
@@ -15,20 +15,9 @@ import { type HeadlessFactory, type SerializeAddonFactory, SessionManager } from
 
 function makeFactories() {
   const writes: string[] = [];
-  const headless: HeadlessFactory = (cols, rows) => ({
-    cols,
-    rows,
-    write(d: string, cb?: () => void) {
-      writes.push(d);
-      cb?.();
-    },
-    resize() {},
-    dispose() {},
-    loadAddon() {},
-  });
-  const serialize: SerializeAddonFactory = () => ({
+  const { headless, serialize } = headlessFactories({
     serialize: () => "OUT",
-    dispose() {},
+    onWrite: (d) => writes.push(d),
   });
   return { headless, serialize, writes };
 }
