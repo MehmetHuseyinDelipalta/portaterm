@@ -64,7 +64,7 @@
 
 ## 3. Migrate the re-declared module mocks (I-06)
 
-- [ ] 3_1 Replace the two re-declared trios that need no extra control
+- [x] 3_1 Replace the two re-declared trios that need no extra control — verified: pnpm exec vitest run src/providers/TerminalEditorProvider.onReady.test.ts src/providers/TerminalViewProvider.restore.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_2
   - **Refs**: design.md#d3-expected-test-moves, design.md#d4-allowed-non-pure-transformations
   - **Acceptance**:
