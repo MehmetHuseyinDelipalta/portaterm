@@ -35,7 +35,6 @@ import { agentRowFields, worktreeFields, worktreeSignature } from "./worktreeRen
 import { RosterRequests, rosterKey } from "./worktreeRosterRequests";
 import {
   confidenceHint,
-  type NoticeSpec,
   renderAgentRow,
   renderAgentsHeader,
   renderIdleDisclosure,
@@ -49,12 +48,11 @@ import {
   renderWorktreeRow,
   worktreeEmptyState,
 } from "./worktreeTreeView";
+import { type ActionNotices, createActionNotices, resultKey } from "./worktreeView/actionNotices";
 import { createFoldState, type FoldRepoInput, type FoldState } from "./worktreeView/foldState";
 import { createKeyboardNav, type KeyboardNav } from "./worktreeView/keyboardNav";
 import type {
   PresenceDegradation,
-  ProvisionResultContest,
-  ProvisionStepResult,
   WorktreeActionResult,
   WorktreeAgentRow,
   WorktreeInfo,
@@ -82,9 +80,6 @@ function isUnbranched(repo: WorktreeRepo): boolean {
 
 /** setTimeout's delay is a signed 32-bit int; anything larger wraps and fires now. */
 const MAX_TIMEOUT_MS = 2_147_483_647;
-
-/** Long enough to read a two-line result, short enough that it is not furniture. */
-const AUTO_DISMISS_MS = 10_000;
 
 export interface WorktreeViewData {
   tree: WorktreeTree | null;
@@ -225,7 +220,8 @@ export class WorktreeView {
    * that changed is a new notice with a fresh countdown. `"held"` is a notice
    * the user hovered or focused: it never expires again.
    */
-  private readonly autoDismiss = new Map<string, ReturnType<typeof setTimeout> | "held">();
+  /** Placing, naming and dismissing action notices (task 1_3). */
+  private readonly notices: ActionNotices;
   private disposed = false;
   private query = "";
   private signature: string | null = null;
@@ -269,6 +265,16 @@ export class WorktreeView {
     // A restored set already carries the user's own decisions — including the
     // expansions it records by omission — so nothing in the first tree is reseeded.
     // Presence of the array is the signal; its length says nothing.
+    this.notices = createActionNotices({
+      data: () => this.data,
+      element: () => this.element,
+      disposed: () => this.disposed,
+      view: deps,
+      repoOf: (info) => this.repoOf(info),
+      repoAnchors: this.repoAnchors,
+      renderedWorktreeRows: () => this.renderedWorktreeRows(),
+      openRemoveReport: (info, report) => this.openRemoveReport(info, report),
+    });
     this.nav = createKeyboardNav({
       element: () => this.element,
       toggleCollapsed: (id) => this.toggleCollapsed(id),
@@ -718,12 +724,7 @@ export class WorktreeView {
       clearTimeout(this.ceilingTimer);
       this.ceilingTimer = undefined;
     }
-    for (const timer of this.autoDismiss.values()) {
-      if (timer !== "held") {
-        clearTimeout(timer);
-      }
-    }
-    this.autoDismiss.clear();
+    this.notices.dispose();
     this.closeDialog?.();
     this.closeDialog = null;
     this.menu?.close();
@@ -896,7 +897,7 @@ export class WorktreeView {
     // that return no key at all (.reviews/round-2.md B6).
     const focusWasInside = this.element.contains(document.activeElement);
     const restoreFocusTo = this.renderListing(now, focusWasInside);
-    this.placeResults();
+    this.notices.placeResults();
     this.restoreFocus(restoreFocusTo, focusWasInside, scrollTop);
     // Last, and after focus is back: this is the only step here that reaches the
     // host, so it is the only one that can throw — and a throw before the restore
@@ -1481,567 +1482,4 @@ export class WorktreeView {
       }
     }
   }
-
-  /**
-   * The ONE place a result becomes a notice. Deliberately blind to every display
-   * rule: it asks the DOM which rows were actually drawn rather than re-deciding
-   * what `shownWorktrees` decided. Three earlier attempts each put this judgement
-   * inside a branch that decides what to DRAW — the lead loop, the folded tail,
-   * the cap — and each left a different hole. A rule added later cannot open a
-   * new one here, because this pass never learns the rules exist.
-   */
-  private placeResults(): void {
-    const results = this.data.actionResults ?? [];
-    this.pruneAutoDismiss(results);
-    if (results.length === 0) {
-      return;
-    }
-    const drawn = this.renderedWorktreeRows();
-    // Several results can share one anchor, so each insert walks the cursor
-    // forward; appending them all `after` the same node would reverse them.
-    const cursors = new Map<HTMLElement, HTMLElement>();
-    for (const result of results) {
-      const row = result.worktreeId === undefined ? undefined : drawn.get(result.worktreeId);
-      const info = result.worktreeId === undefined ? undefined : this.infoFor(result.worktreeId);
-      // A drawn row already says which worktree this is about, directly above.
-      const notice = this.buildActionNotice(result, info, row ? undefined : this.nameFor(result, info));
-      this.armAutoDismiss(result, notice);
-      const anchor = row ? this.groupEndFor(row) : this.repoAnchorFor(result, info);
-      // Unreachable as written — the map is cleared with the DOM, so every anchor in
-      // it was recorded after that same `replaceChildren`. Kept because `after()` on
-      // a detached node is a SILENT no-op: this turns a future regression into a
-      // notice in the wrong place rather than no notice at all, which is the one
-      // outcome this pass exists to prevent.
-      if (anchor === undefined || !this.element.contains(anchor)) {
-        this.element.appendChild(notice);
-        continue;
-      }
-      const at = cursors.get(anchor) ?? anchor;
-      at.after(notice);
-      cursors.set(anchor, notice);
-    }
-  }
-
-  /**
-   * A mutation that STANDS reports itself and then gets out of the way — the
-   * tree behind the notice is what the user actually asked for, and a create
-   * whose setup step failed is still a create that succeeded. Only `ok` results
-   * expire: an error, an unreadable subject or a partly-applied action is a
-   * question the user still has to answer, so it waits for them.
-   */
-  private armAutoDismiss(result: WorktreeActionResult, notice: HTMLElement): void {
-    const dismiss = this.deps.onDismissActionResult;
-    // A create only. Every other action's `ok` notice keeps the lifecycle it
-    // was designed with — a scope-cleared statement in particular answers to no
-    // row and is replaced rather than expired.
-    if (dismiss === undefined || result.action !== "create" || result.outcome !== "ok") {
-      return;
-    }
-    const key = resultKey(result);
-    if (!this.autoDismiss.has(key)) {
-      this.autoDismiss.set(
-        key,
-        setTimeout(() => {
-          if (this.autoDismiss.get(key) === "held") {
-            return;
-          }
-          this.autoDismiss.delete(key);
-          if (this.disposed) {
-            return;
-          }
-          // The LIVE result carrying this key, never the object the timer was
-          // armed with: the controller dismisses by object identity, and every
-          // tree reconciliation rebuilds an attached result into an equal but
-          // different object. Handing back the captured one dismissed nothing
-          // and retired the countdown, leaving the notice up for good.
-          const live = (this.data.actionResults ?? []).find((r) => resultKey(r) === key);
-          if (live !== undefined) {
-            dismiss(live);
-          }
-        }, AUTO_DISMISS_MS),
-      );
-    }
-    // Reaching the notice is the user reading it, and "View output" and "Retry
-    // setup" must not vanish under the cursor on the way to a click. The hold
-    // is permanent: someone who looked at a notice closes it themselves.
-    const hold = (): void => {
-      const timer = this.autoDismiss.get(key);
-      if (timer !== undefined && timer !== "held") {
-        clearTimeout(timer);
-      }
-      this.autoDismiss.set(key, "held");
-    };
-    notice.addEventListener("mouseenter", hold);
-    notice.addEventListener("focusin", hold);
-  }
-
-  /** Drop countdowns for results that are already gone, so a long session does
-   *  not accumulate one entry per notice it ever drew. */
-  private pruneAutoDismiss(results: readonly WorktreeActionResult[]): void {
-    if (this.autoDismiss.size === 0) {
-      return;
-    }
-    const live = new Set(results.map(resultKey));
-    for (const [key, timer] of this.autoDismiss) {
-      if (!live.has(key)) {
-        if (timer !== "held") {
-          clearTimeout(timer);
-        }
-        this.autoDismiss.delete(key);
-      }
-    }
-  }
-
-  /** The last node belonging to a row: its group when it has one, else its pill. */
-  private groupEndFor(row: HTMLElement): HTMLElement {
-    // `.wt-group`, not `.wt-card`: the card is a selection mark now and an
-    // expanded-but-unselected worktree carries only the group.
-    const card = row.closest<HTMLElement>(".wt-group");
-    if (card) {
-      return card;
-    }
-    const next = row.nextElementSibling;
-    return next instanceof HTMLElement && next.classList.contains("wt-presence") ? next : row;
-  }
-
-  /** Where a result with no drawn row goes: with its repository when we can place
-   *  it there, else at the end, which is the only honest place left. */
-  private repoAnchorFor(result: WorktreeActionResult, info?: WorktreeInfo): HTMLElement | undefined {
-    const repoId = result.repoId ?? (info ? this.repoOf(info)?.repoId : undefined);
-    return repoId === undefined ? undefined : this.repoAnchors.get(repoId);
-  }
-
-  private infoFor(worktreeId: string): WorktreeInfo | undefined {
-    for (const repo of this.data.tree?.repos ?? []) {
-      const found = repo.worktrees.find((w) => w.id === worktreeId);
-      if (found) {
-        return found;
-      }
-    }
-    return undefined;
-  }
-
-  /**
-   * What to call a worktree whose row is not on screen. A row label alone does
-   * not identify one — `main`, `bare`, `(no branch)` and a short sha all repeat,
-   * across repositories especially — so a label shared with another worktree the
-   * panel holds is qualified until it separates them.
-   */
-  private nameFor(result: WorktreeActionResult, info?: WorktreeInfo): string | undefined {
-    if (result.worktreeId === undefined) {
-      return undefined;
-    }
-    if (!info) {
-      // Left the tree: the last thing the panel knew of it, reconstructed by the
-      // controller rather than supplied by the host, so it is a fallback and not
-      // an authority.
-      return result.orphanedLabel;
-    }
-    const label = branchLabel(info).text;
-    const shared = (this.data.tree?.repos ?? []).some((repo) =>
-      repo.worktrees.some((w) => w.id !== info.id && branchLabel(w).text === label),
-    );
-    return shared ? `${label} — ${info.displayPath}` : label;
-  }
-
-  /**
-   * An indeterminate result is NOT an error: it says the repository changed and
-   * names what was observed, so the user knows there is state to resolve. Rendering
-   * it as a failure would tell them nothing happened, which is the false claim.
-   */
-  private buildActionNotice(result: WorktreeActionResult, info?: WorktreeInfo, name?: string): HTMLElement {
-    const dismiss = this.deps.onDismissActionResult ? () => this.deps.onDismissActionResult?.(result) : undefined;
-    // A notice re-scoped to its repository has no row above it to say what it
-    // is about, so it says so itself.
-    const about = name ?? result.orphanedLabel;
-    const withAbout = (body?: string): string | undefined =>
-      about === undefined ? body : body === undefined ? about : `${about} — ${body}`;
-    if (result.action === "scope") {
-      // Not a mutation: nothing failed and nothing was done to the worktree. It
-      // left the tree, and the surface that was filtered by it says so rather
-      // than quietly showing every tab again.
-      return renderNotice({
-        tone: "neutral",
-        live: "status",
-        title: "Scope cleared.",
-        body: `${about ?? "The scoped worktree"} is no longer in this tree, so every tab is shown again.`,
-        onDismiss: dismiss,
-      });
-    }
-    if (result.outcome === "ok") {
-      const brought = provisionSummary(result.provisioned, result.provisionContests);
-      const ported = portSummary(result.ports, result.portWarnings);
-      const migrationDetail =
-        result.migrationIndeterminate === undefined
-          ? undefined
-          : `Unverified Git integration detail: ${result.migrationIndeterminate}`;
-      const setup = setupSummary(result.setup);
-      const setupActions = [
-        ...(result.setupOutputId === undefined || this.deps.onViewSetupOutput === undefined
-          ? []
-          : [{ label: "View output", onClick: () => this.deps.onViewSetupOutput?.(result) }]),
-        ...(result.worktreeId === undefined || result.setupRetryId === undefined || this.deps.onRetrySetup === undefined
-          ? []
-          : [{ label: "Retry setup", onClick: () => this.deps.onRetrySetup?.(result) }]),
-      ];
-      // Stated, not implied: the tree refreshing underneath is not a report,
-      // and a user who started a mutation is owed its result either way.
-      // Still a success — the worktree exists — but the notice says plainly
-      // what did not happen afterwards, rather than a second notice replacing
-      // this one (round-4 W7).
-      return renderNotice({
-        // A create that succeeded while some of its material did not arrive is
-        // still a success and still needs saying — the same rule the launch
-        // failure above follows (round-4 W7). A refused branch delete is the
-        // same shape: the removal still succeeded, but "done" alone would
-        // hide that the opt-in did not go through.
-        tone:
-          result.openFailed === undefined &&
-          result.migrationIndeterminate === undefined &&
-          result.branchDelete?.kind !== "refused" &&
-          brought?.tone !== "warn" &&
-          ported?.tone !== "warn" &&
-          setup?.tone !== "warn" &&
-          result.manifestWarning === undefined
-            ? "neutral"
-            : "warn",
-        live: "status",
-        title: `${titleForAction(result.action)} done.`,
-        body: withAbout(
-          [
-            result.migrationIndeterminate === undefined
-              ? undefined
-              : "Migration may be partial, so no provisioning, port allocation, opening, or launch ran afterwards. Inspect the source worktree, destination worktree, and Git stashes.",
-            result.openFailed === undefined ? undefined : "It could not be opened afterwards.",
-            branchDeleteLine(result.branchDelete),
-            brought?.body,
-            ported?.body,
-            setup?.body,
-            result.manifestWarning,
-          ]
-            .filter((line) => line !== undefined)
-            .join(" ") || undefined,
-        ),
-        reason:
-          [
-            migrationDetail,
-            result.openFailed,
-            branchDeleteReason(result.branchDelete),
-            brought?.reason,
-            ported?.reason,
-            setup?.reason,
-          ]
-            .filter((line) => line !== undefined)
-            .join("\n") || undefined,
-        actions: setupActions.length === 0 ? undefined : setupActions,
-        onDismiss: dismiss,
-      });
-    }
-    if (result.outcome === "unavailable") {
-      // NOT a failure and NOT unclear: nothing was attempted, because what the
-      // action would affect could not be read. That is the one outcome a retry
-      // can actually change, so it is the only one that offers one.
-      // Offered only where it can act. A re-scoped result has lost the
-      // worktreeId the re-ask needs, and a button that does nothing is worse
-      // than no button (round-4 W4).
-      const retry = result.worktreeId === undefined ? undefined : this.deps.onRetryAction;
-      return renderNotice({
-        tone: "warn",
-        live: "alert",
-        title: `Couldn't check what this would affect.`,
-        body: withAbout("Nothing was changed. These reads failed:"),
-        reason: (result.unreadable ?? []).join(", "),
-        actions: retry ? [{ label: "Retry", onClick: () => retry(result) }] : undefined,
-        onDismiss: dismiss,
-      });
-    }
-    if (result.outcome === "indeterminate") {
-      const repoId = result.repoId;
-      const spec: NoticeSpec = {
-        tone: "warn",
-        live: "alert",
-        title: `${titleForAction(result.action)} partly applied.`,
-        body: withAbout("The repository changed. Check what was observed before retrying."),
-        reason: result.observed,
-        onDismiss: dismiss,
-        actions:
-          this.deps.onPrune && repoId ? [{ label: "Prune", onClick: () => this.deps.onPrune?.(repoId) }] : undefined,
-      };
-      return renderNotice(spec);
-    }
-    const actions: NonNullable<NoticeSpec["actions"]> = [];
-    // A blocked destructive action reopens the confirmation rather than reporting
-    // a dead end — the blocker set is what the user has to answer.
-    if (result.needsConfirm && info) {
-      const report = result.needsConfirm;
-      actions.push({
-        label: "Force remove…",
-        onClick: () => this.openRemoveReport(info, report),
-      });
-    }
-    return renderNotice({
-      tone: "error",
-      live: "alert",
-      title: `Couldn't ${result.action} this worktree.`,
-      body: withAbout(),
-      reason: result.error,
-      actions: actions.length > 0 ? actions : undefined,
-      onDismiss: dismiss,
-    });
-  }
-
-  // -- Keyboard (§ 6) ------------------------------------------------------
-}
-
-/** What the notice says happened to the opted-in branch, apart from the removal itself. */
-function branchDeleteLine(outcome: WorktreeActionResult["branchDelete"]): string | undefined {
-  if (outcome === undefined) {
-    return undefined;
-  }
-  return outcome.kind === "deleted" ? `The branch ${outcome.branch} was also deleted.` : "The branch was not deleted.";
-}
-
-/** Which guard refused the branch delete, in the user's terms — never a bare "refused". */
-function branchDeleteReason(outcome: WorktreeActionResult["branchDelete"]): string | undefined {
-  if (outcome === undefined || outcome.kind !== "refused") {
-    return undefined;
-  }
-  switch (outcome.reason) {
-    case "branch-in-use":
-      return "It is checked out in another worktree.";
-    case "default-branch":
-      return "It is the default branch.";
-    case "holders-unavailable":
-      return "The branch deletion could not be safely authorized or completed.";
-    case "refs-moved":
-      return "It moved since it was checked.";
-    default:
-      return undefined;
-  }
-}
-
-function titleForAction(action: WorktreeActionResult["action"]): string {
-  switch (action) {
-    case "remove":
-      return "Remove";
-    case "create":
-      return "Create";
-    case "lock":
-      return "Lock";
-    case "unlock":
-      return "Unlock";
-    case "prune":
-      return "Prune";
-    case "scope":
-      return "Scope";
-    default:
-      return "Launch";
-  }
-}
-
-/**
- * The part of a provisioning report that decides whether the notice redraws.
- *
- * Every outcome, in order — a run where one entry turned from `copied` to
- * `refused` must not compare equal to the run before it.
- */
-function provisionKey(result: WorktreeActionResult): string {
-  // Structural, over exactly what the provisioning summaries and actions read.
-  return JSON.stringify([
-    result.provisioned ?? [],
-    result.provisionContests ?? [],
-    result.ports ?? [],
-    result.portWarnings ?? [],
-    result.setup ?? [],
-    result.setupOutputId ?? null,
-    result.setupRetryId ?? null,
-    result.manifestWarning ?? null,
-  ]);
-}
-
-/**
- * The part of a result that decides whether its notice redraws — and, because it
- * is stable across redraws of an unchanged result, the identity its auto-dismiss
- * countdown is keyed on.
- *
- * The blocker fingerprint is part of the key: it decides whether the notice
- * offers Force remove at all, and WHICH blocker set that confirmation would
- * authorize. Provisioning lands as a SECOND message folded onto the same notice,
- * so its summary is part of the key — without it the merged result is
- * byte-different and renders identically.
- */
-function resultKey(r: WorktreeActionResult): string {
-  return `${r.action}:${r.worktreeId ?? r.repoId ?? ""}:${r.orphanedLabel ?? ""}:${r.outcome}:${r.openFailed ?? ""}:${r.migrationIndeterminate ?? ""}:${r.error ?? ""}${r.observed ?? ""}:${r.needsConfirm?.fingerprint ?? ""}:${provisionKey(r)}:${r.branchDelete ? `${r.branchDelete.kind}:${r.branchDelete.kind === "deleted" ? r.branchDelete.branch : r.branchDelete.reason}` : ""}`;
-}
-
-function setupSummary(
-  setup: WorktreeActionResult["setup"],
-): { body: string; tone: "neutral" | "warn"; reason?: string } | undefined {
-  if (setup === undefined || setup.length === 0) {
-    return undefined;
-  }
-  const ok = setup.filter((step) => step.outcome.kind === "ok");
-  const failed = setup.filter((step) => step.outcome.kind === "failed");
-  const skipped = setup.filter((step) => step.outcome.kind === "skipped");
-  const body = [
-    `${ok.length} of ${setup.length} setup steps completed.`,
-    ...(failed.length === 0 ? [] : [`${failed.length} failed.`]),
-    ...(skipped.length === 0 ? [] : [`${skipped.length} skipped.`]),
-  ].join(" ");
-  const reasons = [...failed, ...skipped].map(
-    (step) => `${step.script}: ${"reason" in step.outcome ? step.outcome.reason : step.outcome.kind}`,
-  );
-  return {
-    body,
-    tone: failed.length === 0 && skipped.length === 0 ? "neutral" : "warn",
-    ...(reasons.length === 0 ? {} : { reason: reasons.join("\n") }),
-  };
-}
-
-function portSummary(
-  ports: WorktreeActionResult["ports"],
-  warnings: WorktreeActionResult["portWarnings"],
-): { body: string; tone: "neutral" | "warn"; reason?: string } | undefined {
-  if ((ports === undefined || ports.length === 0) && (warnings === undefined || warnings.length === 0)) {
-    return undefined;
-  }
-  const byName = new Map<string, NonNullable<WorktreeActionResult["ports"]>[number]>();
-  const priority = (port: NonNullable<WorktreeActionResult["ports"]>[number]): number => {
-    if (port.outcome.kind === "failed") {
-      return 3;
-    }
-    return port.preview !== undefined && port.preview !== port.outcome.port ? 2 : 1;
-  };
-  for (const port of ports ?? []) {
-    const current = byName.get(port.name);
-    if (current === undefined || priority(port) > priority(current)) {
-      byName.set(port.name, port);
-    }
-  }
-  const unique = [...byName.values()];
-  const ready = unique.filter((port) => port.outcome.kind !== "failed");
-  const failed = unique.filter((port) => port.outcome.kind === "failed");
-  const moved = ready.filter(
-    (port) => port.preview !== undefined && port.outcome.kind !== "failed" && port.preview !== port.outcome.port,
-  );
-  const warningText = [
-    ...(warnings?.includes("lockReleaseFailed")
-      ? ["The allocation lock could not be released; later port allocations may be blocked."]
-      : []),
-    ...(warnings?.includes("lockRetained")
-      ? [
-          "A repository lock was retained because a timed-out write may still finish; related worktree setup may remain blocked until cleanup.",
-        ]
-      : []),
-    ...(warnings?.includes("temporaryCleanupFailed")
-      ? ["Port claims were saved, but temporary-file cleanup did not finish."]
-      : []),
-    ...(warnings?.includes("excludeFailed")
-      ? ["The repository-local exclude could not be updated; .env.worktree may appear in Git status."]
-      : []),
-  ];
-  const body = [
-    ...(unique.length === 0 ? [] : [`${ready.length} of ${unique.length} ports ready.`]),
-    ...warningText,
-  ].join(" ");
-  const reasons = [
-    ...moved.map(
-      (port) => `${port.name}: ${port.preview} → ${port.outcome.kind === "failed" ? "failed" : port.outcome.port}`,
-    ),
-    ...failed.map((port) => `${port.name}: ${port.outcome.kind === "failed" ? port.outcome.reason : "failed"}`),
-  ];
-  return {
-    body,
-    tone: failed.length > 0 || warningText.length > 0 ? "warn" : "neutral",
-    ...(reasons.length === 0 ? {} : { reason: reasons.join("\n") }),
-  };
-}
-
-/**
- * One sentence about what was brought over, and the reasons behind it.
- *
- * `refused` and `failed` are the two the user has to be told about: the first
- * is a rule they can work around, the second is something that went wrong.
- * `skipped` is neither — it means the file was already there — so it is
- * counted and not dwelt on.
- */
-function provisionSummary(
-  steps: readonly ProvisionStepResult[] | undefined,
-  contests: readonly ProvisionResultContest[] = [],
-): { body: string; tone: "neutral" | "warn"; reason?: string } | undefined {
-  /**
-   * Which contest a row belongs to — a marker, never the membership.
-   *
-   * Rebuilding the full list per row put the `O(N²)` the wire had just shed
-   * straight back into the notice and the DOM (.reviews/round-1.md F001). The
-   * membership is listed once, below the rows, and each row carries only a
-   * number into it.
-   *
-   * An index that does not resolve is SAID rather than dropped: silently
-   * falling back to the bare reason removes every declaring file exactly where
-   * the obligation to name them lives (F002).
-   */
-  const cited = new Set<number>();
-  const withContest = (step: ProvisionStepResult, reason: string): string => {
-    if (step.contest === undefined) {
-      return reason;
-    }
-    const members = contests[step.contest]?.members;
-    if (members === undefined || members.length === 0) {
-      return `${reason} [contest ${step.contest + 1}, which was not reported]`;
-    }
-    cited.add(step.contest);
-    return `${reason} [contest ${step.contest + 1}]`;
-  };
-
-  /** Each cited contest's membership, once, in index order. */
-  const contestLines = (): readonly string[] =>
-    [...cited]
-      .sort((a, b) => a - b)
-      .map(
-        (at) =>
-          `Contest ${at + 1}, one destination these may all name: ${(contests[at]?.members ?? [])
-            .map((member) => `${member.path} (declared in ${member.source})`)
-            .join(", ")}`,
-      );
-  if (steps === undefined || steps.length === 0) {
-    return undefined;
-  }
-  // Arrival is what this apply WROTE. `skipped` means the destination was
-  // already there, so counting it said "1 of 1 brought over" for an apply that
-  // wrote nothing (.reviews/round-4.md F026).
-  const bad = steps.filter((s) => s.outcome.kind === "refused" || s.outcome.kind === "failed");
-  const untouched = steps.filter((s) => s.outcome.kind === "skipped");
-  // A link the platform refused is not a link the provider got. PLAN Acceptance
-  // requires the degradation be said per entry, and rendered as a plain copy it
-  // was said nowhere.
-  const degraded = steps.filter((s) => s.outcome.kind === "degradedToCopy");
-  const arrived = steps.length - bad.length - untouched.length;
-  // A directory entry has one outcome and many nodes: it reports `copied` while
-  // descendants inside it were skipped or refused. Counting only the top level
-  // told the user everything arrived when some of it had not (round-2 F018).
-  const inside = steps.flatMap((s) => s.details ?? []);
-  const counts = [
-    `${arrived} of ${steps.length} brought over.`,
-    ...(degraded.length === 0 ? [] : [`${degraded.length} copied instead of linked.`]),
-    ...(untouched.length === 0 ? [] : [`${untouched.length} already there.`]),
-  ];
-  if (bad.length === 0 && inside.length === 0 && degraded.length === 0 && untouched.length === 0) {
-    return { body: counts[0] ?? "", tone: "neutral" };
-  }
-  const body = counts.join(" ");
-  return {
-    body: inside.length === 0 ? body : `${body} ${inside.length} inside them did not arrive.`,
-    tone: "warn",
-    reason: [
-      ...bad.map((s) => `${s.path}: ${withContest(s, "reason" in s.outcome ? s.outcome.reason : s.outcome.kind)}`),
-      ...degraded.map((s) => `${s.path}: the platform had no symlink to give, so it was copied`),
-      ...untouched.map(
-        (s) => `${s.path}: ${withContest(s, "reason" in s.outcome ? s.outcome.reason : s.outcome.kind)}`,
-      ),
-      ...inside.map((d) => `${d.path}: ${d.reason}`),
-      // After the rows, because it explains them.
-      ...contestLines(),
-    ].join("\n"),
-  };
 }

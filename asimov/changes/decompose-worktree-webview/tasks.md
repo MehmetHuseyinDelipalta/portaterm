@@ -32,7 +32,7 @@
     4. Add `src/webview/worktree/worktreeView/keyboardNav.test.ts` with `// @vitest-environment jsdom` on line 1, proving OBL-2: wire against one set of rows, REPLACE the host's children, dispatch a key, assert `document.activeElement` is among the replacement host's current rows.
     5. Close with `git diff --exit-code -- src/types/messages.ts` (OBL-5).
 
-- [ ] 1_3 Extract the action notices
+- [x] 1_3 Extract the action notices — verified: pnpm exec vitest run src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/WorktreeView.test.ts exit 0
   - **Deps**: 1_2
   - **Refs**: design.md D1, design.md D2, design.md D4
   - **Boundary**: the auto-dismiss map crosses by reference; no timer is re-armed by the move
