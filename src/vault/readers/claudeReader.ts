@@ -15,10 +15,8 @@
 // (claudeRecords), team threading (claudeTeam), and nested children
 // (claudeChildren). The shared classifier lives in ./detail.
 
-import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import * as readline from "node:readline";
 import { isResolvedPathInsideRoot, prepareResolvedRoot } from "../../utils/resolvedPathBoundary";
 import type { ReaderListCache, ReaderResultWithState } from "../cacheTypes";
 import { boundedPreview } from "../preview";
@@ -61,6 +59,7 @@ import {
   scopeDirectChildren,
   sourceVerdict,
 } from "./detail";
+import { streamJsonlObjects } from "./jsonlStream";
 import { findRecordLine, type RecordLineResult } from "./recordLine";
 
 const NOT_FOUND = { ok: false, reason: "not-found" } as const;
@@ -109,29 +108,8 @@ async function parseClaudeFile(filePath: string): Promise<ClaudeFileFields | nul
   let haveUser = false;
   let haveAssistant = false;
 
-  let stream: ReturnType<typeof createReadStream> | undefined;
-  let rl: readline.Interface | undefined;
   try {
-    stream = createReadStream(filePath, { encoding: "utf8" });
-    rl = readline.createInterface({
-      input: stream,
-      crlfDelay: Number.POSITIVE_INFINITY,
-    });
-    for await (const line of rl) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-      let obj: Record<string, unknown>;
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (typeof parsed !== "object" || parsed === null) {
-          continue;
-        }
-        obj = parsed as Record<string, unknown>;
-      } catch {
-        continue; // skip a single corrupt line, keep reading (D8)
-      }
+    for await (const { record: obj } of streamJsonlObjects(filePath)) {
       fields.parsedAnyLine = true;
 
       if (fields.cwd === undefined && typeof obj.cwd === "string") {
@@ -174,9 +152,6 @@ async function parseClaudeFile(filePath: string): Promise<ClaudeFileFields | nul
     }
   } catch {
     return null; // stream/open failure → unreadable
-  } finally {
-    rl?.close();
-    stream?.destroy();
   }
 
   if (!fields.parsedAnyLine) {

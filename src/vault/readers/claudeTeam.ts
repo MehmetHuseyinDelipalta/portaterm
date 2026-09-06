@@ -4,10 +4,8 @@
 // team membership, scan member siblings, and thread per-turn communication into
 // the leader's timeline.
 
-import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import * as readline from "node:readline";
 import { boundedPreview } from "../preview";
 import { formatEntryId, type VaultSessionDetail, type VaultTimelineItem } from "../types";
 import { formatTeamTurnSessionId } from "./claudeChildIds";
@@ -20,6 +18,7 @@ import {
   MAX_TIMELINE_ITEMS,
   sourceVerdict,
 } from "./detail";
+import { streamJsonlObjects } from "./jsonlStream";
 import { parseStoredTimestamp } from "./timestamp";
 
 /**
@@ -170,26 +169,8 @@ export async function readClaudeTeamSegment(
   let boundaryCount = 0;
   let collecting = false;
   let found = false;
-  let stream: ReturnType<typeof createReadStream> | undefined;
-  let rl: readline.Interface | undefined;
   try {
-    stream = createReadStream(filePath, { encoding: "utf8" });
-    rl = readline.createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY });
-    for await (const line of rl) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-      let rec: Record<string, unknown>;
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (!parsed || typeof parsed !== "object") {
-          continue;
-        }
-        rec = parsed as Record<string, unknown>;
-      } catch {
-        continue; // skip a corrupt line, keep counting (D8)
-      }
+    for await (const { record: rec } of streamJsonlObjects(filePath)) {
       if (teammateBoundary(rec) !== null) {
         if (boundaryCount === turn) {
           collecting = true;
@@ -205,9 +186,6 @@ export async function readClaudeTeamSegment(
     }
   } catch {
     return null;
-  } finally {
-    rl?.close();
-    stream?.destroy();
   }
   if (!found) {
     return null; // turn out of range
@@ -244,27 +222,9 @@ interface TeamMemberInfo {
  * to that first user record — a non-member is never read to EOF.
  */
 async function readTeamMemberInfo(filePath: string, sessionId: string): Promise<TeamMemberInfo | null> {
-  let stream: ReturnType<typeof createReadStream> | undefined;
-  let rl: readline.Interface | undefined;
   let result: TeamMemberInfo | null = null;
   try {
-    stream = createReadStream(filePath, { encoding: "utf8" });
-    rl = readline.createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY });
-    for await (const line of rl) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-      let obj: Record<string, unknown>;
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (!parsed || typeof parsed !== "object") {
-          continue;
-        }
-        obj = parsed as Record<string, unknown>;
-      } catch {
-        continue;
-      }
+    for await (const { record: obj } of streamJsonlObjects(filePath)) {
       if (obj.type !== "user" || obj.isMeta === true || obj.isSidechain === true) {
         continue;
       }
@@ -287,9 +247,6 @@ async function readTeamMemberInfo(filePath: string, sessionId: string): Promise<
     }
   } catch {
     return null;
-  } finally {
-    rl?.close();
-    stream?.destroy();
   }
   return result;
 }
@@ -352,26 +309,8 @@ interface MemberTurn {
 async function collectMemberTurns(filePath: string): Promise<MemberTurn[]> {
   const turns: MemberTurn[] = [];
   let idx = 0;
-  let stream: ReturnType<typeof createReadStream> | undefined;
-  let rl: readline.Interface | undefined;
   try {
-    stream = createReadStream(filePath, { encoding: "utf8" });
-    rl = readline.createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY });
-    for await (const line of rl) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-      let rec: Record<string, unknown>;
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (!parsed || typeof parsed !== "object") {
-          continue;
-        }
-        rec = parsed as Record<string, unknown>;
-      } catch {
-        continue;
-      }
+    for await (const { record: rec } of streamJsonlObjects(filePath)) {
       const tag = teammateBoundary(rec);
       if (tag) {
         turns.push({
@@ -392,9 +331,6 @@ async function collectMemberTurns(filePath: string): Promise<MemberTurn[]> {
     }
   } catch {
     return turns; // partial is fine — defensive (D8)
-  } finally {
-    rl?.close();
-    stream?.destroy();
   }
   return turns;
 }
