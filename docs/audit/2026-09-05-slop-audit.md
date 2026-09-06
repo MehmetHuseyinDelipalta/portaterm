@@ -9,6 +9,11 @@ relying on the counts.
 
 ## Executive summary
 
+> **Status — 2026-09-06.** This list records the audit as of base commit `8222f6dc`, before any
+> code was written. Every top cut named in items 3–8 has since been executed or explicitly
+> dispositioned, and the line figures here are the original estimates. See **Execution
+> follow-up** below for what actually landed and what it actually measured.
+
 1. Reviewed 135 P1/P2 candidates; the verifier returned 125 CONFIRMED, 8 DOWNGRADED and 2 REJECTED before cross-axis merging.
 2. Final cleanup pool: 119 distinct opportunities, about 2,461 net lines (~1% of the non-vendored TypeScript tree); estimates, not measured deletions.
 3. Top cut 1: remove simulated webview integration coverage (T1-G07/G08), ~195 lines; low risk once the real module-owner tests remain.
@@ -33,18 +38,22 @@ The pool was revalidated against `0de80546` before editing. This follow-up super
 - After product review, resolved D-11 by retiring the unreleased receiver-only Vault fork path end-to-end; the shipped Vault remains Resume/Continue only.
 - Resolved D-12 by contributing the already-implemented `renameTab` command to the Command Palette and root-tab context menu, with cold activation and no default keybinding.
 - Resolved U-12 with field-specific timestamp parsing: decimal epoch strings remain compatible only for legacy Claude workflow `startTime`; transcript timestamps use the observed provider string profile or numeric forms and SQLite timestamp columns remain number-only.
+- Completed U-18 and I-06, initially deferred below, in change `260906-0459-share-session-manager-test-fixtures` (`a82e6383^..842914b5`). `src/test/sessionMocks.ts` now exports `sessionStorageMock(options)` and `headlessFactories(options)`. The change replaced all six hand-written storage bodies and six of the seven hand-written headless-factory bodies with those two helpers, and all five I-06 files import shared mocks. The four provider suites use all three shared factories; `SessionManager.test.ts` shares `ptyManagerMock` and `outputBufferMock` while retaining its richer local `PtySession` double. What remains under the old names, and why, is itemized in the U-18 entry below.
+- Completed U-07, initially deferred below, in change `260906-0540-share-jsonl-stream-lifecycle` (`53e21117^..8484a26f`). The readline sites now run through one `src/vault/readers/jsonlStream.ts`; each caller keeps its own limits, early-return cleanup, malformed-record handling and partial-result semantics, and byte-bounded `recordLine.ts` stayed separate as the Cut required.
+- Completed U-11, initially deferred below, in change `260906-0708-share-provider-request-mechanics` (`4b19525c^..c7d1ac4d`). Preview/vault request mechanics moved to the new `src/providers/webviewRequests.ts` behind provider-specific post/retry adapters, preserving the subagent-response delivery difference — editor posts once, view retries — along with log suffixes, cancellation, supersession and disposal.
 
-### Retained or deferred after HEAD revalidation
+### Retained after HEAD revalidation
+
+U-07, U-11 and U-18 / I-06 were originally deferred here and have since been completed; they
+moved to **Applied** above. Nothing in this audit is deferred any more — every remaining row
+is a deliberate keep.
 
 | IDs | Disposition |
 |---|---|
 | A-08 | Keep. It is the exact composition production uses; deleting it only recreates the wrapper in tests or makes them noisier. |
 | A-09 | Keep. Replacing it with lower-level test exports grows the test-only API and saves no lines. |
 | U-02 remainder | Keep provider-specific context and the migration coercion asymmetry; only the exact plain converters were shared. |
-| U-07 | Defer. The seven JSONL sites differ in partial/null failure, early termination, line numbering and buffering; the original ~80 was an opportunity ceiling. |
 | U-08 | Withdraw the blanket cut. The predicates implement different lexical, resolved, case-folding and platform contracts. |
-| U-11 | Defer pending a dedicated lifecycle/retry refactor; the ~180 estimate is not one safe deletion block. |
-| U-18 / I-06 | Defer pending a dedicated fixture design. Current variants carry generation, serialization, addon, disposal and control semantics that a generic helper could hide. |
 | I-08 | Keep. Moving single-consumer fixtures saves no lines and is not evidence of waste. |
 
 ### Product and behavior decisions
@@ -61,6 +70,32 @@ D-11, D-12 and U-12 are resolved. No product/behavior decision remains open in t
 - Full `pnpm run test:unit`: **301 files, 7,822 tests passed**. The first run exposed a pre-existing stale `SetupTerminal` fake missing the live `retire()` method; adding that API-compatible no-op to the fake made its 17-test owner suite and the full gate pass.
 - Subsequent D-11 retirement removed another 418 net lines across 54 files. Focused Vault/provider verification passed 529 tests; the post-retirement full suite passed **301 files, 7,801 tests**. TypeScript, Biome check mode, `fsDeletionGate` and `git diff --check` also passed; Biome retained seven pre-existing warnings in touched files.
 - D-12/U-12 focused verification passed 204 rename tests, 308 initial timestamp tests and 63 final review-fix tests. Review fixed numeric workflow fallbacks and impossible calendar normalization, then narrowed the advertised timestamp contract to the observed provider string profile; the final full suite passed **303 files, 7,818 tests**; TypeScript, changed-file Biome check mode, `fsDeletionGate` and `git diff --check` passed.
+
+#### Measured delta of the three later consolidations — 2026-09-06
+
+U-18 / I-06, U-07 and U-11 landed after the figures above. The table uses
+`git diff --numstat <first-commit>^ <tip> -- src`. Net values are additions minus deletions.
+Changes in former owner/suite files, shared helper/module code and added test files are shown
+separately.
+
+| Item | Net in former owner/suite files | Shared helper/module delta | Added test-file lines | Net before added test files | Overall src net | Original estimate |
+|---|---|---|---|---|---|---|
+| U-18 / I-06 | −667 across 13 modified suites | `sessionMocks.ts` +151 | `sessionMocks.test.ts` +252 | −516 test-infrastructure lines | **−264** | ~200 + ~200 removed |
+| U-07 | −132 across 4 readers | `jsonlStream.ts` +72 | +283 across 2 files | −60 production lines | **+223** | ~80 removed |
+| U-11 | −391 across 2 providers | `webviewRequests.ts` +363 | +681 across 2 files | −28 production lines | **+653** | ~180 removed |
+
+The targeted duplication was consolidated. Before counting newly added test files, the three
+changes netted −516 test-infrastructure lines, −60 production lines and −28 production lines
+respectively. Including the added test files gives repository-wide `src` deltas of −264, +223
+and +653. The added tests comprise both direct tests of the shared helpers/modules and
+characterization or wiring coverage of pre-existing behavior. Including them in the overall net
+is appropriate for repository-size accounting, but it is not a like-for-like measure of
+production deduplication. The original estimates remain below as historical audit estimates and
+should not be read as measured outcomes.
+
+Line counts here are measured. Test, typecheck and lint results for these three changes are
+recorded in their own change archives under `asimov/changes/archive/`, not re-run for this
+document update.
 
 ## Scope, method and confidence
 
@@ -801,12 +836,13 @@ Each finding records its final priority, verified evidence, precise cut or repai
 - **Cut / repair:** one `isRecord(v): v is Record<string, unknown>` + `asRecord(v): Record<string,unknown>|undefined` in `src/utils/record.ts` (must stay node-free so the webview can import). Overlaps U-04 for the four reader copies; count once.
 - **Estimated net lines removed:** ~18. **Risk:** low — pure predicates; `claudeChildren.ts` keeps its narrower `ManifestObj` type via a cast at the call site.
 
-### U-07 [P2] Eight readline sites repeat JSONL stream setup, parsing and cleanup across the Claude and Codex readers.
+### U-07 [RESOLVED] Eight readline sites repeat JSONL stream setup, parsing and cleanup across the Claude and Codex readers.
 
 - **Location:** src/vault/readers/claudeRecords.ts:182-218 (`streamClaudeRecords`), 221-255 (`readFirstUserRecord`) ; src/vault/readers/claudeTeam.ts:152-225 (`readClaudeTeamSegment`), 245-294 (`readTeamMemberInfo`), 351-399 (`collectMemberTurns`) ; src/vault/readers/claudeReader.ts:106-190 (`parseClaudeFile`) ; src/vault/readers/codexReader.ts:380-399 (`readFirstLine`), 1058-1091 (`streamCodexRecords`)
 - **Verifier:** CONFIRMED. **Evidence:** `grep -n readline.createInterface src/vault/readers/*.ts` → 8 sites, matching the claim.
 - **Cut / repair:** Extract only genuinely shared stream lifecycle/parsing; preserve each caller’s limits, early-return cleanup, malformed-record handling and error/partial-result semantics. Leave byte-bounded recordLine.ts separate.
 - **Estimated net lines removed:** ~80. **Risk:** low — the frame is behaviourally identical (skip blank, skip corrupt, null on open failure); early `return`/`break` inside `for await` of a generator still runs the generator's `finally`.
+- **Resolution (2026-09-06):** DONE in change `260906-0540-share-jsonl-stream-lifecycle` (`53e21117^..8484a26f`). The lifecycle lives in `src/vault/readers/jsonlStream.ts`; per-caller limits, early-return cleanup, malformed-record handling and partial-result semantics were preserved, and byte-bounded `recordLine.ts` was left separate. Re-check: `grep -c "readline.createInterface" src/vault/readers/*.ts` → one non-zero file, `jsonlStream.ts`. Measured **−60 production lines** against the ~80 estimate, and **+223 overall** once the two new characterization suites are counted — see *Measured delta of the three later consolidations*.
 
 ### U-08 [P2] Eight ad-hoc "same path / inside path" predicates alongside the documented one owner `src/utils/pathBoundary.ts`, with two of them disagreeing.
 
@@ -829,12 +865,13 @@ Each finding records its final priority, verified evidence, precise cut or repai
 - **Cut / repair:** export `trapTabFocus(container: HTMLElement, ev: KeyboardEvent)` (+ the selector) from `worktreeDialogShell.ts` or a new `src/webview/ui/focusTrap.ts`; ContinueDialog calls it.
 - **Estimated net lines removed:** ~25. **Risk:** low — ContinueDialog keeps its own Escape handling (`stopPropagation`).
 
-### U-11 [P2] The two terminal providers duplicate preview/vault request mechanics, with provider-specific retry and posting behavior.
+### U-11 [RESOLVED] The two terminal providers duplicate preview/vault request mechanics, with provider-specific retry and posting behavior.
 
 - **Location:** src/providers/TerminalEditorProvider.ts:541-558 (`cancelPreviewToken`, `cancelAllPreviewTokens`), 561-613 (`handleRequestFilePreview`), 930-959 (`handleRequestVaultSessions`), 963-988 (`handleRequestVaultSessionDetail`), 990-1026 (`handleRequestSubagentPreview`), 1029-1052 (`subagentResolveDeps`), 1241-1249 (`safePostMessage`), 1266-1290 (`safeSendWithRetry`) ; src/providers/TerminalViewProvider.ts:427-444, 357-419, 453-497, 623-661, 830-869, 872-895, 1671-1679, 1693-1720 respectively
 - **Verifier:** CONFIRMED (spot-verified), risk medium. **Evidence:** `diff` of the two `subagentResolveDeps` extractions → empty. The editor/view retry asymmetry is real and must be parameterised.
 - **Cut / repair:** Extract shared preview/vault request mechanics behind provider-specific post/retry adapters. Preserve editor/view retry differences, cancellation, supersession and disposal. The ~180-line estimate is a refactor opportunity, not a proven removable block.
 - **Estimated net lines removed:** ~180. **Risk:** medium — lifecycle and retry behavior differ; representative duplication verified, extraction not implemented.
+- **Resolution (2026-09-06):** DONE in change `260906-0708-share-provider-request-mechanics` (`4b19525c^..c7d1ac4d`). The shared mechanics live in the new `src/providers/webviewRequests.ts`, reached through provider-specific post/retry adapters; the providers retain the subagent-response delivery difference — editor posts once, view retries (`webviewRequests.ts:318-321`) — along with their log suffixes, cancellation, supersession and disposal behavior. Measured **−28 production lines** against the ~180 estimate, and **+653 overall** with the two new suites — the closing recommendation's "requires a lifecycle/retry-focused review" is satisfied, not waived.
 
 ### U-16 [P2] The JSDOM `ResizeObserver`/`matchMedia` polyfill block is pasted verbatim into four test files, one of which says so.
 
@@ -850,12 +887,13 @@ Each finding records its final priority, verified evidence, precise cut or repai
 - **Cut / repair:** Share mockExtensionContext with explicit overrides for the two variants; preserve workspaceState and fsPath differences.
 - **Estimated net lines removed:** ~30. **Risk:** low — shared-helper extraction/import rewiring; preserve the verified variant differences.
 
-### U-18 [P2] `makeStorageMock` ×6 and `makeFactories` ×7 are hand-rolled in SessionManager split tests that all already import `src/test/sessionMocks.ts`.
+### U-18 [RESOLVED] `makeStorageMock` ×6 and `makeFactories` ×7 are hand-rolled in SessionManager split tests that all already import `src/test/sessionMocks.ts`.
 
 - **Location:** makeStorageMock — src/session/SessionManager.settingToggle.test.ts:21-60 ; editorPanels.test.ts:14-55 ; persist.test.ts:15-66 ; deactivate.test.ts:15-54 ; shutdownLifecycle.test.ts:25-74 ; hydrate.test.ts:38-83. makeFactories — settingToggle.test.ts:62-94 ; agentHooks.test.ts:81-97 ; deactivate.test.ts:56-72 ; shutdownLifecycle.test.ts:76-109 ; snapshot.test.ts:22-79 ; persist.test.ts:68-88 ; exit.test.ts:16-34
 - **Verifier:** CONFIRMED. **Evidence:** Ranges resolve across all 13 files. Chair opened makeStorageMock in SessionManager.deactivate.test.ts:14-53 and settingToggle.test.ts:21-60: the same bufferGens/sidecarGen transitions and stale-skipped decisions, differing only in an unused parameter. Headless factories vary in disposed tracking and serialize output and need overrides.
 - **Cut / repair:** add `storageMock(overrides?)` and `headlessFactories({ serialize?, onWrite? })` to sessionMocks.ts; the snapshot and shutdownLifecycle variants keep their bespoke serialize hooks as overrides.
 - **Estimated net lines removed:** ~200. **Risk:** low to medium — preserve generation invalidation, disposed-state tracking, output sinks and per-suite serialization overrides; not every factory is interchangeable.
+- **Resolution (2026-09-06):** DONE as a consolidation of the common bodies, in change `260906-0459-share-session-manager-test-fixtures` (`a82e6383^..842914b5`). `sessionMocks.ts` gained `sessionStorageMock(options)` and `headlessFactories(options)`. The change replaced all six hand-written storage bodies and six of the seven hand-written headless-factory bodies with those helpers. **The bodies were shared; the names were not all removed:** five one-line `makeStorageMock` aliases, one parameterized `makeStorageMock` alias (`hydrate.test.ts:39-40`), four one-line `makeFactories` aliases, two local adapters over `headlessFactories` (`shutdownLifecycle.test.ts:27`, `exit.test.ts:16`) and the bespoke snapshot factory (`snapshot.test.ts:22`) remain. The aliases and adapters are the shared-factory-plus-local-override pattern this entry's own Cut names; the snapshot factory is justified by what that suite observes — loaded addons, addon constructor count, and serialize call counts and options at `SessionManager.snapshot.test.ts:22-78` — not merely by the helper's JSDoc. Re-check with a pattern that catches arrow aliases, not just declarations: `grep -rnE "(const|function) +(makeStorageMock|makeFactories)" src/session`. Counting bodies, `RESOLVED` is accurate; counting names, it is not.
 
 ### U-19 [P2] `Tree.flat-list.test.ts` re-declares the whole Tree test kit from `Tree.test.ts`.
 
@@ -897,12 +935,13 @@ Each finding records its final priority, verified evidence, precise cut or repai
 - **Cut / repair:** Remove only the export keyword. Keep the interface because mockPtySessions uses it at sessionMocks.ts:19. No whole-line deletion.
 - **Estimated net lines removed:** ~0. **Risk:** low — no behavior loss identified by static review; preserve the stated surviving coverage.
 
-### I-06 [P2] Five test files re-declare the PtyManager/PtySession/OutputBuffer mock trio that `sessionMocks.ts` exists to be the superset of
+### I-06 [RESOLVED] Five test files re-declare the PtyManager/PtySession/OutputBuffer mock trio that `sessionMocks.ts` exists to be the superset of
 
 - **Location:** src/providers/TerminalEditorProvider.onReady.test.ts:7-60, src/providers/TerminalViewProvider.restore.test.ts:7-60, src/providers/TerminalEditorProvider.test.ts:12-66, src/providers/TerminalViewProvider.test.ts:12-95, src/session/SessionManager.test.ts:23-133
 - **Verifier:** CONFIRMED. **Evidence:** `grep -c sessionMocks` = 0 for all five named files while 16 others use the shared factories.
 - **Cut / repair:** replace the two byte-identical copies (`onReady`, `restore`) with the shared factories outright; for the other three, extend the factory the way `agentHooks.test.ts:29-31` already does (shared factories for two modules, local override for the one that needs a control).
 - **Estimated net lines removed:** ~200. **Risk:** low for the two identical copies; medium for the three that carry extra controls.
+- **Resolution (2026-09-06):** DONE in the same change as U-18 (`a82e6383^..842914b5`). All five named files now import mocks from `sessionMocks.ts`. The four provider suites use `ptyManagerMock`, `ptySessionMock` and `outputBufferMock`; `SessionManager.test.ts` uses `ptyManagerMock` and `outputBufferMock` while retaining its richer local `PtySession` double for spawn/write/resize/kill and shell-integration-sink assertions, as its own comment at `SessionManager.test.ts:26-28` records. **The evidence line above is stale and is retained only as provenance:** `grep -c sessionMocks` now returns 4, 4, 4, 4 and 3 respectively. A declaration-plus-arrow pattern, `grep -cE '(const|function) +(ptyManagerMock|ptySessionMock|outputBufferMock|makeStorageMock|makeFactories)'`, returns 0 for all five, proving the original named local factory declarations are gone. Use that form rather than `^function`: the U-18 suites retain some names as arrow-function aliases, which `^function` silently misses.
 
 ### I-08 [P2] Six worktree fixture builders each serve exactly one test file
 
@@ -978,7 +1017,7 @@ These are not included in the cleanup pool. A registered command can be invoked 
 - **Resolution (2026-09-06):** Decimal epoch strings are accepted only for legacy Claude workflow `startTime`. Claude/Codex transcript records accept observed provider-profile strings or numeric epochs; Codex/OpenCode SQLite timestamp fields accept numbers only. Shared parsers preserve each caller's existing missing-value sentinel, and the Vault cache version was bumped because list-entry derivation changed.
 
 
-## Looks like slop but is not — rejected or deferred
+## Looks like slop but is not — rejected, downgraded or deliberately retained
 
 | Candidate | Decision and reason |
 |---|---|
@@ -1003,12 +1042,12 @@ These are not included in the cleanup pool. A registered command can be invoked 
 | Vault reader parsers | SQL, JSONL, malformed-record and bounded-byte semantics differ. Only the identified common leaves/lifecycle are candidates; do not unify entire readers. |
 | Archived plans and renamed cyberk-flow references | Old plan versions are referenced history. Fix the live AGENTS.md pointer, not historical archives merely because they use the old name. |
 
-## Verification before any cut lands
+## Original pre-execution verification guidance
 
 1. Make source changes only after the user selects a cut; no changes were made during this audit.
 2. For test deletion, retain the named stronger witness and every unique input/output assertion. A different value can expose hard-coding even when it follows the same branch.
 3. For test-only wrappers, move the tests onto the production surface; deleting their callers is not an acceptable shortcut. Preserve the benchmark caller and shared-mock lifecycle controls.
-4. For shared helpers, preserve cancellation, rejection, disposal, per-file isolation, path/platform behavior and variant overrides. U-11 requires a lifecycle/retry-focused review; U-12 needs a behavior decision.
+4. For shared helpers, preserve cancellation, rejection, disposal, per-file isolation, path/platform behavior and variant overrides. *(U-11's lifecycle/retry review and U-12's behavior decision were both completed on 2026-09-06; the standing rule remains for any future extraction.)*
 5. Before any scoped Vitest run, check `pgrep -f "vitest run" || true` and coordinate with the performance audit. Never start the full suite for this findings task. Follow the repo’s type/lint/invariant gates when implementing approved cuts.
 
 ## Agents and models
