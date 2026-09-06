@@ -9,50 +9,10 @@ vi.mock("../pty/PtyManager", async () => (await import("../test/sessionMocks")).
 vi.mock("../pty/PtySession", async () => (await import("../test/sessionMocks")).ptySessionMock());
 vi.mock("./OutputBuffer", async () => (await import("../test/sessionMocks")).outputBufferMock());
 
+import { sessionStorageMock } from "../test/sessionMocks";
 import { SessionManager } from "./SessionManager";
 
-function makeStorageMock() {
-  const bufferGens = new Map<string, number>();
-  let sidecarGen = 0;
-  const scheduleLivePanelsWrite = vi.fn();
-  return {
-    commitBufferSync: vi.fn((id: string) => {
-      bufferGens.set(id, (bufferGens.get(id) ?? 0) + 1);
-    }),
-    commitBufferAsync: vi.fn(async (id: string, _data: string, capturedGen: number) => {
-      if ((bufferGens.get(id) ?? 0) !== capturedGen) {
-        return "stale-skipped" as const;
-      }
-      return "renamed" as const;
-    }),
-    commitIndexSync: vi.fn(() => {
-      sidecarGen += 1;
-    }),
-    commitIndexAsync: vi.fn(async (_idx: unknown, capturedGen: number) => {
-      if (sidecarGen !== capturedGen) {
-        return "stale-skipped" as const;
-      }
-      return "renamed" as const;
-    }),
-    dropBuffer: vi.fn((id: string) => {
-      bufferGens.set(id, (bufferGens.get(id) ?? 0) + 1);
-    }),
-    currentBufferGen: vi.fn((id: string) => bufferGens.get(id) ?? 0),
-    currentSidecarGen: vi.fn(() => sidecarGen),
-    cleanupOrphanTemps: vi.fn(),
-    scheduleLivePanelsWrite,
-    writeIndexAwaited: vi.fn(async () => {}),
-    writeLivePanelsAwaited: vi.fn(async () => {}),
-    readBufferFile: () => null,
-    listBufferFiles: () => [],
-    loadIndex: () => undefined,
-    loadLivePanels: () => undefined,
-    bufferFilePath: (id: string) => `/tmp/${id}`,
-    bufferFileRelativePath: (id: string) => `snapshots/${id}.snapshot.ans`,
-    cancelPendingIndex: vi.fn(),
-    purge: vi.fn(async () => {}),
-  };
-}
+const makeStorageMock = () => sessionStorageMock();
 
 beforeEach(() => {
   __resetAll();

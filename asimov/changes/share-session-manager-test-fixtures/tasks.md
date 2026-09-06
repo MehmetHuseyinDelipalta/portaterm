@@ -28,7 +28,7 @@
 
 ## 2. Migrate the SessionManager suites (U-18)
 
-- [ ] 2_1 Move the three plain-variant suites onto the shared factories
+- [x] 2_1 Move the three plain-variant suites onto the shared factories — verified: pnpm exec vitest run src/session/SessionManager.settingToggle.test.ts src/session/SessionManager.editorPanels.test.ts src/session/SessionManager.deactivate.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_2
   - **Refs**: design.md#d3-expected-test-moves, design.md#d4-allowed-non-pure-transformations
   - **Acceptance**:
