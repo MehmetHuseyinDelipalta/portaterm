@@ -82,10 +82,7 @@ describe("OBL-3: an unreadable file reaches the caller's own sentinel", () => {
 describe("OBL-6: a throwing onRecord costs one record, not the file", () => {
   it("keeps reading and still returns a result", async () => {
     const file = path.join(dir, "hook.jsonl");
-    await fsp.writeFile(
-      file,
-      `${["a", "b", "c", "d"].map((t) => userRecord(t)).join("\n")}\n`,
-    );
+    await fsp.writeFile(file, `${["a", "b", "c", "d"].map((t) => userRecord(t)).join("\n")}\n`);
     const seen: string[] = [];
     let calls = 0;
 
@@ -102,11 +99,7 @@ describe("OBL-6: a throwing onRecord costs one record, not the file", () => {
     // The hook fires before the push, so the throw costs record 2 its buffer
     // slot as well — but only that record; the file is still read to the end.
     expect(seen).toEqual(["a", "c", "d"]);
-    expect(result?.records.map((rec) => (rec.message as { content: string }).content)).toEqual([
-      "a",
-      "c",
-      "d",
-    ]);
+    expect(result?.records.map((rec) => (rec.message as { content: string }).content)).toEqual(["a", "c", "d"]);
   });
 });
 

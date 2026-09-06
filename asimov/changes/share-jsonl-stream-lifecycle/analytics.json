@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "target": {
+    "kind": "change",
+    "id": "share-jsonl-stream-lifecycle"
+  },
+  "sessions": [
+    {
+      "sessionId": "a208a393-cd0a-45f3-ad4d-65bbbcaff050",
+      "runtime": "claude",
+      "author": "huybuidac@gmail.com",
+      "attachedAt": 1788670816227,
+      "accounting": 2,
+      "windows": [
+        {
+          "from": 1788670816227,
+          "to": null
+        }
+      ],
+      "phases": [
+        {
+          "phase": "plan",
+          "from": 1788670816227
+        }
+      ],
+      "firstAt": 1788670816227,
+      "lastAt": 1788671376555,
+      "buckets": [
+        {
+          "runtime": "claude",
+          "phase": "plan",
+          "agent": "main",
+          "model": "claude-opus-5",
+          "messages": 11,
+          "inputTokens": 22,
+          "outputTokens": 16261,
+          "reasoningTokens": 3973,
+          "cacheWriteTokens": 362063,
+          "cacheReadTokens": 3307460,
+          "extra": {
+            "cacheWrite5mTokens": 362063,
+            "cacheWrite1hTokens": 0,
+            "webSearchRequests": 0,
+            "webFetchRequests": 0
+          }
+        }
+      ]
+    },
+    {
+      "sessionId": "0b620109-3dc3-4230-8766-4d4b1bf8a231",
+      "runtime": "claude",
+      "author": "huybuidac@gmail.com",
+      "attachedAt": 1788670816227,
+      "accounting": 2,
+      "windows": [
+        {
+          "from": 1788670816227,
+          "to": null
+        }
+      ],
+      "phases": [
+        {
+          "phase": "plan",
+          "from": 1788670816227
+        }
+      ],
+      "firstAt": 1788670816227,
+      "lastAt": 1788671261266,
+      "buckets": [
+        {
+          "runtime": "claude",
+          "phase": "plan",
+          "agent": "main",
+          "model": "gpt-5.6-sol",
+          "messages": 17,
+          "inputTokens": 134705,
+          "outputTokens": 14221,
+          "reasoningTokens": 0,
+          "cacheWriteTokens": 0,
+          "cacheReadTokens": 1345408,
+          "extra": {
+            "cacheWrite5mTokens": 0,
+            "cacheWrite1hTokens": 0,
+            "webSearchRequests": 0,
+            "webFetchRequests": 0
+          }
+        }
+      ]
+    }
+  ]
+}

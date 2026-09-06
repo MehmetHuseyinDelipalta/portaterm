@@ -17,9 +17,7 @@ import * as readline from "node:readline";
  * and corrupt lines too, because Codex stamps it onto records as a user-visible
  * transcript locator (D5 OBL-1).
  */
-export async function* streamJsonlLines(
-  filePath: string,
-): AsyncGenerator<{ line: string; lineNo: number }> {
+export async function* streamJsonlLines(filePath: string): AsyncGenerator<{ line: string; lineNo: number }> {
   let stream: ReturnType<typeof createReadStream> | undefined;
   let rl: readline.Interface | undefined;
   try {
