@@ -21,7 +21,7 @@ stops if the count disagrees with design.md D1.
     2. Add `src/webview/worktree/createDialog/bringContention.test.ts` with NO `@vitest-environment` pragma (OBL-3). Exercise every exported function — an unexercised one cannot throw on a DOM reference.
     3. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
-- [ ] 1_2 Extract the offer summaries
+- [x] 1_2 Extract the offer summaries — verified: pnpm exec vitest run src/webview/worktree/createDialog/bringSummaries.test.ts src/webview/worktree/WorktreeCreateDialog.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_1
   - **Refs**: design.md D1, design.md D4, design.md § Obligation ledger
   - **Boundary**: no reference to `document`, `HTMLElement` or `createElement`
@@ -29,7 +29,7 @@ stops if the count disagrees with design.md D1.
     - Outcome: what a provisioning offer says about itself is decided headlessly.
     - Verify: command pnpm exec vitest run src/webview/worktree/createDialog/bringSummaries.test.ts src/webview/worktree/WorktreeCreateDialog.test.ts
   - **Plan**:
-    1. Create `src/webview/worktree/createDialog/bringSummaries.ts` with the `BringRow` interface and `bringRows`, `rowDescriptors`, `carryForward`, `bringSummary`, `saveSummary`. It imports from `bringContention.ts`.
+    1. Create `src/webview/worktree/createDialog/bringSummaries.ts` with the `BringRow` interface and `bringRows`, `rowDescriptors`, `carryForward`, `bringSummary`, `saveSummary`, moving them out of `src/webview/worktree/WorktreeCreateDialog.ts`. It imports from `bringContention.ts`.
     2. Add `src/webview/worktree/createDialog/bringSummaries.test.ts`, no pragma (OBL-3), exercising every export.
     3. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
