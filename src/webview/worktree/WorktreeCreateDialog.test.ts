@@ -57,6 +57,16 @@ function open(over: Partial<Parameters<typeof openWorktreeCreateDialog>[1]> = {}
   return { host, submitted, dispose, q };
 }
 
+/**
+ * Type and settle, which is what a real edit does before the host hears about
+ * it. A resolution is an ANSWER, and the form only accepts one where a question
+ * still stands — so a test that delivers a resolution has to have asked first.
+ */
+function typeSettled(input: HTMLInputElement, value: string): void {
+  type(input, value);
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 function type(input: HTMLInputElement, value: string): void {
   // Focus is part of typing, and the destination field now has a rule that reads
   // it — a stand-in that skips the focus cannot see that rule at all.
@@ -324,9 +334,106 @@ describe("create worktree — the default and every consequential action explain
     expect(shown()).not.toContain("anywhere-terminal-2");
     expect(host.querySelector<HTMLElement>(".wt-dest-note")?.hidden).toBe(true);
 
-    // Named, and the seed is a statement about something again.
+    // And it does not become one by the user typing. The seed still answers the
+    // EMPTY name; drawing it under `feat/x` would attach a suffix and a
+    // collision the host worked out for a different create (round-2 F002).
+    type(q<HTMLInputElement>("#wt-branch"), "feat/x");
+    expect(shown()).not.toContain("anywhere-terminal-2");
+    expect(host.querySelector<HTMLElement>(".wt-dest-note")?.hidden).toBe(true);
+  });
+
+  it("draws the seeded plan once it answers the name on screen", () => {
+    // The other half of the rule above: a seed that names the branch it was
+    // computed for is a statement about THAT create, and is drawn for it.
+    const { host, q } = open({
+      repos: [
+        createDefaults({
+          answersBranch: "feat/x",
+          resolvedPath: "/Users/dev/Projects/ai-oss/anywhere-terminal-2",
+          collidedWith: "anywhere-terminal",
+        }),
+      ],
+    });
+    const shown = (): string => (host.textContent ?? "").replace(/\s+/g, " ");
     type(q<HTMLInputElement>("#wt-branch"), "feat/x");
     expect(shown()).toContain("anywhere-terminal-2");
+    expect(host.querySelector<HTMLElement>(".wt-dest-note")?.hidden).toBe(false);
+  });
+
+  it("withdraws a resolved plan as soon as the name is cleared", () => {
+    // Not on the next settled edit — on the keystroke that empties the field.
+    // The withdrawal used to run only under `settled`, so between clearing the
+    // name and leaving the field the form still stated a destination, a mode
+    // and a collision worked out for text that was no longer there
+    // (round-2 F001).
+    let apply: ((r: WorktreeCreateResolutionMessage) => void) | undefined;
+    const { q, host } = open({
+      bindResolution: (fn) => {
+        apply = fn;
+      },
+      onSelectionChange: () => {},
+    });
+    const input = q<HTMLInputElement>("#wt-branch");
+    typeSettled(input, "feat/x");
+    apply?.({
+      type: "worktreeCreateResolution",
+      repoId: REPO_ID,
+      token: 1,
+      seq: 1,
+      query: "feat/x",
+      mode: { kind: "fresh" },
+      freePath: "/trees/repo-feat-x",
+    });
+    const shown = (): string => (host.textContent ?? "").replace(/\s+/g, " ");
+    expect(shown(), "the setup never reached a resolved destination").toContain("/trees/repo-feat-x");
+
+    // One keystroke, no blur and no change.
+    type(input, "");
+    expect(shown()).not.toContain("/trees/repo-feat-x");
+  });
+
+  it("does not reuse an empty-name seed before the typed edit settles", () => {
+    // The window this closes is the whole of the typing: the seed answers the
+    // opening request, which carries no branch, and the host is not asked again
+    // until the edit settles. Keying the seed on "the field is non-empty" drew
+    // the empty name's suffixed path and its collision under every character
+    // typed in between (round-2 F002).
+    const { host, q } = open({
+      repos: [
+        createDefaults({
+          resolvedPath: "/Users/dev/Projects/ai-oss/anywhere-terminal-2",
+          collidedWith: "anywhere-terminal",
+        }),
+      ],
+      onSelectionChange: () => {},
+    });
+    const shown = (): string => (host.textContent ?? "").replace(/\s+/g, " ");
+    const input = q<HTMLInputElement>("#wt-branch");
+    for (const partial of ["f", "fe", "fea", "feat/x"]) {
+      type(input, partial);
+      expect(shown(), `the empty-name plan was drawn under "${partial}"`).not.toContain("anywhere-terminal-2");
+      expect(shown()).not.toContain("anywhere-terminal already exists");
+    }
+  });
+
+  it("states a typed destination exactly, named or not", () => {
+    // The exception to the rule above. An unnamed create draws no resolved
+    // destination because the seed is a DECISION about a create nobody made —
+    // but an override is the user's own text, and rewriting it as a template
+    // would be the form editing what they typed (round-2 F004).
+    const { host, q } = open({
+      repos: [
+        createDefaults({
+          resolvedPath: "/Users/dev/Projects/ai-oss/anywhere-terminal-2",
+          collidedWith: "anywhere-terminal",
+        }),
+      ],
+    });
+    const shown = (): string => (host.textContent ?? "").replace(/\s+/g, " ");
+    type(q<HTMLInputElement>("#wt-path"), "/mine/exactly-here");
+    expect(shown()).toContain("/mine/exactly-here");
+    // And still nothing the host decided for the empty name.
+    expect(shown()).not.toContain("anywhere-terminal-2");
   });
 
   it("re-asks after the name is cleared and typed again", () => {
@@ -381,6 +488,38 @@ describe("create worktree — the default and every consequential action explain
     });
     const reason = host.querySelector<HTMLElement>(".wt-create-disabled-reason");
     expect(reason?.textContent ?? "").toBe("");
+  });
+
+  it("drops an answer to a question the cleared name withdrew", () => {
+    // The `query` echo is a cheap first test, not identity: retyping the same
+    // name makes a withdrawn question's late answer match the field again, and
+    // the form would then be drawing a plan for a question it has not asked
+    // (round-2 F001).
+    let apply: ((r: WorktreeCreateResolutionMessage) => void) | undefined;
+    const { q, host } = open({
+      bindResolution: (fn) => {
+        apply = fn;
+      },
+      onSelectionChange: () => {},
+    });
+    const input = q<HTMLInputElement>("#wt-branch");
+    typeSettled(input, "feat/x");
+    typeSettled(input, "");
+
+    // Retyped, but not settled — so nothing has been asked yet.
+    type(input, "feat/x");
+    apply?.({
+      type: "worktreeCreateResolution",
+      repoId: REPO_ID,
+      token: 1,
+      seq: 1,
+      query: "feat/x",
+      mode: { kind: "fresh" },
+      freePath: "/trees/repo-feat-x",
+    });
+
+    const shown = (host.textContent ?? "").replace(/\s+/g, " ");
+    expect(shown).not.toContain("/trees/repo-feat-x");
   });
 
   it("says it when a create is asked for, rather than sitting inert", () => {
@@ -817,7 +956,9 @@ describe("create worktree — invalid and collided (§ 10)", () => {
   it("reports the collision without naming a destination the host has not resolved", () => {
     // The derived path IS the occupied one, so claiming it as the destination
     // would tell the user the create lands where it cannot.
-    const { q } = open({ repos: [createDefaults({ collidedWith: "-worktree-ui" })] });
+    const { q } = open({
+      repos: [createDefaults({ answersBranch: "feat/worktree-ui", collidedWith: "-worktree-ui" })],
+    });
     type(q<HTMLInputElement>("#wt-branch"), "feat/worktree-ui");
     const note = q<HTMLElement>(".wt-dest-note").textContent ?? "";
     expect(note).toContain("-worktree-ui already exists");
@@ -831,7 +972,13 @@ describe("create worktree — invalid and collided (§ 10)", () => {
     // back when this field carried a whole path. Every case below asserts with
     // `toContain`, which a stray `…` satisfies, and that is why this survived.
     const { q } = open({
-      repos: [createDefaults({ collidedWith: "repo-feat-x", resolvedPath: "/Users/dev/trees/repo-feat-x-2" })],
+      repos: [
+        createDefaults({
+          answersBranch: "feat/x",
+          collidedWith: "repo-feat-x",
+          resolvedPath: "/Users/dev/trees/repo-feat-x-2",
+        }),
+      ],
     });
     type(q<HTMLInputElement>("#wt-branch"), "feat/x");
     const note = (q<HTMLElement>(".wt-dest-note").textContent ?? "").trim();
@@ -842,7 +989,13 @@ describe("create worktree — invalid and collided (§ 10)", () => {
 
   it("names the destination once the host has resolved one", () => {
     const { q } = open({
-      repos: [createDefaults({ collidedWith: "-worktree-ui", resolvedPath: "/Users/dev/Projects/ai-oss/x-2" })],
+      repos: [
+        createDefaults({
+          answersBranch: "feat/worktree-ui",
+          collidedWith: "-worktree-ui",
+          resolvedPath: "/Users/dev/Projects/ai-oss/x-2",
+        }),
+      ],
     });
     type(q<HTMLInputElement>("#wt-branch"), "feat/worktree-ui");
     // One line, naming the result — and NOT a second full path. The destination
@@ -1857,12 +2010,16 @@ describe("Move uncommitted work", () => {
         resolve = apply;
       },
     });
+    // A classification is an answer to a NAME, so the name is typed and settled
+    // — the form never asks about an empty field and never accepts an answer
+    // about one.
+    typeSettled(h.q<HTMLInputElement>("#wt-branch"), "stale-ref");
     resolve?.({
       type: "worktreeCreateResolution",
       repoId: REPO_ID,
       token: 1,
       seq: 0,
-      query: "",
+      query: "stale-ref",
       freePath: "/trees/repo",
       mode:
         kind === "reattach"
@@ -4087,7 +4244,7 @@ describe("the base ref states when it cannot apply", () => {
 
   it("refuses the base ref for a repair, with its own reason", () => {
     const h = withResolution();
-    type(h.q<HTMLInputElement>("#wt-branch"), "feat/search");
+    typeSettled(h.q<HTMLInputElement>("#wt-branch"), "feat/search");
     h.resolve({ mode: { kind: "reattach", repairPath: "/trees/stale", expectedOid: "abc" } });
 
     expect(h.base().disabled).toBe(true);
@@ -4491,7 +4648,7 @@ describe("the base ref states when it cannot apply", () => {
     // branch being checked out twice also stops the one action that fixes the
     // registration, and reattach could never be reached at all.
     const h = withResolution();
-    type(h.q<HTMLInputElement>("#wt-branch"), "fix/lock");
+    typeSettled(h.q<HTMLInputElement>("#wt-branch"), "fix/lock");
     expect(h.q<HTMLButtonElement>(".wt-btn--primary").disabled, "the setup never armed the held-branch guard").toBe(
       true,
     );
@@ -5948,7 +6105,7 @@ describe("create worktree — choosing the folder the worktree is created in", (
     // let the user choose a target, and an action that stayed live there would
     // offer a destination the form has already withdrawn.
     const h = withPicker();
-    type(h.q<HTMLInputElement>("#wt-branch"), "feature");
+    typeSettled(h.q<HTMLInputElement>("#wt-branch"), "feature");
     h.resolveAs({ kind: "adopt", adoptPath: "/trees/repo-feature", expectedBranchOid: "oid-feature" });
 
     expect(h.path().disabled, "the setup never reached a mode that withdraws it").toBe(true);
@@ -5979,7 +6136,7 @@ describe("create worktree — choosing the folder the worktree is created in", (
     // stayed armed at the PRE-PICK destination for that whole window
     // (round-3 F005).
     const h = withPicker();
-    type(h.q<HTMLInputElement>("#wt-branch"), "feature");
+    typeSettled(h.q<HTMLInputElement>("#wt-branch"), "feature");
     // Twice: applying a resolution settles the destination and re-asks under the
     // new key, so one answer leaves the form waiting on its own consequence.
     h.resolveAs({ kind: "fresh" });
@@ -6045,7 +6202,7 @@ describe("create worktree — choosing the folder the worktree is created in", (
     // Cancel is why D3 had to change: a wait with no terminal answer is a form
     // the user cannot escape, which is the trap the old rule existed to prevent.
     const h = withPicker();
-    type(h.q<HTMLInputElement>("#wt-branch"), "feature");
+    typeSettled(h.q<HTMLInputElement>("#wt-branch"), "feature");
     h.resolveAs({ kind: "fresh" });
     h.resolveAs({ kind: "fresh" });
     expect(h.createButton().disabled, "the setup never reached an armed Create").toBe(false);
@@ -6063,7 +6220,7 @@ describe("create worktree — choosing the folder the worktree is created in", (
     // destination gate — if the pick shared it, Create would be offered again at
     // the pre-pick destination. The plan attack refuted reusing that flag.
     const h = withPicker();
-    type(h.q<HTMLInputElement>("#wt-branch"), "feature");
+    typeSettled(h.q<HTMLInputElement>("#wt-branch"), "feature");
     h.resolveAs({ kind: "fresh" });
     h.resolveAs({ kind: "fresh" });
     expect(h.createButton().disabled, "the setup never reached an armed Create").toBe(false);

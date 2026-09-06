@@ -67,7 +67,7 @@ function refusal(host: HTMLElement): string {
   return el && !el.hidden ? (el.textContent ?? "") : "";
 }
 
-describe("clicking a control does not refuse a name nobody typed", () => {
+describe("the empty branch field is refused only once the user has been in it", () => {
   it("says nothing, and marks nothing, when the field the form focused is blurred", () => {
     const host = open();
     const input = field(host);

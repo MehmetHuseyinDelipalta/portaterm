@@ -1442,22 +1442,23 @@ describe("a mutating verb reaches git from the menu item a user can see", () => 
     branch.value = "feat/assembly";
     branch.dispatchEvent(new Event("input", { bubbles: true }));
     branch.dispatchEvent(new Event("change", { bubbles: true }));
+    // THIS branch's destination, on the destination field. "some input starts
+    // with a slash" was satisfied by the repo path already on screen before the
+    // name was typed — and `settleUntil` tests its predicate before it awaits,
+    // so the wait returned on the state the test came in with (round-2 F005).
+    const destination = (): string => document.querySelector<HTMLInputElement>("#wt-path")?.value ?? "";
     await settleUntil(
-      () =>
-        [
-          ...(document
-            .querySelector(".wt-create-dialog, [role='dialog']")
-            ?.querySelectorAll<HTMLInputElement>("input") ?? []),
-        ].some((i) => i.value.startsWith("/")),
-      "the dialog and the destination the host supplied it",
+      () => destination().endsWith("-feat-assembly"),
+      "the destination the host supplied for feat/assembly",
     );
     // B1: the callback existed and nothing rendered an item for it, so no test
     // that called the callback directly could see the action was unreachable.
     const dialog = document.querySelector(".wt-create-dialog, [role='dialog']");
     expect(dialog).not.toBeNull();
-    // And the destination came from the host, not from a webview guess.
-    const shown = [...(dialog?.querySelectorAll<HTMLInputElement>("input") ?? [])].map((i) => i.value);
-    expect(shown.some((v) => v.startsWith("/"))).toBe(true);
+    // And the destination came from the host, not from a webview guess: an
+    // absolute path, under the repository's own parent, naming this branch.
+    expect(destination().startsWith("/")).toBe(true);
+    expect(destination()).toContain("feat-assembly");
   });
 
   it("proves the destination against the real filesystem, not only the registry", async () => {

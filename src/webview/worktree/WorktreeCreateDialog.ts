@@ -2799,21 +2799,6 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // a decision (260906-at-create-dialog-resolves-an-empty-name).
     const target = draft.branchMode === "detached" ? draft.baseRef : now.branch;
     if (target.trim().length === 0) {
-      // Withdrawn, not merely unasked. Returning here without retiring the last
-      // question left `askedFor` holding a key nothing would answer: a reply for
-      // the cleared name is rejected on its `query`, so `resolutionOutstanding`
-      // never fell, and retyping that same name matched the stale key and sent
-      // no replacement — Create disabled behind "Checking…" with nothing in
-      // flight (round-1 F001). Emptying the field is the user retracting the
-      // question, so everything that question armed comes down with it.
-      if (askedFor !== null || outstanding || resolutionOutstanding || effective !== null) {
-        askedFor = null;
-        defaultsAskedFor = null;
-        effective = null;
-        outstanding = false;
-        resolutionOutstanding = false;
-        withdrawRecover();
-      }
       return;
     }
     const key = askKey(now);
@@ -3175,8 +3160,44 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
    * names the collided path AND the suffixed one the create will actually use —
    * showing only the pretty default would be a claim the form cannot keep.
    */
+  /**
+   * Emptying the field retracts the question, and everything it armed with it.
+   *
+   * Run on EVERY pass rather than from `askForDestination`, which only runs on a
+   * settled edit: deleting a name without leaving the field is an ordinary
+   * `input`, so the retirement never ran and the deleted name's own destination,
+   * collision, refusal and destructive recovery offer stayed on screen for as
+   * long as the caret did (round-2 F001). Requests stay settled-only; it is the
+   * retirement that has to keep up with the text.
+   *
+   * Before anything derived is read, for the same reason: a pass that retires
+   * after rendering has already drawn the answer it is about to discard.
+   *
+   * Idempotent, and guarded so a form sitting empty does not call
+   * `withdrawRecover` on every keystroke elsewhere.
+   */
+  function withdrawTarget(): void {
+    if (askedFor === null && !outstanding && !resolutionOutstanding && effective === null) {
+      return;
+    }
+    askedFor = null;
+    defaultsAskedFor = null;
+    effective = null;
+    outstanding = false;
+    resolutionOutstanding = false;
+    withdrawRecover();
+  }
+
   function syncDerived(settled = false): void {
     const repo = currentRepo();
+    // From the INPUTS, not from `draft`. The draft's copies are written far
+    // below (`draft.branchName = nameInput.value`), so reading them here saw the
+    // previous render's text: the withdrawal and the seed rule both ran one
+    // keystroke behind the field they are about.
+    const activeTarget = (draft.branchMode === "detached" ? baseInput.value : nameInput.value).trim();
+    if (activeTarget.length === 0) {
+      withdrawTarget();
+    }
     repoHint.textContent = repo.mainPath;
     syncBringOver(repo.provisioning);
     syncMigration(repo.migration);
@@ -3312,8 +3333,17 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // That is a decision about a create nobody has named yet, so while there is
     // no target the line falls back to the template `derived` builds from the
     // repository's own prefix (round-1 F002).
-    const unnamed = (draft.branchMode === "detached" ? draft.baseRef : draft.branchName).trim().length === 0;
-    const resolvedPath = answered ?? (unnamed ? undefined : repo.resolvedPath);
+    const unnamed = activeTarget.length === 0;
+    // The seed answers exactly one question — the opening request, which carries
+    // no branch — so it may only speak where that question is this one. Keying it
+    // on "the field is non-empty" put the empty name's suffixed path and its
+    // collision under a branch the user had typed but not yet settled, which is
+    // the same wrong-target statement as drawing them under no branch at all
+    // (round-2 F002). `answersBranch` absent means the seed does not say what it
+    // answered, and an answer that cannot identify its own question cannot claim
+    // to be about this one.
+    const seedAnswers = !unnamed && (repo.answersBranch ?? "").trim() === activeTarget;
+    const resolvedPath = answered ?? (seedAnswers ? repo.resolvedPath : undefined);
     const derived = resolvedPath ?? (slug ? `${repo.pathParent}/${repo.pathPrefix}-${slug}` : "");
     if (pathIsDerived) {
       // Whoever owns the caret owns the text. Guarding the CALLERS was the
@@ -3331,6 +3361,13 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // path is the candidate the probe carried, and what the form states and
     // submits is what came back about it (D8). Before any answer there is only
     // the candidate, or the derived shape.
+    //
+    // A TYPED override is stated exactly even while nothing is named, and is the
+    // deliberate exception to the rule above it. What the unnamed create must
+    // not show is a DECISION nobody asked for — a suffix around a collision the
+    // host worked out for the empty name. An override is not one of those: it is
+    // the user's own text, and echoing it back as a template would be the form
+    // editing what they typed (round-2 F004).
     const stated = answered ?? (pathIsDerived ? derived : supplied);
     // ONE value, read by the line and by the submission — the split between them
     // is what let a create display one directory and hand git another.
@@ -3372,7 +3409,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       recovered !== undefined
         ? ""
         : effective === null
-          ? pathIsDerived && !unnamed
+          ? pathIsDerived && seedAnswers
             ? repo.collidedWith
             : ""
           : lastSegment(effective.occupiedCandidate?.path ?? "");
@@ -3747,6 +3784,13 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // is compared against — the branch field is not what was asked about.
     const detached = draft.branchMode === "detached";
     if (resolution.query.trim() !== (detached ? baseInput.value : nameInput.value).trim()) {
+      return;
+    }
+    // And only where the question still stands. A reply that outlives a
+    // withdrawal can match the query again the moment the user retypes the same
+    // name, and would then answer a question this form has not asked yet — the
+    // text matching is not identity, it is only a cheap first test (round-2 F001).
+    if (askedFor === null) {
       return;
     }
     // Every mode, not only `reattach`. Dropping the others left `fresh`,
