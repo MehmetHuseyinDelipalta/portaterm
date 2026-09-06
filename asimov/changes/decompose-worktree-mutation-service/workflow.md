@@ -12,8 +12,8 @@
 
 ## Implement
 
-- [ ] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [x] All tasks done (`tasks.md`)
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
@@ -42,3 +42,5 @@ Planned at: ef96ea01
 - Gate 2 auto-taken under the standing fastlane grant in the user's own message; it records that authorization, not a plan the user read.
 - I10 count after 1_3: `[I10] ok — 74 scoped modules scanned` (pre-change 70). Four production modules, not the three the ledger first wrote: `outcomes.ts` was added under 1_2 because removal.ts is imported BY the facade, so importing `settled`/`paths` back would be a runtime cycle. OBL-3's claim is unchanged — the gate reads every new module; only the derived count moved, and tasks.md/design.md now carry 74.
 - `asm refactor shape` after 1_3, recorded and NOT chased (design.md Risk Map): facade 1852 → 1135 lines, still `long-function` (`createWorktreeMutationService` 647 lines, 57%); setupExecution.ts 276 → `god-class` 61%; removal.ts 346 → `long-function` 70%; registerExisting.ts 414 → `long-function` 52%; outcomes.ts 26 → `unremarkable`. These are PERCENTAGE heuristics: a factory-per-module file is one big closure by construction, so it fires them at any size. Third change in a row to record this rather than chase it.
+- Witnesses: OBL-1 pass [exit 0] (rotation, 180 tests) and pass [exit 0] (scoping, 9 tests); OBL-2 pass [exit 0]; OBL-3 pass [exit 0]; OBL-4 pass [exit 0]. Every row run by its own `X:`, not inferred from the suite's exit.
+- Real-dependency: none — every task is a behaviour-preserving move within one process; no task crosses a network, filesystem-mutating or spawn boundary this change introduces.
