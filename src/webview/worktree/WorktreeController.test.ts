@@ -8,6 +8,7 @@ import type {
 } from "../../types/messages";
 import { createMessageRouter, type MessageHandlers } from "../messaging/MessageRouter";
 import type { PaneAttribution, PaneReport } from "../paneAttribution";
+import type { DialogChannels } from "./controller/dialogChannels";
 import { WorktreeController, worktreeMenuActions } from "./WorktreeController";
 import { openWorktreeCreateDialog } from "./WorktreeCreateDialog";
 import {
@@ -74,6 +75,11 @@ function mount(
   });
   document.body.appendChild(controller.element);
   return { controller, posts, state };
+}
+
+/** The create form's answer channels, which a dialog binds through `createDialogDeps`. */
+function channels(h: Harness): DialogChannels {
+  return (h.controller as unknown as { dialogChannels: DialogChannels }).dialogChannels;
 }
 
 /** The menu callbacks the controller actually handed the view. */
@@ -1810,8 +1816,7 @@ describe("the create a toolbar with no repository opens", () => {
     h.controller.handleCreateDefaults(answer(REPO_A, "/trees/a"));
     h.controller.handleCreateDefaults(answer(REPO_B, "/trees/b"));
     const applied: { repoId: string; refs: unknown }[] = [];
-    (h.controller as unknown as { applyRefs?: (r: string, x: unknown) => void }).applyRefs = (repoId, refs) =>
-      applied.push({ repoId, refs });
+    channels(h).refs.bind((repoId, refs) => applied.push({ repoId, refs }));
 
     h.controller.handleRefs({
       type: "worktreeRefs",
@@ -1833,10 +1838,7 @@ describe("the create a toolbar with no repository opens", () => {
     h.controller.handleCreateDefaults(answer(REPO_A, "/trees/a"));
     h.controller.handleCreateDefaults(answer(REPO_B, "/trees/b"));
     const applied: { repoId: string; offer: unknown }[] = [];
-    (h.controller as unknown as { applyPullRequests?: (r: string, x: unknown) => void }).applyPullRequests = (
-      repoId,
-      offer,
-    ) => applied.push({ repoId, offer });
+    channels(h).pullRequests.bind((repoId, offer) => applied.push({ repoId, offer }));
 
     h.controller.handlePullRequests({
       type: "worktreePullRequests",
@@ -1878,10 +1880,7 @@ describe("the create a toolbar with no repository opens", () => {
     h.controller.handleCreateDefaults(answer(REPO_A, "/trees/a"));
     h.controller.handleCreateDefaults(answer(REPO_B, "/trees/b"));
     const applied: unknown[] = [];
-    (h.controller as unknown as { applyPullRequests?: (r: string, x: unknown) => void }).applyPullRequests = (
-      _repoId,
-      offer,
-    ) => applied.push(offer);
+    channels(h).pullRequests.bind((_repoId, offer) => applied.push(offer));
 
     h.controller.handlePullRequests({
       type: "worktreePullRequests",
@@ -1908,8 +1907,7 @@ describe("the create a toolbar with no repository opens", () => {
     h.controller.handleCreateDefaults(answer(REPO_A, "/trees/a"));
     h.controller.handleCreateDefaults(answer(REPO_B, "/trees/b"));
     const applied: string[] = [];
-    (h.controller as unknown as { applyPullRequests?: (r: string, x: unknown) => void }).applyPullRequests = (repoId) =>
-      applied.push(repoId);
+    channels(h).pullRequests.bind((repoId) => applied.push(repoId));
 
     h.controller.handlePullRequests({
       type: "worktreePullRequests",
@@ -1947,8 +1945,7 @@ describe("the create a toolbar with no repository opens", () => {
     h.controller.handleCreateDefaults(answer(REPO_A, "/trees/a"));
     h.controller.handleCreateDefaults(answer(REPO_B, "/trees/b"));
     const applied: string[] = [];
-    (h.controller as unknown as { applyRefs?: (r: string, x: unknown) => void }).applyRefs = (repoId) =>
-      applied.push(repoId);
+    channels(h).refs.bind((repoId) => applied.push(repoId));
 
     h.controller.handleRefs({
       type: "worktreeRefs",
@@ -2337,7 +2334,7 @@ describe("the create a toolbar with no repository opens", () => {
 
   it("[1_2][r1 W2] a list that outlived a dialog that really opened and closed changes nothing", () => {
     // The round-1 version asserted this with no dialog ever opened, so
-    // `applyRefs` was null for a reason the test did not name — it could not
+    // the refs channel was unbound for a reason the test did not name — it could not
     // have failed. This one opens a real form, closes it, and only then
     // delivers. The controller cannot unregister the applier (it learns a form
     // closed only through the view), so the FORM is what goes inert.
@@ -2346,8 +2343,7 @@ describe("the create a toolbar with no repository opens", () => {
     h.controller.handleCreateDefaults(answer(REPO_A, "/trees/a"));
     h.controller.handleCreateDefaults(answer(REPO_B, "/trees/b"));
     expect(open(), "the form never opened, so closing it proves nothing").toBe(true);
-    const bound = (h.controller as unknown as { applyRefs?: unknown }).applyRefs;
-    expect(bound, "no applier was bound, so a drop is not what this measures").toBeDefined();
+    expect(channels(h).refs.bound(), "no applier was bound, so a drop is not what this measures").toBe(true);
 
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(open()).toBe(false);
@@ -2440,8 +2436,7 @@ describe("the create a toolbar with no repository opens", () => {
   it("[B1] an answer that names the branch it is for still reaches the open form", () => {
     const h = ready(twoRepoResponse());
     const applied: unknown[] = [];
-    (h.controller as unknown as { applyCreateDefaults?: (s: unknown) => void }).applyCreateDefaults = (seed) =>
-      applied.push(seed);
+    channels(h).defaults.bind((seed) => applied.push(seed));
     // Answering the controller's own live opening: this fixture opens no
     // door, so it is still the initial one (1_2's guard drops any other).
     h.controller.handleCreateDefaults({ ...answer(REPO_A, "/trees/a"), opening: 0, branch: "feat/x" });

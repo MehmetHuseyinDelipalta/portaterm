@@ -13,7 +13,7 @@
     4. Import the moved names back into `src/providers/WorktreeHost.ts`; `namedOpening` keeps its five call sites at 2947, 3771, 3788 and 4055, and every `liveOpening` comparison stays as written.
     5. Run `bun run asm refactor shape src/providers/worktreeHost/messageGuards.ts` and confirm no shape fires.
 
-- [ ] 1_2 Extract the create-dialog sinks and pin the live-token builders
+- [x] 1_2 Extract the create-dialog sinks and pin the live-token builders — verified: pnpm exec vitest run src/webview/worktree/WorktreeController.test.ts src/webview/worktree/controller/dialogChannels.test.ts exit 0
   - **Deps**: none
   - **Refs**: design.md D1, design.md D2, design.md D3
   - **Boundary**: all seven outbound `onXxx` request builders keep their existing token expression — do not generalise them
@@ -21,10 +21,10 @@
     - Outcome: the eight `apply*` fields are gone, and a superseded opening's switch, save and authorize name the current token.
     - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeController.test.ts src/webview/worktree/controller/dialogChannels.test.ts
   - **Plan**:
-    1. Create `src/webview/worktree/controller/dialogChannels.ts` holding the eight sinks — defaults, provisioning, migration, pullRequests, refs, resolution, debrisAuthorization, destinationPicked — with `bind`, `push` and `clear` per channel; `destinationPicked` keeps its `{ opening, apply }` pairing.
+    1. Create `src/webview/worktree/controller/dialogChannels.ts` holding the eight sinks — defaults, provisioning, migration, pullRequests, refs, resolution, debrisAuthorization, destinationPicked — with `bind` and `push` per channel and no `clear`: the eight fields are never set back to null today, so a closed form's sink stays bound and safety comes entirely from the token guard in each `handleXxx`. `destinationPicked` keeps its `{ opening, apply }` pairing behind a push that fires only for a matching opening.
     2. Replace the eight `private apply*` fields at `src/webview/worktree/WorktreeController.ts:362-395` with one `dialogChannels` member.
     3. Point the eight `bindXxx` callbacks at 553-647 at the collaborator's `bind`, leaving all seven sibling `onXxx` builders in that literal byte-identical.
-    4. Point the consumption sites at 971, 1292, 1315, 1334, 1350, 1377, 1392, 1404, 1448, 1740 and 1752 at the collaborator's `push` and `clear`.
+    4. Point the consumption sites at 971, 1292, 1315, 1334, 1350, 1377, 1392, 1404, 1448, 1740 and 1752 at the collaborator's `push`.
     5. Add `src/webview/worktree/controller/dialogChannels.test.ts`: supersede an opening, then fire switch, save and authorize and assert each request carries the current `refsToken`, not the retired one (design.md OBL-3).
     6. Run `bun run asm refactor shape src/webview/worktree/WorktreeController.ts src/webview/worktree/controller/dialogChannels.ts`.
 

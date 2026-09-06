@@ -142,9 +142,18 @@ Mechanical only. No assertion changes anywhere.
   (`fsDeletionGate.ts:36-41`), and a prefix would pull `messageGuards.ts`, `actions/create.ts`,
   `actions/provision.ts` and `actions/shell.ts` into scope for no reason. Not a test move — a
   **scope repair**, see OBL-1. No assertion changes.
-- No other test file moves. The host and controller suites address their targets through
-  `createWorktreeHost` and `WorktreeController.mount`, both of which keep their signatures, so
-  no import path in any existing test changes.
+- `src/webview/worktree/WorktreeController.test.ts` (`1_2`): **7 sites change their mock target.**
+  This corrects a wrong premise in the first draft of this design, which claimed the suites reach
+  their targets only through `createWorktreeHost` and `WorktreeController.mount`. They mostly do —
+  but seven tests poke the private field directly
+  (`(h.controller as unknown as { applyRefs?: … }).applyRefs = …`), so removing the eight fields
+  makes those assignments write a dead property and the answers go nowhere. The edit is mechanical:
+  the same `as unknown as` escape hatch, retargeted from the removed field to
+  `channels(h).<name>.bind(...)`, with every assertion byte-identical. One site
+  (`[1_2][r1 W2]`, line 2349) read the field to prove a sink WAS bound before measuring a drop —
+  that guard against a vacuous assertion is preserved by `Channel.bound()`, which exists for that
+  purpose and nothing branches on it in production.
+- No test file moves, and no assertion changes anywhere.
 
 Additive test growth, funded by the refuted ledger rows — new files, no edits to existing ones:
 

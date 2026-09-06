@@ -29,6 +29,7 @@ import type {
 import { attributionKey, type PaneReport, waitingKey } from "../paneAttribution";
 import type { WebviewState } from "../state/WebviewState";
 import type { VaultView } from "../vault/VaultPanel";
+import { createDialogChannels } from "./controller/dialogChannels";
 import type { WorktreeMenuActions } from "./WorktreeContextMenu";
 import { WorktreeView } from "./WorktreeView";
 import type {
@@ -38,12 +39,10 @@ import type {
   WorktreeCreateMode,
   WorktreeInfo,
   WorktreeLaunchAgent,
-  WorktreeMigrationOffer,
   WorktreeOpenAfter,
   WorktreePresence,
   WorktreeProvisionOffer,
   WorktreePullRequestOffer,
-  WorktreeRefOffer,
   WorktreeRowActivation,
   WorktreeTree,
 } from "./worktreeViewTypes";
@@ -358,39 +357,13 @@ export class WorktreeController {
    * so opening on the first reply would offer one repository as the workspace.
    */
   private pendingCreate: { asked: string[]; outstanding: Set<string>; initialRepoId?: string } | null = null;
-  /** Push a fresh host answer into the open form. Null when none is open. */
-  private applyCreateDefaults: ((next: WorktreeCreateDefaults) => void) | null = null;
   /**
-   * Push a fresh provisioning offer into the open form.
+   * Every answer channel the open create form binds.
    *
-   * Its own channel, not `applyCreateDefaults`. That callback carries the
-   * DESTINATION, and the form clears its pending gate on any answer through it —
-   * so routing provisioning there enabled Create on a stale path
-   * (.reviews/round-1.md B4).
+   * Never unbound: an answer that outlived its dialog is dropped by the token
+   * guard in each handler below, not by clearing a sink.
    */
-  private applyProvisionOffer: ((repoId: string, offer: WorktreeProvisionOffer) => void) | null = null;
-  private applyMigrationOffer: ((repoId: string, offer: WorktreeMigrationOffer | undefined) => void) | null = null;
-  /**
-   * Push the repository's branch list into the open form. Null when none is
-   * open — which is what drops an answer that outlived its dialog.
-   */
-  private applyRefs: ((repoId: string, refs: WorktreeRefOffer) => void) | null = null;
-  private applyPullRequests: ((repoId: string, offer: WorktreePullRequestOffer) => void) | null = null;
-  private applyResolution: ((resolution: WorktreeCreateResolutionMessage) => void) | null = null;
-  private applyDebrisAuthorization: ((answer: WorktreeDebrisAuthorizedMessage) => void) | null = null;
-  /**
-   * The live form's picker binding, WITH the opening that composed it.
-   *
-   * The opening travels beside the callback rather than being read when an
-   * answer lands: a form stays interactive until its successor's defaults
-   * arrive, so between `openCreate` and that render the controller's current
-   * opening is the SUCCESSOR's while the bound form is the predecessor
-   * (round-1 F002).
-   */
-  private applyDestinationPicked: {
-    opening: number;
-    apply: (answer: WorktreeDestinationPickedMessage) => void;
-  } | null = null;
+  private readonly dialogChannels = createDialogChannels();
   /** Notices the panel is showing, newest last, one per scope+verb. */
   private actionResults: WorktreeActionResult[] = [];
   /**
@@ -551,13 +524,13 @@ export class WorktreeController {
             });
           },
           bindDefaults: (apply) => {
-            this.applyCreateDefaults = apply;
+            this.dialogChannels.defaults.bind(apply);
           },
           bindProvisioning: (apply) => {
-            this.applyProvisionOffer = apply;
+            this.dialogChannels.provisioning.bind(apply);
           },
           bindMigration: (apply) => {
-            this.applyMigrationOffer = apply;
+            this.dialogChannels.migration.bind(apply);
           },
           // A source the HOST detected, named by id. The message carries no file,
           // no path and no model — the host re-resolves that provider itself, and
@@ -619,13 +592,13 @@ export class WorktreeController {
             });
           },
           bindPullRequests: (apply) => {
-            this.applyPullRequests = apply;
+            this.dialogChannels.pullRequests.bind(apply);
           },
           bindRefs: (apply) => {
-            this.applyRefs = apply;
+            this.dialogChannels.refs.bind(apply);
           },
           bindResolution: (apply) => {
-            this.applyResolution = apply;
+            this.dialogChannels.resolution.bind(apply);
           },
           // Its own request, sent only when the user accepts the recover offer —
           // the probe is answered per settled edit, so a token riding it would be
@@ -634,7 +607,7 @@ export class WorktreeController {
             deps.postMessage({ type: "worktreeAuthorizeDebris", repoId, token: this.refsToken, ask, path });
           },
           bindDebrisAuthorization: (apply) => {
-            this.applyDebrisAuthorization = apply;
+            this.dialogChannels.debrisAuthorization.bind(apply);
           },
           // The opening rides here the way every other create request's does, so
           // the form states no identity of its own (design.md D2).
@@ -644,7 +617,7 @@ export class WorktreeController {
             deps.postMessage({ type: "worktreePickDestination", repoId, token: opening, ask });
           },
           bindDestinationPicked: (apply) => {
-            this.applyDestinationPicked = { opening, apply };
+            this.dialogChannels.destinationPicked.bind(opening, apply);
           },
         };
       },
@@ -968,7 +941,7 @@ export class WorktreeController {
     // honest state until the host answers.
     this.provisionOffers.clear();
     for (const migrationRepoId of this.migrationOffers.keys()) {
-      this.applyMigrationOffer?.(migrationRepoId, undefined);
+      this.dialogChannels.migration.push(migrationRepoId, undefined);
     }
     this.migrationOffers.clear();
     // Cleared on the same terms as the offer: a list seeded from the previous
@@ -1289,7 +1262,7 @@ export class WorktreeController {
       return;
     }
     this.migrationOffers.set(msg.repoId, msg);
-    this.applyMigrationOffer?.(msg.repoId, { offerId: msg.offerId, count: msg.count });
+    this.dialogChannels.migration.push(msg.repoId, { offerId: msg.offerId, count: msg.count });
   }
 
   /**
@@ -1312,7 +1285,7 @@ export class WorktreeController {
     // repository's record to update one was O(repos²) across a workspace's
     // replies (round-1 S1), and sending it down the destination's channel is
     // what B4 was.
-    this.applyProvisionOffer?.(msg.repoId, { offerId: msg.offerId, model: msg.model });
+    this.dialogChannels.provisioning.push(msg.repoId, { offerId: msg.offerId, model: msg.model });
   }
 
   /**
@@ -1331,7 +1304,7 @@ export class WorktreeController {
       return;
     }
     this.repoRefs.set(msg.repoId, msg);
-    this.applyRefs?.(msg.repoId, { list: msg.refs, truncated: msg.truncated });
+    this.dialogChannels.refs.push(msg.repoId, { list: msg.refs, truncated: msg.truncated });
   }
 
   /**
@@ -1347,7 +1320,7 @@ export class WorktreeController {
       return;
     }
     this.repoPullRequests.set(msg.repoId, msg);
-    this.applyPullRequests?.(msg.repoId, pullRequestOffer(msg));
+    this.dialogChannels.pullRequests.push(msg.repoId, pullRequestOffer(msg));
   }
 
   /**
@@ -1374,7 +1347,7 @@ export class WorktreeController {
       return;
     }
     this.createResolutions.set(msg.repoId, msg);
-    this.applyResolution?.(msg);
+    this.dialogChannels.resolution.push(msg);
   }
 
   /**
@@ -1389,7 +1362,7 @@ export class WorktreeController {
     if (msg.token !== this.refsToken) {
       return;
     }
-    this.applyDebrisAuthorization?.(msg);
+    this.dialogChannels.debrisAuthorization.push(msg);
   }
 
   /**
@@ -1401,15 +1374,14 @@ export class WorktreeController {
    * applies whatever reaches it.
    */
   handleDestinationPicked(msg: WorktreeDestinationPickedMessage): void {
-    const bound = this.applyDestinationPicked;
     // Both, and they are different questions: the token says the answer is not
     // for a retired opening, and the binding says the form on screen is the one
     // that asked. A successor's token passes the first on its own, which is how
     // a form that never opened the picker was told a folder (round-1 F002).
-    if (bound === null || msg.token !== this.refsToken || msg.token !== bound.opening) {
+    if (msg.token !== this.refsToken) {
       return;
     }
-    bound.apply(msg);
+    this.dialogChannels.destinationPicked.pushWhenOpening(msg.token, msg);
   }
 
   /**
@@ -1445,7 +1417,7 @@ export class WorktreeController {
       if (msg.branch !== undefined) {
         const seed = this.createRepos().find((r) => r.repoId === msg.repoId);
         if (seed !== undefined) {
-          this.applyCreateDefaults?.(seed);
+          this.dialogChannels.defaults.push(seed);
         }
       }
       return;
@@ -1737,7 +1709,7 @@ export class WorktreeController {
     for (const repoId of this.migrationOffers.keys()) {
       if (!repos.has(repoId)) {
         this.migrationOffers.delete(repoId);
-        this.applyMigrationOffer?.(repoId, undefined);
+        this.dialogChannels.migration.push(repoId, undefined);
       }
     }
     const source = this.createSource;
@@ -1749,7 +1721,7 @@ export class WorktreeController {
     ) {
       this.createSource = null;
       this.migrationOffers.delete(source.repoId);
-      this.applyMigrationOffer?.(source.repoId, undefined);
+      this.dialogChannels.migration.push(source.repoId, undefined);
     }
     for (const repoId of this.repoRefs.keys()) {
       if (!repos.has(repoId)) {

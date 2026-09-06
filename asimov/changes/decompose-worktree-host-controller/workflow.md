@@ -38,3 +38,7 @@ Late fork: action modules need ~10 host helpers, not just state — chose factor
 Pattern: tagged-union opening reducer admitted (design.md D5) as task 3_1, after extraction, per user decision to keep it in this change.
 Residual: createWorktreeHost still fires long-function at ~71% after 2_4 — projection/publish/presence is a separate axis and a follow-up change.
 Worktree: none — building on main at user's direction.
+Mode: fastlane from task 1_2 onward (user), incl. review to 3 rounds then archive.
+Next change (user-directed): WorktreeCreateDialog.ts + WorktreeView.ts — note CreateDialog is this change's declared non-goal; the churn/capture reasons in proposal.md stand and the cut there must be the headless form model, not a DOM split.
+D1 premise corrected during 1_2: the controller suite is not purely black-box — 7 tests bound the create form's sinks by assigning the private `apply*` fields. Retargeted to the channel seam (design.md D3); assertions untouched. The host suite was checked and has no equivalent poke.
+
