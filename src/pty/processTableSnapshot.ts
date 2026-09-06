@@ -19,9 +19,11 @@
 import {
   collectDescendants,
   defaultProcessTreeDeps,
+  ownerAppOf,
+  type ProcessRows,
   type ProcessTreeDeps,
   PS_TIMEOUT_MS,
-  parseProcessTable,
+  parseProcessRows,
   psTableArgs,
 } from "./processTree";
 
@@ -51,6 +53,15 @@ export type DescendantsOutcome =
  */
 export interface ProcessTableReading {
   descendantsOf(rootPid: number): DescendantsOutcome;
+  /**
+   * The bundled application that owns `rootPid`, from the same read.
+   *
+   * `undefined` covers three different situations on purpose — the table could
+   * not be read, nothing in the chain is bundled, or the pid is gone — because a
+   * caller can do only one thing with all three: say nothing about the owner.
+   * Where the distinction matters the caller already has `descendantsOf`.
+   */
+  ownerAppOf(rootPid: number): string | undefined;
 }
 
 export interface ProcessTableSnapshot {
@@ -68,7 +79,7 @@ export interface ProcessTableSnapshotOptions {
 }
 
 /** What one completed read produced — a parsed table, or why there isn't one. */
-type TableOutcome = { kind: "ok"; table: Map<number, number[]> } | { kind: "failed"; reason: string };
+type TableOutcome = { kind: "ok"; rows: ProcessRows } | { kind: "failed"; reason: string };
 
 function describeExecFailure(err: unknown): string {
   if (err instanceof Error && err.message) {
@@ -85,12 +96,12 @@ export function createProcessTableSnapshot(options: ProcessTableSnapshotOptions 
 
   let inFlight: Promise<TableOutcome> | undefined;
   /** The last SUCCESSFUL read and when it landed. A failure caches nothing. */
-  let cached: { table: Map<number, number[]>; at: number } | undefined;
+  let cached: { rows: ProcessRows; at: number } | undefined;
 
   async function read(args: string[]): Promise<TableOutcome> {
     try {
       const { stdout } = await run("ps", args, { timeout: PS_TIMEOUT_MS });
-      return { kind: "ok", table: parseProcessTable(stdout) };
+      return { kind: "ok", rows: parseProcessRows(stdout) };
     } catch (err) {
       return { kind: "failed", reason: describeExecFailure(err) };
     }
@@ -98,7 +109,7 @@ export function createProcessTableSnapshot(options: ProcessTableSnapshotOptions 
 
   async function table(args: string[]): Promise<TableOutcome> {
     if (cached && now() - cached.at < ttlMs) {
-      return { kind: "ok", table: cached.table };
+      return { kind: "ok", rows: cached.rows };
     }
     // A read already running is the read this caller wants: starting a second
     // would defeat the whole point of the snapshot.
@@ -108,7 +119,7 @@ export function createProcessTableSnapshot(options: ProcessTableSnapshotOptions 
         // open on an answer that is not an answer, and the next rebuild —
         // which is the one that would have recovered — would be served it.
         if (outcome.kind === "ok") {
-          cached = { table: outcome.table, at: now() };
+          cached = { rows: outcome.rows, at: now() };
         }
         inFlight = undefined;
         return outcome;
@@ -127,7 +138,15 @@ export function createProcessTableSnapshot(options: ProcessTableSnapshotOptions 
     if (outcome.kind !== "ok") {
       return outcome;
     }
-    return { kind: "ok", pids: collectDescendants(rootPid, outcome.table) };
+    return { kind: "ok", pids: collectDescendants(rootPid, outcome.rows.children) };
+  }
+
+  /** Shared by both entry points for the same reason as `lookup`. */
+  function owner(rootPid: number, outcome: TableOutcome | { kind: "unsupported" }): string | undefined {
+    if (outcome.kind !== "ok" || !Number.isInteger(rootPid) || rootPid <= 0) {
+      return undefined;
+    }
+    return ownerAppOf(rootPid, outcome.rows);
   }
 
   async function readTable(): Promise<TableOutcome | { kind: "unsupported" }> {
@@ -147,7 +166,10 @@ export function createProcessTableSnapshot(options: ProcessTableSnapshotOptions 
 
     async open() {
       const outcome = await readTable();
-      return { descendantsOf: (rootPid) => lookup(rootPid, outcome) };
+      return {
+        descendantsOf: (rootPid) => lookup(rootPid, outcome),
+        ownerAppOf: (rootPid) => owner(rootPid, outcome),
+      };
     },
   };
 }

@@ -3,6 +3,7 @@
 // which of them is title-shaped (source-the-agent-row-preview 1_4).
 
 import { describe, expect, it } from "vitest";
+import { ICON_TERMINAL } from "../vault/icons";
 import { agentRow } from "./worktreeFixtures";
 import { type AgentRowOptions, renderAgentRow, renderSubagentSection } from "./worktreeTreeView";
 import type { WorktreeAgentRow } from "./worktreeViewTypes";
@@ -176,5 +177,21 @@ describe("a preview that adds nothing to the row", () => {
   it("draws the line again once the session says something else", () => {
     expect(previewOf(render({ title: "Building", preview: "Building" }))).toBeNull();
     expect(previewOf(render({ title: "Building", preview: "Bash: pnpm test" }))?.textContent).toBe("Bash: pnpm test");
+  });
+});
+
+describe("the agent row's icon", () => {
+  it("draws the plain terminal glyph, never a guessed brand, when nothing proved an agent", () => {
+    // WorktreeView filters these out of the panel, so this is the only place the
+    // contract is stated: given such a row, the row itself must not invent a brand.
+    const el = render({ agentSource: "none", title: "zsh" });
+    const icon = el.querySelector<HTMLElement>(".wt-aicon");
+    // Through a parse on both sides: jsdom rewrites `<rect …/>` to `<rect …></rect>`,
+    // so comparing rendered markup against the raw constant fails on the serializer.
+    const expected = document.createElement("span");
+    expected.innerHTML = ICON_TERMINAL;
+    expect(icon?.innerHTML).toBe(expected.innerHTML);
+    expect(icon?.dataset.tip).toBeUndefined();
+    expect(icon?.style.color).toBe("");
   });
 });

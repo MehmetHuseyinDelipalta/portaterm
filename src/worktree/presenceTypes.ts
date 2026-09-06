@@ -138,6 +138,13 @@ export interface WorktreeAgentRow {
   /** Newest evidence timestamp — the worktree ordering key. */
   lastActivityAt?: number;
   /** External rows only. */
+  /**
+   * The application running this session's process — external rows only, and
+   * only where one could be named. Absent means "outside this window" with no
+   * claim about whose window: nothing in the chain was a bundled application, or
+   * the process table could not be read.
+   */
+  host?: string;
   pid?: number;
   /**
    * What this row's session delegated — read on expansion, never on a routine

@@ -210,6 +210,13 @@ export function createPresenceProjectorDeps(options: PresenceDepsOptions): Prese
             }
           : {}),
 
+        async ownerAppOf(pid: number): Promise<string | undefined> {
+          // Same table the pane pass reads. A window drawing only external rows
+          // opens it here instead of not at all — one `ps` per rebuild, TTL-paced,
+          // and only while the view is shown.
+          return (await processTable()).ownerAppOf(pid);
+        },
+
         async sessions(): Promise<RunningSessionsOutcome> {
           const read = await registryRead;
           // `all()`, never `read.sessions`: the headless drop happens in the

@@ -27,7 +27,7 @@ const GLYPH_FRAMES = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷�
  * characters too — a title that starts `/Users/…` is a path, not an animation. Only
  * a lone one followed by whitespace is treated as a frame.
  */
-const ASCII_FRAME = /^[|/\\-]\s+/;
+const ASCII_FRAME = /^[|/-]\s+/;
 
 /** Drop a leading run of decorative frames. A title that is ONLY frames becomes "". */
 export function stripDecorations(title: string | undefined): string {
@@ -373,6 +373,20 @@ export function worktreeTooltip(info: WorktreeInfo): string {
 }
 
 /** Plural-safe `N agents` header text. */
+/**
+ * The rows a panel draws: the agents, and only the agents.
+ *
+ * Presence projects a row for every pane, because activity, exit and attribution
+ * are facts about panes that the model depends on. A pane holding no proven
+ * agent is a terminal the user already has on screen, and repeating it as a row
+ * says nothing. Here rather than in either caller, because the view and the
+ * render guard drifting apart on this rule is the whole defect: a rule stated
+ * twice is a rule that will disagree with itself.
+ */
+export function displayedRows(rows: readonly WorktreeAgentRow[]): WorktreeAgentRow[] {
+  return rows.filter((row) => row.agent !== undefined);
+}
+
 export function agentCountLabel(count: number): string {
   return `${count} agent${count === 1 ? "" : "s"}`;
 }

@@ -56,14 +56,14 @@ describe("worktreeSignature", () => {
   // (source-the-agent-row-preview D4). The animation-rate risk the stripping above
   // guards against lives on the title, which still strips.
   it("moves for any preview change, including a leading marker", () => {
-    expect(signatureFor([agentRow({ rowId: "a", preview: "- run the tests" })])).not.toBe(
-      signatureFor([agentRow({ rowId: "a", preview: "run the tests" })]),
+    expect(signatureFor([agentRow({ rowId: "a", agent: "claude", preview: "- run the tests" })])).not.toBe(
+      signatureFor([agentRow({ rowId: "a", agent: "claude", preview: "run the tests" })]),
     );
   });
 
   it("still moves when the real preview changes", () => {
-    expect(signatureFor([agentRow({ rowId: "a", preview: "Bash: npm test" })])).not.toBe(
-      signatureFor([agentRow({ rowId: "a", preview: "Bash: npm run build" })]),
+    expect(signatureFor([agentRow({ rowId: "a", agent: "claude", preview: "Bash: npm test" })])).not.toBe(
+      signatureFor([agentRow({ rowId: "a", agent: "claude", preview: "Bash: npm run build" })]),
     );
   });
 
@@ -141,6 +141,7 @@ const FULL_ROW: Required<WorktreeAgentRow> = {
   stateStartedAt: 20,
   finishedAt: 30,
   lastActivityAt: 40,
+  host: "Orca",
   pid: 4321,
   delegations: { kind: "ok", rows: [FULL_SUBAGENT], incomplete: true },
 };
@@ -286,16 +287,20 @@ describe("roster states are distinguishable in the signature", () => {
   it("separates a row whose roster was never read from one read and empty", () => {
     // Both render nothing under the row, and a signature that cannot tell them
     // apart leaves the "reading…" state on screen after the answer arrived.
-    const unread = signatureFor([agentRow({ rowId: "window:a", delegations: undefined })]);
-    const empty = signatureFor([agentRow({ rowId: "window:a", delegations: { kind: "ok", rows: [] } })]);
+    const unread = signatureFor([agentRow({ rowId: "window:a", agent: "claude", delegations: undefined })]);
+    const empty = signatureFor([
+      agentRow({ rowId: "window:a", agent: "claude", delegations: { kind: "ok", rows: [] } }),
+    ]);
     expect(unread).not.toBe(empty);
   });
 
   it("separates an incomplete roster from a complete one with the same rows", () => {
     const rows = [{ name: "librarian", status: "completed" as const, live: false as const }];
-    const complete = signatureFor([agentRow({ rowId: "window:a", delegations: { kind: "ok", rows } })]);
+    const complete = signatureFor([
+      agentRow({ rowId: "window:a", agent: "claude", delegations: { kind: "ok", rows } }),
+    ]);
     const incomplete = signatureFor([
-      agentRow({ rowId: "window:a", delegations: { kind: "ok", rows, incomplete: true } }),
+      agentRow({ rowId: "window:a", agent: "claude", delegations: { kind: "ok", rows, incomplete: true } }),
     ]);
     expect(complete).not.toBe(incomplete);
   });
@@ -307,12 +312,14 @@ describe("roster states are distinguishable in the signature", () => {
     const past = signatureFor([
       agentRow({
         rowId: "window:a",
+        agent: "claude",
         delegations: { kind: "ok", rows: [{ name: "librarian", status: "running", live: false }] },
       }),
     ]);
     const live = signatureFor([
       agentRow({
         rowId: "window:a",
+        agent: "claude",
         delegations: { kind: "ok", reported: true, rows: [{ name: "librarian", status: "running", live: true }] },
       }),
     ]);
@@ -320,9 +327,15 @@ describe("roster states are distinguishable in the signature", () => {
   });
 
   it("separates a failed roster from an empty one, and by its reason", () => {
-    const empty = signatureFor([agentRow({ rowId: "window:a", delegations: { kind: "ok", rows: [] } })]);
-    const failed = signatureFor([agentRow({ rowId: "window:a", delegations: { kind: "failed", reason: "EACCES" } })]);
-    const other = signatureFor([agentRow({ rowId: "window:a", delegations: { kind: "failed", reason: "ENOENT" } })]);
+    const empty = signatureFor([
+      agentRow({ rowId: "window:a", agent: "claude", delegations: { kind: "ok", rows: [] } }),
+    ]);
+    const failed = signatureFor([
+      agentRow({ rowId: "window:a", agent: "claude", delegations: { kind: "failed", reason: "EACCES" } }),
+    ]);
+    const other = signatureFor([
+      agentRow({ rowId: "window:a", agent: "claude", delegations: { kind: "failed", reason: "ENOENT" } }),
+    ]);
     expect(failed).not.toBe(empty);
     expect(failed).not.toBe(other);
   });
@@ -356,5 +369,35 @@ describe("[1_3] the model is keyed again", () => {
     const named = signatureFor([{ ...bare, model: "x" }]);
     expect(signatureFor([bare])).not.toBe(named);
     expect(signatureFor([{ ...bare, model: "" }])).not.toBe(named);
+  });
+});
+
+describe("a row the panel does not draw", () => {
+  const shell = agentRow({ rowId: "shell", agentSource: "none", activity: "idle", title: "zsh" });
+  const agent = agentRow({ rowId: "a", agent: "claude", activity: "running", title: "Building" });
+
+  it("does not move the key when only that row changed", () => {
+    // A shell running a build emits output for minutes. Every flip used to move
+    // this key, and the render it forced tore the whole list down through
+    // `replaceChildren` to draw exactly what was already there (round-2 F001).
+    const before = signatureFor([agent, shell]);
+    const after = signatureFor([agent, { ...shell, activity: "running", title: "npm run build" }]);
+    expect(after).toBe(before);
+  });
+
+  it("still moves the key when it becomes a row the panel draws", () => {
+    // The motion that matters is ACROSS the boundary, not within the hidden set:
+    // the row enters the drawn list, and a guard blind to that would hold a
+    // panel missing an agent that just proved itself.
+    expect(signatureFor([agent, { ...shell, agent: "claude", agentSource: "process" }])).not.toBe(
+      signatureFor([agent, shell]),
+    );
+  });
+
+  it("keys a group holding nothing else apart from an empty one", () => {
+    // Not the same picture: one worktree is absent from presence entirely and
+    // one holds a pane. They render alike today, and may not hash alike by
+    // accident — the drawn-row rule is what makes them equal, and the test says so.
+    expect(signatureFor([shell])).toBe(signatureFor([]));
   });
 });

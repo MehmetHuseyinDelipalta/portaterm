@@ -30,10 +30,15 @@ function entry(over: Partial<VaultSessionEntry> & { id: string; agent: VaultAgen
  * `open` is what the projection must use: one table per rebuild, however many
  * panes look at it and however long the rebuild takes.
  */
-function table(outcome: DescendantsOutcome = { kind: "ok", pids: [] }) {
+function table(outcome: DescendantsOutcome = { kind: "ok", pids: [] }, owner?: string) {
   const descendantsOf = vi.fn(async (): Promise<DescendantsOutcome> => outcome);
-  const open = vi.fn(async () => ({ descendantsOf: () => outcome }));
-  return { descendantsOf, open } as ProcessTableSnapshot & { descendantsOf: typeof descendantsOf; open: typeof open };
+  const ownerAppOf = vi.fn((_pid: number): string | undefined => owner);
+  const open = vi.fn(async () => ({ descendantsOf: () => outcome, ownerAppOf }));
+  return { descendantsOf, open, ownerAppOf } as unknown as ProcessTableSnapshot & {
+    descendantsOf: typeof descendantsOf;
+    open: typeof open;
+    ownerAppOf: typeof ownerAppOf;
+  };
 }
 
 /** A readable registry holding exactly these sessions. */
@@ -262,6 +267,31 @@ describe("resolution", () => {
 
     const [row] = (await projector.project(["/repo"])).rowsByWorktreeId["/repo"];
     expect(row).toMatchObject({ agent: "claude", agentSource: "registry" });
+  });
+
+  it("names the application hosting an external session, from the same table read", async () => {
+    const { store, projector } = wire({
+      table: table({ kind: "ok", pids: [] }, "Orca"),
+      listRunning: async () => ok(running({ pid: 999, cwd: "/repo/app" })),
+    });
+    store.create("a", { cwd: "/repo/app", ptyPid: 10 });
+
+    const rows = (await projector.project(["/repo"])).rowsByWorktreeId["/repo"];
+    const external = rows.find((row) => row.scope === "external");
+    expect(external?.host).toBe("Orca");
+  });
+
+  it("leaves an external row's host absent when no application could be named", async () => {
+    // Linux, or a chain with no bundle: "outside this window" with no claim
+    // about whose, rather than a guess dressed as a fact.
+    const { store, projector } = wire({
+      table: table({ kind: "ok", pids: [] }),
+      listRunning: async () => ok(running({ pid: 999, cwd: "/repo/app" })),
+    });
+    store.create("a", { cwd: "/repo/app", ptyPid: 10 });
+
+    const rows = (await projector.project(["/repo"])).rowsByWorktreeId["/repo"];
+    expect(rows.find((row) => row.scope === "external")?.host).toBeUndefined();
   });
 
   it("refuses that same cwd match once a readable table places the session elsewhere", async () => {

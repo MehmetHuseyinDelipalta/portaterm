@@ -26,6 +26,7 @@ import {
   branchLabel,
   CONFIRMATION_CEILING_MS,
   compactAge,
+  displayedRows,
   groupPresenceByActivity,
   presentedActivity,
   strongestActivity,
@@ -578,11 +579,14 @@ export class WorktreeView {
     // display cap would tear the whole list down to change nothing a user can see.
     const drawn = this.renderedWorktreeIds();
     let soonest: number | undefined;
-    for (const [worktreeId, rows] of Object.entries(this.data.presence?.rowsByWorktreeId ?? {})) {
+    for (const worktreeId of Object.keys(this.data.presence?.rowsByWorktreeId ?? {})) {
       if (!drawn.has(worktreeId)) {
         continue;
       }
-      for (const row of rows) {
+      // Same reason the loop skips an undrawn worktree: a row this view does not
+      // draw cannot cross anything a user can see, and waking for it tears the
+      // whole list down to change nothing (round-1 F001).
+      for (const row of this.rowsFor(worktreeId)) {
         if (row.stateStartedAt === undefined || presentedActivity(row, degraded, now) !== "running") {
           continue;
         }
@@ -760,8 +764,30 @@ export class WorktreeView {
 
   // -- State ---------------------------------------------------------------
 
+  /**
+   * The rows this view draws — the agents, and only the agents.
+   *
+   * Presence still projects a row for every pane, because activity, exit and
+   * attribution are facts about panes and the rest of the model needs them.
+   * This list is not that model: a pane holding no proven agent is a terminal
+   * the user already has on screen, and repeating it here as a row said
+   * nothing.
+   *
+   * Parameterized on the envelope because `isIdleIn` runs against the INCOMING
+   * one. Every consumer that answers a question about what is on screen — the
+   * rows, the count, the pill, navigation, idleness, the ceiling timer — reads
+   * through here, so none of them can disagree with the rest about what a
+   * worktree holds. The one deliberate exception is `pruneStaleState`, which
+   * reconciles retained state against the presence MODEL: pruning by what is
+   * drawn would discard the expansion and roster state of a pane the moment it
+   * stopped proving an agent, and again on every rebuild until it did.
+   */
+  private static displayRows(data: WorktreeViewData, worktreeId: string): WorktreeAgentRow[] {
+    return displayedRows(data.presence?.rowsByWorktreeId[worktreeId] ?? []);
+  }
+
   private rowsFor(worktreeId: string): WorktreeAgentRow[] {
-    return this.data.presence?.rowsByWorktreeId[worktreeId] ?? [];
+    return WorktreeView.displayRows(this.data, worktreeId);
   }
 
   /**
@@ -1172,7 +1198,10 @@ export class WorktreeView {
     if (!presence || presence.degradedSources.length > 0) {
       return false;
     }
-    return (presence.rowsByWorktreeId[info.id] ?? []).length === 0;
+    // What is DRAWN, not what was projected: a worktree holding nothing but a
+    // shell pane shows no agent rows, and calling it active kept it out of the
+    // idle tail on the strength of a row the user cannot see (round-1 F001).
+    return WorktreeView.displayRows(data, info.id).length === 0;
   }
 
   private toggleIdleTail(repoId: string): void {

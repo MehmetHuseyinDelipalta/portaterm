@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "target": {
+    "kind": "debug",
+    "id": "260906-at-window-pane-untitled"
+  },
+  "sessions": [
+    {
+      "sessionId": "50a22087-e052-4fdd-9828-b3030da66ee0",
+      "runtime": "claude",
+      "author": "huybuidac@gmail.com",
+      "attachedAt": 1788683464145,
+      "accounting": 2,
+      "windows": [
+        {
+          "from": 1788683464145,
+          "to": 1788686305570
+        }
+      ],
+      "phases": [
+        {
+          "phase": "debug",
+          "from": 1788683464145
+        }
+      ],
+      "firstAt": 1788683464145,
+      "lastAt": 1788686209317,
+      "buckets": [
+        {
+          "runtime": "claude",
+          "phase": "debug",
+          "agent": "main",
+          "model": "claude-opus-5",
+          "messages": 17,
+          "inputTokens": 34,
+          "outputTokens": 27616,
+          "reasoningTokens": 15097,
+          "cacheWriteTokens": 337879,
+          "cacheReadTokens": 4354300,
+          "extra": {
+            "cacheWrite5mTokens": 337879,
+            "cacheWrite1hTokens": 0,
+            "webSearchRequests": 0,
+            "webFetchRequests": 0
+          }
+        },
+        {
+          "runtime": "claude",
+          "phase": "debug",
+          "agent": "general-purpose",
+          "model": "claude-sonnet-5",
+          "messages": 32,
+          "inputTokens": 64,
+          "outputTokens": 5959,
+          "reasoningTokens": 3314,
+          "cacheWriteTokens": 137284,
+          "cacheReadTokens": 3209676,
+          "extra": {
+            "cacheWrite5mTokens": 137284,
+            "cacheWrite1hTokens": 0,
+            "webSearchRequests": 0,
+            "webFetchRequests": 0
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -67,7 +67,7 @@ async function measure(each: () => Promise<unknown>): Promise<number> {
 function presenceProjector() {
   const outcome: DescendantsOutcome = { kind: "ok", pids: [] };
   const table = {
-    open: async () => ({ descendantsOf: () => outcome }),
+    open: async () => ({ descendantsOf: () => outcome, ownerAppOf: () => undefined }),
     descendantsOf: async () => outcome,
   } as unknown as ProcessTableSnapshot;
 

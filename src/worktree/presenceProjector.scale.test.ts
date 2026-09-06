@@ -37,7 +37,8 @@ function wireAtScale(panes: number = PANES) {
   // Spied INSIDE the snapshot, because that is where per-pane resolution work happens:
   // `open` is once per rebuild by design, so counting it cannot see a per-pane regression.
   const descendantsFor = vi.fn(answer);
-  const open = vi.fn(async () => ({ descendantsOf: descendantsFor }));
+  const ownerAppOf = vi.fn((): string | undefined => undefined);
+  const open = vi.fn(async () => ({ descendantsOf: descendantsFor, ownerAppOf }));
   const descendantsOf = vi.fn(async (rootPid: number): Promise<DescendantsOutcome> => answer(rootPid));
   const processTable = { open, descendantsOf } as unknown as ProcessTableSnapshot;
 

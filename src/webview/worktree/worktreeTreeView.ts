@@ -637,11 +637,16 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
   const scope = document.createElement("span");
   if (row.scope === "external") {
     scope.className = "wt-scope";
-    scope.dataset.tip = "Running in another VS Code window";
+    // The host when one could be named, the neutral phrase otherwise. The old
+    // wording said "another VS Code window" of every external row, which is
+    // simply false of a session another APPLICATION is running — and that false
+    // sentence is what sent a user looking for a bug in this extension.
+    const host = row.host?.trim();
+    scope.dataset.tip = host ? `Running in ${host}` : "Running outside this window";
     const winIcon = document.createElement("span");
     setIcon(winIcon, ICON_WINDOW);
     winIcon.setAttribute("aria-hidden", "true");
-    scope.append(winIcon, document.createTextNode("other window"));
+    scope.append(winIcon, document.createTextNode(host || "other window"));
   }
   el.appendChild(scope);
   // Same reason as the worktree row above: `el` is what the roving tabindex

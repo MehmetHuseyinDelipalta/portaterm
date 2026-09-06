@@ -10,7 +10,7 @@
 // a change the UI would reflect must never be masked by the guard. It is
 // order-sensitive: the tree renders in array order, so a reorder is a change.
 
-import { presentedActivity, stripDecorations } from "./worktreeFormat";
+import { displayedRows, presentedActivity, stripDecorations } from "./worktreeFormat";
 import type {
   DelegationRoster,
   PresenceDegradation,
@@ -64,7 +64,15 @@ export function worktreeSignature(
   const rows = Object.keys(presence.rowsByWorktreeId)
     .sort()
     .map((worktreeId) => {
-      const list = presence.rowsByWorktreeId[worktreeId] ?? [];
+      // Keyed on what is DRAWN. A pane holding no proven agent is not a row in
+      // this panel, so its activity flipping — a shell running a build emits
+      // output for minutes — moved this key and tore the whole list down through
+      // `replaceChildren` to change nothing anyone could see (round-2 F001).
+      //
+      // A row crossing between the two sets still moves the key, because it
+      // enters or leaves this list: it is only motion WITHIN the hidden set that
+      // is now silent, which is the motion that had nothing to draw.
+      const list = displayedRows(presence.rowsByWorktreeId[worktreeId] ?? []);
       return [worktreeId, list.map((r) => agentRowFields(r, presence.degradedSources, now)).join(ROW_SEP)].join(
         SECTION_SEP,
       );
@@ -112,6 +120,9 @@ export function agentRowFields(r: WorktreeAgentRow, degraded: readonly PresenceD
     // must move the signature like any other change (D4).
     r.preview ?? "",
     r.agent ?? "",
+    // The chip's own text: an external row that learns its host, or loses it
+    // when the table cannot be read, draws a different word in the same slot.
+    r.host ?? "",
     r.agentSource,
     r.activity,
     r.activitySource,

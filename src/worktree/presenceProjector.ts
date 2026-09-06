@@ -53,6 +53,15 @@ export interface ResolutionSnapshot {
   sessions(): Promise<RunningSessionsOutcome>;
   /** Newest vault entry for a proven agent under this cwd, once per rebuild. */
   sessionUnderCwd?(agent: VaultAgentId, cwd: string): Promise<string | undefined>;
+  /**
+   * The application hosting a live session's process, from this rebuild's table.
+   *
+   * Only external rows ask: a window row's host is this window by construction.
+   * Absent, or resolving to `undefined`, means the row says "outside this window"
+   * without naming anyone — which is the honest answer wherever no process is
+   * bundled (Linux) or the table could not be read.
+   */
+  ownerAppOf?(pid: number): Promise<string | undefined>;
 }
 
 /**
@@ -933,12 +942,13 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
    * sensitive, so an unsorted append re-renders on a poll that found nothing
    * new (D5).
    */
-  function externalRows(
+  async function externalRows(
     sessions: readonly RunningClaudeSession[],
     worktreeIds: readonly string[],
     claimed: ReadonlyMap<string, string>,
     now: number,
-  ): Array<{ worktreeId: string; row: WorktreeAgentRow }> {
+    snapshot: ResolutionSnapshot,
+  ): Promise<Array<{ worktreeId: string; row: WorktreeAgentRow }>> {
     const out: Array<{ worktreeId: string; row: WorktreeAgentRow }> = [];
     for (const session of sessions) {
       const entryId = formatEntryId(REGISTRY_AGENT, session.sessionId);
@@ -957,6 +967,9 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
       // no launch time gets the moment this projection first saw it instead.
       const startedAt = session.startedAt ?? externalSeen.get(rowId) ?? now;
       externalSeen.set(rowId, startedAt);
+      // Asked only for a row that will actually be drawn — the claimed and
+      // unattributed sessions have already been dropped above.
+      const host = await snapshot.ownerAppOf?.(session.pid);
       const registryActivity = registrySessionActivity(session.status);
       const activity = registryActivity ?? "idle";
       const statusAt = Math.max(
@@ -977,6 +990,7 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
           activity,
           activitySource: registryActivity === undefined ? "none" : "registry",
           entryId,
+          ...(host === undefined ? {} : { host }),
           pid: session.pid,
           startedAt,
           stateStartedAt: statusAt,
@@ -1208,7 +1222,7 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
           }
         }
       }
-      for (const { worktreeId, row } of externalRows(sessions, worktreeIds, claimed, now)) {
+      for (const { worktreeId, row } of await externalRows(sessions, worktreeIds, claimed, now, snapshot)) {
         (rowsByWorktreeId[worktreeId] ??= []).push(row);
         const at = row.lastActivityAt;
         if (at !== undefined) {

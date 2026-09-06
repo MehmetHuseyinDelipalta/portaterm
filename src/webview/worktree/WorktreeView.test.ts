@@ -10,7 +10,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetTooltipForTests } from "../ui/Tooltip";
-import { ICON_TERMINAL } from "../vault/icons";
 import type { WorktreeMenuActions } from "./WorktreeContextMenu";
 import { MAX_WORKTREES_PER_REPO, WorktreeView, type WorktreeViewData, type WorktreeViewDeps } from "./WorktreeView";
 import {
@@ -321,7 +320,22 @@ describe("tree structure", () => {
     const { view } = mount();
     // `activitySource: "none"` is unknown on its own — nothing was degraded, and
     // nothing decided it either, so `idle` would be a claim with no evidence.
-    view.setData(populated());
+    // Carried by an agent row, because that is the only kind this view draws:
+    // a registry session whose status the registry never recorded.
+    const presence = singleRepoPresence(NOW);
+    presence.rowsByWorktreeId[MAIN_PATH] = [
+      agentRow({
+        rowId: "silent",
+        scope: "external",
+        agent: "claude",
+        agentSource: "registry",
+        activity: "idle",
+        activitySource: "none",
+        title: "Sash regression hunt",
+        entryId: "claude:silent",
+      }),
+    ];
+    view.setData(populated({ presence }));
     const dots = Array.from(view.element.querySelectorAll(".wt-arow .wt-state")).map((d) => d.className);
     expect(dots.some((c) => c.includes("wt-state--unknown"))).toBe(true);
   });
@@ -1007,9 +1021,16 @@ describe("tree structure", () => {
           degradedSources: [],
           rowsByWorktreeId: {
             [PANEL_WT]: [
-              agentRow({ rowId: "h", activity: "running", activitySource: "hook", stateStartedAt: NOW - 60 * 60_000 }),
+              agentRow({
+                rowId: "h",
+                agent: "claude",
+                activity: "running",
+                activitySource: "hook",
+                stateStartedAt: NOW - 60 * 60_000,
+              }),
               agentRow({
                 rowId: "past",
+                agent: "claude",
                 activity: "running",
                 activitySource: "output",
                 stateStartedAt: NOW - 60 * 60_000,
@@ -1026,7 +1047,15 @@ describe("tree structure", () => {
           scannedAt: NOW,
           degradedSources: [],
           rowsByWorktreeId: {
-            [PANEL_WT]: [agentRow({ rowId: "s", activity: "running", activitySource: "output", stateStartedAt: NOW })],
+            [PANEL_WT]: [
+              agentRow({
+                rowId: "s",
+                agent: "claude",
+                activity: "running",
+                activitySource: "output",
+                stateStartedAt: NOW,
+              }),
+            ],
           },
         },
       });
@@ -1050,8 +1079,20 @@ describe("tree structure", () => {
           degradedSources: [],
           rowsByWorktreeId: {
             [PANEL_WT]: [
-              agentRow({ rowId: "a", activity: "running", activitySource: "output", stateStartedAt: NOW - 4 * 60_000 }),
-              agentRow({ rowId: "b", activity: "running", activitySource: "output", stateStartedAt: NOW - 60_000 }),
+              agentRow({
+                rowId: "a",
+                agent: "claude",
+                activity: "running",
+                activitySource: "output",
+                stateStartedAt: NOW - 4 * 60_000,
+              }),
+              agentRow({
+                rowId: "b",
+                agent: "claude",
+                activity: "running",
+                activitySource: "output",
+                stateStartedAt: NOW - 60_000,
+              }),
             ],
           },
         },
@@ -1085,7 +1126,7 @@ describe("tree structure", () => {
     view.setData(populated());
     const group = view.element.querySelector(".wt-group");
     expect(group?.querySelector(".wt-branch")?.textContent).toBe("main");
-    expect(group?.querySelectorAll(".wt-arow").length).toBe(5);
+    expect(group?.querySelectorAll(".wt-arow").length).toBe(4);
   });
 
   it("caps a large repo with a Show all affordance rather than truncating silently", () => {
@@ -1523,26 +1564,13 @@ describe("agent rows", () => {
   // The [I2] tag moved to the composed test in webview/integration/paneEvidenceReporting.test.ts
   // (design.md D5). This builds its row by hand, so it proves the renderer honours
   // `agentSource` — it cannot prove production ever sets it to anything but "launch".
-  it("shows no agent icon when identity is unproven", () => {
+  it("draws no row for a pane holding no proven agent", () => {
     const { view } = mount();
     view.setData(populated());
+    // The fixture still carries one: presence projects a row per pane, and this
+    // view is the thing that decides a terminal is not an agent.
     const shell = agentRows(view).find((r) => r.querySelector(".wt-atitle")?.textContent?.startsWith("zsh"));
-    // `shell?.…` on a missing row yields undefined, and `expect(undefined).not.toBeNull()`
-    // passes — so the row has to be pinned before anything is asked of it (round-4 B2).
-    expect(shell, "no unproven-identity row in the fixture").toBeDefined();
-    const icon = shell?.querySelector<HTMLElement>(".wt-aicon");
-    expect(icon).not.toBeNull();
-    // The three things that separate a plain terminal glyph from a brand badge: the glyph
-    // is the shared terminal icon, no brand name reaches the tooltip, and no agent accent
-    // reaches the style attribute. Asserting only "some svg is present" cannot tell a
-    // terminal glyph from the Claude mark.
-    // Through a parse on both sides: jsdom rewrites `<rect …/>` to `<rect …></rect>`, so
-    // comparing rendered markup against the raw constant fails on the serializer, not the claim.
-    const expected = document.createElement("span");
-    expected.innerHTML = ICON_TERMINAL;
-    expect(icon?.innerHTML).toBe(expected.innerHTML);
-    expect(icon?.dataset.tip).toBeUndefined();
-    expect(icon?.style.color).toBe("");
+    expect(shell).toBeUndefined();
   });
 
   it("marks a fallback activity source without touching the icon", () => {
@@ -1568,13 +1596,19 @@ describe("agent rows", () => {
   // presence; that it actually sits under the title is task 1_2's manual check.
   it("gives a previewed row a preview line and a preview-less row none", () => {
     const { view } = mount();
-    view.setData(populated());
+    const presence = singleRepoPresence(NOW);
+    // Appended rather than borrowed: every fixture row that carried no preview
+    // was a terminal, and this view draws none of those.
+    presence.rowsByWorktreeId[MAIN_PATH]?.push(
+      agentRow({ rowId: "quiet", agent: "claude", title: "quiet", paneId: "pane-9" }),
+    );
+    view.setData(populated({ presence }));
     const rows = agentRows(view);
     expect(rows[0]?.querySelector(".wt-apreview")?.textContent).toBe("Approve the git worktree add?");
-    const shell = rows.find((r) => r.querySelector(".wt-atitle")?.textContent?.startsWith("zsh"));
-    expect(shell, "no preview-less row in the fixture").toBeDefined();
+    const bare = rows.find((r) => r.querySelector(".wt-apreview") === null);
+    expect(bare, "no preview-less row in the fixture").toBeDefined();
     // Absent, not empty: an empty span still claims a row's worth of height.
-    expect(shell?.querySelector(".wt-apreview")).toBeNull();
+    expect(bare?.querySelector(".wt-apreview")).toBeNull();
   });
 
   it("presents the preview verbatim everywhere, marker and all", () => {
@@ -3545,6 +3579,19 @@ describe("the idle tail", () => {
     const { view } = mount({ now: () => NOW });
     view.setData({ tree: tree(["a", "b", "c", "d"]), presence: presence(["b", "d"]) });
     expect(branchesInOrder(view)).toEqual(["b", "d", "a", "c"]);
+  });
+
+  it("classifies a worktree with only an agent-less pane as idle", () => {
+    const { view } = mount({ now: () => NOW });
+    const held = presence(["b"]);
+    // Presence keeps projecting a row for this pane — activity, exit and
+    // attribution are facts about panes. The panel draws none of it, so the
+    // worktree must sort and fold as what it shows: nothing (round-1 F001).
+    held.rowsByWorktreeId["/wt/a"] = [
+      agentRow({ rowId: "shell-a", agentSource: "none", activitySource: "none", title: "zsh", paneId: "pane-1" }),
+    ];
+    view.setData({ tree: tree(["a", "b", "c"]), presence: held });
+    expect(branchesInOrder(view)).toEqual(["b", "a", "c"]);
   });
 
   it("leaves a worktree of unknown presence in the leading part", () => {

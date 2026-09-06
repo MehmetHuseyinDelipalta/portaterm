@@ -423,6 +423,10 @@ describe("agentCountLabel", () => {
     expect(agentCountLabel(1)).toBe("1 agent");
     expect(agentCountLabel(3)).toBe("3 agents");
   });
+
+  it("names agents even when there are none", () => {
+    expect(agentCountLabel(0)).toBe("0 agents");
+  });
 });
 
 describe("presentedPreview", () => {
