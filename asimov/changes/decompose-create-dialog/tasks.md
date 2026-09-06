@@ -33,7 +33,7 @@ stops if the count disagrees with design.md D1.
     2. Add `src/webview/worktree/createDialog/bringSummaries.test.ts`, no pragma (OBL-3), exercising every export.
     3. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
-- [ ] 1_3 Extract the row rendering
+- [x] 1_3 Extract the row rendering — verified: pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_2
   - **Refs**: design.md D1, design.md D2
   - **Boundary**: reads `BringRow` flags; recomputes nothing the model owns
@@ -41,7 +41,7 @@ stops if the count disagrees with design.md D1.
     - Outcome: how a provisioning row is drawn lives outside the dialog closure.
     - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts
   - **Plan**:
-    1. Create `src/webview/worktree/createDialog/bringRowView.ts` with `bringProblem`, `switchRow`, `STEP_NAME_CHARS`, `stepName`, `stepButton`, `bringRow`.
+    1. Create `src/webview/worktree/createDialog/bringRowView.ts` with `bringProblem`, `switchRow`, `STEP_NAME_CHARS`, `stepName`, `stepButton`, `bringRow`, moving them out of `src/webview/worktree/WorktreeCreateDialog.ts`.
     2. No new suite: the 386-case suite already drives every one of these through `openWorktreeCreateDialog` (rows at `:2187-2304`, problems and switches at `:2307-2755`, added-step actions at `:6276-6610`), and a second assertion of the same markup proves nothing (D2).
     3. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 

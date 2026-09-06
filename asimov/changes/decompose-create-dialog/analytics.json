@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "target": {
+    "kind": "change",
+    "id": "decompose-create-dialog"
+  },
+  "sessions": [
+    {
+      "sessionId": "83708d46-2968-4e5a-988b-f5cd424f1a70",
+      "runtime": "claude",
+      "author": "huybuidac@gmail.com",
+      "attachedAt": 1788735353591,
+      "accounting": 2,
+      "windows": [
+        {
+          "from": 1788735353591,
+          "to": null
+        }
+      ],
+      "phases": [
+        {
+          "phase": "build",
+          "from": 1788735353591
+        }
+      ],
+      "firstAt": 1788735353591,
+      "lastAt": 1788735353591,
+      "buckets": []
+    }
+  ]
+}
