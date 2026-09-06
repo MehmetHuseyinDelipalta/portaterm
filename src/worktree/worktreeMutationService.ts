@@ -49,6 +49,7 @@ import type {
 } from "./migrateChanges";
 import { createMutationCoordinator, type MutationCoordinator, type MutationSettle } from "./mutationCoordinator";
 import { createMutationQueue } from "./mutationQueue";
+import { createSetupExecution, type PendingSetupRetry } from "./mutationService/setupExecution";
 import { disposeProvisionMaterials, type ProvisionMaterial, provisionEntryOf } from "./provisioning/provisionMaterial";
 import type { ReattachVerdict } from "./reattachProbe";
 import type { RemovalAssessment, RemovalEvidence } from "./worktreeBlockers";
@@ -564,28 +565,8 @@ export interface WorktreeMutationService extends WorktreeMutationCapabilities {
   issueDebrisAuthorization(path: string): Promise<DebrisIssueResult>;
 }
 
-interface SetupRetryRecord {
-  readonly repoId: string;
-  readonly worktreeId: string;
-  readonly worktreePath: string;
-  readonly incarnation: string;
-  readonly mainPath: string;
-  readonly branch: string;
-  readonly steps: readonly ProvisionSetupStep[];
-  readonly asimovEnvironment: boolean;
-  readonly ports: Readonly<Record<string, number>>;
-  readonly authorization: AuthorizedDirectory;
-  readonly materialized: readonly ProvisionStepResult[];
-  readonly portResults: readonly ProvisionPortResult[];
-  retryId: string;
-}
-
-interface PendingSetupRetry extends Omit<SetupRetryRecord, "incarnation" | "retryId"> {}
-
 export function createWorktreeMutationService(deps: MutationServiceDeps): WorktreeMutationService {
   const fingerprints = createFingerprintStore();
-  const setupRetries = new Map<string, SetupRetryRecord>();
-  const newSetupRetryId = deps.newSetupRetryId ?? (() => crypto.randomUUID());
   const debrisAuthorizations = deps.debrisAuthorizations ?? createDebrisAuthorizationStore();
   // The module's own, not deps assembled from `pathDeps`: the boundary's
   // ordering rule holds only while every probe is synchronous, and the async
@@ -598,54 +579,19 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
       gate: { request: async (repoId) => void (await deps.forceRebuild(repoId)) },
     });
 
-  const retryKey = (repoId: string, worktreeId: string): string => JSON.stringify([repoId, worktreeId]);
-
-  const failedSetup = (steps: readonly ProvisionSetupStep[], reason: string): readonly ProvisionSetupResult[] =>
-    steps.map((step, index) => ({
-      id: step.id,
-      source: step.source,
-      script: step.script,
-      outcome:
-        index === 0
-          ? { kind: "failed" as const, reason }
-          : { kind: "skipped" as const, reason: "previous setup step failed" },
-    }));
-
-  const portEnvironment = (ports: readonly ProvisionPortResult[]): Readonly<Record<string, number>> => {
-    const environment: Record<string, number> = Object.create(null);
-    for (const port of ports) {
-      if (port.outcome.kind === "allocated" || port.outcome.kind === "reused") {
-        environment[port.name] = port.outcome.port;
-      }
-    }
-    return environment;
-  };
-
-  const executeSetup = async (input: SetupExecutionInput, origin?: WorktreeSurface): Promise<SetupExecutionOutcome> => {
-    if (deps.runSetup === undefined) {
-      return { steps: failedSetup(input.steps, "this window cannot run setup"), succeeded: false };
-    }
-    return deps.runSetup(input, origin).catch((error: unknown) => ({
-      steps: failedSetup(input.steps, messageOf(error)),
-      succeeded: false,
-    }));
-  };
-
-  const writeManifest = async (
-    worktreePath: string,
-    steps: readonly ProvisionStepResult[],
-    ports: readonly ProvisionPortResult[],
-    setup: readonly ProvisionSetupResult[],
-  ): Promise<string | undefined> => {
-    if (deps.writeProvisionManifest === undefined) {
-      return undefined;
-    }
-    try {
-      return (await deps.writeProvisionManifest(worktreePath, steps, ports, setup)).warning;
-    } catch (error) {
-      return `the provisioning manifest could not be written: ${messageOf(error)}`;
-    }
-  };
+  // Setup execution and the retry authority it hands out. The map, its key and
+  // its id minting live together in there — the one-shot property is their
+  // conjunction, not the map's alone (design.md D3).
+  const setup = createSetupExecution({
+    coordinator,
+    newSetupRetryId: deps.newSetupRetryId ?? (() => crypto.randomUUID()),
+    resolve: (target) => deps.resolve(target),
+    ...(deps.runSetup === undefined ? {} : { runSetup: deps.runSetup }),
+    ...(deps.writeProvisionManifest === undefined ? {} : { writeProvisionManifest: deps.writeProvisionManifest }),
+    ...(deps.retireSetupOutput === undefined ? {} : { retireSetupOutput: deps.retireSetupOutput }),
+    ...(deps.reportProvisioning === undefined ? {} : { reportProvisioning: deps.reportProvisioning }),
+  });
+  const { executeSetup, writeManifest, failedSetup, portEnvironment } = setup;
 
   /**
    * Run `body` against whatever `target` names AFTER the rebuild.
@@ -728,95 +674,10 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
           fingerprints.forget(worktreeId);
         }
       }
-      for (const [key, retry] of setupRetries) {
-        if (!present.has(retry.worktreeId)) {
-          setupRetries.delete(key);
-        }
-      }
+      setup.forgetAbsent(present);
     },
 
-    retrySetup(target, retryId) {
-      const key = retryKey(target.repoId, target.worktreeId);
-      const held = setupRetries.get(key);
-      if (held === undefined || held.retryId !== retryId) {
-        return Promise.resolve();
-      }
-      // Spend before queueing, so a double click cannot enqueue the same authority twice.
-      held.retryId = newSetupRetryId();
-      deps.retireSetupOutput?.(held.worktreeId);
-      return coordinator
-        .run<ResolvedTarget, WorktreeProvisionResultMessage | null>(target.repoId, {
-          resolve: async () => deps.resolve(target),
-          missing: async () => null,
-          body: async (resolved) => {
-            if (
-              resolved.incarnation !== held.incarnation ||
-              normalizePathForCompare(resolved.worktreePath) !== normalizePathForCompare(held.worktreePath)
-            ) {
-              return null;
-            }
-            const setup = await executeSetup(
-              {
-                repoId: held.repoId,
-                mainPath: held.mainPath,
-                worktreeId: held.worktreeId,
-                worktreePath: held.worktreePath,
-                branch: held.branch,
-                steps: held.steps,
-                asimovEnvironment: held.asimovEnvironment,
-                ports: held.ports,
-                authorization: held.authorization,
-              },
-              target.origin,
-            );
-            const manifestWarning = await writeManifest(
-              held.worktreePath,
-              held.materialized,
-              held.portResults,
-              setup.steps,
-            );
-            if (setup.succeeded) {
-              setupRetries.delete(key);
-            }
-            return {
-              type: "worktreeProvisionResult",
-              worktreeId: held.worktreeId,
-              setup: setup.steps,
-              ...(setup.outputId === undefined ? {} : { setupOutputId: setup.outputId }),
-              ...(setup.succeeded ? {} : { setupRetryId: held.retryId }),
-              ...(manifestWarning === undefined ? {} : { manifestWarning }),
-            };
-          },
-        })
-        .then(
-          (outcome) => {
-            if (outcome === null) {
-              setupRetries.delete(key);
-              deps.reportProvisioning?.(
-                {
-                  type: "worktreeProvisionResult",
-                  worktreeId: held.worktreeId,
-                  setup: failedSetup(held.steps, "the worktree identity changed before setup retry"),
-                },
-                target.origin,
-              );
-              return;
-            }
-            deps.reportProvisioning?.(outcome, target.origin);
-          },
-          (error: unknown) => {
-            setupRetries.delete(key);
-            deps.reportProvisioning?.(
-              {
-                type: "worktreeProvisionResult",
-                worktreeId: held.worktreeId,
-                setup: failedSetup(held.steps, messageOf(error)),
-              },
-              target.origin,
-            );
-          },
-        );
-    },
+    retrySetup: (target, retryId) => setup.retrySetup(target, retryId),
 
     issueFingerprint(target, evidence) {
       const resolved = deps.resolve(target);
@@ -1726,19 +1587,11 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
           (outcome) => {
             let reported = outcome;
             if (outcome.kind === "ok" && outcome.worktreeId !== undefined && outcome.provision !== undefined) {
-              const key = retryKey(request.repoId, outcome.worktreeId);
-              setupRetries.delete(key);
-              if (pendingSetupRetry !== undefined) {
-                const current = deps.resolve({ repoId: request.repoId, worktreeId: outcome.worktreeId });
-                if (
-                  current !== null &&
-                  normalizePathForCompare(current.worktreePath) ===
-                    normalizePathForCompare(pendingSetupRetry.worktreePath)
-                ) {
-                  const retryId = newSetupRetryId();
-                  setupRetries.set(key, { ...pendingSetupRetry, incarnation: current.incarnation, retryId });
-                  reported = { ...outcome, provision: { ...outcome.provision, setupRetryId: retryId } };
-                }
+              // One call: the retire and the mint-and-insert are the same
+              // decision, and the id has to be minted where the map is (D3).
+              const retryId = setup.register(request.repoId, outcome.worktreeId, pendingSetupRetry);
+              if (retryId !== null) {
+                reported = { ...outcome, provision: { ...outcome.provision, setupRetryId: retryId } };
               }
             }
             deps.report(reported, request.origin);

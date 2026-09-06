@@ -2,7 +2,7 @@
 
 ## 1. Extractions
 
-- [ ] 1_1 Extract setup execution and its retry authority
+- [x] 1_1 Extract setup execution and its retry authority — verified: pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/worktree/mutationService/setupExecution.test.ts && pnpm run check-types exit 0
   - **Deps**: none
   - **Refs**: design.md D1, design.md D1b, design.md D3, design.md D4
   - **Boundary**: the map, its key and its id minting move as one unit — the facade keeps no reference to any of the three, and no caller outside the module mints a retry id
