@@ -14,7 +14,7 @@
     5. In `src/test/sessionMocks.ts` add `headlessFactories(options?: { serialize?: (addonIndex: number) => string; onWrite?: (data: string) => void; track?: boolean })` returning `{ headless, serialize }`, where `headless(cols, rows)` yields `{ cols, rows, write(data, cb) { options.onWrite?.(data); cb?.(); }, resize() {}, dispose() {}, loadAddon() {} }` and each `serialize` addon calls `options.serialize` on every `serialize()` invocation, passing its own 1-based construction index, defaulting to `` (n) => `BUF#${n}` ``.
     6. In the same factory, when `track` is set, also return `builtHeadless` and `builtAddons` arrays whose entries carry a `disposed` boolean that each object's own `dispose()` sets to `true`.
 
-- [ ] 1_2 Pin the three load-bearing factory behaviours with a direct test
+- [x] 1_2 Pin the three load-bearing factory behaviours with a direct test — verified: pnpm exec vitest run src/test/sessionMocks.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_1
   - **Refs**: design.md#d5-obligation-ledger, design.md#d2-preservation-proof
   - **Acceptance**:
