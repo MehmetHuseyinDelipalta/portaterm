@@ -230,14 +230,59 @@ describe("create worktree — the default and every consequential action explain
     });
   };
 
+  it("says nothing about an empty name until the user has been in the field", () => {
+    // The form opening is not the user's answer. Naming the empty field on sight
+    // — and again under every click, since each one re-renders — reads as being
+    // told off for not having typed yet (260906-at-create-dialog-errors-before-touch).
+    const { host, q } = open();
+    const reason = (): string => host.querySelector<HTMLElement>(".wt-create-disabled-reason")?.textContent ?? "";
+    const create = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find((b) =>
+      b.textContent?.startsWith("Create worktree"),
+    );
+    expect(create, "the form has no Create button").toBeDefined();
+    expect(reason()).toBe("");
+    // Still disabled, and still disabled for the same cause: what waits is the
+    // sentence, never the guard.
+    expect(create?.disabled).toBe(true);
+
+    for (const box of host.querySelectorAll<HTMLInputElement>("input[type=checkbox]")) {
+      box.click();
+    }
+    expect(reason()).toBe("");
+
+    q<HTMLInputElement>("#wt-branch").dispatchEvent(new Event("blur", { bubbles: true }));
+    expect(reason()).toBe("Enter a branch name.");
+  });
+
+  it("says it when a create is asked for, rather than sitting inert", () => {
+    // ⌘↵ reaches `submit` even while Create is disabled — the one way a user can
+    // ask without having been in the field, and the moment they have answered.
+    const { host } = open();
+    const dialog = host.querySelector<HTMLElement>(".wt-dialog");
+    expect(dialog).not.toBeNull();
+    dialog?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true }));
+    expect(host.querySelector<HTMLElement>(".wt-create-disabled-reason")?.textContent).toBe("Enter a branch name.");
+  });
+
   const reasonCases: ReasonCase[] = [
-    { name: "missing branch", expected: "Enter a branch name.", arrange: () => open() },
+    {
+      name: "missing branch",
+      expected: "Enter a branch name.",
+      // Left, not merely opened: the form does not name an empty field until the
+      // user has been in it, so the reason is earned rather than shown on sight.
+      arrange: () => {
+        const h = open();
+        h.q<HTMLInputElement>("#wt-branch").dispatchEvent(new Event("blur", { bubbles: true }));
+        return h;
+      },
+    },
     {
       name: "missing detached ref",
       expected: "Enter a ref to detach at.",
       arrange: () => {
         const h = open();
         h.q<HTMLButtonElement>("#wt-detached").click();
+        h.q<HTMLInputElement>("#wt-base").dispatchEvent(new Event("blur", { bubbles: true }));
         return h;
       },
     },

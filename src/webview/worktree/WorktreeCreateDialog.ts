@@ -2486,8 +2486,28 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     return { offerId: drawnOfferId, itemIds: [...(checkedByOffer.get(drawnOfferId) ?? [])] };
   }
 
+  /**
+   * Has the user been in the field the form would refuse, and left it?
+   *
+   * A form that opens already saying "Enter a branch name." is scolding someone
+   * for not having typed yet — the emptiness is the form's own opening state,
+   * not their answer. Leaving the field, or asking to create, is what makes it
+   * theirs. Only the EMPTY-field prompt waits on this: a name the host actually
+   * refused is a verdict about text the user did type, and says so at once.
+   */
+  let nameLeft = false;
+  let baseLeft = false;
+
   function submit(): void {
     if (createBtn.disabled || heldBranch() !== undefined) {
+      // Asking to create IS the moment the user has answered, so a form that
+      // was staying quiet now says what it is waiting for rather than sitting
+      // inert under a disabled button (⌘↵ reaches here; the button cannot).
+      if (!nameLeft || !baseLeft) {
+        nameLeft = true;
+        baseLeft = true;
+        syncDerived(true);
+      }
       return;
     }
     const launch = afterChoice === "agent" ? agentBox.read() : {};
@@ -3346,8 +3366,12 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // field already has the vocabulary for a refusal, and `blockedBy` reads
     // `error` first, so a refused name never reads as one still being checked.
     const branchRefused = !detached && effective?.branchValid?.ok === false ? effective.branchValid.reason : undefined;
-    const error =
-      heldBy !== undefined
+    // An empty field the user has not left yet is not a name they got wrong.
+    // Every refusal below is ABOUT the branch name, so one guard covers them.
+    const unanswered = !detached && !nameLeft && draft.branchName.trim().length === 0;
+    const error = unanswered
+      ? undefined
+      : heldBy !== undefined
         ? `${draft.branchName.trim()} is checked out in ${heldBy}`
         : detached
           ? undefined
@@ -3387,12 +3411,18 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // default — submitting here would launch under a posture the user never
     // picked, which is the whole point of never preselecting one.
     const postureMissing = afterChoice === "agent" && agentBox.needsPosture();
+    // Blocked either way — Create is never offered without a target. What waits
+    // is only the SENTENCE: naming the empty field before the user has been in
+    // it is the scold, not the disabled button.
+    const unprompted = detached ? !baseLeft : !nameLeft;
     const blockedBy =
       error ??
       (!named
-        ? detached
-          ? "Enter a ref to detach at."
-          : "Enter a branch name."
+        ? unprompted
+          ? ""
+          : detached
+            ? "Enter a ref to detach at."
+            : "Enter a branch name."
         : unasked
           ? "Waiting to check this selection."
           : resolutionOutstanding
@@ -3413,9 +3443,11 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
                           ? "Choose a permission mode before starting the agent."
                           : undefined);
     createBtn.disabled = blockedBy !== undefined;
-    disabledReason.hidden = blockedBy === undefined;
+    // An empty reason is still a reason to disable — it is the one the form is
+    // deliberately not stating yet — so it must not be drawn as a blank line.
+    disabledReason.hidden = !blockedBy;
     disabledReason.textContent = blockedBy ?? "";
-    if (blockedBy === undefined) {
+    if (!blockedBy) {
       createBtn.removeAttribute("aria-describedby");
     } else {
       createBtn.setAttribute("aria-describedby", disabledReason.id);
@@ -3441,6 +3473,8 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   nameInput.addEventListener("change", edited);
   nameInput.addEventListener("blur", () => {
     closeList();
+    // Leaving the field is what turns its emptiness into the user's answer.
+    nameLeft = true;
     syncDerived(true);
   });
   nameInput.addEventListener("keydown", (ev) => {
@@ -3465,6 +3499,10 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   });
   baseInput.addEventListener("input", () => syncDerived());
   baseInput.addEventListener("change", edited);
+  baseInput.addEventListener("blur", () => {
+    baseLeft = true;
+    syncDerived(true);
+  });
   pathInput.addEventListener("change", edited);
   pathInput.addEventListener("input", () => stateDestination({ kind: "typed", path: pathInput.value }, true));
   shell.dialog.addEventListener("keydown", (ev) => {
