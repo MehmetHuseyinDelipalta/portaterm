@@ -14,7 +14,6 @@
 //  - The repo picker appears only once the workspace holds more than one repo.
 
 import type {
-  DebrisAuthorization,
   ProbeBase,
   ResolvedMode,
   WorktreeCreateResolutionMessage,
@@ -32,6 +31,8 @@ import { bothOrAll, claimingPerGroup } from "./createDialog/bringContention";
 import { bringProblem, bringRow, switchRow } from "./createDialog/bringRowView";
 import { bringRows, bringSummary, carryForward } from "./createDialog/bringSummaries";
 import { type AfterChoice, createDraftModel, type DestinationEdit } from "./createDialog/draftModel";
+import { lastSegment, shortPath } from "./createDialog/paths";
+import { createRecoverOffer } from "./createDialog/recoverOffer";
 import { createWorktreeAgentBox, initialSafeAgentId } from "./worktreeAgentBox";
 import { dialogTitle, field, keyHint, openDialogShell, selectControl, textButton } from "./worktreeDialogShell";
 import type {
@@ -45,29 +46,6 @@ import type {
   WorktreeRef,
   WorktreeRefOffer,
 } from "./worktreeViewTypes";
-
-/**
- * The destination, shortened for reading. Two trailing segments: one is not
- * enough to tell `…/anywhere-terminal-feat-x` in one root from the same name in
- * another, and the exact value is a focus or a hover away regardless.
- */
-function segments(path: string): string[] {
-  // Both separators. The host builds these with `node:path`, which produces `\\`
-  // on Windows — splitting on `/` alone leaves such a path whole, so the line
-  // renders unshortened and the collision note restates it in full: the two
-  // things this form exists to stop doing. Same idiom the file-tree panel and
-  // its data source already use, both module-private to their own files.
-  return path.split(/[/\\]/).filter(Boolean);
-}
-
-function shortPath(path: string): string {
-  const parts = segments(path);
-  return parts.length <= 2 ? path : `…/${parts.slice(-2).join("/")}`;
-}
-
-function lastSegment(path: string): string {
-  return segments(path).at(-1) ?? path;
-}
 
 // `AfterChoice` is the form's own vocabulary and lives with the answer it names
 // (createDialog/draftModel.ts). Opening the folder is one intent with two
@@ -264,7 +242,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   const model = createDraftModel({ initialRepoId, initialAfterChoice });
   /** The answer itself, mutated in place by the fields that own their own value. */
   const draft = model.draft;
-  /** How many picks this form has opened. Minted like `recoverAsks` (D7). */
+  /** How many picks this form has opened. Minted like `recoverAsks` in createDialog/recoverOffer.ts (D7). */
   let pickAsks = 0;
   /**
    * Which pick this form is waiting on, or null.
@@ -665,7 +643,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       if (anyAsking()) {
         return;
       }
-      // Minted here, like `recoverAsks` above: `token` separates two openings
+      // Minted here, like `recoverAsks` in createDialog/recoverOffer.ts: `token` separates two openings
       // and this separates two picks inside one, so an answer to an earlier
       // pick cannot be mistaken for an answer to this one (design.md D7).
       pickAsks += 1;
@@ -1639,7 +1617,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // The grant, only where it still covers the destination this form is
     // showing. Absent, the create is an ordinary one against a free path — the
     // form never asks for a removal it cannot name the authorization for.
-    const disposition = settledDisposition();
+    const disposition = recover.disposition();
     // The last hop. `checkedByOffer` has held this since WT-012.1 and nothing
     // read it, so every tick the user made was discarded at the submit and the
     // whole provisioning flow was inert end to end (.reviews/round-1.md F005).
@@ -1752,96 +1730,17 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
    */
   let resolutionOutstanding = false;
 
-  /** The user accepted the recover offer. Withdrawn by any change of selection. */
-  let recoverWanted = false;
-  /** The authorization the host issued, and the entries it was digested over. */
-  let recoverGrant: { path: string; authorization: DebrisAuthorization; entries: readonly string[] } | null = null;
-  /**
-   * Which request is outstanding, or null.
-   *
-   * A generation rather than a flag: an answer that arrives after the offer was
-   * withdrawn names the same path and would otherwise be kept, so a later
-   * re-acceptance reused a reading that acceptance never made (round-1 W2).
-   */
-  let recoverAsked: number | null = null;
-  let recoverAsks = 0;
-  /** Why the host refused, stated where the offer was — a refusal is an answer, not silence. */
-  let recoverRefused: string | null = null;
-
-  /**
-   * The directory this form would offer to clear, or null where it offers none.
-   *
-   * Only a candidate the suffixing SKIPPED, only where the resolution classified
-   * it as debris, and only where the create would actually take that path once
-   * it is cleared: under `reattach` the create acts on the registration's own
-   * path, so the skipped candidate is a directory this create never touches, and
-   * offering to delete it would be the round-3 B3 defect with a delete attached.
-   */
-  function debrisOffer(): string | null {
-    if (deps.onAuthorizeDebris === undefined || deps.bindDebrisAuthorization === undefined) {
-      // Nothing can answer the request, so the offer would be a control that
-      // cannot be acted on.
-      return null;
-    }
-    if (effective === null) {
-      return null;
-    }
-    const occupied = effective.occupiedCandidate;
-    if (occupied === undefined || occupied.disposition.kind !== "debris") {
-      return null;
-    }
-    // The MODE, said outright. Comparing `targetOf` against `freePath` was a
-    // proxy for it, and the two coincide whenever a stale registration's own
-    // path is also the first free candidate — which armed a clearance the
-    // service's repair branch never performs (round-1 B7).
-    // Adopt joins `reattach`, and more strongly: a repair's skipped candidate is
-    // merely a directory this create never touches, while an adoption's IS the
-    // directory being re-registered — so the offer would be to delete the work.
-    if (draft.branchMode !== "detached" && (effective.mode.kind === "reattach" || effective.mode.kind === "adopt")) {
-      return null;
-    }
-    return targetOf(effective) === effective.freePath ? occupied.path : null;
-  }
-
-  /** The disposition the form settled on — `debris` only under a grant for the path on screen. */
-  function settledDisposition(): { kind: "debris"; authorization: DebrisAuthorization } | undefined {
-    const offer = debrisOffer();
-    if (!recoverWanted || offer === null || recoverGrant === null || recoverGrant.path !== offer) {
-      return undefined;
-    }
-    return { kind: "debris", authorization: recoverGrant.authorization };
-  }
-
-  /** Forget an acceptance and its grant. The authorization binds one path and one content. */
-  function withdrawRecover(): void {
-    recoverWanted = false;
-    recoverGrant = null;
-    recoverAsked = null;
-    recoverRefused = null;
-    recoverBox.checked = false;
-  }
-
-  recoverBox.addEventListener("change", () => {
-    const offer = debrisOffer();
-    if (offer === null) {
-      recoverBox.checked = false;
-      return;
-    }
-    if (!recoverBox.checked) {
-      withdrawRecover();
-      syncDerived();
-      return;
-    }
-    recoverWanted = true;
-    recoverRefused = null;
-    if (recoverGrant?.path !== offer) {
-      // A grant for a different directory authorizes nothing here.
-      recoverGrant = null;
-      recoverAsks += 1;
-      recoverAsked = recoverAsks;
-      deps.onAuthorizeDebris?.({ repoId: draft.repoId, ask: recoverAsked, path: offer });
-    }
-    syncDerived();
+  const recover = createRecoverOffer({
+    recoverField,
+    recoverBox,
+    recoverText,
+    recoverNote,
+    draft,
+    effective: () => effective,
+    targetOf: (resolution) => targetOf(resolution),
+    onAuthorizeDebris: deps.onAuthorizeDebris,
+    canAnswer: deps.onAuthorizeDebris !== undefined && deps.bindDebrisAuthorization !== undefined,
+    syncDerived: (settled) => syncDerived(settled),
   });
 
   /** What the form would start a new branch from, where the mode takes one. */
@@ -1927,7 +1826,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       // And with it the acceptance: an authorization is issued over ONE path and
       // what was in it, so carrying it across a changed selection would submit a
       // token for a directory this create is no longer aimed at.
-      withdrawRecover();
+      recover.withdraw();
       // Only where an answer is actually coming. With no resolver bound none
       // ever arrives, and gating on it would leave Create permanently disabled
       // rather than waiting for something.
@@ -2059,49 +1958,6 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     syncDerived: (settled) => syncDerived(settled),
   });
 
-  /** How many entries the note names before it summarises the rest. */
-  const RECOVER_ENTRY_CAP = 6;
-
-  /**
-   * State the offer, and what accepting it would remove.
-   *
-   * The list is the one the AUTHORIZATION was digested over, so what is shown
-   * and what is bound cannot differ — a list read separately for display would
-   * be a second answer to the question the token already answered.
-   */
-  function renderRecover(): void {
-    const offer = debrisOffer();
-    if (offer === null) {
-      recoverField.hidden = true;
-      recoverNote.hidden = true;
-      recoverNote.textContent = "";
-      recoverBox.checked = false;
-      return;
-    }
-    recoverField.hidden = false;
-    recoverBox.checked = recoverWanted;
-    recoverText.textContent = `Clear existing folder and create here: ${lastSegment(offer)}`;
-    const note =
-      recoverRefused ??
-      (recoverAsked !== null
-        ? "Reading what is there…"
-        : recoverGrant !== null && recoverGrant.path === offer
-          ? recoverGrant.entries.length === 0
-            ? `Removes ${offer}, which is empty.`
-            : `Removes ${recoverGrant.entries.length} item(s) from ${offer}: ${listed(recoverGrant.entries)}`
-          : `${offer} is not a git checkout. Accepting clears it before the worktree is created.`);
-    recoverNote.hidden = false;
-    // `textContent`, not markup: these are directory names off the user's disk.
-    recoverNote.textContent = note;
-  }
-
-  /** The first few names, and a count for the rest — a capped list never reads as the whole set. */
-  function listed(entries: readonly string[]): string {
-    const shown = entries.slice(0, RECOVER_ENTRY_CAP).join(", ");
-    const rest = entries.length - RECOVER_ENTRY_CAP;
-    return rest > 0 ? `${shown} and ${rest} more.` : `${shown}.`;
-  }
-
   /**
    * Re-derive the path and its hint from the branch, and re-validate. The hint
    * names the collided path AND the suffixed one the create will actually use —
@@ -2121,7 +1977,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
    * after rendering has already drawn the answer it is about to discard.
    *
    * Idempotent, and guarded so a form sitting empty does not call
-   * `withdrawRecover` on every keystroke elsewhere.
+   * `recover.withdraw` on every keystroke elsewhere.
    */
   function withdrawTarget(): void {
     if (askedFor === null && !outstanding && !resolutionOutstanding && effective === null) {
@@ -2132,7 +1988,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     effective = null;
     outstanding = false;
     resolutionOutstanding = false;
-    withdrawRecover();
+    recover.withdraw();
   }
 
   function syncDerived(settled = false): void {
@@ -2259,7 +2115,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // An accepted recover replaces it: clearing the ground is what makes the
     // skipped candidate available, so that — not the suffix — is where this
     // create lands, and the line has to say so before Create authorizes it.
-    const recovered = settledDisposition() === undefined ? undefined : recoverGrant?.path;
+    const recovered = recover.grantedPath();
     const answered = recovered ?? (effective === null ? undefined : targetOf(effective));
     // The opening seed is the host's answer for `msg.branch ?? ""` — a concrete
     // free path, suffixed around whatever already occupies the bare candidate.
@@ -2363,7 +2219,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       }
     }
 
-    renderRecover();
+    recover.render();
 
     const heldBy = heldBranch();
     // git's own answer about the name on screen. `effective` is nulled on every
@@ -2442,7 +2298,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
                   ? "Waiting for the file picker."
                   : anyStepAsking()
                     ? "Waiting for the setup step."
-                    : recoverAsked !== null
+                    : recover.asking()
                       ? "Reading the existing folder before it can be cleared."
                       : baseUnresolvable
                         ? (verdict as { ok: false; reason: string }).reason
@@ -2752,29 +2608,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     if (model.closed() || answer.repoId !== draft.repoId) {
       return;
     }
-    const offer = debrisOffer();
-    // THIS request, not merely some request for this path. Accept, withdraw and
-    // accept again asks twice inside one opening, and the first answer arriving
-    // late would otherwise satisfy the second with a reading that request never
-    // made (round-1 W2, round-2 W2).
-    if (offer === null || recoverAsked === null || answer.ask !== recoverAsked || answer.path !== offer) {
-      return;
-    }
-    recoverAsked = null;
-    if (answer.granted) {
-      recoverGrant = { path: answer.path, authorization: answer.authorization, entries: answer.entries };
-      recoverRefused = null;
-    } else {
-      // Not debris, or unreadable — either way there is nothing to authorize,
-      // so the acceptance is withdrawn and the create falls back to the suffix.
-      recoverGrant = null;
-      recoverWanted = false;
-      recoverRefused =
-        answer.because === "notDebris"
-          ? "That directory holds a repository, so it will not be cleared."
-          : "That directory could not be read, so it will not be cleared.";
-    }
-    syncDerived();
+    recover.applyAnswer(answer);
   });
 
   syncOpenAfter();

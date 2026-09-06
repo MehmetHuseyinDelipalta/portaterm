@@ -60,7 +60,7 @@ stops if the count disagrees with design.md D1.
     3. Apply D4's negation rule at every site a moved `let` became an accessor.
     4. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
-- [ ] 1_5 Extract the recover offer
+- [x] 1_5 Extract the recover offer — verified: pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_4
   - **Refs**: design.md D1, design.md D1a, design.md D4
   - **Boundary**: the facade holds no reference to `recoverWanted`, `recoverGrant`, `recoverAsked`, `recoverAsks` or `recoverRefused`
@@ -69,9 +69,10 @@ stops if the count disagrees with design.md D1.
     - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts
   - **Plan**:
     1. Enumerate in both directions (D1a).
-    2. Create `src/webview/worktree/createDialog/recoverOffer.ts` with the five `let` bindings and `debrisOffer`, `settledDisposition`, `withdrawRecover`, `renderRecover`, `listed`, `RECOVER_ENTRY_CAP`.
-    3. Apply D4's negation rule at every site.
-    4. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
+    2. Create `src/webview/worktree/createDialog/recoverOffer.ts` with the five `let` bindings and `debrisOffer`, `settledDisposition`, `withdrawRecover`, `renderRecover`, `listed`, `RECOVER_ENTRY_CAP`, moving them out of `src/webview/worktree/WorktreeCreateDialog.ts`.
+    3. Move `segments`, `shortPath` and `lastSegment` to `src/webview/worktree/createDialog/paths.ts`; the offer needs `lastSegment` and threading a pure function through a deps interface would hide a shared seam task 1_9 needs too.
+    4. Apply D4's negation rule at every site.
+    5. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
 - [ ] 1_6 Extract the resolution asks
   - **Deps**: 1_5
