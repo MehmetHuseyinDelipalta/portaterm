@@ -108,13 +108,21 @@ and rewriting the oracle to fit the change would destroy the evidence.
 
 ### D4: Allowed non-pure transformations
 
-- `2_1`/`2_2`/`2_3`: the six parsed sites vary in how they reject a non-object parse —
+- `2_1`/`2_2`/`2_3`: the six parsed sites spell one predicate three ways —
   `if (parsed && typeof parsed === "object")` accepting (`claudeRecords:181`,
-  `codexReader:1062`) versus `if (!parsed || typeof parsed !== "object") continue` rejecting
-  (`claudeReader:128`, `claudeTeam:186`, `:261`, `:368`). They are contrapositives of one
-  predicate; the module states it once, rejecting form. Both admit `null`-excluded
-  `typeof "object"` values, **arrays included** — `typeof [] === "object"`. The module must admit
-  arrays too: narrowing to plain objects would change what six sites see.
+  `codexReader:1062`), `if (!parsed || typeof parsed !== "object") continue` rejecting
+  (`claudeTeam:186`, `:261`, `:368`), and `if (typeof parsed !== "object" || parsed === null)
+  continue` rejecting with the operands swapped (`claudeReader:128`). All three are equivalent;
+  the module states it once, rejecting form. All three admit `null`-excluded `typeof "object"`
+  values, **arrays included** — `typeof [] === "object"`. The module must admit arrays too:
+  narrowing to plain objects would change what six sites see.
+- `2_3`: `streamCodexRecords`'s `stampLineOrdinal` + `buffer.push` were also inside the old
+  per-line catch and are deliberately left outside the new one — unlike `streamClaudeRecords`,
+  which gets the wrap above. The distinction is reachability, not consistency: `onRecord` is a
+  **caller-supplied** callback whose throw is real and witnessed by a test, while these two are
+  internal and cannot throw for a `JSON.parse` result (probed round 1: `Object.defineProperty`
+  succeeds on every `JSON.parse` output — no frozen, non-configurable, proxy or exotic receiver
+  is constructible — and `detail.ts:57-102`'s `push` never reads a record's properties).
 - `2_1`/`2_2`/`2_3`: the local `stream` and `rl` variables and their `finally` block disappear
   from each caller, since the generator now owns that lifecycle. The `try/catch` around the loop
   stays.
@@ -179,3 +187,4 @@ change it by accident; fixing it is a separate behaviour change with its own spe
 | The line ordinal drifts, degrading a user-visible transcript locator quietly | OBL-1's witness already exists at `codexReader.detail.test.ts:339-359` and was written for precisely this property |
 | The refactor is judged by tests it also edited | D3 forbids editing any existing test; the 580 reader tests stay untouched as the oracle |
 | `jsonlStream.ts` grows into its own shape | D2 re-runs `asm refactor shape` on it and on every reader written to |
+| The two-generator chain costs ~1.4x per line (round 1 F002: 51-63 ms → 78-88 ms over 200k lines / 51.8 MB) | Accepted, not fixed. The only fix collapses the two seams back into one and re-duplicates the lifecycle this change removes. It reaches just the two read-to-EOF callers (`streamCodexRecords`, `streamClaudeRecords` on detail open) — listing breaks early on both readers — and those reads are already head+tail bounded. The number is Bun-measured; the extension host is Node, so re-measure there before acting |

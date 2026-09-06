@@ -41,6 +41,14 @@ export async function* streamJsonlLines(filePath: string): AsyncGenerator<{ line
  * The predicate is exactly the one all six parsed call sites use today, so
  * **arrays are yielded** — `typeof [] === "object"`. Narrowing to plain objects
  * would change what those sites see (D5 OBL-5).
+ *
+ * `record` is therefore declared narrower than what it can hold: an array
+ * reaches you typed as `Record<string, unknown>`. This is the same cast all six
+ * sites made inline before the extraction, kept so the seam stays behaviour-
+ * preserving — every caller here indexes by string key, which is safe on both
+ * shapes. Do NOT assume string-keyed iteration or `Object.keys` semantics; if a
+ * future consumer needs the distinction, widen the type and refine at the six
+ * call sites as its own change (review round 1, F001).
  */
 export async function* streamJsonlObjects(
   filePath: string,

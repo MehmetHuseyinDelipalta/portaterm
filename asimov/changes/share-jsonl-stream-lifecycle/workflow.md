@@ -14,9 +14,9 @@
 
 - [x] All tasks done (`tasks.md`)
 - [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
-- [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
-- [ ] Gate: implementation approved
-- [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
+- [x] Review done _(user-initiated; `[-]` + reason if skipped)_
+- [x] Gate: implementation approved
+- [-] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_ — `Blueprint: none`
 
 ## Archive
 
@@ -42,5 +42,6 @@ Witnesses: OBL-1 pass; OBL-2 pass; OBL-3 pass; OBL-4 pass; OBL-5 pass; OBL-6 pas
 Verify-task `--cmd`: `pnpm run check-types` rather than the full test script, because `pnpm run test:unit` is load-flaky (project.md § "test:unit is load-flaky") and three refusals lock a task. Each task's own Verify — the reader suite — was run by `verify-task` itself, and the full 7878-test suite was run once at the Verify Gate.
 Lint: `pnpm exec biome check src` exits 1 on three pre-existing findings in files this change never touches (`webview/worktree/worktreeFormat.ts:30`, `session/SnapshotPersistence.ts:504`, `vault/VaultService.customName.test.ts:23`). Scoped to this change's seven files it exits 0.
 Shape after: all five touched readers plus `jsonlStream.ts` (65 lines) are `unremarkable` — the frame did not move into a new shape. Production shrank 2561 → 2429 lines against 64 added.
+Review: cycle 1 round 1 — WARN, 0 blocking, 2 WARN + 1 SUGGEST, all accepted and closed doc-only (no logic changed, so the cycle ends at Re-Verify). Chair corrected one D4 fact of mine: the six sites spell the record predicate three ways, not two — `claudeReader:128` swaps the operands.
 Knowledge candidate: claudeRecords.readFirstUserRecord:216 parses with no object guard, so one literal `null` line ends the whole title lookup at :229 | Surprise: expected the same guard the other six sites carry; the inner catch wraps only JSON.parse, so the TypeError escapes to the file-level catch | Evidence: src/vault/readers/claudeRecords.ts#readFirstUserRecord | Consumer: plan | Action: a separate behaviour-changing change with its own spec delta; OBL-8 pins the current answer so this refactor cannot drift it.
 Verify field choice: reader suites are node-ish and would pass under `bun test`, but each Verify is written `command pnpm exec vitest run <path>` so the recorded runner is the project's, not asm's default.
