@@ -7,8 +7,13 @@
 // that was the only difference between their copies of the posting primitives.
 
 import * as vscode from "vscode";
+import { descendantPids } from "../pty/processTree";
+import { type ResolveClaudeSessionDeps, resolveClaudeSession } from "../session/resolveClaudeSession";
 import type { SessionManager } from "../session/SessionManager";
 import type { ExtensionToWebViewMessage, WebViewToExtensionMessage } from "../types/messages";
+import { claudeSessionMtime, readClaudeSessions } from "../vault/readers/claudeReader";
+import { indexRunningSessionsOrEmpty, listRunningClaudeSessions } from "../vault/readers/runningSessions";
+import { resolveSubagentDetail, resolveSubagentDetailByEntryId } from "../vault/readers/subagentLookup";
 import type { VaultService } from "../vault/VaultService";
 import { readHoverPreviewSettings } from "./hoverPreviewSettings";
 import { previewFileLink } from "./previewFileLink";
@@ -272,6 +277,87 @@ export async function handleVaultSessionDetailRequest(ctx: {
       entryId,
       error: err instanceof Error ? err.message : "Failed to read session detail",
       ...echo,
+    });
+  }
+}
+
+/** Wire SessionManager + Claude readers into the `resolveClaudeSession` deps. */
+export function subagentResolveDeps(sessionManager: SessionManager): ResolveClaudeSessionDeps {
+  return {
+    getPtyPid: (id) => sessionManager.getSession(id)?.pty.pid,
+    getCwd: async (id) =>
+      (await sessionManager.getLiveCwd(id)) ??
+      sessionManager.getCurrentCwd(id) ??
+      sessionManager.getInitialCwd(id),
+    runningIndex: () => indexRunningSessionsOrEmpty(listRunningClaudeSessions()),
+    descendantPids: (pid) => descendantPids(pid),
+    sessionMtime: (sessionId) => claudeSessionMtime(sessionId),
+    newestSessionUnderCwd: async (cwd) => {
+      const { entries } = await readClaudeSessions({});
+      let best: { sessionId: string; cwd: string } | null = null;
+      let bestMtime = Number.NEGATIVE_INFINITY;
+      for (const entry of entries) {
+        if (entry.agent === "claude" && entry.cwd === cwd && entry.modified > bestMtime) {
+          best = { sessionId: entry.sessionId, cwd: entry.cwd };
+          bestMtime = entry.modified;
+        }
+      }
+      return best;
+    },
+  };
+}
+
+/**
+ * Resolve a clicked subagent (Task) line in a running Claude terminal to its
+ * sub-session transcript: map the terminal to its live Claude `sessionId`
+ * (process-tree ∩ PID registry, cwd/mtime fallback), then prefix-match the
+ * clicked `description` against that session's subagent stubs. Replies with a
+ * `subagentPreviewResponse` echoing `requestId`; a missing session / no match /
+ * read error becomes an `error` marker — it never throws (design.md D3).
+ *
+ * `post` is injected because the two providers genuinely differ here: the
+ * editor posts each of the four reply paths once, the sidebar/panel view
+ * retries each (D5 OBL-4). That asymmetry is preserved, not reconciled.
+ */
+export async function handleSubagentPreviewRequest(
+  message: Extract<WebViewToExtensionMessage, { type: "requestSubagentPreview" }>,
+  ctx: {
+    sessionManager: SessionManager;
+    post: (message: ExtensionToWebViewMessage) => void;
+  },
+): Promise<void> {
+  const { sessionManager, post } = ctx;
+  const { terminalId, requestId, description, entryId } = message;
+  try {
+    // Nested drill-down: resolve the named child by its vault entryId (no live
+    // terminal/description matching) and echo entryId so the popup routes the
+    // reply to that nested block (support-nested-subagent-preview D5).
+    if (entryId) {
+      const nested = await resolveSubagentDetailByEntryId(entryId);
+      post(
+        nested
+          ? { type: "subagentPreviewResponse", requestId, entryId, detail: nested }
+          : { type: "subagentPreviewResponse", requestId, entryId, error: "notFound" },
+      );
+      return;
+    }
+    const session = await resolveClaudeSession(terminalId, subagentResolveDeps(sessionManager));
+    if (!session) {
+      post({ type: "subagentPreviewResponse", requestId, error: "noSession" });
+      return;
+    }
+    const detail = await resolveSubagentDetail(session.sessionId, description);
+    post(
+      detail
+        ? { type: "subagentPreviewResponse", requestId, detail }
+        : { type: "subagentPreviewResponse", requestId, error: "notFound" },
+    );
+  } catch (err) {
+    post({
+      type: "subagentPreviewResponse",
+      requestId,
+      ...(entryId ? { entryId } : {}),
+      error: err instanceof Error ? err.message : "Failed to read subagent transcript",
     });
   }
 }

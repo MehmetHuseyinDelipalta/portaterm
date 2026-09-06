@@ -57,7 +57,7 @@
     6. In both providers remove any import left unused by the move.
   - **Boundary**: no edits to any existing test file
 
-- [ ] 2_2 Move subagent preview behind an injected post
+- [x] 2_2 Move subagent preview behind an injected post — verified: pnpm exec vitest run src/providers && pnpm run check-types exit 0
   - **Deps**: 1_2, 1_3, 2_1
   - **Refs**: design.md#d1-target-structure, design.md#d5-obligation-ledger
   - **Acceptance**:

@@ -1,10 +1,8 @@
 import * as crypto from "node:crypto";
 import * as vscode from "vscode";
-import { descendantPids } from "../pty/processTree";
 import { disposalGrace } from "../session/closeGates";
 import { confirmKill, type RunningAgentPane } from "../session/killConfirmation";
 import type { PaneEvidenceStore } from "../session/PaneEvidenceStore";
-import { type ResolveClaudeSessionDeps, resolveClaudeSession } from "../session/resolveClaudeSession";
 import type { SessionManager } from "../session/SessionManager";
 import type { PendingSnapshot } from "../session/SessionSnapshot";
 import {
@@ -21,9 +19,6 @@ import type {
 } from "../types/messages";
 import { isWorktreeMessage } from "../types/messages";
 import { createTrackedPathResolver, type ResolvedPathMemo } from "../utils/resolvedPathMemo";
-import { claudeSessionMtime, readClaudeSessions } from "../vault/readers/claudeReader";
-import { indexRunningSessionsOrEmpty, listRunningClaudeSessions } from "../vault/readers/runningSessions";
-import { resolveSubagentDetail, resolveSubagentDetailByEntryId } from "../vault/readers/subagentLookup";
 import { agentKindForExecutable } from "../vault/registry";
 import type { VaultService } from "../vault/VaultService";
 import { handlePasteClipboardImage, handlePasteOsClipboardImage, readImageFromOsClipboard } from "./clipboardImageSync";
@@ -39,6 +34,7 @@ import type { WorktreeAttachment, WorktreeHost, WorktreeSurface } from "./Worktr
 import { getTerminalHtml } from "./webviewHtml";
 import {
   handleFilePreviewRequest,
+  handleSubagentPreviewRequest,
   handleVaultSessionDetailRequest,
   handleVaultSessionsRequest,
   postOnce,
@@ -853,13 +849,6 @@ export class TerminalEditorProvider {
   }
 
   /**
-   * Resolve a clicked subagent (Task) line in a running Claude editor-terminal to
-   * its sub-session transcript and reply with `subagentPreviewResponse`. Mirrors
-   * `TerminalViewProvider.handleRequestSubagentPreview`; posts to this panel's
-   * webview. A missing session / no match / read error becomes an `error` marker —
-   * it never throws (design.md D3).
-   */
-  /**
    * The vault list, so the preview overlay has the entry it opens ON. Mirrors
    * `TerminalViewProvider.handleRequestVaultSessions`; the sequence token drops a
    * refresh a newer request has already superseded, including across the retry
@@ -893,68 +882,17 @@ export class TerminalEditorProvider {
     });
   }
 
+  /**
+   * Mirrors `TerminalViewProvider.handleRequestSubagentPreview`, except that this
+   * panel posts each reply ONCE where the view retries (D5 OBL-4).
+   */
   private async handleRequestSubagentPreview(
     message: Extract<WebViewToExtensionMessage, { type: "requestSubagentPreview" }>,
   ): Promise<void> {
-    const { terminalId, requestId, description, entryId } = message;
-    try {
-      // Nested drill-down: resolve the named child by its vault entryId (no live
-      // terminal/description matching) and echo entryId so the popup routes the
-      // reply to that nested block (support-nested-subagent-preview D5).
-      if (entryId) {
-        const nested = await resolveSubagentDetailByEntryId(entryId);
-        this.safePostMessage(
-          nested
-            ? { type: "subagentPreviewResponse", requestId, entryId, detail: nested }
-            : { type: "subagentPreviewResponse", requestId, entryId, error: "notFound" },
-        );
-        return;
-      }
-      const session = await resolveClaudeSession(terminalId, this.subagentResolveDeps());
-      if (!session) {
-        this.safePostMessage({ type: "subagentPreviewResponse", requestId, error: "noSession" });
-        return;
-      }
-      const detail = await resolveSubagentDetail(session.sessionId, description);
-      this.safePostMessage(
-        detail
-          ? { type: "subagentPreviewResponse", requestId, detail }
-          : { type: "subagentPreviewResponse", requestId, error: "notFound" },
-      );
-    } catch (err) {
-      this.safePostMessage({
-        type: "subagentPreviewResponse",
-        requestId,
-        ...(entryId ? { entryId } : {}),
-        error: err instanceof Error ? err.message : "Failed to read subagent transcript",
-      });
-    }
-  }
-
-  /** Wire SessionManager + Claude readers into the `resolveClaudeSession` deps. */
-  private subagentResolveDeps(): ResolveClaudeSessionDeps {
-    return {
-      getPtyPid: (id) => this.sessionManager.getSession(id)?.pty.pid,
-      getCwd: async (id) =>
-        (await this.sessionManager.getLiveCwd(id)) ??
-        this.sessionManager.getCurrentCwd(id) ??
-        this.sessionManager.getInitialCwd(id),
-      runningIndex: () => indexRunningSessionsOrEmpty(listRunningClaudeSessions()),
-      descendantPids: (pid) => descendantPids(pid),
-      sessionMtime: (sessionId) => claudeSessionMtime(sessionId),
-      newestSessionUnderCwd: async (cwd) => {
-        const { entries } = await readClaudeSessions({});
-        let best: { sessionId: string; cwd: string } | null = null;
-        let bestMtime = Number.NEGATIVE_INFINITY;
-        for (const entry of entries) {
-          if (entry.agent === "claude" && entry.cwd === cwd && entry.modified > bestMtime) {
-            best = { sessionId: entry.sessionId, cwd: entry.cwd };
-            bestMtime = entry.modified;
-          }
-        }
-        return best;
-      },
-    };
+    await handleSubagentPreviewRequest(message, {
+      sessionManager: this.sessionManager,
+      post: (msg) => postOnce(this._panel.webview, msg),
+    });
   }
 
   /**
