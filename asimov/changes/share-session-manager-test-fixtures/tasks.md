@@ -39,7 +39,7 @@
     2. In `src/session/SessionManager.editorPanels.test.ts` delete the local `makeStorageMock` and call `sessionStorageMock()`, keeping the suite's existing reference to `scheduleLivePanelsWrite` by reading it off the returned object.
     3. In `src/session/SessionManager.deactivate.test.ts` delete the local `makeStorageMock` and `makeFactories` and call `sessionStorageMock()` and `headlessFactories({ serialize: () => "BUFFER" })`.
 
-- [ ] 2_2 Move the two concurrency suites onto the shared factories
+- [x] 2_2 Move the two concurrency suites onto the shared factories — verified: pnpm exec vitest run src/session/SessionManager.persist.test.ts src/session/SessionManager.shutdownLifecycle.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_2
   - **Refs**: design.md#d3-expected-test-moves, design.md#d5-obligation-ledger
   - **Acceptance**:

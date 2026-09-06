@@ -13,82 +13,23 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetAll, __setAppRoot, __setWorkspaceFolders } from "../test/__mocks__/vscode";
-import { mockPtySessions, mockWebview } from "../test/sessionMocks";
+import { headlessFactories, mockPtySessions, mockWebview, sessionStorageMock } from "../test/sessionMocks";
 
 vi.mock("../pty/processCwd", async () => (await import("../test/sessionMocks")).processCwdMock());
 vi.mock("../pty/PtyManager", async () => (await import("../test/sessionMocks")).ptyManagerMock());
 vi.mock("../pty/PtySession", async () => (await import("../test/sessionMocks")).ptySessionMock());
 vi.mock("./OutputBuffer", async () => (await import("../test/sessionMocks")).outputBufferMock());
 
-import { type HeadlessFactory, type SerializeAddonFactory, SessionManager } from "./SessionManager";
+import { SessionManager } from "./SessionManager";
 
-function makeStorageMock() {
-  const bufferGens = new Map<string, number>();
-  let sidecarGen = 0;
-  const commitBufferSync = vi.fn((id: string, _data: string) => {
-    bufferGens.set(id, (bufferGens.get(id) ?? 0) + 1);
-  });
-  const commitBufferAsync = vi.fn(async (id: string, _data: string, capturedGen: number) => {
-    if ((bufferGens.get(id) ?? 0) !== capturedGen) {
-      return "stale-skipped" as const;
-    }
-    return "renamed" as const;
-  });
-  const commitIndexSync = vi.fn((_idx: unknown) => {
-    sidecarGen += 1;
-  });
-  const commitIndexAsync = vi.fn(async (_idx: unknown, capturedGen: number) => {
-    if (sidecarGen !== capturedGen) {
-      return "stale-skipped" as const;
-    }
-    return "renamed" as const;
-  });
-  const dropBuffer = vi.fn((id: string) => {
-    bufferGens.set(id, (bufferGens.get(id) ?? 0) + 1);
-  });
-  const currentBufferGen = vi.fn((id: string) => bufferGens.get(id) ?? 0);
-  const currentSidecarGen = vi.fn(() => sidecarGen);
-  const cleanupOrphanTemps = vi.fn();
-  const writeIndexAwaited = vi.fn(async () => {});
-  const writeLivePanelsAwaited = vi.fn(async () => {});
-  return {
-    commitBufferSync,
-    commitBufferAsync,
-    commitIndexSync,
-    commitIndexAsync,
-    dropBuffer,
-    currentBufferGen,
-    currentSidecarGen,
-    cleanupOrphanTemps,
-    writeIndexAwaited,
-    writeLivePanelsAwaited,
-    readBufferFile: () => null,
-    listBufferFiles: () => [],
-    loadIndex: () => undefined,
-    loadLivePanels: () => undefined,
-    bufferFilePath: (id: string) => `/tmp/snap/${id}`,
-    bufferFileRelativePath: (id: string) => `snapshots/${id}.snapshot.ans`,
-    cancelPendingIndex: vi.fn(),
-    purge: vi.fn(async () => {}),
-  };
-}
+const makeStorageMock = () => sessionStorageMock();
 
 function makeFactories() {
   // Per-session serialize counter so each generateSnapshotMetadata returns
   // a unique buffer payload — lets us tell pre-clear from post-clear writes.
   let serializeCount = 0;
   let nextSerialize: string | null = null;
-  const headless: HeadlessFactory = (cols, rows) => ({
-    cols,
-    rows,
-    write(_data, cb) {
-      cb?.();
-    },
-    resize() {},
-    dispose() {},
-    loadAddon() {},
-  });
-  const serialize: SerializeAddonFactory = () => ({
+  const { headless, serialize } = headlessFactories({
     serialize: () => {
       if (nextSerialize !== null) {
         const v = nextSerialize;
@@ -97,7 +38,6 @@ function makeFactories() {
       }
       return `BUF#${++serializeCount}`;
     },
-    dispose() {},
   });
   return {
     headless,
