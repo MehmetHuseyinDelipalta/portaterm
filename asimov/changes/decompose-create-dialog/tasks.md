@@ -127,8 +127,22 @@ stops if the count disagrees with design.md D1.
     2. Create `src/webview/worktree/createDialog/formFields.ts` building the branch, destination, mode, base, path and migration fields and returning them as a record the facade destructures, moving them out of `src/webview/worktree/WorktreeCreateDialog.ts`.
     3. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
-- [ ] 1_10 Extract the host bindings, and confirm every file is under 500
+- [ ] 1_9b Extract the derive pass
   - **Deps**: 1_9
+  - **Refs**: design.md D1, design.md D1a, design.md D4
+  - **Boundary**: the facade holds no reference to `syncDerived`'s body; the module derives and states, and decides no host ask of its own
+  - **Acceptance**:
+    - Outcome: the render pass runs from its own module and the facade calls it.
+    - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts
+  - **Plan**:
+    1. Enumerate in both directions (D1a).
+    2. Create `src/webview/worktree/createDialog/derivePass.ts` with `syncDerived`, `syncAfterHint`, `syncOpenAfter` and `rebuildAfterOptions`, moving them out of `src/webview/worktree/WorktreeCreateDialog.ts`.
+    3. Split it further the moment either file reaches 500 — the destination line and the button gates are two subjects, not one.
+    4. Apply D4's negation rule at every site.
+    5. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
+
+- [ ] 1_10 Extract the host bindings, and confirm every file is under 500
+  - **Deps**: 1_9b
   - **Refs**: design.md D1, design.md § Obligation ledger
   - **Boundary**: `src/webview/worktree/WorktreeCreateDialog.ts` and every file under `src/webview/worktree/createDialog/` is under 500 lines
   - **Acceptance**:
