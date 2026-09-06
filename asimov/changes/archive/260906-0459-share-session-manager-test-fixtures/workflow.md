@@ -15,13 +15,13 @@
 - [x] All tasks done (`tasks.md`)
 - [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [x] Review done _(round 1: APPROVE, 0 blocking; F001-F003 accepted and fixed, F004 audit-backlog)_
-- [ ] Gate: implementation approved
-- [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
+- [x] Gate: implementation approved _(fastlane)_
+- [-] Blueprint sync complete — no blueprint for this change
 
 ## Archive
 
-- [ ] Apply deltas: `bun run asm change apply`
-- [ ] Archive change: `bun run asm change archive`
+- [x] Apply deltas: `bun run asm change apply`
+- [x] Archive change: `bun run asm change archive`
 
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
 
@@ -36,7 +36,7 @@ Planned at: 34a7680d
 Source: docs/audit/2026-09-05-slop-audit.md findings U-18 and I-06, deferred at audit time pending this fixture design.
 Real-dependency: none — the change edits test doubles only; no production path and no external dependency is involved.
 Verify field choice: every suite here calls `vi.mock`, so each Verify is `command pnpm exec vitest run <path>` rather than `unit <path>` — `asm verify-task`'s default `bun test` runner mis-runs these files.
-Audit correction: I-06's "two byte-identical copies, replace outright" is false at 34a7680d — `onReady`/`restore` differ from `sessionMocks` in `loadNodePty`'s spawn result, the `onData`/`onExit` field shape, and `isOutputPaused`. Carried as OBL-7/OBL-8 and task 3_1.
+Audit correction: I-06's "two byte-identical copies, replace outright" is false at 34a7680d — `onReady`/`restore` differ from `sessionMocks` in `loadNodePty`'s spawn result, the `onData`/`onExit` field shape, and `isOutputPaused`. Handled by task 3_1 as a widening rather than a swap. (The first draft carried this as OBL-7/OBL-8; both were removed at D6 once the oracle showed all three differences are unobservable — `PtySession` is mocked in every one of the five suites, so `loadNodePty` is never dereferenced.)
 Deliberately not cut: `SessionManager.snapshot.test.ts`'s `makeFactories` — its addon instrumentation is the subject under test (design.md D1).
 Oracle triage: 5 of 9 first-draft ledger rows accepted as refuted/unresolved and removed (design.md D6); 3 kept with consumer witnesses; 1 new row OBL-10 added from its finding 4; OBL-9's gate rewritten as OBL-11 to catch untracked files. Verified independently before accepting: `bufferFilePath` unreachable through the injected double, `loadNodePty` never dereferenced under `PtySession` mocks, `SessionManager.test.ts:462-470` needs its own handle. Net effect: two pieces of planned work dropped.
 Wave 3 built solo, not fanned out to fillers: its five tasks have disjoint leases but one decision thread (the same preservation rules), and the risk here is semantic — a suite passing for the wrong reason — which leases do not prevent.
