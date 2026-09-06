@@ -30,7 +30,7 @@
 
 ## 2. Action modules
 
-- [ ] 2_0 Extract the host types the action modules share
+- [x] 2_0 Extract the host types the action modules share — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_1
   - **Refs**: design.md D1, design.md D2
   - **Boundary**: types move only — no behaviour, no new field on any of them
