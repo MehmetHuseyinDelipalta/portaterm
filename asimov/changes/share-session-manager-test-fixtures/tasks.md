@@ -75,7 +75,7 @@
     2. In the same file import `mockPtySessions` from `../test/sessionMocks` and add `mockPtySessions.length = 0` to the existing `beforeEach`.
     3. Apply steps 1 and 2 to `src/providers/TerminalViewProvider.restore.test.ts`.
 
-- [ ] 3_2 Replace the three re-declared trios that carry extra controls
+- [x] 3_2 Replace the three re-declared trios that carry extra controls — verified: pnpm exec vitest run src/providers/TerminalEditorProvider.test.ts src/providers/TerminalViewProvider.test.ts src/session/SessionManager.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_2
   - **Refs**: design.md#d3-expected-test-moves, design.md#d5-obligation-ledger
   - **Acceptance**:

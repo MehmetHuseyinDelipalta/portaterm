@@ -20,28 +20,12 @@ const mockPtySessions: Array<{
   onExit: ((code: number) => void) | undefined;
 }> = [];
 
-vi.mock("../pty/processCwd", () => ({
-  queryProcessCwd: vi.fn(async (_pid: number) => undefined as string | undefined),
-}));
+vi.mock("../pty/processCwd", async () => (await import("../test/sessionMocks")).processCwdMock());
+vi.mock("../pty/PtyManager", async () => (await import("../test/sessionMocks")).ptyManagerMock());
 
-vi.mock("../pty/PtyManager", () => ({
-  loadNodePty: vi.fn(() => ({
-    spawn: vi.fn(() => ({
-      onData: vi.fn(() => ({ dispose: () => {} })),
-      onExit: vi.fn(() => ({ dispose: () => {} })),
-      write: vi.fn(),
-      resize: vi.fn(),
-      kill: vi.fn(),
-      pause: vi.fn(),
-      resume: vi.fn(),
-      pid: 12345,
-    })),
-  })),
-  detectShell: vi.fn(() => ({ shell: "/bin/zsh", args: ["--login"] })),
-  buildEnvironment: vi.fn(() => ({ PATH: "/usr/bin" })),
-  resolveWorkingDirectory: vi.fn(() => "/tmp"),
-}));
-
+// PtySession stays local: this suite's tracked handle captures spawn/write/
+// resize/kill and the shell-integration sink, which the shared 3-field handle
+// cannot express. See share-session-manager-test-fixtures/design.md OBL-10.
 vi.mock("../pty/PtySession", () => {
   class MockPtySession {
     id: string;
@@ -105,39 +89,7 @@ vi.mock("../pty/PtySession", () => {
   return { PtySession: MockPtySession };
 });
 
-vi.mock("./OutputBuffer", () => {
-  class MockOutputBuffer {
-    append = vi.fn();
-    handleAck = vi.fn();
-    dispose = vi.fn();
-    flush = vi.fn();
-    pauseOutput = vi.fn();
-    resumeOutput = vi.fn();
-    updateWebview = vi.fn();
-    /** Mock bufferSize — settable for testing getMemoryMetrics(). */
-    private _mockBufferSize = 0;
-    get bufferSize(): number {
-      return this._mockBufferSize;
-    }
-    set bufferSize(value: number) {
-      this._mockBufferSize = value;
-    }
-    /** Mock unackedCharCount — settable for testing getMemoryMetrics(). */
-    private _mockUnackedCharCount = 0;
-    get unackedCharCount(): number {
-      return this._mockUnackedCharCount;
-    }
-    set unackedCharCount(value: number) {
-      this._mockUnackedCharCount = value;
-    }
-    constructor(
-      public _tabId: string,
-      public _webview: unknown,
-      public _pty: unknown,
-    ) {}
-  }
-  return { OutputBuffer: MockOutputBuffer };
-});
+vi.mock("./OutputBuffer", async () => (await import("../test/sessionMocks")).outputBufferMock());
 
 import { SessionManager } from "./SessionManager";
 

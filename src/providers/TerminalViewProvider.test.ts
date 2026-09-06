@@ -1,100 +1,11 @@
 // src/providers/TerminalViewProvider.test.ts — Unit tests for TerminalViewProvider
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetAll, __setAppRoot, __setWorkspaceFolders } from "../test/__mocks__/vscode";
+import { mockPtySessions } from "../test/sessionMocks";
 
-// Track mock PtySession instances for assertions
-const mockPtySessions: Array<{
-  id: string;
-  onData: ((data: string) => void) | undefined;
-  onExit: ((code: number) => void) | undefined;
-}> = [];
-
-// Mock PtyManager so no real PTY is spawned
-vi.mock("../pty/PtyManager", () => ({
-  loadNodePty: vi.fn(() => ({
-    spawn: vi.fn(() => ({
-      onData: vi.fn(() => ({ dispose: () => {} })),
-      onExit: vi.fn(() => ({ dispose: () => {} })),
-      write: vi.fn(),
-      resize: vi.fn(),
-      kill: vi.fn(),
-      pause: vi.fn(),
-      resume: vi.fn(),
-      pid: 12345,
-    })),
-  })),
-  detectShell: vi.fn(() => ({ shell: "/bin/zsh", args: ["--login"] })),
-  buildEnvironment: vi.fn(() => ({ PATH: "/usr/bin" })),
-  resolveWorkingDirectory: vi.fn(() => "/tmp"),
-}));
-
-// Mock PtySession
-vi.mock("../pty/PtySession", () => {
-  class MockPtySession {
-    id: string;
-    spawn = vi.fn();
-    write = vi.fn();
-    resize = vi.fn();
-    kill = vi.fn();
-    pause = vi.fn();
-    resume = vi.fn();
-    setShellIntegrationSink = vi.fn();
-    setShellIntegrationNonce = vi.fn();
-    private _onDataCallback: ((data: string) => void) | undefined;
-    private _onExitCallback: ((code: number) => void) | undefined;
-
-    get onData(): ((data: string) => void) | undefined {
-      return this._onDataCallback;
-    }
-    set onData(cb: ((data: string) => void) | undefined) {
-      this._onDataCallback = cb;
-      const tracked = mockPtySessions.find((p) => p.id === this.id);
-      if (tracked) {
-        tracked.onData = cb;
-      }
-    }
-
-    get onExit(): ((code: number) => void) | undefined {
-      return this._onExitCallback;
-    }
-    set onExit(cb: ((code: number) => void) | undefined) {
-      this._onExitCallback = cb;
-      const tracked = mockPtySessions.find((p) => p.id === this.id);
-      if (tracked) {
-        tracked.onExit = cb;
-      }
-    }
-
-    constructor(id: string) {
-      this.id = id;
-      mockPtySessions.push({
-        id,
-        onData: undefined,
-        onExit: undefined,
-      });
-    }
-  }
-  return { PtySession: MockPtySession };
-});
-
-// Mock OutputBuffer
-vi.mock("../session/OutputBuffer", () => {
-  class MockOutputBuffer {
-    append = vi.fn();
-    handleAck = vi.fn();
-    dispose = vi.fn();
-    flush = vi.fn();
-    pauseOutput = vi.fn();
-    resumeOutput = vi.fn();
-    updateWebview = vi.fn();
-    constructor(
-      public _tabId: string,
-      public _webview: unknown,
-      public _pty: unknown,
-    ) {}
-  }
-  return { OutputBuffer: MockOutputBuffer };
-});
+vi.mock("../pty/PtyManager", async () => (await import("../test/sessionMocks")).ptyManagerMock());
+vi.mock("../pty/PtySession", async () => (await import("../test/sessionMocks")).ptySessionMock());
+vi.mock("../session/OutputBuffer", async () => (await import("../test/sessionMocks")).outputBufferMock());
 
 vi.mock("./openFileLink", () => ({
   openFileLink: vi.fn(async () => {}),

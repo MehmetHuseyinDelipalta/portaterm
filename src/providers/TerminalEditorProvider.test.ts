@@ -7,62 +7,11 @@ import {
   __setConfigValues,
   __setWorkspaceFolders,
 } from "../test/__mocks__/vscode";
+import { mockPtySessions } from "../test/sessionMocks";
 
-// Mock PtyManager so no real PTY is spawned
-vi.mock("../pty/PtyManager", () => ({
-  loadNodePty: vi.fn(() => ({
-    spawn: vi.fn(() => ({
-      onData: vi.fn(() => ({ dispose: () => {} })),
-      onExit: vi.fn(() => ({ dispose: () => {} })),
-      write: vi.fn(),
-      resize: vi.fn(),
-      kill: vi.fn(),
-      pause: vi.fn(),
-      resume: vi.fn(),
-      pid: 12345,
-      process: "zsh",
-    })),
-  })),
-  detectShell: vi.fn(() => ({ shell: "/bin/zsh", args: ["--login"] })),
-  buildEnvironment: vi.fn(() => ({ PATH: "/usr/bin" })),
-  resolveWorkingDirectory: vi.fn(() => "/tmp"),
-}));
-
-// Mock PtySession
-vi.mock("../pty/PtySession", () => {
-  class MockPtySession {
-    id: string;
-    spawn = vi.fn();
-    write = vi.fn();
-    resize = vi.fn();
-    kill = vi.fn();
-    pause = vi.fn();
-    resume = vi.fn();
-    setShellIntegrationSink = vi.fn();
-    setShellIntegrationNonce = vi.fn();
-    onData: ((data: string) => void) | null = null;
-    onExit: ((code: number) => void) | null = null;
-    constructor(id: string) {
-      this.id = id;
-    }
-  }
-  return { PtySession: MockPtySession };
-});
-
-// Mock OutputBuffer
-vi.mock("../session/OutputBuffer", () => {
-  class MockOutputBuffer {
-    append = vi.fn();
-    handleAck = vi.fn();
-    dispose = vi.fn();
-    constructor(
-      public _tabId: string,
-      public _webview: unknown,
-      public _pty: unknown,
-    ) {}
-  }
-  return { OutputBuffer: MockOutputBuffer };
-});
+vi.mock("../pty/PtyManager", async () => (await import("../test/sessionMocks")).ptyManagerMock());
+vi.mock("../pty/PtySession", async () => (await import("../test/sessionMocks")).ptySessionMock());
+vi.mock("../session/OutputBuffer", async () => (await import("../test/sessionMocks")).outputBufferMock());
 
 vi.mock("./openFileLink", () => ({
   openFileLink: vi.fn(async () => {}),
@@ -81,6 +30,7 @@ beforeEach(() => {
   __setAppRoot("/mock/vscode/app");
   __setWorkspaceFolders([{ uri: { fsPath: "/mock/workspace" } }]);
   vi.clearAllMocks();
+  mockPtySessions.length = 0;
 });
 
 afterEach(() => {
