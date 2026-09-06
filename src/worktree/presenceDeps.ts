@@ -16,7 +16,7 @@ import {
   type ProcessTableSnapshot,
 } from "../pty/processTableSnapshot";
 import type { PaneEvidenceStore } from "../session/PaneEvidenceStore";
-import { resolveClaudeSession } from "../session/resolveClaudeSession";
+import { type PaneSubtree, resolveClaudeSession } from "../session/resolveClaudeSession";
 import { createTrackedPathResolver, ResolvedPathMemo } from "../utils/resolvedPathMemo";
 import { claudeSessionMtime, resolveClaudeSessionPath } from "../vault/readers/claudePaths";
 import {
@@ -226,22 +226,25 @@ export function createPresenceProjectorDeps(options: PresenceDepsOptions): Prese
             return { kind: "failed", source: "registry", reason: read.reason };
           }
           // The descendant lookup is checked before resolution rather than
-          // inside it: `ResolveClaudeSessionDeps.descendantPids` has no way to
-          // carry a failure, so the outcome would be flattened to "no pids".
-          let descendants: readonly number[] = [];
+          // inside it: a `failed` table degrades the whole pane read, which
+          // `PaneSubtree` deliberately cannot express — it separates an answer
+          // from an unreachable platform, not from a broken one.
+          let subtree: PaneSubtree = { kind: "unknown" };
           if (pane.ptyPid !== undefined) {
             const outcome = (await processTable()).descendantsOf(pane.ptyPid);
             if (outcome.kind === "failed") {
               return { kind: "failed", source: "panes", reason: outcome.reason };
             }
-            descendants = outcome.kind === "ok" ? outcome.pids : [];
+            // `unsupported` stays `unknown`: on Windows nothing was refuted, so
+            // the cwd fallback is still the only evidence there is.
+            subtree = outcome.kind === "ok" ? { kind: "known", pids: outcome.pids } : { kind: "unknown" };
           }
 
           const session = await resolveClaudeSession(pane.paneId, {
             getPtyPid: () => pane.ptyPid,
             getCwd: async () => pane.cwd,
             runningIndex: () => running,
-            descendantPids: async () => [...descendants],
+            paneSubtree: async () => subtree,
             sessionMtime: mtimeOf,
             // Presence claims identity only from evidence that proves an agent
             // is in this pane NOW. The newest transcript recorded under a

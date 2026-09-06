@@ -251,12 +251,30 @@ describe("resolution", () => {
     expect(row.agentSource).toBe("none");
   });
 
-  it("still resolves by cwd when the subtree lookup finds nothing", async () => {
-    const { store, projector } = wire({ listRunning: async () => ok(running({ pid: 999, cwd: "/repo/app" })) });
+  it("still resolves by cwd where no process table can be read", async () => {
+    // Windows, and only Windows: with nothing to refute the guess, the directory
+    // a live session was launched in is the strongest evidence there is.
+    const { store, projector } = wire({
+      table: table({ kind: "unsupported" }),
+      listRunning: async () => ok(running({ pid: 999, cwd: "/repo/app" })),
+    });
     store.create("a", { cwd: "/repo/app", ptyPid: 10 });
 
     const [row] = (await projector.project(["/repo"])).rowsByWorktreeId["/repo"];
     expect(row).toMatchObject({ agent: "claude", agentSource: "registry" });
+  });
+
+  it("refuses that same cwd match once a readable table places the session elsewhere", async () => {
+    // The reporter's case: another application runs claude in a directory a pane
+    // of this window also sits in. The default table here is readable and finds
+    // pid 999 under no pane of ours, which settles it — and leaving the session
+    // unclaimed is what lets the external pass badge it "other window".
+    const { store, projector } = wire({ listRunning: async () => ok(running({ pid: 999, cwd: "/repo/app" })) });
+    store.create("a", { cwd: "/repo/app", ptyPid: 10 });
+
+    const [row] = (await projector.project(["/repo"])).rowsByWorktreeId["/repo"];
+    expect(row.entryId).toBeUndefined();
+    expect(row.agentSource).toBe("none");
   });
 
   it("lets the launch record beat the registry, keeping the session handle", async () => {

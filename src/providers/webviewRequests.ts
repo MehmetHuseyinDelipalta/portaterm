@@ -7,7 +7,7 @@
 // that was the only difference between their copies of the posting primitives.
 
 import * as vscode from "vscode";
-import { descendantPids } from "../pty/processTree";
+import { createProcessTableSnapshot } from "../pty/processTableSnapshot";
 import { type ResolveClaudeSessionDeps, resolveClaudeSession } from "../session/resolveClaudeSession";
 import type { SessionManager } from "../session/SessionManager";
 import type { ExtensionToWebViewMessage, WebViewToExtensionMessage } from "../types/messages";
@@ -290,7 +290,13 @@ export function subagentResolveDeps(sessionManager: SessionManager): ResolveClau
     getCwd: async (id) =>
       (await sessionManager.getLiveCwd(id)) ?? sessionManager.getCurrentCwd(id) ?? sessionManager.getInitialCwd(id),
     runningIndex: () => indexRunningSessionsOrEmpty(listRunningClaudeSessions()),
-    descendantPids: (pid) => descendantPids(pid),
+    // Through the snapshot rather than `descendantPids`, which maps an
+    // unreachable platform and a real empty subtree both to `[]`. Only the
+    // former may keep the cwd fallback alive.
+    paneSubtree: async (pid) => {
+      const outcome = await createProcessTableSnapshot().descendantsOf(pid);
+      return outcome.kind === "ok" ? { kind: "known", pids: outcome.pids } : { kind: "unknown" };
+    },
     sessionMtime: (sessionId) => claudeSessionMtime(sessionId),
     newestSessionUnderCwd: async (cwd) => {
       const { entries } = await readClaudeSessions({});

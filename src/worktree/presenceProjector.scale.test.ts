@@ -22,13 +22,23 @@ const PANES = 10;
 
 const worktreeIds = Array.from({ length: WORKTREES }, (_, i) => `/repo/wt-${i}`);
 
+/** pane-`i`'s pty pid, matching the store below. */
+const PANE_0_PTY = 1000;
+/** The running claude, inside pane-0's pty subtree and no other's. */
+const LIVE_PID = 9000;
+
 function wireAtScale(panes: number = PANES) {
-  const outcome: DescendantsOutcome = { kind: "ok", pids: [] };
+  const empty: DescendantsOutcome = { kind: "ok", pids: [] };
+  // pane-0's pty holds the live session's pid. Nothing else does, which is both what
+  // makes pane-0 the one resolving pane and what keeps the other nine honest: a session
+  // the table places outside a pane is not that pane's, whatever directory they share.
+  const forPane0: DescendantsOutcome = { kind: "ok", pids: [LIVE_PID] };
+  const answer = (rootPid: number): DescendantsOutcome => (rootPid === PANE_0_PTY ? forPane0 : empty);
   // Spied INSIDE the snapshot, because that is where per-pane resolution work happens:
   // `open` is once per rebuild by design, so counting it cannot see a per-pane regression.
-  const descendantsFor = vi.fn(() => outcome);
+  const descendantsFor = vi.fn(answer);
   const open = vi.fn(async () => ({ descendantsOf: descendantsFor }));
-  const descendantsOf = vi.fn(async (): Promise<DescendantsOutcome> => outcome);
+  const descendantsOf = vi.fn(async (rootPid: number): Promise<DescendantsOutcome> => answer(rootPid));
   const processTable = { open, descendantsOf } as unknown as ProcessTableSnapshot;
 
   // A real running session for pane-0, so its identity RESOLVES — the proven cache is
@@ -37,7 +47,7 @@ function wireAtScale(panes: number = PANES) {
   const listRunning = vi.fn(
     async (): Promise<RunningSessionsOutcome> => ({
       kind: "ok",
-      sessions: [{ sessionId: "live-0", cwd: worktreeIds[0], pid: 1000 }],
+      sessions: [{ sessionId: "live-0", cwd: worktreeIds[0], pid: LIVE_PID }],
     }),
   );
   const sessionMtime = vi.fn(async () => 1);

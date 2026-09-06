@@ -95,7 +95,14 @@ export const defaultProcessTreeDeps: ProcessTreeDeps = {
 /**
  * Return every descendant pid of `rootPid` on macOS/Linux. Returns `[]` for an
  * invalid pid, an unsupported platform (e.g. Windows), or any `ps` failure —
- * never throws (the caller degrades to the cwd fallbacks).
+ * never throws.
+ *
+ * PREFER `createProcessTableSnapshot()` for anything that reasons about who owns
+ * a session. The `[]` here answers "this pty holds nothing" and "we could not
+ * look" identically, and a caller that cannot tell those apart will treat a
+ * directory two processes happen to share as ownership — which is how a session
+ * another application was running was drawn as this window's
+ * (260906-at-session-owner-other-window). No production caller remains.
  */
 export async function descendantPids(
   rootPid: number,

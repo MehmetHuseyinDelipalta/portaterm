@@ -3,12 +3,19 @@
 // terminal to its Claude session"):
 //   1. process subtree of the pane's pty ∩ running PID registry (exact pid;
 //      tie-break newest <sessionId>.jsonl mtime when >1);
-//   2. running registry entries whose cwd equals the pane's live cwd (newest mtime);
-//   3. newest Claude session recorded under that cwd (even if already exited).
+//   2. running registry entries whose cwd equals the pane's live cwd (newest
+//      mtime) — ONLY when step 1 could not be asked. A process table that
+//      answered names every pid on the machine, so a running session it did not
+//      place under this pty is a session this pane does not hold: matching it on
+//      the directory it happens to share is not weaker evidence, it is evidence
+//      already refuted (260906-at-session-owner-other-window);
+//   3. newest Claude session recorded under that cwd (even if already exited) —
+//      still reached after a conclusive step 1, because a transcript on disk
+//      carries no pid for the table to have refuted.
 //
 // SessionManager + reader access is injected via `deps` so the algorithm is
 // unit-tested without the host. The host (TerminalViewProvider) wires the real
-// implementations; on Windows `descendantPids` is `[]` so only the cwd fallbacks run.
+// implementations; on Windows the subtree is `unknown` so the cwd fallbacks run.
 
 import type { RunningClaudeSession, RunningSessionIndex } from "../vault/readers/runningSessions";
 
@@ -32,6 +39,16 @@ export const EVIDENCE_RANK: Record<ClaudeSessionEvidence, number> = {
   recent: 0,
 };
 
+/**
+ * What this window's process table could say about a pane's pty subtree.
+ *
+ * `known` with no pids is an ANSWER — this pty holds nothing — and is what lets
+ * step 2 stand down. It is not the same claim as `unknown`, which is a platform
+ * or a `ps` that could not be asked; collapsing the two is what let a pane claim
+ * a session another application was running.
+ */
+export type PaneSubtree = { kind: "known"; pids: readonly number[] } | { kind: "unknown" };
+
 export interface ResolvedClaudeSession {
   sessionId: string;
   cwd: string;
@@ -51,8 +68,13 @@ export interface ResolveClaudeSessionDeps {
    * machine (.reviews/round-2.md W1).
    */
   runningIndex(): Promise<RunningSessionIndex>;
-  /** Descendant pids of a root pid (processTree.ts); [] on Windows / error. */
-  descendantPids(rootPid: number): Promise<number[]>;
+  /**
+   * Descendant pids of a root pid, or `unknown` where no process table was
+   * reachable (Windows, a missing or timed-out `ps`). The distinction is the
+   * point: a caller that cannot tell "this pty holds nothing" from "we could not
+   * look" has no way to know when a directory match has already been refuted.
+   */
+  paneSubtree(rootPid: number): Promise<PaneSubtree>;
   /** mtime (epoch ms) of `<sessionId>.jsonl`, or undefined when unresolved. */
   sessionMtime(sessionId: string): Promise<number | undefined>;
   /** Newest Claude session (running or exited) recorded under `cwd`, or null. */
@@ -90,16 +112,21 @@ export async function resolveClaudeSession(
   const running = await deps.runningIndex();
 
   // Step 1 — exact: the claude node pid is a descendant of the pane's pty shell.
+  // `refuted` records that the table ANSWERED and placed no running session here.
+  let refuted = false;
   const ptyPid = deps.getPtyPid(terminalId);
   if (ptyPid !== undefined) {
-    const subtree = new Set(await deps.descendantPids(ptyPid));
-    const inTree = running.byPid(subtree);
-    if (inTree.length === 1) {
-      return { sessionId: inTree[0].sessionId, cwd: inTree[0].cwd, evidence: "process" };
-    }
-    if (inTree.length > 1) {
-      const best = await pickNewest(inTree, deps.sessionMtime);
-      return { sessionId: best.sessionId, cwd: best.cwd, evidence: "process" };
+    const subtree = await deps.paneSubtree(ptyPid);
+    if (subtree.kind === "known") {
+      const inTree = running.byPid(new Set(subtree.pids));
+      if (inTree.length === 1) {
+        return { sessionId: inTree[0].sessionId, cwd: inTree[0].cwd, evidence: "process" };
+      }
+      if (inTree.length > 1) {
+        const best = await pickNewest(inTree, deps.sessionMtime);
+        return { sessionId: best.sessionId, cwd: best.cwd, evidence: "process" };
+      }
+      refuted = true;
     }
   }
 
@@ -109,7 +136,10 @@ export async function resolveClaudeSession(
   if (cwd === undefined) {
     return null;
   }
-  const byCwd = running.byCwd(cwd);
+  // Step 2 stands down once the table has spoken: every candidate it offers is a
+  // LIVE session with a pid, and the same read that failed to find one under this
+  // pty found all of them somewhere else.
+  const byCwd = refuted ? [] : running.byCwd(cwd);
   if (byCwd.length > 0) {
     const best = await pickNewest(byCwd, deps.sessionMtime);
     return { sessionId: best.sessionId, cwd: best.cwd, evidence: "directory" };
