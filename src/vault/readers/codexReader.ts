@@ -7,11 +7,9 @@
 // ~/.codex/sessions/**/*.jsonl (first line's session_meta). A query-error on the
 // SQLite read is surfaced as unreadable rather than masked by the fallback.
 
-import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as readline from "node:readline";
 import { provesAbsence } from "../../utils/fsPresence";
 import { asRecord } from "../../utils/record";
 import { isResolvedPathInside } from "../../utils/resolvedPathBoundary";
@@ -44,6 +42,7 @@ import {
   truncate,
   truncateRich,
 } from "./detail";
+import { streamJsonlLines, streamJsonlObjects } from "./jsonlStream";
 import { findRecordLine, type RecordLineResult } from "./recordLine";
 import { parseEpochMilliseconds, parseStoredTimestamp } from "./timestamp";
 
@@ -380,23 +379,16 @@ async function walkJsonl(dir: string): Promise<string[]> {
 }
 
 async function readFirstLine(filePath: string): Promise<string | undefined> {
-  let stream: ReturnType<typeof createReadStream> | undefined;
-  let rl: readline.Interface | undefined;
   try {
-    stream = createReadStream(filePath, { encoding: "utf8" });
-    rl = readline.createInterface({
-      input: stream,
-      crlfDelay: Number.POSITIVE_INFINITY,
-    });
-    for await (const line of rl) {
+    // The lines-only seam: a blank or corrupt first line must come back as-is.
+    // `streamJsonlObjects` would skip it and hand back a later line, so a
+    // rollout with a blank head would report the wrong record as session_meta.
+    for await (const { line } of streamJsonlLines(filePath)) {
       return line;
     }
     return undefined;
   } catch {
     return undefined;
-  } finally {
-    rl?.close();
-    stream?.destroy();
   }
 }
 
@@ -1045,33 +1037,16 @@ async function streamCodexRecords(
   filePath: string,
 ): Promise<{ records: Record<string, unknown>[]; truncated: boolean } | null> {
   const buffer = createBoundedRecordBuffer();
-  let stream: ReturnType<typeof createReadStream> | undefined;
-  let rl: readline.Interface | undefined;
   try {
-    stream = createReadStream(filePath, { encoding: "utf8" });
-    rl = readline.createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY });
-    let lineNo = 0;
-    for await (const line of rl) {
-      lineNo++;
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed && typeof parsed === "object") {
-          stampLineOrdinal(parsed as Record<string, unknown>, lineNo);
-          buffer.push(parsed as Record<string, unknown>);
-        }
-      } catch {
-        // skip a corrupt line, keep reading (D8)
-      }
+    // The generator's `lineNo` is the physical line, counted before any skip —
+    // the same number the local counter produced, and what the `#n` transcript
+    // locator means.
+    for await (const { record, lineNo } of streamJsonlObjects(filePath)) {
+      stampLineOrdinal(record, lineNo);
+      buffer.push(record);
     }
   } catch {
     return null;
-  } finally {
-    rl?.close();
-    stream?.destroy();
   }
   return buffer.result();
 }
