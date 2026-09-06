@@ -41,4 +41,5 @@ Worktree: none — building on main at user's direction.
 Mode: fastlane from task 1_2 onward (user), incl. review to 3 rounds then archive.
 Next change (user-directed): WorktreeCreateDialog.ts + WorktreeView.ts — note CreateDialog is this change's declared non-goal; the churn/capture reasons in proposal.md stand and the cut there must be the headless form model, not a DOM split.
 D1 premise corrected during 1_2: the controller suite is not purely black-box — 7 tests bound the create form's sinks by assigning the private `apply*` fields. Retargeted to the channel seam (design.md D3); assertions untouched. The host suite was checked and has no equivalent poke.
+Planning defect found at 2_1, fixed in-contract: all four action factories need WorktreeSurface / AdmittedLaunch / LaunchTargetRecord / WorktreeActions across the module boundary, and two of those were unexported. Added barrier task 2_0 (hostTypes.ts) as predecessor per skeleton-first; 2_1 now Deps on it. 2_1's lease was parked unstarted — no code was written for it.
 

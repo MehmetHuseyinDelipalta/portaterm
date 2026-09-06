@@ -30,8 +30,21 @@
 
 ## 2. Action modules
 
-- [ ] 2_1 Move the thin action arms into a shell action factory
+- [ ] 2_0 Extract the host types the action modules share
   - **Deps**: 1_1
+  - **Refs**: design.md D1, design.md D2
+  - **Boundary**: types move only — no behaviour, no new field on any of them
+  - **Acceptance**:
+    - Outcome: the action-facing host types resolve from one module; host suites pass unchanged.
+    - Verify: command pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.test.ts
+  - **Plan**:
+    1. Create `src/providers/worktreeHost/hostTypes.ts` and move `WorktreeSurface`, `AdmittedLaunch` and `LaunchTargetRecord` into it from `src/providers/WorktreeHost.ts`, exporting each.
+    2. Move `WorktreeActions` and `WorktreeHostOptions` into the same module, since every action factory's `Deps` names `WorktreeActions`.
+    3. Re-export `WorktreeSurface`, `WorktreeActions` and `WorktreeHostOptions` from `src/providers/WorktreeHost.ts` so no existing importer changes.
+    4. Confirm no import cycle: `hostTypes.ts` imports nothing from `WorktreeHost.ts`.
+
+- [ ] 2_1 Move the thin action arms into a shell action factory
+  - **Deps**: 2_0
   - **Refs**: design.md D1, design.md D2, design.md D4
   - **Acceptance**:
     - Outcome: the twelve thin arms and `launch` live in `actions/shell.ts` behind an action table; host suites pass.
