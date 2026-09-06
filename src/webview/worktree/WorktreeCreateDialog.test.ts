@@ -287,19 +287,6 @@ describe("create worktree — the default and every consequential action explain
       },
     },
     {
-      name: "validation failure outranks host checks",
-      expected: "That branch name is invalid.",
-      arrange: () => {
-        const h = open({
-          validateBranch: () => "That branch name is invalid.",
-          onSelectionChange: () => {},
-          bindResolution: () => {},
-        });
-        type(h.q<HTMLInputElement>("#wt-branch"), "bad name");
-        return h;
-      },
-    },
-    {
       name: "selection not asked yet",
       expected: "Waiting to check this selection.",
       arrange: () => {
@@ -615,21 +602,6 @@ describe("create worktree — default state (§ 9)", () => {
 });
 
 describe("create worktree — invalid and collided (§ 10)", () => {
-  it("shows git's own message under an invalid branch name and refuses Create", () => {
-    const { q } = open({
-      validateBranch: (name) =>
-        name.includes(" ") ? "git check-ref-format: a branch name cannot contain a space." : undefined,
-    });
-    const input = q<HTMLInputElement>("#wt-branch");
-    type(input, "feat/worktree ui");
-    expect(input.classList.contains("is-invalid")).toBe(true);
-    expect(input.getAttribute("aria-invalid")).toBe("true");
-    expect(q<HTMLElement>(".wt-ferror").textContent).toBe(
-      "git check-ref-format: a branch name cannot contain a space.",
-    );
-    expect(q<HTMLButtonElement>(".wt-btn--primary").disabled).toBe(true);
-  });
-
   it("[1_2] states git's refusal on the field, not as a pending check", () => {
     // The seam above has been supplied by tests alone since it was written, so
     // until the host answered, a name git will not take read as a selection

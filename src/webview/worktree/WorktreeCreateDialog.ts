@@ -209,11 +209,6 @@ export interface WorktreeCreateDialogDeps {
   /** Which repo the create was invoked from. */
   initialRepoId?: string;
   /**
-   * Validate a branch name the way `git check-ref-format --branch` would. Supplied
-   * by the owner so the form holds no git knowledge; returns the message to show.
-   */
-  validateBranch?: (name: string) => string | undefined;
-  /**
    * The selection changed, so what a create would do has to be resolved again —
    * only the host can say which path is free and whether the base names a
    * commit. Called on every SETTLED edit, and it carries the whole selection
@@ -3375,8 +3370,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
         ? `${draft.branchName.trim()} is checked out in ${heldBy}`
         : detached
           ? undefined
-          : (branchRefused ?? deps.validateBranch?.(draft.branchName));
-    draft.branchError = error;
+          : branchRefused;
     nameError.textContent = error ?? "";
     nameError.hidden = !error;
     nameInput.classList.toggle("is-invalid", Boolean(error));

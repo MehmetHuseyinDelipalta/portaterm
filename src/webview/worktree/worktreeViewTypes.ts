@@ -318,8 +318,6 @@ export interface WorktreeCreateDraft {
   /** The chosen agent's own posture id — never a shared enum. */
   permissionChoiceId?: string;
   prompt?: string;
-  /** `git check-ref-format` said no; the message is shown under the field. */
-  branchError?: string;
   pathError?: string;
   /**
    * The classification the form was showing when this was submitted.
