@@ -1541,6 +1541,18 @@ describe("the create a toolbar with no repository opens", () => {
     menuActions(h).createWorktree(source);
     h.controller.handleCreateDefaults(answer(REPO_A, "/trees/a"));
     h.controller.handleCreateDefaults(answer(REPO_B, "/trees/b"));
+    // Named first: the form does not resolve a create with no target, so a
+    // switch with an empty field asks nothing and there is no request to read
+    // the source off (260906-at-create-dialog-resolves-an-empty-name). What is
+    // under test is which source rides the request, not whether one is sent.
+    const branch = document.querySelector<HTMLInputElement>("#wt-branch");
+    if (branch === null) {
+      throw new Error("expected the branch field");
+    }
+    branch.value = "feat/x";
+    branch.dispatchEvent(new Event("input", { bubbles: true }));
+    branch.dispatchEvent(new Event("change", { bubbles: true }));
+
     h.posts.length = 0;
     const select = document.querySelector<HTMLSelectElement>("#wt-repo-select");
     if (select === null) {

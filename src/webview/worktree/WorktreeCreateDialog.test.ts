@@ -295,12 +295,16 @@ describe("create worktree — the default and every consequential action explain
     expect(input.classList.contains("is-invalid")).toBe(false);
     expect(input.getAttribute("aria-invalid")).toBeNull();
 
-    // And it still refuses the same name once the field is one the user has used.
+    // And once the field IS one the user has used, the form still says what it
+    // wants — in its own words. git is never asked about an empty name at all
+    // now, so the verdict that used to arrive for `""` cannot: what the user
+    // sees is the form asking for a name, not git refusing one
+    // (260906-at-create-dialog-resolves-an-empty-name).
     type(input, "x");
     type(input, "");
     input.dispatchEvent(new Event("blur", { bubbles: true }));
-    expect(q<HTMLElement>(".wt-ferror").textContent).toBe('git will not take "" as a branch name.');
-    expect(input.classList.contains("is-invalid")).toBe(true);
+    expect(host.querySelector<HTMLElement>(".wt-ferror")?.hidden).toBe(true);
+    expect(host.querySelector<HTMLElement>(".wt-create-disabled-reason")?.textContent).toBe("Enter a branch name.");
   });
 
   it("says it when a create is asked for, rather than sitting inert", () => {

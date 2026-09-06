@@ -2791,6 +2791,16 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   /** Ask the host what this selection would do, at most once each. */
   function askForDestination(): void {
     const now = selection();
+    // There is nothing to resolve for a create with no target. Asking anyway got
+    // back a full plan for the empty name — a free suffixed path, the collision
+    // it stepped around, an offer to clear a folder — and the form drew all of it
+    // under a field nobody had typed in. The seeded destination line already says
+    // what the form knows at this point, and says it as a template rather than as
+    // a decision (260906-at-create-dialog-resolves-an-empty-name).
+    const target = draft.branchMode === "detached" ? draft.baseRef : now.branch;
+    if (target.trim().length === 0) {
+      return;
+    }
     const key = askKey(now);
     if (key === askedFor) {
       return;

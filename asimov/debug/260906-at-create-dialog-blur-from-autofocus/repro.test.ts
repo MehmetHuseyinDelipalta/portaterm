@@ -41,9 +41,12 @@ function open() {
         query: s.branch,
         mode: { kind: "fresh" },
         freePath: "/trees/repo-x",
-        branchValid: s.branch.trim()
-          ? { ok: true }
-          : { ok: false, reason: `git will not take "" as a branch name.` },
+        // git's real shape: a space is not allowed in a ref name.
+        branchValid: s.branch.includes(" ")
+          ? { ok: false, reason: `git will not take "${s.branch}" as a branch name.` }
+          : s.branch.trim()
+            ? { ok: true }
+            : { ok: false, reason: `git will not take "" as a branch name.` },
       });
     },
   });
@@ -85,10 +88,13 @@ describe("clicking a control does not refuse a name nobody typed", () => {
   it("still refuses a name the user typed and git will not take", () => {
     const host = open();
     const input = field(host);
+    // Left AS TYPED. Clearing it back to empty is not "a name git will not take"
+    // — it is no name at all, and git is not asked about one
+    // (260906-at-create-dialog-resolves-an-empty-name). The title of this guard
+    // was always about a name the user typed; the body had been emptying it.
     input.value = "brand new";
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.value = "";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
     input.dispatchEvent(new Event("blur", { bubbles: true }));
     expect(refusal(host)).not.toBe("");
   });
