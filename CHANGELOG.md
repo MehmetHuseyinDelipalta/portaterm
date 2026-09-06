@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Tab rename is now discoverable.** The existing root-tab rename command is contributed to the Command Palette and to the clicked tab's context menu. Double-click remains available; no default keybinding is shipped.
 - **Claude hook installation v1.** On macOS and Linux, the opt-in Claude observer now reconciles one frozen fail-open command into the currently resolved `settings.json`, preserving user hooks and refusing ambiguous ownership rather than guessing. Disabling or using the removal command cleans only that current destination; no historical-location ledger or sweep is retained. Windows remains unsupported with zero configuration I/O until a real Windows Claude Code spike validates the boundary.
 
 ### Removed
@@ -328,7 +329,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **Tab rename.** Give any terminal tab a meaningful name via double-click on the tab label (inline input), right-click → `Rename Tab…`, command palette `AnyWhere Terminal: Rename Tab`, or `F2` when a terminal webview is focused. The custom name persists across window reloads (workspace-scoped). Clear the name (empty input) to revert to the live process title. OSC title updates continue to track the shell process but are subordinated to the custom name when one is set. Rename applies to root tabs only; split-pane process names are suppressed while a custom root name is active.
+- **Tab rename.** Give any terminal tab a meaningful name by double-clicking the tab label (inline input). The custom name persists across window reloads (workspace-scoped). Clear the name (empty input) to revert to the live process title. OSC title updates continue to track the shell process but are subordinated to the custom name when one is set. Rename applies to root tabs only; split-pane process names are suppressed while a custom root name is active.
 
 ### Fixed
 

@@ -54,6 +54,7 @@
     "onCommand:anywhereTerminal.splitHorizontal",
     "onCommand:anywhereTerminal.splitVertical",
     "onCommand:anywhereTerminal.closeSplitPane",
+    "onCommand:anywhereTerminal.renameTab",
     "onWebviewPanel:anywhereTerminal.editor"
   ],
   "main": "./dist/extension.js",
@@ -254,6 +255,11 @@
       {
         "command": "anywhereTerminal.agentHooks.uninstall",
         "title": "AnyWhere Terminal: Remove Current Agent Hooks"
+      },
+      {
+        "command": "anywhereTerminal.renameTab",
+        "category": "AnyWhere Terminal",
+        "title": "Rename Tab…"
       },
       {
         "command": "anywhereTerminal.newTerminalInEditor",
@@ -472,6 +478,11 @@
         }
       ],
       "webview/context": [
+        {
+          "command": "anywhereTerminal.renameTab",
+          "when": "webviewSection == 'terminalTab'",
+          "group": "tab@1"
+        },
         {
           "command": "anywhereTerminal.ctx.clearTerminal",
           "when": "webviewSection == 'splitPane'",

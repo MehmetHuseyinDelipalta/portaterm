@@ -107,7 +107,8 @@ The built-in terminal is awkward to reposition and can't live in the sidebar. An
 | `Cmd+K` | Clear terminal |
 | `Cmd+Backspace` | Kill input line |
 | `Shift+Enter` | Insert newline |
-| `F2` | Rename the focused tab |
+
+Rename a root tab by double-clicking its label, choosing **Rename Tab…** from the tab context menu, or running **AnyWhere Terminal: Rename Tab…** from the Command Palette. No default rename keybinding is shipped.
 
 > Replace `Cmd` with `Ctrl` on non-macOS (Windows/Linux support in progress).
 

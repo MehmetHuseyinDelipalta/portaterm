@@ -127,7 +127,7 @@ export interface CloseTabMessage {
 /**
  * Inline-edit dblclick path for tab rename. Host normalizes (trim / empty→null /
  * truncate to 80 chars) and persists via `SessionManager.renameSession`. The host-
- * side triggers (right-click, command palette, F2) invoke `renameSession` directly
+ * side triggers (right-click and command palette) invoke `renameSession` directly
  * — they do NOT send this message.
  */
 export interface RenameTabMessage {
@@ -2076,7 +2076,7 @@ export interface TabCreatedMessage {
 
 /**
  * Host pushes the normalized custom name after any rename trigger (inline-edit,
- * context menu, command palette, F2). The webview mirrors it into
+ * context menu, and command palette). The webview mirrors it into
  * `TerminalInstance.customName` and re-renders the tab bar.
  */
 export interface TabRenamedMessage {

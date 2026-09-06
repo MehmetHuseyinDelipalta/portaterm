@@ -159,7 +159,7 @@ line in `src/types/messages.ts`.
 | `flashPane` | E→W | Flash a leaf so the user sees which pane exports; no-op when unmounted (`:1269-1274`) | `:1275` | MR:222 |
 
 `renameTab` is emitted **only** by the inline dblclick-overlay rename. Host-side triggers
-(context menu, command palette, F2) call `SessionManager.renameSession` directly and
+(context menu and command palette) call `SessionManager.renameSession` directly and
 never round-trip. The host owns normalization: trim → empty becomes `null` → truncate 80.
 
 ### 4.3 File tree

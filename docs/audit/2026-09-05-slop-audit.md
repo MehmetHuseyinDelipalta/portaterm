@@ -31,6 +31,7 @@ The pool was revalidated against `0de80546` before editing. This follow-up super
 - Removed the validated dead/test-only surfaces in Axes 2, 3 and 5, including A-01..07, A-10..12, A-14..16, D-01/03/07..10 and I-01/02/05.
 - Applied the behavior-neutral consolidation subset: U-01, U-02's exact plain converters, U-03..06's equivalent leaves, U-05, U-09/10, U-16/17, U-19's three exact helpers and U-20's scheduler-preserving pumps.
 - After product review, resolved D-11 by retiring the unreleased receiver-only Vault fork path end-to-end; the shipped Vault remains Resume/Continue only.
+- Resolved D-12 by contributing the already-implemented `renameTab` command to the Command Palette and root-tab context menu, with cold activation and no default keybinding.
 
 ### Retained or deferred after HEAD revalidation
 
@@ -47,7 +48,7 @@ The pool was revalidated against `0de80546` before editing. This follow-up super
 
 ### Product and behavior decisions
 
-D-12 and U-12 remain intentionally unmodified. They require choosing product scope (contribute or retire rename) or a timestamp input contract. Static cleanup evidence is not authorization for those behavior changes.
+U-12 remains intentionally unmodified pending resolution of the timestamp input contract. Static cleanup evidence is not authorization for those behavior changes.
 
 ### Verification outcome
 
@@ -958,12 +959,13 @@ These are not included in the cleanup pool. A registered command can be invoked 
 - **Estimated net lines removed:** ~180. **Risk:** medium — this is a product decision, not a mechanical delete; `forkSupport`'s memoized probe can also cost one subprocess per extension process, so leaving it is not free.
 - **Resolution (2026-09-06):** RETIRE. Fork UI was explicitly removed before the first Vault release; remove the preserved backend, capability plumbing and stale user-facing claims so the implementation matches the shipped Resume/Continue product.
 
-### D-12 [P2] The registered renameTab command has no shipped palette/menu/keybinding contributions, despite documentation advertising them.
+### D-12 [RESOLVED] Contribute the registered renameTab command
 
 - **Location:** src/extension.ts:2181-2216; src/providers/resolveRenameTarget.ts:1-38; src/providers/resolveRenameTarget.test.ts:1-84; package.json contributions
 - **Verifier:** CONFIRMED — product decision, excluded from the safe total. **Evidence:** `grep -n "renameTab\|terminalTab" package.json` → no output, exit 1. Registration at `extension.ts:2192`. `resolveRenameTarget.ts` is 38 real lines, its test 84.
 - **Cut / repair:** Product decision: contribute the intended palette/menu/F2 entry points, OR explicitly retire the registered command and helper/test. Correct the advertised behavior in either case. Registration means executeCommand or a user-defined binding may still reach it; absence from contributes is not proof of universal unreachability.
 - **Estimated net lines removed:** ~158. **Risk:** medium — this is dead *wiring*, so the fix direction (contribute vs. delete) is a product call. Note the `webviewSection: "terminalTab"` dataset is dead either way unless a menu clause uses it.
+- **Resolution (2026-09-06):** CONTRIBUTE without a default keybinding. Git history and the accepted tab-rename design require double-click, root-tab context menu and Command Palette entry points; F2 was explicitly dropped because xterm passthrough was unreliable. The missing manifest entries were an implementation omission, not a later retirement.
 
 ### U-12 [P2] `claudeRecords.ts` inlines a weaker copy of its own exported `coerceTimestamp`; codex has a third.
 

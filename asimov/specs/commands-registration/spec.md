@@ -117,3 +117,13 @@ The `killTerminal` and `clearTerminal` commands do NOT need activation events be
 - **When**: A command handler calls `sidebarProvider.getActiveSessionId()`
 - **Then**: It returns `undefined`
 
+
+### Requirement: Rename Tab Command Discovery
+
+`package.json` SHALL declare `anywhereTerminal.renameTab` with title `Rename Tab…` and category `AnyWhere Terminal`, leaving it visible in the Command Palette. `activationEvents` SHALL include `onCommand:anywhereTerminal.renameTab` so cold palette invocation activates the extension. The extension SHALL ship no default keybinding for this command.
+
+#### Scenario: Rename is discoverable without claiming F2
+
+- **WHEN** the user searches the Command Palette for AnyWhere Terminal rename commands
+- **THEN** `AnyWhere Terminal: Rename Tab…` is available
+- **AND** the extension contributes no default keybinding for it
