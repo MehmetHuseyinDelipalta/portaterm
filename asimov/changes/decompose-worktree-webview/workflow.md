@@ -12,8 +12,8 @@
 
 ## Implement
 
-- [ ] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [x] All tasks done (`tasks.md`)
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
@@ -47,3 +47,6 @@ Planned at: a4b4adf77852a7da4a900c47f5624b950b30f5e0
 - 2_1: `AfterChoice` moved with the answer it names; `pickAsks`/`pickAsked` stayed, per the plan. The initial `draft.openAfter` is now the derivation rule at t=0 rather than a copy of the choice — `"folder"` is not a wire value, and the original only type-checked because no caller ever passed it. OBL-4's witness run as a mutation — planting `document.activeElement` in `statePath` throws `ReferenceError` under node, so the missing pragma really is what proves the module headless. WorktreeCreateDialog.ts 3873 -> 3812.
 - 2_2: the ordering functions (`orderChoices`, `pullRequestChoices`, `partialListText`, `CREATE_ROW_LABEL`, `choiceMode`, `branchOfPullRequest`) were already module-level and moved as-is; the state (`choice`, `choices`, `forkHead`) was not. `commit` now RETURNS what taking a row decides — ignored / refused / taken plus the fields to state — so the refusal message and the pull-request name are decided headlessly and the DOM only applies them. `activeAt`/`listOpen` stayed. Four mutations run against `branchChoices.test.ts`: reordering the list, dropping the fork head's repository condition, dropping its detached condition, and planting a DOM read in `commit` — 1, 1, 1 and 11 of 23 red respectively. WorktreeCreateDialog.ts 3812 -> 3665.
 - `asm refactor shape` after 2_2, recorded rather than chased (design.md Risk Map): `WorktreeCreateDialog.ts` still `long-function` (the closure is 73% of statements, bar 25%) and `WorktreeView.ts` still `god-class` (86%, bar 60%) — both percentage heuristics a facade or closure-factory module cannot clear at any size. `branchChoices.ts` reads `unremarkable`; `draftModel.ts` reads `giant-literal` at 53% because the factory's returned object IS the module. No structural remedy is taken from any of the four.
+- Witnesses: OBL-1 pass [exit 0]; OBL-2 pass [exit 0]; OBL-3 pass [exit 0]; OBL-4 pass [exit 0]; OBL-5 pass [exit 0]. No `docs/DESIGN.md § Cross-Cutting Invariants` row's Owner section is cited by any task Ref and none shares state with a changed path, so the touched set is the ledger alone.
+- Real-dependency: none — the change is webview-local and moves no I/O; every seam it cuts is already exercised by the jsdom suites it left in place.
+- Verify Gate on `cc73fc3f` + the branchChoices format fix: `pnpm run check-types` 0, `pnpm exec biome check src` 0 (check mode, never `--write`), `pnpm run test:unit` 8017/319 passed, `pnpm run gate:fs-deletion` ok, `pnpm run build:check-requires` ok. Suite grew 7963/314 -> 8017/319 (+54 across five new files).

@@ -53,12 +53,7 @@ describe("the module is headless", () => {
 describe("the order the list offers", () => {
   it("puts the exact match first, then the prefixes, then create-new", () => {
     const rows = orderChoices([ref("feat/b"), ref("feat"), ref("feat/a")], "feat");
-    expect(rows.map((r) => (r.kind === "existing" ? r.ref.name : r.kind))).toEqual([
-      "feat",
-      "feat/b",
-      "feat/a",
-      "new",
-    ]);
+    expect(rows.map((r) => (r.kind === "existing" ? r.ref.name : r.kind))).toEqual(["feat", "feat/b", "feat/a", "new"]);
   });
 
   it("offers every ref when nothing is typed, none of them as an exact match", () => {
