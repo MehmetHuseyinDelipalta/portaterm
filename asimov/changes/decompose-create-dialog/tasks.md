@@ -9,7 +9,7 @@ stops if the count disagrees with design.md D1.
 
 ## 1. Module-level moves (no closure capture)
 
-- [ ] 1_1 Extract the contention model
+- [x] 1_1 Extract the contention model — verified: pnpm exec vitest run src/webview/worktree/createDialog/bringContention.test.ts src/webview/worktree/WorktreeCreateDialog.test.ts && pnpm run check-types exit 0
   - **Deps**: none
   - **Refs**: design.md D1, design.md D4, design.md § Obligation ledger
   - **Boundary**: no reference to `document`, `HTMLElement` or `createElement`
