@@ -75,10 +75,9 @@ export interface RemovalRefusal {
   /**
    * Registry sessions rooted here that are NOT provably idle, counted once.
    *
-   * Separate from `busyAgents` so one session is never scored twice: the
-   * presence projection emits every external session as a row with a hardcoded
-   * activity, and adding those to the window count would refuse on the strength
-   * of the same fact read from two places.
+   * Separate from `busyAgents` so one session is never scored twice: presence
+   * and removal both use the registry lifecycle mapping, and adding external
+   * rows to the window count would score that same fact twice.
    */
   liveExternalSessionIds: readonly string[];
 }
@@ -180,11 +179,10 @@ export interface SessionRecord {
   /**
    * What this session is doing, or `undefined` when nobody could say.
    *
-   * Absent means LIVE. An external session we cannot ask about is not evidence
-   * of idleness (worktree-removal.md § 3), and this is the one action that
-   * cannot be undone. The Claude registry records no activity today, so
-   * `undefined` is what production supplies — which refuses, honestly, rather
-   * than refusing on a hardcoded value nobody measured.
+   * Absent means LIVE. Recognized Claude registry states map to running,
+   * waiting, or idle before reaching this boundary; an absent or future state
+   * stays undefined and refuses because it is not evidence of idleness
+   * (worktree-removal.md § 3).
    */
   activity: PaneActivity | undefined;
   /** `process.kill(pid, 0)` semantics at the moment of the read. */
@@ -278,10 +276,10 @@ export function evaluateRemoval(input: RemovalInput): RemovalAssessment {
     .map((w) => ({ worktreeId: w.id, displayPath: w.displayPath }))
     .sort((a, b) => a.worktreeId.localeCompare(b.worktreeId));
 
-  // `busyAgents` counts WINDOW-OWNED rows only. presenceProjector emits every
-  // external registry session as a row with a hardcoded activity of "running";
-  // counting those here would score one external session as both busyAgents and
-  // externalAgents, converting the accepted CONFIRMABLE externalAgents blocker
+  // `busyAgents` counts WINDOW-OWNED rows only. External registry rows carry
+  // the same mapped lifecycle used by `sessions`; counting them here would score
+  // one external session as both busyAgents and externalAgents, converting the
+  // accepted CONFIRMABLE externalAgents blocker
   // (worktree-actions.md:192) into an unconditional refusal — and making a
   // worktree unremovable because some other window has a session in it.
   const busyAgents = input.rows.filter(

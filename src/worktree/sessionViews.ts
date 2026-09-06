@@ -3,6 +3,7 @@
 
 import { type ClaudeSessionRecord, canonicalLiveSessions } from "../vault/readers/runningSessions";
 import { formatEntryId } from "../vault/types";
+import { registrySessionActivity } from "./registrySessionActivity";
 import type { SessionRead } from "./worktreeBlockers";
 
 /** Resolves a cwd to its real path, or answers the spelling it was given. */
@@ -41,10 +42,9 @@ export async function composeSessionViews(
     sessionId: record.sessionId,
     entryId: formatEntryId("claude", record.sessionId),
     cwd: paths.resolvedOr(record.cwd),
-    // The registry records pid, cwd and identity — never activity. So this is
-    // undefined rather than a guess, and undefined refuses: a session we cannot
-    // ask about is not evidence of idleness (worktree-removal.md § 3).
-    activity: undefined,
+    // Unknown or future registry states stay undefined, which fails closed for
+    // removal: a live session we cannot classify is not evidence of idleness.
+    activity: registrySessionActivity(record.status),
     alive: record.alive,
   });
   return {

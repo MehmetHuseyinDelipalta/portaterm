@@ -548,7 +548,7 @@ describe("every pane claims its session, whether or not it produces a row", () =
 
 describe("external rows — agents running outside this window", () => {
   function session(over: Partial<RunningClaudeSession> = {}): RunningClaudeSession {
-    return { sessionId: "s1", cwd: WT, pid: 4242, startedAt: 1_600_000_000_000, ...over };
+    return { sessionId: "s1", cwd: WT, pid: 4242, startedAt: 1_600_000_000_000, status: "busy", ...over };
   }
 
   function withRegistry(...sessions: RunningClaudeSession[]) {
@@ -577,6 +577,66 @@ describe("external rows — agents running outside this window", () => {
         lastActivityAt: 1_600_000_000_000,
       },
     ]);
+  });
+
+  it("projects an idle registry session as idle instead of an animated run", async () => {
+    const h = withRegistry(session({ status: "idle", statusUpdatedAt: 1_700_000_000_000 }));
+
+    const [row] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(row).toMatchObject({
+      activity: "idle",
+      activitySource: "registry",
+      stateStartedAt: 1_700_000_000_000,
+      lastActivityAt: 1_700_000_000_000,
+    });
+    expect(row.finishedAt).toBeUndefined();
+  });
+
+  it("projects a waiting registry session as attention", async () => {
+    const h = withRegistry(session({ status: "waiting", statusUpdatedAt: 1_700_000_000_000 }));
+
+    const [row] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(row).toMatchObject({
+      activity: "waiting",
+      activitySource: "registry",
+      stateStartedAt: 1_700_000_000_000,
+      lastActivityAt: 1_700_000_000_000,
+    });
+  });
+
+  it("routes an older registry record with no status through unknown presentation", async () => {
+    const h = withRegistry(session({ status: undefined }));
+
+    const [row] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(row).toMatchObject({
+      activity: "idle",
+      activitySource: "none",
+      stateStartedAt: 1_600_000_000_000,
+      lastActivityAt: 1_600_000_000_000,
+    });
+  });
+
+  it("clamps a registry transition that predates process launch", async () => {
+    const h = withRegistry(session({ statusUpdatedAt: 1_500_000_000_000 }));
+
+    const [row] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(row.stateStartedAt).toBe(1_600_000_000_000);
+    expect(row.lastActivityAt).toBe(1_600_000_000_000);
+  });
+
+  it("does not refresh a registry transition timestamp on repeated scans", async () => {
+    const h = withRegistry(session({ statusUpdatedAt: 1_650_000_000_000 }));
+
+    const first = (await h.projector.project([WT])).rowsByWorktreeId[WT][0];
+    clock += 60_000;
+    const second = (await h.projector.project([WT])).rowsByWorktreeId[WT][0];
+
+    expect(second.stateStartedAt).toBe(first.stateStartedAt);
+    expect(second.lastActivityAt).toBe(first.lastActivityAt);
   });
 
   it("carries no pane and no view, which is what makes the scope trustworthy", async () => {

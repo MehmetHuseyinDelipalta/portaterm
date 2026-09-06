@@ -10,7 +10,7 @@
     1. Extend `src/vault/readers/runningSessions.ts` and its tests to validate `busy | waiting | idle` plus transition timestamps without defaulting unknown values.
     2. Add `src/worktree/registrySessionActivity.ts` and its test with the one registry-to-pane activity mapping consumed downstream.
 
-- [ ] 1_2 Apply registry lifecycle state consistently
+- [x] 1_2 Apply registry lifecycle state consistently — verified: pnpm exec vitest run src/worktree/presenceProjector.test.ts src/worktree/sessionViews.test.ts src/worktree/worktreeBlockers.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_1
   - **Refs**: specs/worktree-agent-presence/spec.md#{surface-agents-running-outside-this-window, external-activity-age-follows-the-lifecycle-transition}; design.md#d1-one-exact-registry-status-mapping-serves-every-consumer
   - **Acceptance**:

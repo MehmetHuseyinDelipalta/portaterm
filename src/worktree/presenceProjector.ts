@@ -23,6 +23,7 @@ import { isPathInside, normalizePathForCompare } from "../utils/pathBoundary";
 import type { RunningClaudeSession, RunningSessionsOutcome } from "../vault/readers/runningSessions";
 import { formatEntryId, type VaultAgentId } from "../vault/types";
 import { resolveAgentIdentity, type SessionLookup } from "./agentIdentity";
+import { registrySessionActivity } from "./registrySessionActivity";
 import type {
   DelegationRoster,
   PresenceDegradation,
@@ -945,6 +946,12 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
       // no launch time gets the moment this projection first saw it instead.
       const startedAt = session.startedAt ?? externalSeen.get(rowId) ?? now;
       externalSeen.set(rowId, startedAt);
+      const registryActivity = registrySessionActivity(session.status);
+      const activity = registryActivity ?? "idle";
+      const statusAt = Math.max(
+        startedAt,
+        registryActivity === undefined ? startedAt : (session.statusUpdatedAt ?? startedAt),
+      );
       out.push({
         worktreeId,
         row: {
@@ -956,13 +963,13 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
           ...(session.name !== undefined ? { title: session.name } : {}),
           agent: REGISTRY_AGENT,
           agentSource: "registry",
-          activity: "running",
-          activitySource: "registry",
+          activity,
+          activitySource: registryActivity === undefined ? "none" : "registry",
           entryId,
           pid: session.pid,
           startedAt,
-          stateStartedAt: startedAt,
-          lastActivityAt: startedAt,
+          stateStartedAt: statusAt,
+          lastActivityAt: statusAt,
         },
       });
     }

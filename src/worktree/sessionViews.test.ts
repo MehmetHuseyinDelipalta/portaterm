@@ -63,6 +63,17 @@ describe("composeSessionViews", () => {
     expect((await composeSessionViews([record()], false, resolver())).partial).toBe(false);
   });
 
+  it.each([
+    ["busy", "running"],
+    ["waiting", "waiting"],
+    ["idle", "idle"],
+  ] as const)("maps registry %s to removal activity %s", async (status, activity) => {
+    const views = await composeSessionViews([record({ status })], false, resolver());
+
+    expect(views.live[0]?.activity).toBe(activity);
+    expect(views.canonical[0]?.activity).toBe(activity);
+  });
+
   it("names each session by its registry identity, never its pid", async () => {
     const views = await composeSessionViews([record({ sessionId: "s-7" })], false, resolver());
 
