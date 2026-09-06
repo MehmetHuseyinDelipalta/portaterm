@@ -307,6 +307,82 @@ describe("create worktree — the default and every consequential action explain
     expect(host.querySelector<HTMLElement>(".wt-create-disabled-reason")?.textContent).toBe("Enter a branch name.");
   });
 
+  it("draws no resolved destination or collision while nothing is named", () => {
+    // The opening defaults request carries no branch, and the host answers it as
+    // `msg.branch ?? ""` — so the seed is a CONCRETE free path, suffixed around
+    // whatever occupies the bare candidate, plus the candidate it skipped. Those
+    // are decisions about a create nobody has named (round-1 F002).
+    const { host, q } = open({
+      repos: [
+        createDefaults({
+          resolvedPath: "/Users/dev/Projects/ai-oss/anywhere-terminal-2",
+          collidedWith: "anywhere-terminal",
+        }),
+      ],
+    });
+    const shown = (): string => (host.textContent ?? "").replace(/\s+/g, " ");
+    expect(shown()).not.toContain("anywhere-terminal-2");
+    expect(host.querySelector<HTMLElement>(".wt-dest-note")?.hidden).toBe(true);
+
+    // Named, and the seed is a statement about something again.
+    type(q<HTMLInputElement>("#wt-branch"), "feat/x");
+    expect(shown()).toContain("anywhere-terminal-2");
+  });
+
+  it("re-asks after the name is cleared and typed again", () => {
+    // Clearing the field retracts the question. Before this, the request key
+    // outlived it: the late reply for the cleared name was rejected on its
+    // `query`, so the pending gate never fell, and retyping the SAME name
+    // matched the stale key and sent nothing — Create disabled behind
+    // "Checking…" with no request in flight (round-1 F001).
+    let apply: ((r: WorktreeCreateResolutionMessage) => void) | undefined;
+    const asked: string[] = [];
+    const { q, host } = open({
+      bindResolution: (fn) => {
+        apply = fn;
+      },
+      onSelectionChange: (selection) => {
+        asked.push(selection.branch);
+      },
+    });
+    const input = q<HTMLInputElement>("#wt-branch");
+    type(input, "feat/x");
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(asked).toEqual(["feat/x"]);
+
+    // Cleared before the answer lands.
+    type(input, "");
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+
+    // The late answer describes a selection that is gone, and is dropped.
+    apply?.({
+      type: "worktreeCreateResolution",
+      repoId: REPO_ID,
+      token: 1,
+      seq: 1,
+      query: "feat/x",
+      mode: { kind: "fresh" },
+      freePath: "/trees/repo-feat-x",
+    });
+
+    // The same name again is a new question, and must be asked.
+    type(input, "feat/x");
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(asked).toEqual(["feat/x", "feat/x"]);
+
+    apply?.({
+      type: "worktreeCreateResolution",
+      repoId: REPO_ID,
+      token: 1,
+      seq: 2,
+      query: "feat/x",
+      mode: { kind: "fresh" },
+      freePath: "/trees/repo-feat-x",
+    });
+    const reason = host.querySelector<HTMLElement>(".wt-create-disabled-reason");
+    expect(reason?.textContent ?? "").toBe("");
+  });
+
   it("says it when a create is asked for, rather than sitting inert", () => {
     // ⌘↵ reaches `submit` even while Create is disabled — the one way a user can
     // ask without having been in the field, and the moment they have answered.

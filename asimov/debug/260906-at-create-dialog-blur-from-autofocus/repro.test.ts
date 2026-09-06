@@ -68,7 +68,7 @@ function refusal(host: HTMLElement): string {
 }
 
 describe("clicking a control does not refuse a name nobody typed", () => {
-  it("says nothing, and marks nothing, when the click blurs the field the form focused", () => {
+  it("says nothing, and marks nothing, when the field the form focused is blurred", () => {
     const host = open();
     const input = field(host);
     // What the browser does when the user clicks a checkbox in the dialog: the

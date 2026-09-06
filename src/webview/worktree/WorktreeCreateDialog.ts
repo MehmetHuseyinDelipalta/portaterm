@@ -2799,6 +2799,21 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // a decision (260906-at-create-dialog-resolves-an-empty-name).
     const target = draft.branchMode === "detached" ? draft.baseRef : now.branch;
     if (target.trim().length === 0) {
+      // Withdrawn, not merely unasked. Returning here without retiring the last
+      // question left `askedFor` holding a key nothing would answer: a reply for
+      // the cleared name is rejected on its `query`, so `resolutionOutstanding`
+      // never fell, and retyping that same name matched the stale key and sent
+      // no replacement — Create disabled behind "Checking…" with nothing in
+      // flight (round-1 F001). Emptying the field is the user retracting the
+      // question, so everything that question armed comes down with it.
+      if (askedFor !== null || outstanding || resolutionOutstanding || effective !== null) {
+        askedFor = null;
+        defaultsAskedFor = null;
+        effective = null;
+        outstanding = false;
+        resolutionOutstanding = false;
+        withdrawRecover();
+      }
       return;
     }
     const key = askKey(now);
@@ -3292,7 +3307,13 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // create lands, and the line has to say so before Create authorizes it.
     const recovered = settledDisposition() === undefined ? undefined : recoverGrant?.path;
     const answered = recovered ?? (effective === null ? undefined : targetOf(effective));
-    const resolvedPath = answered ?? repo.resolvedPath;
+    // The opening seed is the host's answer for `msg.branch ?? ""` — a concrete
+    // free path, suffixed around whatever already occupies the bare candidate.
+    // That is a decision about a create nobody has named yet, so while there is
+    // no target the line falls back to the template `derived` builds from the
+    // repository's own prefix (round-1 F002).
+    const unnamed = (draft.branchMode === "detached" ? draft.baseRef : draft.branchName).trim().length === 0;
+    const resolvedPath = answered ?? (unnamed ? undefined : repo.resolvedPath);
     const derived = resolvedPath ?? (slug ? `${repo.pathParent}/${repo.pathPrefix}-${slug}` : "");
     if (pathIsDerived) {
       // Whoever owns the caret owns the text. Guarding the CALLERS was the
@@ -3351,7 +3372,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       recovered !== undefined
         ? ""
         : effective === null
-          ? pathIsDerived
+          ? pathIsDerived && !unnamed
             ? repo.collidedWith
             : ""
           : lastSegment(effective.occupiedCandidate?.path ?? "");

@@ -71,7 +71,7 @@ describe("the form does not plan a create for a name nobody has typed", () => {
   });
 
   // Guard: the moment there IS a name, the form asks and plans as it always did.
-  it("asks as soon as the user names something", () => {
+  it("asks once the user names something and the edit settles", () => {
     const { host, asked } = open();
     const input = field(host);
     input.value = "feat/x";

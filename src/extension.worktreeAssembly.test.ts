@@ -1429,6 +1429,19 @@ describe("a mutating verb reaches git from the menu item a user can see", () => 
   it("offers Create, and the item opens a form the host has resolved a path for", async () => {
     await assemble();
     clickItem(openMenu("feature"), /new worktree/i);
+    await settleUntil(() => document.querySelector("#wt-branch") !== null, "the create dialog");
+    // Named first. The form no longer draws a resolved destination for a create
+    // with no target — the opening seed is the host's answer for the EMPTY name,
+    // and stating its suffixed path was a decision about a create nobody had
+    // made (round-1 F002). What this test is about is unchanged: the path on
+    // screen came from the host's own resolution and not from a webview guess.
+    const branch = document.querySelector<HTMLInputElement>("#wt-branch");
+    if (branch === null) {
+      throw new Error("the create dialog has no branch field");
+    }
+    branch.value = "feat/assembly";
+    branch.dispatchEvent(new Event("input", { bubbles: true }));
+    branch.dispatchEvent(new Event("change", { bubbles: true }));
     await settleUntil(
       () =>
         [

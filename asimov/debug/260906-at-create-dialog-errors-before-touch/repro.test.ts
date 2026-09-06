@@ -70,7 +70,7 @@ describe("the create form does not refuse a name the user has not typed", () => 
     expect(said, "the form refused the name before the user could type one").toBe("");
   });
 
-  it("OBSERVES 2: still says nothing after any control is clicked", () => {
+  it("OBSERVES 2: still says nothing after every checkbox in the form is clicked", () => {
     const host = open();
     for (const el of host.querySelectorAll<HTMLElement>("input[type=checkbox]")) {
       el.click();
