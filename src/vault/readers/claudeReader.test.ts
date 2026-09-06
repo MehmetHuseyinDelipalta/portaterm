@@ -303,6 +303,24 @@ describe("workflow board from manifest workflowProgress (1_2)", () => {
     expect(detail?.stats.subagentCount).toBe(2);
   });
 
+  it("leaves a directly opened workflow board undated when manifest timestamp is numeric", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "claude-workflow-timestamp-"));
+    const configDir = path.join(root, "config");
+    try {
+      await fsp.cp(WF_FIXTURE_ROOT, configDir, { recursive: true });
+      const manifestPath = path.join(configDir, "projects", "-Users-me-wf", "wfboard", "workflows", "wf_board1.json");
+      const manifest = JSON.parse(await fsp.readFile(manifestPath, "utf8"));
+      manifest.startTime = "invalid";
+      manifest.timestamp = 1_750_000_000_000;
+      await fsp.writeFile(manifestPath, JSON.stringify(manifest));
+      const detail = await readClaudeDetail("wfboard:workflow:wf_board1", { configDir });
+      expect(detail?.timeline[0]).toMatchObject({ kind: "workflowBoard" });
+      expect(detail?.timeline[0]).not.toHaveProperty("timestamp");
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("resolves phase detail positionally without an off-by-one (1-based index → 0-based phases[])", async () => {
     const detail = await readClaudeDetail("wfboard:workflow:wf_board1", { configDir: WF_FIXTURE_ROOT });
     const board = detail?.timeline[0];
@@ -333,6 +351,24 @@ describe("workflow board from manifest workflowProgress (1_2)", () => {
     expect(kinds).not.toContain("workflowBoard");
     expect(kinds).toEqual(["subagentSession"]);
     expect(detail?.firstPrompt).toBe("A run whose manifest has an empty workflowProgress");
+  });
+
+  it("leaves a fallback stub undated when manifest timestamp is numeric", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "claude-workflow-stub-timestamp-"));
+    const configDir = path.join(root, "config");
+    try {
+      await fsp.cp(WF_FIXTURE_ROOT, configDir, { recursive: true });
+      const manifestPath = path.join(configDir, "projects", "-Users-me-wf", "wfempty", "workflows", "wf_empty1.json");
+      const manifest = JSON.parse(await fsp.readFile(manifestPath, "utf8"));
+      manifest.startTime = "invalid";
+      manifest.timestamp = 1_750_000_000_000;
+      await fsp.writeFile(manifestPath, JSON.stringify(manifest));
+
+      const stubs = await listClaudeWorkflowStubs("wfempty", { configDir });
+      expect(stubs[0]).not.toHaveProperty("timestamp");
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true });
+    }
   });
 
   it("inlines a progress-bearing run as a self-collapsing board in the PARENT timeline (one layer, #1)", async () => {

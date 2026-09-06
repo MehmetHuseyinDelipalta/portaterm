@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseEpochMilliseconds, parseStoredTimestamp, parseWorkflowStartTime } from "./timestamp";
+import {
+  parseEpochMilliseconds,
+  parseRfc3339Timestamp,
+  parseStoredTimestamp,
+  parseWorkflowStartTime,
+} from "./timestamp";
 
 const EPOCH = 1_750_000_000_000;
 
@@ -9,6 +14,11 @@ describe("timestamp store boundaries", () => {
     for (const value of [String(EPOCH), Number.NaN, Number.POSITIVE_INFINITY, 1.5]) {
       expect(parseEpochMilliseconds(value)).toBeUndefined();
     }
+  });
+
+  it("keeps RFC3339-only fields string-only", () => {
+    expect(parseRfc3339Timestamp("2026-05-01T01:02:03Z")).toBe(Date.parse("2026-05-01T01:02:03Z"));
+    expect(parseRfc3339Timestamp(EPOCH)).toBeUndefined();
   });
 
   it("accepts RFC3339 transcript strings and numeric epoch milliseconds", () => {

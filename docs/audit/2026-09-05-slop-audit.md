@@ -60,7 +60,7 @@ U-12 remains intentionally unmodified pending resolution of the timestamp input 
 - Every edited batch's scoped Vitest suites pass.
 - Full `pnpm run test:unit`: **301 files, 7,822 tests passed**. The first run exposed a pre-existing stale `SetupTerminal` fake missing the live `retire()` method; adding that API-compatible no-op to the fake made its 17-test owner suite and the full gate pass.
 - Subsequent D-11 retirement removed another 418 net lines across 54 files. Focused Vault/provider verification passed 529 tests; the post-retirement full suite passed **301 files, 7,801 tests**. TypeScript, Biome check mode, `fsDeletionGate` and `git diff --check` also passed; Biome retained seven pre-existing warnings in touched files.
-- D-12/U-12 focused verification passed 204 rename tests and 308 timestamp tests. The final full suite passed **303 files, 7,813 tests**; TypeScript, changed-file Biome check mode, `fsDeletionGate` and `git diff --check` passed.
+- D-12/U-12 focused verification passed 204 rename tests and 308 timestamp tests. After review narrowed workflow `manifest.timestamp` fallback to RFC3339-only, the final full suite passed **303 files, 7,816 tests**; TypeScript, changed-file Biome check mode, `fsDeletionGate` and `git diff --check` passed.
 
 ## Scope, method and confidence
 

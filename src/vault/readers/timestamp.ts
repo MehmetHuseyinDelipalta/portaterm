@@ -6,17 +6,18 @@ export function parseEpochMilliseconds(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) ? value : undefined;
 }
 
-/** A transcript timestamp: epoch milliseconds as a number, or an RFC3339 string. */
-export function parseStoredTimestamp(value: unknown): number | undefined {
-  const epoch = parseEpochMilliseconds(value);
-  if (epoch !== undefined) {
-    return epoch;
-  }
+/** An RFC3339 timestamp string, without loose runtime-specific date parsing. */
+export function parseRfc3339Timestamp(value: unknown): number | undefined {
   if (typeof value !== "string" || !RFC3339.test(value)) {
     return undefined;
   }
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/** A transcript timestamp: epoch milliseconds as a number, or an RFC3339 string. */
+export function parseStoredTimestamp(value: unknown): number | undefined {
+  return parseEpochMilliseconds(value) ?? parseRfc3339Timestamp(value);
 }
 
 /** Claude workflow manifests historically wrote startTime as a 13-digit string. */
