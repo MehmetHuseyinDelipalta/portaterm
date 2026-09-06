@@ -50,6 +50,7 @@ import {
   worktreeEmptyState,
 } from "./worktreeTreeView";
 import { createFoldState, type FoldRepoInput, type FoldState } from "./worktreeView/foldState";
+import { createKeyboardNav, type KeyboardNav } from "./worktreeView/keyboardNav";
 import type {
   PresenceDegradation,
   ProvisionResultContest,
@@ -74,33 +75,9 @@ export const MAX_WORKTREES_PER_REPO = 20;
 /** Below this many agentless worktrees, a disclosure hides less than it costs (§ 3.6). */
 export const IDLE_FOLD_THRESHOLD = 4;
 
-/**
- * Namespaced so it can never collide with a repoId or a worktree id, both of which
- * share the same collapse set and are matched against the live tree.
- */
-function idleTailKey(repoId: string): string {
-  return `\u0000idle-tail:${repoId}`;
-}
-
-/** Every row kind that takes part in traversal. One string, because the roving tab
- *  stop, the level stamp and the focus delegate must agree on what a row IS. */
-const NAV_ROWS = ".wt-repo, .wt-idle, .wt-row, .wt-arow, .wt-srow";
-
-/**
- * One tab stop for the tree, and one more inside the row that owns it: a row's
- * own action control joins the tab order only while that row is the stop, so
- * tabbing from a focused row reaches its actions and tabbing again leaves.
- */
 /** A repository that has been cloned but never branched out — one worktree, the main one. */
 function isUnbranched(repo: WorktreeRepo): boolean {
   return repo.degraded === undefined && repo.worktrees.length === 1 && repo.worktrees[0]?.kind === "main";
-}
-
-function setRowTabStop(row: HTMLElement, isStop: boolean): void {
-  row.tabIndex = isStop ? 0 : -1;
-  for (const action of row.querySelectorAll<HTMLElement>(".wt-rowaction")) {
-    action.tabIndex = isStop ? 0 : -1;
-  }
 }
 
 /** setTimeout's delay is a signed 32-bit int; anything larger wraps and fires now. */
@@ -261,7 +238,8 @@ export class WorktreeView {
   private closeDialog: (() => void) | null = null;
   private readonly disposeTooltips: () => void;
   /** Roving tabindex target — the row keyboard navigation last landed on. */
-  private focusedKey: string | null = null;
+  /** Roving tabindex and tree traversal (task 1_2). */
+  private readonly nav: KeyboardNav;
   /**
    * The worktree the user selected, or `null` for none. Never seeded: selection
    * is an act, so a first render, a reload and a push all leave it alone.
@@ -291,6 +269,12 @@ export class WorktreeView {
     // A restored set already carries the user's own decisions — including the
     // expansions it records by omission — so nothing in the first tree is reseeded.
     // Presence of the array is the signal; its length says nothing.
+    this.nav = createKeyboardNav({
+      element: () => this.element,
+      toggleCollapsed: (id) => this.toggleCollapsed(id),
+      toggleIdleTail: (repoId) => this.toggleIdleTail(repoId),
+      toggleRow: (rowId) => this.toggleRow(rowId),
+    });
     this.fold = createFoldState({
       persisted: deps.getInitialCollapsed?.(),
       initialExpandedRows: deps.getInitialExpandedRows?.() ?? [],
@@ -311,32 +295,13 @@ export class WorktreeView {
     // somewhere inside the tree to land instead of `<body>`, which is the top of
     // the whole document (.reviews/round-1.md B2).
     this.element.tabIndex = -1;
-    this.element.addEventListener("keydown", (ev) => this.onKeyDown(ev));
+    this.element.addEventListener("keydown", (ev) => this.nav.onKeyDown(ev));
     // Focus retention was written only where the KEYBOARD moves focus, so a pointer
     // press — which focuses the row it lands on without `onKeyDown` running — left the
     // roving key naming some other row, and the re-render a click causes restored focus
     // there. Written here instead, where focus actually arrives, so every row kind is
     // covered at once rather than each toggle path remembering to update the key.
-    this.element.addEventListener("focusin", (ev) => {
-      const row = (ev.target as HTMLElement | null)?.closest<HTMLElement>(NAV_ROWS);
-      if (row === undefined || row === null) {
-        return;
-      }
-      const key = this.keyOf(row);
-      if (key === this.focusedKey) {
-        // Already the stop — `focusRow` writes them before it focuses, so this
-        // is that focus arriving. Repeating the pass here doubled the DOM work
-        // of every arrow keypress (round-1 W4).
-        return;
-      }
-      this.focusedKey = key;
-      // Focus that did NOT come through `focusRow` — a pointer press. The stop
-      // moves with it, or the action on the pressed row is unreachable by the
-      // Tab that follows.
-      for (const other of this.navRows()) {
-        setRowTabStop(other, other === row);
-      }
-    });
+    this.element.addEventListener("focusin", (ev) => this.nav.onFocusIn(ev));
     // Delegated, because render() replaces every row: rows carry `data-tip` and
     // nothing is attached or disposed per render.
     this.disposeTooltips = attachTooltipDelegate(this.element);
@@ -456,19 +421,19 @@ export class WorktreeView {
    * drawn — a filtered-out row must not leave focus on `<body>`.
    */
   focusWorktree(worktreeId: string): void {
-    const rows = this.navRows();
+    const rows = this.nav.navRows();
     // The tree's own tab stop is the fallback, not the container: the container
     // is not focusable, so focusing it would leave focus on `<body>` and the
     // keyboard user back at the top of the document.
     const target =
       rows.find((r) => r.dataset.worktreeId === worktreeId) ??
-      rows.find((r) => this.keyOf(r) === this.focusedKey) ??
+      rows.find((r) => this.nav.keyOf(r) === this.nav.focusedKey()) ??
       rows[0];
     if (target === undefined) {
       this.element.focus();
       return;
     }
-    this.focusRow(target);
+    this.nav.focusRow(target);
   }
 
   /** The worktree this panel marks as selected, or `null`. The only copy there is. */
@@ -955,15 +920,16 @@ export class WorktreeView {
       return;
     }
     this.element.scrollTop = scrollTop;
-    this.syncRovingTabindex();
+    this.nav.syncRovingTabindex();
     if (restoreFocusTo !== null) {
-      const rows = this.navRows();
+      const rows = this.nav.navRows();
       // The row can have left in this very render — a worktree removed, a query
       // typed. `syncRovingTabindex` above has already moved the tab stop to a row
       // that exists, so that is where focus belongs; with no rows at all the tree
       // itself is the last thing standing between the user and `<body>`.
       const target =
-        rows.find((r) => this.keyOf(r) === restoreFocusTo) ?? rows.find((r) => this.keyOf(r) === this.focusedKey);
+        rows.find((r) => this.nav.keyOf(r) === restoreFocusTo) ??
+        rows.find((r) => this.nav.keyOf(r) === this.nav.focusedKey());
       if (target === undefined) {
         this.element.focus();
         return;
@@ -1004,7 +970,7 @@ export class WorktreeView {
     // `replaceChildren` detaches the focused row, and focus falls to <body> — a
     // keyboard user loses their place on every disclosure toggle. Restored by
     // `render` from this key, which is why subagent rows had to gain one.
-    const restoreFocusTo = focusWasInside ? this.focusedKey : null;
+    const restoreFocusTo = focusWasInside ? this.nav.focusedKey() : null;
     // Cleared with the DOM it describes, never later: every anchor in it points at
     // a node this call is about to detach, and `placeResults` runs on paths that
     // never reach the repo loop. An anchor map outliving its nodes is a drawing
@@ -1104,7 +1070,7 @@ export class WorktreeView {
     if (rendered === 0 && this.query) {
       this.element.appendChild(worktreeEmptyState("noMatch"));
     }
-    this.stampLevels(multiRepo);
+    this.nav.stampLevels(multiRepo);
     return restoreFocusTo;
   }
 
@@ -1825,185 +1791,6 @@ export class WorktreeView {
   }
 
   // -- Keyboard (§ 6) ------------------------------------------------------
-
-  /** Every focusable row, in visual order. The presence pill and the agents header
-   *  are excluded: both duplicate the worktree row's own toggle, and both are hidden
-   *  from assistive tech because neither is a valid child of `role="tree"`. */
-  private navRows(): HTMLElement[] {
-    return Array.from(this.element.querySelectorAll<HTMLElement>(NAV_ROWS));
-  }
-
-  /** One tab stop for the whole tree; arrows move within it. */
-  private syncRovingTabindex(): void {
-    const rows = this.navRows();
-    let focused = rows.find((r) => this.keyOf(r) === this.focusedKey);
-    if (!focused) {
-      focused = rows[0];
-      this.focusedKey = focused ? this.keyOf(focused) : null;
-    }
-    for (const row of rows) {
-      setRowTabStop(row, row === focused);
-    }
-  }
-
-  private keyOf(row: HTMLElement): string {
-    // The disclosure's `idleKey` IS its repo's id, byte-identical to the header's
-    // `repoId` — two row kinds, one string. Namespacing the navigation key the same
-    // way the collapse key is namespaced is what keeps them apart; without it the
-    // header renders first and wins every lookup, so focus and the tab stop land
-    // on the repository instead of the tail.
-    const idleKey = row.dataset.idleKey;
-    if (idleKey !== undefined) {
-      return idleTailKey(idleKey);
-    }
-    return row.dataset.worktreeId ?? row.dataset.repoId ?? row.dataset.rowId ?? row.dataset.subKey ?? "";
-  }
-
-  /**
-   * `aria-level` on every navigable row, from the one depth model. A flat
-   * `role="tree"` carries no structure of its own, so a level declared on some
-   * kinds and left implicit on others is worse than none: the disclosure would
-   * announce as a sibling of the header it sits under. `depthOf` is zero-based and
-   * the header only exists multi-repo, hence the offset.
-   */
-  private stampLevels(multiRepo: boolean): void {
-    const offset = multiRepo ? 1 : 0;
-    for (const row of this.navRows()) {
-      row.setAttribute("aria-level", String(this.depthOf(row) + offset));
-    }
-  }
-
-  /** Depth in the declared tree, from the row's own class. */
-  private depthOf(row: HTMLElement): number {
-    if (row.classList.contains("wt-repo")) {
-      return 0;
-    }
-    if (row.classList.contains("wt-idle")) {
-      return 1;
-    }
-    if (row.classList.contains("wt-row")) {
-      // A row inside the tail sits UNDER the disclosure, so Right can descend into
-      // it and Left can climb back out.
-      return row.classList.contains("wt-row--in-tail") ? 2 : 1;
-    }
-    return row.classList.contains("wt-arow") ? 2 : 3;
-  }
-
-  /** The nearest preceding row one level up — the parent every tree keyboard
-   *  model needs and a flat NodeList does not carry. */
-  private parentOf(rows: HTMLElement[], index: number): HTMLElement | undefined {
-    const target = rows[index];
-    if (!target) {
-      return undefined;
-    }
-    const depth = this.depthOf(target);
-    for (let i = index - 1; i >= 0; i--) {
-      const candidate = rows[i];
-      if (candidate && this.depthOf(candidate) < depth) {
-        return candidate;
-      }
-    }
-    return undefined;
-  }
-
-  private focusRow(row: HTMLElement | undefined): void {
-    if (!row) {
-      return;
-    }
-    // The stops are written here and NOT again by the delegate `focus()` fires:
-    // `focusedKey` already names this row, and the delegate returns early on
-    // that. Two full-tree passes per arrow keypress was the cost otherwise.
-    for (const other of this.navRows()) {
-      setRowTabStop(other, other === row);
-    }
-    this.focusedKey = this.keyOf(row);
-    row.focus();
-  }
-
-  private onKeyDown(ev: KeyboardEvent): void {
-    const rows = this.navRows();
-    if (rows.length === 0) {
-      return;
-    }
-    // A row's action control can hold focus, and it is not a row. Resolving it
-    // to its owner first is what keeps every arrow working from there: indexing
-    // the control itself yields -1, which sends both vertical arrows to the top
-    // of the tree and hands the horizontal pair something that is not a row.
-    const target = document.activeElement as HTMLElement | null;
-    const active = target?.closest<HTMLElement>(NAV_ROWS) ?? null;
-    const index = active ? rows.indexOf(active) : -1;
-    switch (ev.key) {
-      case "ArrowDown":
-        ev.preventDefault();
-        this.focusRow(rows[Math.min(rows.length - 1, index + 1)] ?? rows[0]);
-        return;
-      case "ArrowUp":
-        ev.preventDefault();
-        this.focusRow(index <= 0 ? rows[0] : rows[index - 1]);
-        return;
-      case "Home":
-        ev.preventDefault();
-        this.focusRow(rows[0]);
-        return;
-      case "End":
-        ev.preventDefault();
-        this.focusRow(rows[rows.length - 1]);
-        return;
-      case "ArrowRight":
-      case "ArrowLeft": {
-        if (!active) {
-          return;
-        }
-        ev.preventDefault();
-        this.expandOrDescend(active, ev.key === "ArrowRight", rows, index);
-        return;
-      }
-      default:
-    }
-  }
-
-  /**
-   * Right opens a closed node, then descends into an open one, and does nothing on
-   * a leaf. Left closes an open node, then ascends to the PARENT — not the previous
-   * visual row, which on a nested row is a sibling and takes the user sideways.
-   */
-  private expandOrDescend(active: HTMLElement, forward: boolean, rows: HTMLElement[], index: number): void {
-    const expandable = active.hasAttribute("aria-expanded");
-    const isOpen = expandable && active.getAttribute("aria-expanded") === "true";
-
-    if (expandable && forward !== isOpen) {
-      const treeId = active.dataset.worktreeId ?? active.dataset.repoId;
-      const idleKey = active.dataset.idleKey;
-      const rowId = active.dataset.rowId;
-      if (idleKey) {
-        this.toggleIdleTail(idleKey);
-        const key = idleTailKey(idleKey);
-        this.focusRow(this.navRows().find((r) => this.keyOf(r) === key));
-        return;
-      }
-      if (treeId) {
-        this.toggleCollapsed(treeId);
-      } else if (rowId) {
-        this.toggleRow(rowId);
-      } else {
-        return;
-      }
-      const key = treeId ?? rowId;
-      this.focusRow(this.navRows().find((r) => this.keyOf(r) === key));
-      return;
-    }
-
-    if (forward) {
-      // Descend only into a child. A leaf stays put rather than sliding to the
-      // next branch, which would read as navigation the tree did not offer.
-      const next = rows[index + 1];
-      if (isOpen && next && this.depthOf(next) > this.depthOf(active)) {
-        this.focusRow(next);
-      }
-      return;
-    }
-    this.focusRow(this.parentOf(rows, index));
-  }
 }
 
 /** What the notice says happened to the opted-in branch, apart from the removal itself. */

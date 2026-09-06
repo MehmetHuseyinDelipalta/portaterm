@@ -17,7 +17,7 @@
     5. Add `src/webview/worktree/worktreeView/foldState.test.ts` with `// @vitest-environment jsdom` on line 1 if it touches the DOM — the pragma is per file and the existing suites' does not carry.
     6. Close with `git diff --exit-code $(git rev-parse HEAD)..HEAD -- src/types/messages.ts` against this change's base, then the tree form (OBL-5).
 
-- [ ] 1_2 Extract keyboard navigation
+- [x] 1_2 Extract keyboard navigation — verified: pnpm exec vitest run src/webview/worktree/worktreeView/keyboardNav.test.ts src/webview/worktree/WorktreeView.test.ts exit 0
   - **Deps**: 1_1
   - **Refs**: design.md D1, design.md D2, design.md D4
   - **Boundary**: no row list is captured — `navRows()` is read at the moment of the event
