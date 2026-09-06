@@ -4,10 +4,9 @@
 // Every loop skips a single corrupt line and keeps reading (D8); `streamClaudeRecords`
 // is head+tail bounded so a tens-of-MB transcript never fully materializes (W1).
 
-import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
-import * as readline from "node:readline";
 import { createBoundedRecordBuffer } from "./detail";
+import { streamJsonlLines, streamJsonlObjects } from "./jsonlStream";
 import { parseStoredTimestamp } from "./timestamp";
 import { classifyUserRecord } from "./userRecord";
 
@@ -166,47 +165,33 @@ export async function streamClaudeRecords(
   opts: { onRecord?: (rec: Record<string, unknown>) => void } = {},
 ): Promise<{ records: Record<string, unknown>[]; truncated: boolean } | null> {
   const buffer = createBoundedRecordBuffer();
-  let stream: ReturnType<typeof createReadStream> | undefined;
-  let rl: readline.Interface | undefined;
   try {
-    stream = createReadStream(filePath, { encoding: "utf8" });
-    rl = readline.createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY });
-    for await (const line of rl) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
+    for await (const { record } of streamJsonlObjects(filePath)) {
       try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed && typeof parsed === "object") {
-          const rec = parsed as Record<string, unknown>;
-          // Fire BEFORE buffering so a side-collector (e.g. teamName gathering,
-          // D4) sees every record even when the head+tail bound later drops the
-          // middle of a very large transcript (W1).
-          opts.onRecord?.(rec);
-          buffer.push(rec);
-        }
+        // Fire BEFORE buffering so a side-collector (e.g. teamName gathering,
+        // D4) sees every record even when the head+tail bound later drops the
+        // middle of a very large transcript (W1).
+        opts.onRecord?.(record);
+        buffer.push(record);
       } catch {
-        // skip a single corrupt line, keep reading (D8)
+        // A throwing hook costs that one record, never the file: the per-line
+        // catch that used to cover it now lives inside the generator (D8).
       }
     }
   } catch {
     return null; // stream/open failure → unreadable
-  } finally {
-    rl?.close();
-    stream?.destroy();
   }
   return buffer.result();
 }
 
 /** Cheaply read a transcript's first user message text + timestamp (head only). */
 export async function readFirstUserRecord(filePath: string): Promise<{ text: string; timestamp: number } | null> {
-  let stream: ReturnType<typeof createReadStream> | undefined;
-  let rl: readline.Interface | undefined;
   try {
-    stream = createReadStream(filePath, { encoding: "utf8" });
-    rl = readline.createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY });
-    for await (const line of rl) {
+    // The lines-only seam, not the parsed one: the cast below has no object
+    // guard, so a line that is literally `null` throws on `obj.type` and ends
+    // the read here. `streamJsonlObjects` would skip it and read on, changing
+    // what this answers — a latent bug this refactor may not quietly fix.
+    for await (const { line } of streamJsonlLines(filePath)) {
       const trimmed = line.trim();
       if (!trimmed) {
         continue;
@@ -228,8 +213,5 @@ export async function readFirstUserRecord(filePath: string): Promise<{ text: str
     return null;
   } catch {
     return null;
-  } finally {
-    rl?.close();
-    stream?.destroy();
   }
 }
