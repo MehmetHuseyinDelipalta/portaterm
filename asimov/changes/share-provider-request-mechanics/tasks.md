@@ -12,21 +12,19 @@
     3. In the same file export `PreviewTokenRegistry` with `cancel`, `cancelAll`, `begin` and `end`, moving the `_previewTokens` map behind it and keeping `end`'s identity check and the caller-side deferred `dispose()` split intact.
     4. In the same file document, in one comment each, why disposal is deferred out of `cancel` and why the retry re-checks `shouldAbort` per attempt.
 
-- [ ] 1_2 Pin the lifecycle and asymmetry properties
+- [x] 1_2 Pin the lifecycle and asymmetry properties — verified: pnpm exec vitest run src/providers/webviewRequests.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_1
   - **Refs**: design.md#d5-obligation-ledger
   - **Acceptance**:
-    - Outcome: OBL-1 through OBL-5, OBL-7 and OBL-8 each fail on their named mutation
+    - Outcome: OBL-1, OBL-2 and OBL-3 each fail on their named mutation
     - Verify: command pnpm exec vitest run src/providers/webviewRequests.test.ts
   - **Plan**:
     1. Create `src/providers/webviewRequests.test.ts` with a fake `vscode.Webview` whose `postMessage` resolution and attempt count the test controls.
     2. In it cover OBL-1: begin A then B for one session, end A, and assert a later `cancel` still reaches B.
     3. In the same file cover OBL-2 by spying each source's `dispose` and asserting the call count is 0 after `cancel()` and exactly 1 after the owning `finally` — a readability assertion cannot fail here, per the ledger row.
     4. In the same file cover OBL-3: flip `shouldAbort` to true between the first failed attempt and the retry, and assert no second `postMessage`.
-    5. In the same file cover OBL-4's module half: drive each of the four subagent reply branches under each injected post function and assert 1 versus 3 attempts.
-    6. In the same file cover OBL-5 and OBL-7: exactly one cache-post attempt against three fresh attempts, and no post at all when cancellation wins the race.
-    7. In the same file cover OBL-8's module half: both log labels produce their exact strings.
-    8. Run each assertion against the mutation its ledger row names before ticking — a row whose mutation still passes is not pinned.
+    5. Run each assertion against the mutation its ledger row names before ticking — a row whose mutation still passes is not pinned.
+    6. Do not assert handler behaviour here: OBL-4, OBL-5, OBL-7 and OBL-8's module halves need the shared handlers, which `2_1` and `2_2` create. Task `2_3` covers them.
 
 - [x] 1_3 Characterize the provider wiring before anything moves — verified: pnpm exec vitest run src/providers/providerRequestWiring.test.ts && pnpm run check-types exit 0
   - **Deps**: none
@@ -67,4 +65,17 @@
     1. In `src/providers/webviewRequests.ts` add the shared subagent-preview handler and the shared `subagentResolveDeps` builder, the handler taking its posting function as a parameter.
     2. In `src/providers/TerminalEditorProvider.ts` call it with `postOnce` and in `src/providers/TerminalViewProvider.ts` with a `postWithRetry` wrapper, preserving each provider's current behaviour on all four reply paths.
     3. In both providers delete the local `subagentResolveDeps` and remove any import left unused.
+  - **Boundary**: no edits to any existing test file
+
+- [ ] 2_3 Pin the shared handlers' module-level properties
+  - **Deps**: 2_2
+  - **Refs**: design.md#d5-obligation-ledger
+  - **Acceptance**:
+    - Outcome: OBL-4, OBL-5, OBL-7 and OBL-8's module halves each fail on their named mutation
+    - Verify: command pnpm exec vitest run src/providers/webviewRequests.test.ts
+  - **Plan**:
+    1. In `src/providers/webviewRequests.test.ts` cover OBL-4's module half: drive each of the four subagent reply branches under each injected post function and assert 1 versus 3 attempts.
+    2. In the same file cover OBL-5 and OBL-7: exactly one cache-post attempt against three fresh attempts, and no post at all when cancellation wins the race.
+    3. In the same file cover OBL-8's module half: both log labels produce their exact strings.
+    4. Run each assertion against the mutation its ledger row names before ticking.
   - **Boundary**: no edits to any existing test file
