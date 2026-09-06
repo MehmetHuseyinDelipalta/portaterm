@@ -1,0 +1,40 @@
+# Workflow State: decompose-worktree-host-controller
+
+> State file, not a procedure — stages live in the asimov-plan/build/archive skills.
+> Source of truth: gates → this file · task completion → `tasks.md`
+> States: `[ ]` pending · `[x]` done · `[-]` skipped/N/A · `[!]` failed non-blocking
+
+## Plan
+
+- [-] Gate 1: direction approved — approach arrived settled from asimov-refactor; the one late fork (action seam shape) was decided in Stage 3
+- [x] `asm change validate` passes
+- [x] Gate 2: plan approved
+
+## Implement
+
+- [ ] All tasks done (`tasks.md`)
+- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
+- [ ] Gate: implementation approved
+- [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
+
+## Archive
+
+- [ ] Apply deltas: `bun run asm change apply`
+- [ ] Archive change: `bun run asm change archive`
+
+> Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
+
+## Notes
+
+<!-- Blueprint source, lane, and the SHA the plan is written against below. Optional: one-line orphan decisions only — scope boundaries, deviations, rejected alternatives with no home elsewhere. -->
+
+Blueprint: none
+Lane: full (standard) — 10+ files across the extension-host/webview boundary, MEDIUM risk concentrated in HostState threading | flags: cross-boundary
+Admission: in-contract — behaviour-preserving decomposition; no new invariant owner, single acceptance story (baseline suite green)
+Planned at: a3d2416e
+Plan attack: asm-oracle refuted all 4 obligation rows in their first form; claims restated to what a witness establishes, 2 rows now fund new tests (OBL-3 dialogChannels, OBL-4 provision). Rejected as out of scope: fsDeletionGate is not transitive (src/extension.ts:1603-1619) — pre-existing gate property.
+Late fork: action modules need ~10 host helpers, not just state — chose factory-per-module over a ~25-field context object; the planned HostState task was dropped as unnecessary.
+Pattern: tagged-union opening reducer admitted (design.md D5) as task 3_1, after extraction, per user decision to keep it in this change.
+Residual: createWorktreeHost still fires long-function at ~71% after 2_4 — projection/publish/presence is a separate axis and a follow-up change.
+Worktree: none — building on main at user's direction.
