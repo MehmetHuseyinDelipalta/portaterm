@@ -350,7 +350,7 @@ specific false claim the view could otherwise make.
 |---|-----------|
 | I1 | A failed or timed-out scan never downgrades a row. Absence of evidence is not evidence of absence |
 | I2 | A spinner frame proves activity, never identity. No agent icon without a proven identity |
-| I3 | An `external` row is never focusable and is always labelled as running outside this window |
+| I3 | An `external` row is never focusable and is always labelled as outside this window |
 | I4 | Identity confidence and activity confidence are derived independently from their own source; neither is collapsed into a single field |
 | I5 | Transcript-derived subagents are history, rendered as history, with `live: false` |
 | I6 | A resumed or cleared session landing idle is not a completed turn |
@@ -537,7 +537,7 @@ one definition; every other document references it.
 | `repoId` | Normalized absolute git common dir | [worktree-model.md](design/worktree-model.md) § 3.2 | rpc § 2, ui § 3.1, actions § 3 |
 | `rowId` | `window:<paneId>` or `external:<agent>:<sessionId>` | [worktree-agent-presence.md](design/worktree-agent-presence.md) § 3.5 | rpc § 2, ui § 6 |
 | Vault entry id | `<agent>:<sessionId>` — **pre-existing**, defined in `src/vault/types.ts:53` | Code | presence § 2, rpc § 2, actions § 2 |
-| Activity vocabulary | `running` / `waiting` / `idle` / `exited` — the first three match `TerminalActivityStatus`; `exited` means the pty died with the tab still open. The Worktree view **presents** two further states, `running (unconfirmed)` and `unknown`, both derived and neither on the wire | [worktree-agent-presence.md](design/worktree-agent-presence.md) § 2 | ui § 3.3, § 7.2, hook-server § 4.5, ceiling § 2 |
+| Activity vocabulary | `running` / `waiting` / `idle` / `exited` — the first three match `TerminalActivityStatus`; `exited` means the pty died with the tab still open. The Worktree view **presents** three further states, `running (unconfirmed)`, `unknown`, and `done`; all are derived and none is on the wire | [worktree-agent-presence.md](design/worktree-agent-presence.md) § 2 | ui § 3.3, § 7.2, hook-server § 4.5, ceiling § 2 |
 | Turn-state vocabulary | `working` / `waiting` / `done` — hook-layer only, **deliberately distinct** from the activity vocabulary above. There is no `blocked` | [agent-hook-server.md](design/agent-hook-server.md) § 3 | presence § 3.3 |
 | Evidence tuple | `agentSource`, `activitySource` — confidence is **derived**, never a field | [worktree-agent-presence.md](design/worktree-agent-presence.md) § 2 | ui § 4, hook-server § 4.5 |
 | Degradation record | `PresenceDegradation { source, reason, since }` / `WorktreeRepo.degraded` — a reason, never a bare boolean | [worktree-agent-presence.md](design/worktree-agent-presence.md) § 2 | ui § 3, model § 2 |
@@ -560,7 +560,7 @@ one definition; every other document references it.
 | Idle-tail fold threshold | 4 agentless worktrees per repo | [worktree-panel-ui.md](design/worktree-panel-ui.md) § 3.6 | — |
 | Worktree settings keys | `anywhereTerminal.worktree.createRoot` (string, default `.claude/worktrees`; relative resolves against the main worktree, absolute used as-is; set explicitly it outranks detection, unset the repo's own layout wins), `anywhereTerminal.worktree.rowActivation` (`focus` \| `preview`, default `focus`) | [worktree-create.md](design/worktree-create.md) § 3, [worktree-panel-ui.md](design/worktree-panel-ui.md) § 6 | — |
 | `WorktreeOpenAfter` | `none` / `terminal` / `agent` / `newWindow` / `addToWorkspace` | [worktree-rpc.md](design/worktree-rpc.md) § 2.2 | create § 4 |
-| Worktree row state precedence | `waiting` > `running` > `unknown` > `idle` > `exited` — over **presented** states, so it includes the derived `unknown`. `running (unconfirmed)` is a confidence on `running` and carries no rank of its own | [worktree-panel-ui.md](design/worktree-panel-ui.md) § 7.2 | ui § 8, ceiling § 2.2 |
+| Worktree row state precedence | `waiting` > `running` > `running (unconfirmed)` > `unknown` > `done` > `idle` > `exited` — over **presented** states; evidence gaps outrank completed history, which outranks plain rest | [worktree-panel-ui.md](design/worktree-panel-ui.md) § 7.2 | ui § 8, ceiling § 2.2 |
 
 **Intentional mapping, not an equality**: the hook layer's turn state and the presence layer's
 activity are different vocabularies on purpose. Turn state describes an agent's conversation;
@@ -573,7 +573,9 @@ activity describes a terminal. The mapping is total in one direction and partial
 | `done` | `idle` — never `exited`, because a finished turn does not close the pane |
 
 `exited` has no turn-state preimage. It is produced only by pty exit and overrides any
-published hook state.
+published hook state. Presented `done` is derived only when wire `idle` also carries the
+explicit completion time from a non-boundary hook `done`; registry idle and inference never
+create it.
 
 **Status:** the Claude installer (v1) is shipped and opt-in; the Cursor runtime still produces
 only working/idle transitions on its own, so until a user opts a session into the Claude hook,

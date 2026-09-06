@@ -240,9 +240,7 @@ function parseRecord(fileName: string, text: string): RunningClaudeSession | und
       ? parsed.startedAt
       : undefined;
   const status =
-    parsed.status === "busy" || parsed.status === "waiting" || parsed.status === "idle"
-      ? parsed.status
-      : undefined;
+    parsed.status === "busy" || parsed.status === "waiting" || parsed.status === "idle" ? parsed.status : undefined;
   const statusUpdatedAt =
     status !== undefined &&
     typeof parsed.statusUpdatedAt === "number" &&

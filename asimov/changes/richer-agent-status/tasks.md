@@ -37,7 +37,7 @@
 
 ## 3. Hybrid Orca presentation
 
-- [ ] 3_1 Render the richer status vocabulary with shape-first theme styling
+- [x] 3_1 Render the richer status vocabulary with shape-first theme styling — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/worktreeFormat.test.ts && pnpm run check-types && pnpm exec biome check src/webview/worktree src/worktree/registrySessionActivity.ts src/vault/readers/runningSessions.ts exit 0
   - **Deps**: 2_1
   - **Refs**: specs/worktree-panel/spec.md#{strongest-state-wins-and-shape-carries-it, completed-and-idle-are-visually-distinct, continuous-rotation-identifies-confirmed-execution-only, attention-has-its-own-shape}; design.md#{d3-attention-outranks-execution-evidence-gaps-outrank-history, d4-borrow-orca-s-semantics-retain-anywhere-s-shape-discipline, d5-no-new-runtime-vocabulary-without-evidence}
   - **Acceptance**:
@@ -47,4 +47,4 @@
     1. Add trusted waiting and done SVGs in `src/webview/worktree/worktreeIcons.ts`, and render them through `stateShape` in `src/webview/worktree/worktreeTreeView.ts` with updated labels.
     2. Update `src/webview/worktree/worktreePanel.css` and `src/webview/worktree/worktreeFixtures.ts` for the hybrid shapes, theme tokens, motion, and reduced-motion behavior.
     3. Extend `src/webview/worktree/WorktreeView.test.ts` to prove every shape, colour-independent distinction, summary state, animation restriction, and agent-neutral rendering.
-    4. Reconcile the vocabulary, precedence, external status, and completion rules in `docs/DESIGN.md`, `docs/design/worktree-panel-ui.md`, and `docs/design/worktree-agent-presence.md`.
+    4. Reconcile the vocabulary, precedence, external status, and completion rules in `docs/DESIGN.md`, `docs/design/worktree-panel-ui.md`, and `docs/design/worktree-agent-presence.md`; keep the lifecycle parser edit in `src/vault/readers/runningSessions.ts` formatter-clean for the final gate.

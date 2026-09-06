@@ -166,6 +166,13 @@ describe("strongestActivity", () => {
     expect(strongestActivity(rows, [{ source: "hook", reason: "boom", since: NOW }], NOW)).toBe("unknown");
   });
 
+  it("ranks completed history above plain idle and below unknown evidence", () => {
+    const done = agentRow({ rowId: "1", activity: "idle", activitySource: "hook", finishedAt: NOW - MINUTE });
+    const idle = agentRow({ rowId: "2", activity: "idle", activitySource: "hook" });
+    expect(strongestActivity([idle, done], [], NOW)).toBe("done");
+    expect(strongestActivity([idle, done], [{ source: "hook", reason: "boom", since: NOW }], NOW)).toBe("unknown");
+  });
+
   it("ranks what is shown, not what was sent — a degraded running row does not read as running", () => {
     const rows = [agentRow({ rowId: "1", activity: "running", activitySource: "output" })];
     expect(strongestActivity(rows, [{ source: "panes", reason: "boom", since: NOW }], NOW)).toBe("unknown");

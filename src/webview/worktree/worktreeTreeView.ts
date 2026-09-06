@@ -30,7 +30,16 @@ import {
   worktreePills,
   worktreeTooltip,
 } from "./worktreeFormat";
-import { ICON_BRANCH, ICON_ELLIPSIS, ICON_LOCK, ICON_PLUS, ICON_WARNING, ICON_WINDOW } from "./worktreeIcons";
+import {
+  ICON_BRANCH,
+  ICON_ELLIPSIS,
+  ICON_LOCK,
+  ICON_PLUS,
+  ICON_STATUS_DONE,
+  ICON_STATUS_WAITING,
+  ICON_WARNING,
+  ICON_WINDOW,
+} from "./worktreeIcons";
 import type {
   DelegationRoster,
   WorktreeAgentRow,
@@ -123,7 +132,10 @@ export function activityLabel(activity: PresentedActivity): string {
   if (activity === "unknown") {
     return "activity unknown";
   }
-  return activity === "running-unconfirmed" ? "running, unconfirmed" : activity;
+  if (activity === "running-unconfirmed") {
+    return "running, unconfirmed";
+  }
+  return activity === "done" ? "completed" : activity;
 }
 
 /** The same statement made about a worktree row, which speaks for the agents inside it. */
@@ -131,7 +143,10 @@ export function worktreeActivityLabel(activity: PresentedActivity): string {
   if (activity === "unknown") {
     return "An agent's activity is unknown";
   }
-  return activity === "running-unconfirmed" ? "An agent may be running, unconfirmed" : `An agent is ${activity}`;
+  if (activity === "running-unconfirmed") {
+    return "An agent may be running, unconfirmed";
+  }
+  return activity === "done" ? "An agent completed its turn" : `An agent is ${activity}`;
 }
 
 /**
@@ -204,6 +219,11 @@ export function confidenceHint(
 export function stateShape(activity: PresentedActivity, label?: string): HTMLElement {
   const dot = document.createElement("span");
   dot.className = `wt-state wt-state--${activity}`;
+  if (activity === "waiting") {
+    setIcon(dot, ICON_STATUS_WAITING);
+  } else if (activity === "done") {
+    setIcon(dot, ICON_STATUS_DONE);
+  }
   if (label) {
     dot.setAttribute("role", "img");
     dot.setAttribute("aria-label", label);

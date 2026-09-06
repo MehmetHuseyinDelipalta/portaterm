@@ -30,7 +30,7 @@ import {
 } from "./worktreeFixtures";
 import type { PresentedActivity } from "./worktreeFormat";
 import { CONFIRMATION_CEILING_MS } from "./worktreeFormat";
-import { unconfirmedHint } from "./worktreeTreeView";
+import { activityLabel, stateShape, unconfirmedHint, worktreeActivityLabel } from "./worktreeTreeView";
 import type {
   DelegationRoster,
   PresenceDegradation,
@@ -263,6 +263,18 @@ describe("tree structure", () => {
     expect(glyph?.className).toContain("wt-state--waiting");
   });
 
+  it("renders waiting and done through trusted shape glyphs with explicit labels", () => {
+    const waiting = stateShape("waiting", activityLabel("waiting"));
+    const done = stateShape("done", activityLabel("done"));
+
+    expect(waiting.querySelector("svg path")).not.toBeNull();
+    expect(waiting.getAttribute("aria-label")).toBe("waiting");
+    expect(done.querySelector("svg circle")).not.toBeNull();
+    expect(done.querySelector("svg path")).not.toBeNull();
+    expect(done.getAttribute("aria-label")).toBe("completed");
+    expect(worktreeActivityLabel("done")).toBe("An agent completed its turn");
+  });
+
   it("reads unknown, not idle, when every source that decides a row is failing", () => {
     const { view } = mount();
     const presence = singleRepoPresence(NOW);
@@ -440,6 +452,7 @@ describe("tree structure", () => {
       dropMotion: boolean,
     ): { key: string; base: string; baseInked: boolean; motion: string[] } => {
       const baseDecls = declsOf(css, state, "");
+      const iconMarkup = stateShape(state as PresentedActivity).innerHTML;
       expect(baseDecls, `no rule for .wt-state--${state}`).not.toEqual([]);
       // `::before` as well: an animated pseudo-element is an animated glyph
       // whichever side generates it, and only `::after` was ever looked at.
@@ -497,7 +510,8 @@ describe("tree structure", () => {
         kept.set("edges", painted.map((sd) => `${sd}/${edges.get(sd)?.style ?? ""}`).join(",") || "none");
         kept.set("fill", fill);
         if (layer === "") {
-          baseInked = fill === "filled" || painted.length > 0;
+          kept.set("icon", iconMarkup || "none");
+          baseInked = iconMarkup !== "" || fill === "filled" || painted.length > 0;
         }
         keys.set(layer, kept);
       }
@@ -554,6 +568,11 @@ describe("tree structure", () => {
           still?.motion ?? [],
           "running-unconfirmed animates — it is the state whose whole purpose is to stand still",
         ).toEqual([]);
+        expect(shapes[STATES.indexOf("running")]?.motion.join(" ")).toContain("wt-spin");
+        expect(shapes[STATES.indexOf("waiting")]?.motion.join(" ") ?? "").not.toContain("wt-spin");
+        for (const state of STATES.filter((value) => value !== "running" && value !== "waiting")) {
+          expect(shapes[STATES.indexOf(state)]?.motion ?? [], `.wt-state--${state} must stay static`).toEqual([]);
+        }
       }
       if (dropMotion) {
         // The distinctness passes above cannot ask this: they strip motion from the
@@ -1358,7 +1377,9 @@ describe("presence disclosure", () => {
     view.setData(populated());
     const pill = view.element.querySelector(".wt-presence");
     expect(pill).not.toBeNull();
-    expect(pill?.querySelectorAll(".wt-pgroup")).toHaveLength(2);
+    expect(pill?.querySelectorAll(".wt-pgroup")).toHaveLength(3);
+    expect(pill?.querySelector(".wt-state--done")).not.toBeNull();
+    expect(pill?.querySelector(".wt-state--idle")).not.toBeNull();
     expect(pill?.querySelector(".wt-pgroup-more")?.textContent).toBe("+2");
   });
 

@@ -15,6 +15,10 @@ export const ICON_PLUS =
   '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3.5" x2="8" y2="12.5"/><line x1="3.5" y1="8" x2="12.5" y2="8"/></svg>';
 export const ICON_WARNING =
   '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5l6 11H2z"/><line x1="8" y1="6.5" x2="8" y2="9.8"/><line x1="8" y1="11.4" x2="8" y2="11.5"/></svg>';
+export const ICON_STATUS_WAITING =
+  '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2.75h10a1.25 1.25 0 0 1 1.25 1.25v6.25A1.25 1.25 0 0 1 13 11.5H7l-3.5 2v-2H3a1.25 1.25 0 0 1-1.25-1.25V4A1.25 1.25 0 0 1 3 2.75z"/><path d="M6.5 6a1.65 1.65 0 1 1 2.15 1.57c-.43.15-.65.45-.65.93"/><path d="M8 10h.01"/></svg>';
+export const ICON_STATUS_DONE =
+  '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.75"/><path d="m5.2 8 1.8 1.8 3.8-4"/></svg>';
 export const ICON_WINDOW =
   '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2 6h12"/></svg>';
 export const ICON_TRASH =

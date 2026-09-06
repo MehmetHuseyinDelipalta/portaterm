@@ -233,13 +233,25 @@ export function singleRepoPresence(now: number): WorktreePresence {
           activitySource: "none",
           title: "zsh",
           paneId: "pane-4",
-          finishedAt: now - HOUR,
+          stateStartedAt: now - HOUR,
         }),
       ],
       [`${WT_ROOT}/worktree-panel`]: [
         ...overflow,
-        agentRow({ rowId: "idle-1", agent: "opencode", activity: "idle", title: "opencode", finishedAt: now - HOUR }),
-        agentRow({ rowId: "idle-2", agent: "cursor", activity: "idle", title: "cursor", finishedAt: now - 2 * HOUR }),
+        agentRow({
+          rowId: "done-1",
+          agent: "claude",
+          activity: "idle",
+          title: "completed review",
+          finishedAt: now - HOUR,
+        }),
+        agentRow({
+          rowId: "idle-1",
+          agent: "cursor",
+          activity: "idle",
+          title: "cursor",
+          stateStartedAt: now - 2 * HOUR,
+        }),
       ],
     },
   };

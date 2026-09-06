@@ -62,7 +62,7 @@ WorktreeAgentRow {
   entryId?:     string           // vault `<agent>:<sessionId>` once resolved
   startedAt?:      number        // when this row's agent was first seen
   stateStartedAt?: number        // when the current `activity` began — drives the age column
-  finishedAt?:     number        // when the last turn ended; set only while `idle` after work
+  finishedAt?:     number        // explicit non-boundary hook completion; only while `idle`
   lastActivityAt?: number        // newest evidence timestamp — the worktree ordering key
   pid?:         number           // external rows only
   delegations?: DelegationRoster  // absent = never read — see § 3.6
@@ -164,6 +164,12 @@ three ways, so an idle pane that merely happens to carry a shell title is `outpu
 title there reports a cause that was not one. The projection therefore returns the winning rule
 alongside the activity rather than letting each consumer re-derive it.
 
+A fresh hook report supersedes these inference rules while its process is still live. Hook `done`
+maps to wire `idle`; only a non-boundary `done` writes `finishedAt`, using the report's own
+`stateStartedAt`. Registry idle, output quiet, shell reclaim, and session boundaries never write
+completion. The time remains stable until later running/waiting work, a new identity, or a
+session boundary supersedes it.
+
 These are the same rules `TerminalActivityTracker` applies — literally the same, since both
 sides now call the projection extracted into `src/shared/paneEvidence.ts` — but **presence
 cannot consume that tracker**, and assuming it can is a mistake worth stating plainly:
@@ -258,7 +264,9 @@ worktree with a live agent started from another window or a bare terminal must n
    `${process.pid}.json` carrying `pid: process.pid`, so a mismatch is malformed by
    construction and could otherwise impersonate whatever live process it names), the session id
    must pass the same canonical guard every Claude reader uses, the cwd must be absolute, and a
-   launch time is honoured only when finite and non-negative.
+   launch time is honoured only when finite and non-negative. Lifecycle is an exact allow-list:
+   `busy`, `waiting`, or `idle`; unknown values stay absent. A finite non-negative
+   `statusUpdatedAt` is carried only with a recognized status.
 2. Drop headless one-shots via `isHeadlessSession` — `claude -p` hook subprocesses are the
    single largest source of phantom "an agent is running" rows (`01-agent-detection.md`
    § 3.3).
@@ -268,10 +276,14 @@ worktree with a live agent started from another window or a bare terminal must n
    produced rows. A registry session already claimed by a pane is that pane's row — never a
    second, external row. The limit is deliberate: a pane inside no worktree emits no row, so
    its session can still surface as external under the registry's own cwd.
-5. What survives becomes `scope: "external"`, `agentSource: "registry"`,
-   `activitySource: "registry"` — authoritative for identity by the § 2 derivation — with
-   `activity: "running"` only while the pid is alive. There is no turn-level state without
-   hooks, so an external row reports `running` (a live agent process) and never `waiting`.
+5. What survives becomes `scope: "external"` and `agentSource: "registry"`. The shared
+   lifecycle mapper projects `busy → running`, `waiting → waiting`, and `idle → idle`, with
+   `activitySource: "registry"`. A missing or unknown status uses wire `idle` plus
+   `activitySource: "none"`, which the view presents as `unknown` without animation. Registry
+   idle never supplies `finishedAt`.
+6. `stateStartedAt` and `lastActivityAt` use `max(statusUpdatedAt, launch-or-first-seen)`.
+   Missing timestamps fall back to that floor, impossible pre-launch transitions are clamped,
+   and repeated scans do not refresh it.
 
 **A failed read retains, it does not clear.** The last successfully indexed session list is
 re-attributed against the current worktrees and the scope is marked degraded with the reason,
