@@ -83,10 +83,18 @@ describe("the create form does not refuse a name the user has not typed", () => 
 
   // A guard, not an observation: this one is GREEN today and must stay GREEN,
   // so it can never be RED and cannot be declared as something to reproduce.
-  it("still says it once the user has been in the field and left it empty", () => {
+  it("still says it once the user has used the field and left it empty", () => {
     const host = open();
     const input = branchInput(host);
+    // Typed in, then emptied. A bare focus/blur is NOT this: the form focuses
+    // this field itself, so the caret leaving is the form's, not the user's —
+    // which is the fault 260906-at-create-dialog-blur-from-autofocus corrects,
+    // and this guard had encoded the same wrong precondition.
     input.focus();
+    input.value = "x";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("blur", { bubbles: true }));
     const said = refusal(host);
     console.log(`refusal after visiting and leaving the field: ${JSON.stringify(said)}`);

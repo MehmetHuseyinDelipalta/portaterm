@@ -2492,6 +2492,18 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
    */
   let nameLeft = false;
   let baseLeft = false;
+  /**
+   * Has the user put anything in the field, ever?
+   *
+   * The form focuses the branch field when it opens, so the FIRST click anywhere
+   * in the dialog blurs it. Blur alone therefore cannot mean "the user left this
+   * empty": the caret was never theirs to begin with, and treating it as an
+   * answer is what painted git's refusal of `""` under a field nobody had typed
+   * in. Typing is what makes the field theirs; after that, leaving it empty is a
+   * real answer and is refused like any other.
+   */
+  let nameTyped = false;
+  let baseTyped = false;
 
   function submit(): void {
     if (createBtn.disabled || heldBranch() !== undefined) {
@@ -3361,7 +3373,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     // field already has the vocabulary for a refusal, and `blockedBy` reads
     // `error` first, so a refused name never reads as one still being checked.
     const branchRefused = !detached && effective?.branchValid?.ok === false ? effective.branchValid.reason : undefined;
-    // An empty field the user has not left yet is not a name they got wrong.
+    // An empty field the user has not answered yet is not a name they got wrong.
     // Every refusal below is ABOUT the branch name, so one guard covers them.
     const unanswered = !detached && !nameLeft && draft.branchName.trim().length === 0;
     const error = unanswered
@@ -3457,6 +3469,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     syncDerived(true);
   };
   nameInput.addEventListener("input", () => {
+    nameTyped = true;
     // Typing re-decides what the text MEANS, on the same rule the ordering
     // states: an exact match is the branch the user named, anything else is a
     // branch they are about to create.
@@ -3467,8 +3480,9 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   nameInput.addEventListener("change", edited);
   nameInput.addEventListener("blur", () => {
     closeList();
-    // Leaving the field is what turns its emptiness into the user's answer.
-    nameLeft = true;
+    // Leaving a field the user actually used is what turns its emptiness into
+    // their answer. Leaving the one the form focused for them says nothing.
+    nameLeft = nameLeft || nameTyped || nameInput.value.trim().length > 0;
     syncDerived(true);
   });
   nameInput.addEventListener("keydown", (ev) => {
@@ -3491,10 +3505,13 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       commit(activeAt);
     }
   });
-  baseInput.addEventListener("input", () => syncDerived());
+  baseInput.addEventListener("input", () => {
+    baseTyped = true;
+    syncDerived();
+  });
   baseInput.addEventListener("change", edited);
   baseInput.addEventListener("blur", () => {
-    baseLeft = true;
+    baseLeft = baseLeft || baseTyped || baseInput.value.trim().length > 0;
     syncDerived(true);
   });
   pathInput.addEventListener("change", edited);

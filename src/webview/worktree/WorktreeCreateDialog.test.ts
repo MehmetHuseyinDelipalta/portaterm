@@ -230,10 +230,11 @@ describe("create worktree — the default and every consequential action explain
     });
   };
 
-  it("says nothing about an empty name until the user has been in the field", () => {
-    // The form opening is not the user's answer. Naming the empty field on sight
-    // — and again under every click, since each one re-renders — reads as being
-    // told off for not having typed yet (260906-at-create-dialog-errors-before-touch).
+  it("says nothing about an empty name until the user has actually used the field", () => {
+    // The form opening is not the user's answer, and neither is the caret it
+    // places for them: `focusInitial(nameInput)` means the FIRST click anywhere
+    // in the dialog blurs this field, so blur alone cannot stand for "left it
+    // empty" (260906-at-create-dialog-blur-from-autofocus).
     const { host, q } = open();
     const reason = (): string => host.querySelector<HTMLElement>(".wt-create-disabled-reason")?.textContent ?? "";
     const create = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find((b) =>
@@ -250,8 +251,56 @@ describe("create worktree — the default and every consequential action explain
     }
     expect(reason()).toBe("");
 
-    q<HTMLInputElement>("#wt-branch").dispatchEvent(new Event("blur", { bubbles: true }));
+    // The form's own caret leaving is still not an answer.
+    const input = q<HTMLInputElement>("#wt-branch");
+    input.dispatchEvent(new Event("blur", { bubbles: true }));
+    expect(reason()).toBe("");
+
+    // Typing in it is. Emptying it again and leaving is then a real answer.
+    type(input, "x");
+    type(input, "");
+    input.dispatchEvent(new Event("blur", { bubbles: true }));
     expect(reason()).toBe("Enter a branch name.");
+  });
+
+  it("does not refuse an untyped name when the click blurs the field the form focused", () => {
+    // The reported shape: open the form, click a control, and git's refusal of ""
+    // lands under a field nobody has typed in. The verdict is honest — "" is not
+    // a branch name — so what has to wait is the asking of it as a question about
+    // the user (260906-at-create-dialog-blur-from-autofocus).
+    let apply: ((r: WorktreeCreateResolutionMessage) => void) | undefined;
+    const { q, host } = open({
+      bindResolution: (fn) => {
+        apply = fn;
+      },
+      onSelectionChange: (selection) => {
+        apply?.({
+          type: "worktreeCreateResolution",
+          repoId: REPO_ID,
+          token: 1,
+          seq: 1,
+          query: selection.branch,
+          mode: { kind: "fresh" },
+          freePath: "/trees/repo-x",
+          branchValid: selection.branch.trim()
+            ? { ok: true }
+            : { ok: false, reason: 'git will not take "" as a branch name.' },
+        });
+      },
+    });
+    const input = q<HTMLInputElement>("#wt-branch");
+    input.dispatchEvent(new Event("blur", { bubbles: true }));
+
+    expect(host.querySelector<HTMLElement>(".wt-ferror")?.hidden).toBe(true);
+    expect(input.classList.contains("is-invalid")).toBe(false);
+    expect(input.getAttribute("aria-invalid")).toBeNull();
+
+    // And it still refuses the same name once the field is one the user has used.
+    type(input, "x");
+    type(input, "");
+    input.dispatchEvent(new Event("blur", { bubbles: true }));
+    expect(q<HTMLElement>(".wt-ferror").textContent).toBe('git will not take "" as a branch name.');
+    expect(input.classList.contains("is-invalid")).toBe(true);
   });
 
   it("says it when a create is asked for, rather than sitting inert", () => {
@@ -268,11 +317,14 @@ describe("create worktree — the default and every consequential action explain
     {
       name: "missing branch",
       expected: "Enter a branch name.",
-      // Left, not merely opened: the form does not name an empty field until the
-      // user has been in it, so the reason is earned rather than shown on sight.
+      // Used and emptied, not merely blurred: the form focuses this field itself,
+      // so a blur alone is its own caret leaving, not the user's answer.
       arrange: () => {
         const h = open();
-        h.q<HTMLInputElement>("#wt-branch").dispatchEvent(new Event("blur", { bubbles: true }));
+        const input = h.q<HTMLInputElement>("#wt-branch");
+        type(input, "x");
+        type(input, "");
+        input.dispatchEvent(new Event("blur", { bubbles: true }));
         return h;
       },
     },
@@ -282,7 +334,10 @@ describe("create worktree — the default and every consequential action explain
       arrange: () => {
         const h = open();
         h.q<HTMLButtonElement>("#wt-detached").click();
-        h.q<HTMLInputElement>("#wt-base").dispatchEvent(new Event("blur", { bubbles: true }));
+        const base = h.q<HTMLInputElement>("#wt-base");
+        type(base, "x");
+        type(base, "");
+        base.dispatchEvent(new Event("blur", { bubbles: true }));
         return h;
       },
     },
