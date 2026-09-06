@@ -110,3 +110,17 @@
     3. Route the arms in `src/providers/worktreeHost/actions/create.ts` and `src/providers/worktreeHost/actions/provision.ts` through the same store, so phase is derived in one place rather than through 20 `liveOpening.get` calls.
     4. Add `src/providers/worktreeHost/openingLifecycle.test.ts` driving all five transitions, including a stale replay and a detach-to-same-token reset, asserting none of the three invalid combinations is constructible (design.md OBL-5).
     5. Run `pnpm run test:unit` and confirm 7947 tests still green.
+
+## 4. Review
+
+- [x] 4_1 Close round-1 findings — verified: pnpm run gate:fs-deletion exit 0
+  - **Deps**: 3_1
+  - **Refs**: design.md D1, design.md D3
+  - **Acceptance**:
+    - Outcome: F001, F003 and F005 are closed in code and F004 in the record; the I10 gate fails on a planted deletion in `src/providers/worktreeHost/actions/create.ts`.
+    - Verify: command pnpm run gate:fs-deletion
+  - **Plan**:
+    1. Add `src/providers/worktreeHost/actions/create.ts` to the stated list in `src/test/invariants/fsDeletionGate.ts`, saying why the debris-authorization mint belongs there (F001).
+    2. In `src/providers/worktreeHost/actions/create.ts`, replace `CreateDeps.surfaces` with `hasSurface(surface): boolean`, matching `RemovalDeps` and `ProvisionDeps`, and update the wiring in `src/providers/WorktreeHost.ts` (F003).
+    3. Correct the module header of `src/providers/worktreeHost/actions/provision.test.ts` to name `actions/create.ts` as the baseline writer (F005).
+    4. Amend `asimov/changes/decompose-worktree-host-controller/design.md` D3 to record that one retarget changed `toBeDefined()` to `toBe(true)`, and why that strengthened a vacuous precondition (F004).

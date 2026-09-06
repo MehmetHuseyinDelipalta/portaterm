@@ -1708,7 +1708,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     provisionBaseline,
     provisionReading,
     options,
-    surfaces,
+    hasSurface: (surface) => surfaces.has(surface),
     actionPath,
     admissibleLaunch,
     currentMigrationRegistration,

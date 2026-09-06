@@ -162,6 +162,12 @@ Additive test growth, funded by the refuted ledger rows — new files, no edits 
 - `src/providers/worktreeHost/actions/provision.test.ts` (`2_3`) — pins `provisionBaseline`
   continuity across detach and reattach onto the same opening.
 
+One assertion did NOT survive byte-identical, and the record says so rather than the reverse:
+`WorktreeController.test.ts:2346` went from `expect(...).toBeDefined()` to `expect(...).toBe(true)`.
+The retarget STRENGTHENED it. The field the old poke wrote was initialised to `null`, and
+`expect(null).toBeDefined()` passes under vitest, so the original precondition asserted nothing;
+`channels(h).<name>.bound()` returns a real boolean and the new matcher can fail (round-1 F004).
+
 ### D4: Allowed non-pure transformations
 
 - `1_1`: guards become `export function` declarations and gain explicit parameter types where

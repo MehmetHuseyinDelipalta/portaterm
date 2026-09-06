@@ -50,9 +50,16 @@ function isRemovalPath(rel: string): boolean {
     // The removal arms moved out of `WorktreeHost.ts` here. Named by exact path,
     // not by a `src/providers/worktreeHost/` prefix: this gate is a stated list
     // rather than a repository-wide `fs.rm` rule (see the header above), and a
-    // prefix would pull the guards, the host types and the create, provisioning
-    // and shell modules into scope for no reason.
-    rel === "src/providers/worktreeHost/actions/removal.ts"
+    // prefix would pull the guards, the host types and the provisioning and
+    // shell modules into scope for no reason.
+    rel === "src/providers/worktreeHost/actions/removal.ts" ||
+    // Where `answerDebrisAuthorization` and `corroborate` moved. They do not
+    // delete anything; they MINT the `DebrisAuthorization` that `clearDebris.ts`
+    // spends on a real `fs.rm`, and issuing the authority is the half of I10
+    // that decides which directory is deletable. Both halves were inside
+    // `WorktreeHost.ts` before this change split them, so leaving this file out
+    // would shrink what the gate watches rather than move it (round-1 F001).
+    rel === "src/providers/worktreeHost/actions/create.ts"
   );
 }
 

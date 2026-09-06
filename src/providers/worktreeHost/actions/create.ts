@@ -86,7 +86,7 @@ export interface CreateDeps {
   readonly provisionBaseline: Map<string, string>;
   readonly provisionReading: Map<string, number>;
   readonly options: WorktreeHostOptions;
-  readonly surfaces: Map<WorktreeSurface, unknown>;
+  hasSurface(surface: WorktreeSurface): boolean;
   actionPath(worktreeId: string, allowMissing: boolean): string | undefined;
   admissibleLaunch(surface: WorktreeSurface, fields: unknown): boolean;
   currentMigrationRegistration(repoId: string): MigrationRepositoryBinding["registration"] | undefined;
@@ -146,7 +146,7 @@ export function createCreateActions(deps: CreateDeps) {
     resolveDestination,
     retireOpening,
     surfaceKey,
-    surfaces,
+    hasSurface,
     vettedOverride,
   } = deps;
 
@@ -246,7 +246,7 @@ export function createCreateActions(deps: CreateDeps) {
      * `ask` is echoed, so releasing an older pick cannot release a newer one.
      */
     const release = (path?: string): void => {
-      if (disposed() || !surfaces.has(surface) || openingFor(surface, msg.repoId, msg.token) === undefined) {
+      if (disposed() || !hasSurface(surface) || openingFor(surface, msg.repoId, msg.token) === undefined) {
         return;
       }
       surface.post({
@@ -290,7 +290,7 @@ export function createCreateActions(deps: CreateDeps) {
     // or superseded while either is suspended, and writing the record onto an
     // object the retirement already dropped is the same mistake as posting to a
     // form that is gone.
-    const opening = disposed() || !surfaces.has(surface) ? undefined : openingFor(surface, msg.repoId, msg.token);
+    const opening = disposed() || !hasSurface(surface) ? undefined : openingFor(surface, msg.repoId, msg.token);
     if (opening === undefined || opening !== held || opening.pickGeneration !== generation || resolved === null) {
       // Not recorded — and, where a form is still there to hear it, still
       // answered. A replaced `Opening` and a superseded pick both leave the
@@ -430,7 +430,7 @@ export function createCreateActions(deps: CreateDeps) {
 
     // The surface may have detached while git was answering. Posting to a dead
     // one is at best wasted, and the form it described is gone.
-    if (disposed() || !surfaces.has(surface) || stillOurs() === undefined) {
+    if (disposed() || !hasSurface(surface) || stillOurs() === undefined) {
       return;
     }
     // Only where a base can actually apply. `reuse` and `reattach` take their
@@ -447,7 +447,7 @@ export function createCreateActions(deps: CreateDeps) {
     // verdict on a name no create would take is a verdict on nothing.
     const branchValid = takesBase ? await resolveBranchVerdict(repo, msg.query) : undefined;
     const publishing = stillOurs();
-    if (disposed() || !surfaces.has(surface) || publishing === undefined) {
+    if (disposed() || !hasSurface(surface) || publishing === undefined) {
       return;
     }
     // Recorded as it is PUBLISHED, so the only path an authorization can be
@@ -633,7 +633,7 @@ export function createCreateActions(deps: CreateDeps) {
     // screen (round-1 B1).
     if (
       disposed() ||
-      !surfaces.has(surface) ||
+      !hasSurface(surface) ||
       openingFor(surface, msg.repoId, msg.token)?.debrisCandidate !== msg.path
     ) {
       return;
@@ -1117,7 +1117,7 @@ export function createCreateActions(deps: CreateDeps) {
                 );
               if (
                 disposed() ||
-                !surfaces.has(surface) ||
+                !hasSurface(surface) ||
                 !lifecycle.isLive(key, msg.opening) ||
                 currentReading?.sequence !== mine.sequence ||
                 currentReading.sourceWorktreeId !== mine.sourceWorktreeId ||
@@ -1173,7 +1173,7 @@ export function createCreateActions(deps: CreateDeps) {
           // The surface may have detached while the file was being read. A
           // post to a dead surface is at best wasted and at worst revives an
           // offer the detach was supposed to forget (B6).
-          if (disposed() || !surfaces.has(surface)) {
+          if (disposed() || !hasSurface(surface)) {
             return;
           }
           // A later opening already took over this form. Its own read is in
@@ -1205,7 +1205,7 @@ export function createCreateActions(deps: CreateDeps) {
           const previewed = await previewProvisioning(repo, model);
           if (
             disposed() ||
-            !surfaces.has(surface) ||
+            !hasSurface(surface) ||
             provisionReading.get(reading) !== mine ||
             !lifecycle.isLive(key, mine)
           ) {
@@ -1315,7 +1315,7 @@ export function createCreateActions(deps: CreateDeps) {
         available: false,
       } as const;
       const postForge = (answer: PullRequestsRead | undefined): void => {
-        if (disposed() || !surfaces.has(surface)) {
+        if (disposed() || !hasSurface(surface)) {
           return;
         }
         // The form may have closed while the forge was answering. A reply
@@ -1381,7 +1381,7 @@ export function createCreateActions(deps: CreateDeps) {
       .then((answer) => {
         // The surface may have detached while git was answering. Posting to
         // a dead one is at best wasted, and the form it described is gone.
-        if (disposed() || !surfaces.has(surface)) {
+        if (disposed() || !hasSurface(surface)) {
           return;
         }
         // A failed read posts nothing: the form treats absent as "not told

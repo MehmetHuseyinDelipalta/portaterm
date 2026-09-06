@@ -1,8 +1,9 @@
 // src/providers/worktreeHost/actions/provision.test.ts — OBL-4: the arms read
 // the host's live state, not a copy taken when the factory ran.
 //
-// `provisionBaseline` is written by a handler that is STILL in `WorktreeHost.ts`
-// (the create-defaults case) and read here, by the save arm. That write happens
+// `provisionBaseline` is written by the create-defaults arm, which task 2_4 moved
+// to `actions/create.ts`, and read here, by the save arm — the two halves now sit
+// in different modules over one map. That write happens
 // long after `createProvisionActions` returns, so a map copied at the factory
 // boundary would leave the save reading an empty baseline — and `tookSource`,
 // the one thing the baseline decides, would come out false for every save.

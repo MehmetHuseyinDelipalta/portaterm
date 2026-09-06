@@ -14,7 +14,7 @@
 
 - [x] All tasks done (`tasks.md`)
 - [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
-- [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
+- [x] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
 
@@ -51,3 +51,5 @@ OBL-1 witness executed at 2_2, both directions: old predicate + planted fs.rm in
 - 2_4 Plan step 5 cannot be met and is recorded rather than worked around: `long-function` is a PERCENTAGE heuristic over the largest body, so any closure-factory module fires it regardless of size. `createWorktreeHost` is 82% of 2734 lines and `createCreateActions` 91% of 1426. Absolute size is what moved: WorktreeHost.ts 5225 -> 2734. D2's "the defect moved" test needs a follow-up split of `create.ts` along the read/commit seam (defaults+refs+probe+destination vs create+retry+debris+closed) to be answered honestly.
 - Witnesses: OBL-1 pass [exit 0]; OBL-2 pass [exit 0]; OBL-3 pass [exit 0]; OBL-4 pass [exit 0]; OBL-5 pass [exit 0]. No `docs/DESIGN.md` cross-cutting row's Owner section is cited by a task Ref, and no `X:` path of one is in the diff.
 - Real-dependency: none — the change is behaviour-preserving and adds no dependency boundary; every arm keeps the injected capability it already had.
+- Review cycle 1 ended at Re-Verify: round 1 returned 0 BLOCK, so no verification round was owed. F001/F003/F005 fixed in code and F004 in design.md D3 (task 4_1); F001's witness run both ways — planted `rmSync` in `actions/create.ts` fails the gate naming the line, plant removed passes, scan set 69 -> 70 modules.
+- Audit-backlog: round-1 F002 — `provisionBaseline` is written in `actions/create.ts` and read in `actions/provision.ts`, so the provisioning state machine spans two modules. Non-gating (behaviour identical, OBL-4 independently confirmed). Owner: the follow-up change that splits `create.ts` on the read/commit seam. Trigger: that change reaching Stage 3, where a `seedProvisioning(...)` entry `provision.ts` owns becomes part of its D1.
