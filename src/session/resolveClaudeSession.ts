@@ -10,8 +10,11 @@
 //      the directory it happens to share is not weaker evidence, it is evidence
 //      already refuted (260906-at-session-owner-other-window);
 //   3. newest Claude session recorded under that cwd (even if already exited) —
-//      still reached after a conclusive step 1, because a transcript on disk
-//      carries no pid for the table to have refuted.
+//      still reached after a conclusive step 1, because an EXITED session's
+//      transcript has no pid for the table to have refuted. A LIVE session's
+//      does: the registry pairs it with one, and step 3 must skip it or the
+//      identity step 2 just refused walks back in through the disk
+//      (round-1 F001).
 //
 // SessionManager + reader access is injected via `deps` so the algorithm is
 // unit-tested without the host. The host (TerminalViewProvider) wires the real
@@ -77,8 +80,15 @@ export interface ResolveClaudeSessionDeps {
   paneSubtree(rootPid: number): Promise<PaneSubtree>;
   /** mtime (epoch ms) of `<sessionId>.jsonl`, or undefined when unresolved. */
   sessionMtime(sessionId: string): Promise<number | undefined>;
-  /** Newest Claude session (running or exited) recorded under `cwd`, or null. */
-  newestSessionUnderCwd(cwd: string): Promise<{ sessionId: string; cwd: string } | null>;
+  /**
+   * Newest Claude session (running or exited) recorded under `cwd`, or null.
+   *
+   * `exclude` names session ids this pane has been proven NOT to hold. Skipping
+   * them is the selector's job rather than the caller's: a caller can only drop
+   * the one answer it was handed, which would let a refuted live transcript mask
+   * an older exited one that is genuinely eligible.
+   */
+  newestSessionUnderCwd(cwd: string, exclude: ReadonlySet<string>): Promise<{ sessionId: string; cwd: string } | null>;
 }
 
 /** Among candidates, the one with the newest `<sessionId>.jsonl` mtime (current
@@ -100,6 +110,8 @@ async function pickNewest(
   }
   return best;
 }
+
+const EMPTY_EXCLUSION: ReadonlySet<string> = new Set();
 
 export async function resolveClaudeSession(
   terminalId: string,
@@ -144,6 +156,18 @@ export async function resolveClaudeSession(
     const best = await pickNewest(byCwd, deps.sessionMtime);
     return { sessionId: best.sessionId, cwd: best.cwd, evidence: "directory" };
   }
-  const recent = await deps.newestSessionUnderCwd(cwd);
-  return recent === null ? null : { ...recent, evidence: "recent" };
+  // Step 3 reads from disk, where a session that is still RUNNING also has a
+  // transcript — and the registry pairs that transcript with the pid the table
+  // just placed elsewhere. Without this the identity step 2 refused returns by
+  // the other door, relabelled `recent`.
+  const excluded: ReadonlySet<string> = refuted
+    ? new Set(running.all().map((session) => session.sessionId))
+    : EMPTY_EXCLUSION;
+  const recent = await deps.newestSessionUnderCwd(cwd, excluded);
+  // Re-checked here rather than trusted: a selector that ignores `exclude` would
+  // otherwise hand back exactly the identity this function has already refused.
+  if (recent === null || excluded.has(recent.sessionId)) {
+    return null;
+  }
+  return { ...recent, evidence: "recent" };
 }

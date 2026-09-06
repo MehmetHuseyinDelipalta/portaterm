@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "target": {
+    "kind": "change",
+    "id": "close-the-disk-door-on-a-refuted-session"
+  },
+  "sessions": [
+    {
+      "sessionId": "50a22087-e052-4fdd-9828-b3030da66ee0",
+      "runtime": "claude",
+      "author": "huybuidac@gmail.com",
+      "attachedAt": 1788682518757,
+      "accounting": 2,
+      "windows": [
+        {
+          "from": 1788682518757,
+          "to": 1788682572267
+        }
+      ],
+      "phases": [
+        {
+          "phase": "plan",
+          "from": 1788682518757
+        }
+      ],
+      "firstAt": 1788682518757,
+      "lastAt": 1788682571691,
+      "buckets": [
+        {
+          "runtime": "claude",
+          "phase": "plan",
+          "agent": "main",
+          "model": "claude-opus-5",
+          "messages": 2,
+          "inputTokens": 4,
+          "outputTokens": 4431,
+          "reasoningTokens": 0,
+          "cacheWriteTokens": 5510,
+          "cacheReadTokens": 481670,
+          "extra": {
+            "cacheWrite5mTokens": 5510,
+            "cacheWrite1hTokens": 0,
+            "webSearchRequests": 0,
+            "webFetchRequests": 0
+          }
+        }
+      ]
+    }
+  ]
+}

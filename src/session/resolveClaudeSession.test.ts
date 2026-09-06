@@ -93,7 +93,7 @@ describe("resolveClaudeSession — step 2 (running by cwd)", () => {
     expect(await resolveClaudeSession(TID, deps)).toBeNull();
   });
 
-  it("still reaches the on-disk fallback after a refusal — a transcript has no pid to refute", async () => {
+  it("still reaches the on-disk fallback after a refusal — an exited transcript has no pid to refute", async () => {
     const deps = makeDeps({
       getPtyPid: vi.fn(() => 1000),
       paneSubtree: vi.fn(async () => ({ kind: "known" as const, pids: [9999] })),
@@ -106,6 +106,66 @@ describe("resolveClaudeSession — step 2 (running by cwd)", () => {
       cwd: "/work/proj",
       evidence: "recent",
     });
+  });
+
+  it("names the refuted live sessions to the on-disk selector, so a newer one cannot mask an older exited one", async () => {
+    // Round-1 F001. A session running right now has a transcript on disk too, and
+    // it is the newest one under this directory — so a selector told nothing would
+    // stop at the identity step 2 has just refused.
+    const onDisk = [
+      { sessionId: "theirs", cwd: "/work/proj", modified: 900 },
+      { sessionId: "ours-exited", cwd: "/work/proj", modified: 100 },
+    ];
+    const newestSessionUnderCwd = vi.fn(async (cwd: string, exclude: ReadonlySet<string>) => {
+      const eligible = onDisk.filter((e) => e.cwd === cwd && !exclude.has(e.sessionId));
+      const best = eligible.sort((a, b) => b.modified - a.modified)[0];
+      return best === undefined ? null : { sessionId: best.sessionId, cwd: best.cwd };
+    });
+    const deps = makeDeps({
+      getPtyPid: vi.fn(() => 1000),
+      paneSubtree: vi.fn(async () => ({ kind: "known" as const, pids: [9999] })),
+      getCwd: vi.fn(async () => "/work/proj"),
+      runningIndex: vi.fn(async () => indexRunningSessions([run("theirs", 4242, "/work/proj")])),
+      newestSessionUnderCwd,
+    });
+    expect(await resolveClaudeSession(TID, deps)).toEqual({
+      sessionId: "ours-exited",
+      cwd: "/work/proj",
+      evidence: "recent",
+    });
+    expect(newestSessionUnderCwd).toHaveBeenCalledWith("/work/proj", new Set(["theirs"]));
+  });
+
+  it("refuses a refuted identity a selector handed back anyway", async () => {
+    // The exclusion is stated AND re-checked: a selector that ignores it must not
+    // be able to return the identity this resolution has already refused.
+    const deps = makeDeps({
+      getPtyPid: vi.fn(() => 1000),
+      paneSubtree: vi.fn(async () => ({ kind: "known" as const, pids: [9999] })),
+      getCwd: vi.fn(async () => "/work/proj"),
+      runningIndex: vi.fn(async () => indexRunningSessions([run("theirs", 4242, "/work/proj")])),
+      newestSessionUnderCwd: vi.fn(async () => ({ sessionId: "theirs", cwd: "/work/proj" })),
+    });
+    expect(await resolveClaudeSession(TID, deps)).toBeNull();
+  });
+
+  it("excludes nothing where the process table could not be read", async () => {
+    // Nothing was refuted, so the disk selector must see the whole field — the
+    // Windows path keeps every candidate it had.
+    const newestSessionUnderCwd = vi.fn(async () => ({ sessionId: "theirs", cwd: "/work/proj" }));
+    const deps = makeDeps({
+      getPtyPid: vi.fn(() => 1000),
+      paneSubtree: vi.fn(async () => ({ kind: "unknown" as const })),
+      getCwd: vi.fn(async () => "/work/proj"),
+      runningIndex: vi.fn(async () => indexRunningSessions([run("theirs", 4242, "/elsewhere")])),
+      newestSessionUnderCwd,
+    });
+    expect(await resolveClaudeSession(TID, deps)).toEqual({
+      sessionId: "theirs",
+      cwd: "/work/proj",
+      evidence: "recent",
+    });
+    expect(newestSessionUnderCwd).toHaveBeenCalledWith("/work/proj", new Set());
   });
 });
 

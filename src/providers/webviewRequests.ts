@@ -298,11 +298,18 @@ export function subagentResolveDeps(sessionManager: SessionManager): ResolveClau
       return outcome.kind === "ok" ? { kind: "known", pids: outcome.pids } : { kind: "unknown" };
     },
     sessionMtime: (sessionId) => claudeSessionMtime(sessionId),
-    newestSessionUnderCwd: async (cwd) => {
+    newestSessionUnderCwd: async (cwd, exclude) => {
       const { entries } = await readClaudeSessions({});
       let best: { sessionId: string; cwd: string } | null = null;
       let bestMtime = Number.NEGATIVE_INFINITY;
       for (const entry of entries) {
+        // Skipped rather than rejected at the end: an excluded transcript is
+        // usually the NEWEST one here — a session running right now — so
+        // stopping at it would hide the older exited session this pane may
+        // genuinely have left behind (round-1 F001).
+        if (exclude.has(entry.sessionId)) {
+          continue;
+        }
         if (entry.agent === "claude" && entry.cwd === cwd && entry.modified > bestMtime) {
           best = { sessionId: entry.sessionId, cwd: entry.cwd };
           bestMtime = entry.modified;

@@ -54,9 +54,13 @@ The host SHALL resolve the Claude `sessionId` a given terminal is showing, in th
    that found none under this pty located all of them elsewhere, so the shared directory is
    a refuted claim rather than a weaker one.
 3. WHEN step 2 produced no running session — whether it found none or was skipped — fall
-   back to the most-recently-modified Claude session under that cwd (so a terminal whose CLI
-   has already exited still resolves). This step SHALL remain reachable after a refusal in
-   step 2: a transcript on disk carries no pid, so a process-table read cannot have refuted it.
+   back to the most-recently-modified Claude session recorded under that cwd, so a terminal
+   whose CLI has already exited still resolves. WHERE step 2 was skipped, this step SHALL
+   consider only sessions that are not in the running registry: a live session's transcript
+   IS paired with a pid, and it is the newest file under the directory, so a step 3 that
+   accepted it would return the identity step 2 just refused and hide the exited session
+   behind it. A refuted candidate SHALL be passed over rather than ending the search, and
+   resolution SHALL NOT return one even if the selector offers it.
 
 **Headless one-shot sessions SHALL be excluded from the running set before steps 1 and 2
 are evaluated**, so they can neither be selected outright nor win a tie-break. A session is
@@ -67,31 +71,38 @@ unrecognised or absent `entrypoint` keeps the session as a candidate. WHEN exclu
 the candidate set for a step, resolution SHALL continue to the next step rather than
 returning null.
 
-Step 3 is deliberately NOT filtered: it reads transcripts from disk, where no `entrypoint`
-is available, and is reachable only when no running session was selected at all.
+Step 3 is otherwise unfiltered by `entrypoint`: it reads transcripts from disk, where no
+`entrypoint` is available.
 
 It SHALL return null when nothing resolves, and SHALL derive every path from the cwd within
 the Claude store — never from a webview-supplied path. On platforms without a supported
 process-table query (e.g. Windows) the subtree walk SHALL no-op and resolution SHALL use the
-cwd fallbacks only.
+cwd fallbacks only, with nothing refuted and therefore nothing excluded.
 
 #### Scenario: Another application runs the session in a directory this pane also sits in
 
 - **WHEN** the process table is readable, a live registry session's `cwd` equals the pane's
   cwd, and that session's pid is in no pane's pty subtree
-- **THEN** resolution MUST NOT return that session
+- **THEN** resolution MUST NOT return that session, by either the running or the recorded route
+
+#### Scenario: A refuted live transcript is newer than an eligible exited one
+
+- **WHEN** the process table has placed every live session outside this pane's subtree, and
+  the newest Claude transcript under the pane's cwd belongs to one of those live sessions
+  while an older transcript belongs to an exited one
+- **THEN** resolution MUST return the exited session
+
+#### Scenario: The selector offers a refuted session anyway
+
+- **WHEN** the recorded-session selector returns a session that is in the running registry
+  after the process table refuted every live session for this pane
+- **THEN** resolution MUST return null
 
 #### Scenario: The same directory match, where no process table can be read
 
 - **WHEN** no process-table query is available on this platform and a live registry session's
   `cwd` equals the pane's cwd
 - **THEN** resolution MUST return that session's `{ sessionId, cwd }`
-
-#### Scenario: An exited session under the directory, after a refusal
-
-- **WHEN** the process table has placed every live session outside this pane's subtree and a
-  more-recently-modified Claude session is recorded under the pane's cwd
-- **THEN** resolution MUST return that recorded session
 
 #### Scenario: Hook-spawned headless child competes with the interactive session
 
