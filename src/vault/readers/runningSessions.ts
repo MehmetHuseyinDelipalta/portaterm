@@ -3,14 +3,17 @@
 // See: specs/claude-running-session-map/spec.md "Detect running Claude sessions";
 //      design.md D4; docs/research/20260601-claude-cli-running-detection-and-subagent-linkage.md §1a.
 //
-// Each registry file carries `{ pid, sessionId, cwd, startedAt, kind }`; only the
-// base fields are relied on (the activity heartbeat is build-gated). A file whose
-// pid is dead (ESRCH) is stale and skipped, exactly as Claude's own
-// `isProcessRunning` decides liveness.
+// Each registry file carries `{ pid, sessionId, cwd, startedAt, kind }`; newer
+// builds also publish `status` + `statusUpdatedAt`, which expose lifecycle
+// transitions to external-row consumers. Older records remain valid without
+// those optional fields. A dead pid (ESRCH) is stale and skipped, exactly as
+// Claude's own `isProcessRunning` decides liveness.
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { type ClaudeReaderOptions, claudeRoots, isSafeSessionId } from "./claudePaths";
+
+export type ClaudeRegistryStatus = "busy" | "waiting" | "idle";
 
 export interface RunningClaudeSession {
   sessionId: string;
@@ -18,6 +21,10 @@ export interface RunningClaudeSession {
   pid: number;
   /** Launch time (epoch ms, `Date.now()` on disk); secondary tie-break only. */
   startedAt?: number;
+  /** Claude's published lifecycle state for this live CLI process. */
+  status?: ClaudeRegistryStatus;
+  /** When `status` last changed (epoch ms). */
+  statusUpdatedAt?: number;
   /**
    * Raw `entrypoint` from the registry file, or `undefined` when the field is
    * absent or not a string. Deliberately NOT defaulted: "absent" and "a value
@@ -232,6 +239,17 @@ function parseRecord(fileName: string, text: string): RunningClaudeSession | und
     typeof parsed.startedAt === "number" && Number.isFinite(parsed.startedAt) && parsed.startedAt >= 0
       ? parsed.startedAt
       : undefined;
+  const status =
+    parsed.status === "busy" || parsed.status === "waiting" || parsed.status === "idle"
+      ? parsed.status
+      : undefined;
+  const statusUpdatedAt =
+    status !== undefined &&
+    typeof parsed.statusUpdatedAt === "number" &&
+    Number.isFinite(parsed.statusUpdatedAt) &&
+    parsed.statusUpdatedAt >= 0
+      ? parsed.statusUpdatedAt
+      : undefined;
   const entrypoint = typeof parsed.entrypoint === "string" ? parsed.entrypoint : undefined;
   // Trimmed before the emptiness test, so a name of nothing but whitespace is
   // absent rather than a title that renders as a blank row.
@@ -242,6 +260,8 @@ function parseRecord(fileName: string, text: string): RunningClaudeSession | und
     cwd,
     pid,
     ...(startedAt !== undefined ? { startedAt } : {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(statusUpdatedAt !== undefined ? { statusUpdatedAt } : {}),
     ...(entrypoint !== undefined ? { entrypoint } : {}),
     ...(sessionName !== undefined ? { name: sessionName } : {}),
   };

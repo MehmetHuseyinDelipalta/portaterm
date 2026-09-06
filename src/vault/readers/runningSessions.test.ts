@@ -56,18 +56,81 @@ async function liveSessions(
 
 describe("listRunningClaudeSessions", () => {
   it("returns one entry per live pid file, keyed fields intact", async () => {
-    await writePidFile(100, { pid: 100, sessionId: "sess-a", cwd: "/work/a", startedAt: 111 });
-    await writePidFile(200, { pid: 200, sessionId: "sess-b", cwd: "/work/b", startedAt: 222 });
+    await writePidFile(100, {
+      pid: 100,
+      sessionId: "sess-a",
+      cwd: "/work/a",
+      startedAt: 111,
+      status: "busy",
+      statusUpdatedAt: 333,
+    });
+    await writePidFile(200, {
+      pid: 200,
+      sessionId: "sess-b",
+      cwd: "/work/b",
+      startedAt: 222,
+      status: "idle",
+      statusUpdatedAt: 444,
+    });
 
     const result = await liveSessions(opts(), aliveDeps([100, 200]));
 
     expect(result).toHaveLength(2);
     expect(result).toEqual(
       expect.arrayContaining([
-        { pid: 100, sessionId: "sess-a", cwd: "/work/a", startedAt: 111 },
-        { pid: 200, sessionId: "sess-b", cwd: "/work/b", startedAt: 222 },
+        {
+          pid: 100,
+          sessionId: "sess-a",
+          cwd: "/work/a",
+          startedAt: 111,
+          status: "busy",
+          statusUpdatedAt: 333,
+        },
+        {
+          pid: 200,
+          sessionId: "sess-b",
+          cwd: "/work/b",
+          startedAt: 222,
+          status: "idle",
+          statusUpdatedAt: 444,
+        },
       ]),
     );
+  });
+
+  it("preserves waiting and rejects unknown lifecycle values without guessing", async () => {
+    await writePidFile(100, {
+      pid: 100,
+      sessionId: "waiting",
+      cwd: "/work/a",
+      status: "waiting",
+      statusUpdatedAt: 555,
+    });
+    await writePidFile(200, {
+      pid: 200,
+      sessionId: "future",
+      cwd: "/work/b",
+      status: "paused",
+      statusUpdatedAt: 666,
+    });
+    await writePidFile(300, {
+      pid: 300,
+      sessionId: "bad-clock",
+      cwd: "/work/c",
+      status: "idle",
+      statusUpdatedAt: -1,
+    });
+
+    const result = await liveSessions(opts(), aliveDeps([100, 200, 300]));
+
+    expect(result.find((entry) => entry.sessionId === "waiting")).toMatchObject({
+      status: "waiting",
+      statusUpdatedAt: 555,
+    });
+    expect(result.find((entry) => entry.sessionId === "future")).not.toHaveProperty("status");
+    expect(result.find((entry) => entry.sessionId === "future")).not.toHaveProperty("statusUpdatedAt");
+    expect(result.find((entry) => entry.sessionId === "bad-clock")).toMatchObject({ status: "idle" });
+    expect(result.find((entry) => entry.sessionId === "bad-clock")).not.toHaveProperty("statusUpdatedAt");
   });
 
   it("skips stale (dead-pid) files", async () => {
