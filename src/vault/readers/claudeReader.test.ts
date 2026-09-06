@@ -229,7 +229,7 @@ describe("workflow nesting (2_1 / 2_2 / 2_3)", () => {
     expect(stubs[0].entryId).toBe("claude:wfparent:workflow:wf_test123");
     expect(stubs[0].description).toBe("Workflow: design-audit · completed");
     expect(stubs[0].isGroup).toBe(true);
-    expect(stubs[0].timestamp).toBe(1780072409110); // startTime numeric string coerced
+    expect(stubs[0].timestamp).toBe(1780072409110); // legacy startTime decimal string accepted
   });
 
   it("2_1: returns [] for a parent with no workflows dir", async () => {

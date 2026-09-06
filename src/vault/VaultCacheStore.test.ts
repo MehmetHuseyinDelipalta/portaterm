@@ -149,7 +149,7 @@ describe("VaultCacheStore", () => {
 
   // Versions 1 and 3 predate the Codex root-row and Claude permission-mode corrections.
   // Versions 5 and 6 predate the current Cursor derivation; future versions are unsupported.
-  it.each([1, 3, 5, 6, VAULT_CACHE_VERSION + 1])("discards version %s", (version) => {
+  it.each([1, 3, 5, 6, 8, VAULT_CACHE_VERSION + 1])("discards version %s", (version) => {
     harness.files.set(CACHE_FILE, JSON.stringify({ ...doc(), version }));
     expect(store.load()).toBeNull();
   });

@@ -431,3 +431,15 @@ retiring a session from that retention SHALL NOT license a second attempt agains
 - **THEN** the count of outstanding reads stays at or below that retention rather than growing with
   each cadence tick
 
+
+### Requirement: Provider Timestamp Boundaries
+
+Every timestamp emitted in a Vault entry or timeline SHALL be a finite integer epoch-millisecond number. Claude and Codex transcript JSONL timestamps SHALL accept RFC3339 strings or numeric epoch milliseconds; decimal strings SHALL NOT be reinterpreted as epochs. Codex SQLite `_ms` fields and OpenCode SQLite `time_*` fields SHALL accept numbers only. Invalid values SHALL preserve the caller's existing missing-value sentinel rather than rejecting the containing record.
+
+Claude workflow-manifest `startTime` is the sole legacy exception: it SHALL accept an unpadded 13-digit decimal epoch-millisecond string as well as the current numeric representation.
+
+#### Scenario: A numeric-looking transcript timestamp is not a date
+
+- **WHEN** a transcript record carries `"1750000000000"` as its timestamp
+- **THEN** the timestamp is treated as missing rather than as epoch milliseconds
+- **AND** the record remains available with the source-specific missing timestamp value

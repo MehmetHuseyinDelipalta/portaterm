@@ -45,6 +45,7 @@ import {
   truncateRich,
 } from "./detail";
 import { findRecordLine, type RecordLineResult } from "./recordLine";
+import { parseEpochMilliseconds, parseStoredTimestamp } from "./timestamp";
 
 /** Bound the SQLite read so the vault list stays cheap (D2). */
 const ROW_LIMIT = 500;
@@ -155,7 +156,7 @@ function mapThreadRow(row: Record<string, unknown>): VaultSessionEntry | null {
     sessionId,
     title: boundedPreview(title),
     cwd: asString(row.cwd) ?? "",
-    modified: Number(row.updated_at_ms) || 0,
+    modified: parseEpochMilliseconds(row.updated_at_ms) ?? 0,
     gitBranch: asString(row.git_branch),
     flags: {
       model: asString(row.model),
@@ -632,15 +633,8 @@ export async function readCodexEntry(
 
 const PARTIAL_LIMITED_REASON = "No transcript file for this Codex session — showing index only.";
 
-function parseTs(v: unknown): number {
-  if (typeof v === "number") {
-    return Number.isFinite(v) ? v : 0;
-  }
-  if (typeof v === "string") {
-    const ms = Date.parse(v);
-    return Number.isNaN(ms) ? 0 : ms;
-  }
-  return 0;
+function parseTs(value: unknown): number {
+  return parseStoredTimestamp(value) ?? 0;
 }
 
 /** Session ids are uuids; reject anything that could escape a filename/SQL. */
@@ -1159,7 +1153,8 @@ function codexChildStubFromRow(row: Record<string, unknown>): CodexChildStub | n
   const source = parseCodexSourceMeta(row.source);
   const firstMessage = asString(row.first_user_message);
   const title = asString(row.title);
-  const timestamp = parseTs(row.created_at_ms) || parseTs(row.updated_at_ms);
+  const timestamp =
+    (parseEpochMilliseconds(row.created_at_ms) ?? 0) || (parseEpochMilliseconds(row.updated_at_ms) ?? 0);
   return {
     childThreadId,
     ...(title ? { title: boundedPreview(title) } : {}),

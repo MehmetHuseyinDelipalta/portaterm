@@ -247,6 +247,14 @@ describe("classifyClaudeStyleEvents — injected records", () => {
 });
 
 describe("classifyClaudeStyleEvents", () => {
+  it("rejects decimal-string and non-finite transcript timestamps", () => {
+    const out = classifyClaudeStyleEvents([
+      userText("legacy-looking", { timestamp: "1750000000000" }),
+      assistantText("non-finite", { timestamp: Number.POSITIVE_INFINITY }),
+    ]);
+    expect(out.timeline.filter((item) => item.kind === "message").map((item) => item.timestamp)).toEqual([0, 0]);
+  });
+
   it("captures the first prompt independently of the 12-step activity cap", () => {
     const records: Rec[] = [userText("the very first prompt")];
     for (let i = 0; i < 20; i++) {

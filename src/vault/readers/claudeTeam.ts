@@ -12,7 +12,7 @@ import { boundedPreview } from "../preview";
 import { formatEntryId, type VaultSessionDetail, type VaultTimelineItem } from "../types";
 import { formatTeamTurnSessionId } from "./claudeChildIds";
 import { type ClaudeReaderOptions, isSafeSessionId, resolveClaudeSessionPath } from "./claudePaths";
-import { coerceTimestamp, extractUserText, rawUserText } from "./claudeRecords";
+import { extractUserText, rawUserText } from "./claudeRecords";
 import {
   classifyClaudeStyleEvents,
   createBoundedRecordBuffer,
@@ -20,6 +20,7 @@ import {
   MAX_TIMELINE_ITEMS,
   sourceVerdict,
 } from "./detail";
+import { parseStoredTimestamp } from "./timestamp";
 
 /**
  * The SINGLE team-member predicate (D5, review W2): a record carries a team
@@ -279,7 +280,7 @@ async function readTeamMemberInfo(filePath: string, sessionId: string): Promise<
           agentName: identity.agentName,
           teamName: identity.teamName,
           firstMessage: text,
-          timestamp: coerceTimestamp(obj.timestamp),
+          timestamp: parseStoredTimestamp(obj.timestamp),
         };
       }
       break;
@@ -377,7 +378,7 @@ async function collectMemberTurns(filePath: string): Promise<MemberTurn[]> {
           idx,
           from: tag.from === "leader" ? "leader" : tag.teammateId,
           preview: tag.body || tag.summary || "",
-          timestamp: coerceTimestamp(rec.timestamp) ?? 0,
+          timestamp: parseStoredTimestamp(rec.timestamp) ?? 0,
         });
         idx++;
         // Keep only the most-recent window in memory (R5). `idx` keeps counting,

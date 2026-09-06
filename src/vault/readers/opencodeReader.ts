@@ -43,6 +43,7 @@ import {
   truncateRich,
 } from "./detail";
 import { MAX_RECORD_BYTES, type RecordLineResult } from "./recordLine";
+import { parseEpochMilliseconds } from "./timestamp";
 
 /** Bound the read so the vault list stays cheap (D2). */
 const ROW_LIMIT = 500;
@@ -180,7 +181,7 @@ function mapSessionRow(row: Record<string, unknown>): VaultSessionEntry | null {
     sessionId,
     title: boundedPreview(title),
     cwd: asString(row.directory) ?? "",
-    modified: Number(row.time_updated) || 0,
+    modified: parseEpochMilliseconds(row.time_updated) ?? 0,
     flags: { model, agent },
   };
 }
@@ -918,7 +919,7 @@ function buildChildStubs(rows: Record<string, unknown>[]): { timestamp: number; 
     // `strField` trims + treats a whitespace-only column as absent, so a blank
     // `agent` column falls through to the agent recovered from the title suffix.
     const agent = strField(row.agent) ?? split?.agent;
-    const timestamp = Number(row.time_created) || 0;
+    const timestamp = parseEpochMilliseconds(row.time_created) ?? 0;
     stubs.push({
       timestamp,
       item: {
@@ -964,7 +965,7 @@ function parseMessageRows(rows: Record<string, unknown>[]): OcMessageRow[] {
     const id = strField(row.id);
     const data = parseJsonData(row.data);
     if (id && data) {
-      out.push({ id, timeCreated: finiteNumberOrZero(row.time_created), data });
+      out.push({ id, timeCreated: parseEpochMilliseconds(row.time_created) ?? 0, data });
     }
   }
   return out;
@@ -976,7 +977,7 @@ function parsePartRows(rows: Record<string, unknown>[]): OcPartRow[] {
     const messageId = strField(row.message_id);
     const data = parseJsonData(row.data);
     if (messageId && data) {
-      out.push({ messageId, timeCreated: finiteNumberOrZero(row.time_created), data });
+      out.push({ messageId, timeCreated: parseEpochMilliseconds(row.time_created) ?? 0, data });
     }
   }
   return out;

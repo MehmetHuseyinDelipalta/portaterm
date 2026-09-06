@@ -60,6 +60,12 @@ describe("readOpenCodeSessions", () => {
     expect(s1.flags.agent).toBe("build");
   });
 
+  it("does not coerce SQLite timestamp strings", async () => {
+    const fn = stubSqlite({ status: "ok", rows: [{ ...ROWS[0], time_updated: "5000" }] });
+    const { entries } = await readOpenCodeSessions({ dataDir: "/x/oc", readSqliteFn: fn });
+    expect(entries[0].modified).toBe(0);
+  });
+
   it("still lists a session whose assistant JSON is malformed (model/agent undefined)", async () => {
     const fn = stubSqlite({ status: "ok", rows: ROWS });
     const { entries, unreadable } = await readOpenCodeSessions({ dataDir: "/x/oc", readSqliteFn: fn });

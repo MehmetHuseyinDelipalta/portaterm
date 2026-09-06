@@ -183,3 +183,10 @@ used-by: [enhance-vault-sessions]
 ## Confidence
 
 High — findings are backed by official OSS source, plus live on-disk session files from all three tools and VS Code extension API docs. The only notable uncertainty is the exact serialized Codex turn-model key name, which is confirmed in code but not pinned by a raw JSONL sample.
+
+## Timestamp field types — verified 2026-09-06
+
+- Claude transcript records use RFC3339 strings. Workflow manifests currently use numeric epoch milliseconds for `startTime`; legacy manifests may use an unpadded 13-digit decimal string.
+- Codex rollout records use RFC3339 strings; `threads.created_at_ms` and `threads.updated_at_ms` are SQLite integers.
+- OpenCode `time_created` and `time_updated` fields are SQLite integers produced from `Date.now()`.
+- Decimal timestamp strings are not a cross-provider format. Compatibility for them is limited to Claude workflow `startTime`.

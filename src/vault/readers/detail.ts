@@ -10,6 +10,7 @@
 
 import { asRecord } from "../../utils/record";
 import type { VaultActivityStep, VaultMessageTokens, VaultSessionDetail, VaultTimelineItem } from "../types";
+import { parseStoredTimestamp } from "./timestamp";
 import { classifyUserRecord } from "./userRecord";
 
 /** ~600-char cap per text field (D5). */
@@ -453,15 +454,7 @@ function msgRefOf(rec: Rec): { msgRef?: string } {
 }
 
 function parseTimestamp(rec: Rec): number {
-  const t = rec.timestamp;
-  if (typeof t === "number") {
-    return Number.isFinite(t) ? t : 0;
-  }
-  if (typeof t === "string") {
-    const ms = Date.parse(t);
-    return Number.isNaN(ms) ? 0 : ms;
-  }
-  return 0;
+  return parseStoredTimestamp(rec.timestamp) ?? 0;
 }
 
 /** Cheap diff stat from an Edit's old/new strings (newline delta only). */

@@ -20,7 +20,7 @@ import {
   WORKFLOW_AGENT_STEM_RE,
   WORKFLOW_ID_RE,
 } from "./claudePaths";
-import { coerceTimestamp, readFirstUserRecord, readManifestJson, streamClaudeRecords } from "./claudeRecords";
+import { readFirstUserRecord, readManifestJson, streamClaudeRecords } from "./claudeRecords";
 import {
   type ClaudeChildStub,
   classifyClaudeStyleEvents,
@@ -31,6 +31,7 @@ import {
   synthesizeGroupDetail,
   truncate,
 } from "./detail";
+import { parseStoredTimestamp, parseWorkflowStartTime } from "./timestamp";
 
 /** A subagent's own detail: its records are all `isSidechain` (that IS the
  *  conversation here), so classify with `includeSidechain`. It ALSO embeds this
@@ -239,7 +240,7 @@ function buildWorkflowBoardItem(
   const totalTokens = manifestNumber(manifest.totalTokens);
   const totalToolCalls = manifestNumber(manifest.totalToolCalls);
   const model = manifestString(manifest.defaultModel);
-  const timestamp = coerceTimestamp(manifest.startTime) ?? coerceTimestamp(manifest.timestamp);
+  const timestamp = parseWorkflowStartTime(manifest.startTime) ?? parseStoredTimestamp(manifest.timestamp);
 
   return {
     kind: "workflowBoard",
@@ -426,7 +427,7 @@ export async function listClaudeWorkflowNodes(
       const wfName = typeof manifest.workflowName === "string" ? manifest.workflowName : wfId;
       const status = typeof manifest.status === "string" ? manifest.status : "";
       const summary = typeof manifest.summary === "string" ? manifest.summary : undefined;
-      const ts = coerceTimestamp(manifest.startTime) ?? coerceTimestamp(manifest.timestamp);
+      const ts = parseWorkflowStartTime(manifest.startTime) ?? parseStoredTimestamp(manifest.timestamp);
       const label = `Workflow: ${wfName}${status ? ` · ${status}` : ""}`;
       stubs.push({
         entryId: formatEntryId("claude", formatWorkflowSessionId(parentId, wfId)),

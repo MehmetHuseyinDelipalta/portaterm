@@ -70,6 +70,12 @@ describe("readCodexSessions: SQLite path", () => {
     });
   });
 
+  it("does not coerce SQLite timestamp strings", async () => {
+    const fn = stubSqlite({ status: "ok", rows: [{ ...SAMPLE_ROWS[0], updated_at_ms: "5000" }] });
+    const { entries } = await readCodexSessions({ codexDir: "/x/.codex", readSqliteFn: fn });
+    expect(entries[0].modified).toBe(0);
+  });
+
   it("falls back to first_user_message when title is empty", async () => {
     const fn = stubSqlite({ status: "ok", rows: SAMPLE_ROWS });
     const { entries } = await readCodexSessions({ codexDir: "/x/.codex", readSqliteFn: fn });

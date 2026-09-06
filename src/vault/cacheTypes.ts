@@ -175,8 +175,9 @@ export type ListReader = (prev?: ReaderListCache, hint?: ReaderRefreshHint) => P
  *  derivation forever. `VaultCacheStore.load` discards any other version (→ full
  *  rebuild). v6 added source-qualified Cursor metadata; v7 added standalone project
  *  freshness state. v8 removes project transcripts from the top-level list/cache —
- *  they remain exact, explicit detail sources only. */
-export const VAULT_CACHE_VERSION = 8 as const;
+ *  they remain exact, explicit detail sources only. v9 tightens provider timestamp
+ *  derivation to each store's documented raw type. */
+export const VAULT_CACHE_VERSION = 9 as const;
 
 /** The persisted cache document (design.md D4). */
 export interface VaultListCacheFileV1 {

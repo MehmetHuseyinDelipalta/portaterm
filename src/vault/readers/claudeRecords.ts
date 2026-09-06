@@ -8,6 +8,7 @@ import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as readline from "node:readline";
 import { createBoundedRecordBuffer } from "./detail";
+import { parseStoredTimestamp } from "./timestamp";
 import { classifyUserRecord } from "./userRecord";
 
 /** Cap on a workflow manifest read (review W5): manifests are normally tens-to-
@@ -27,25 +28,6 @@ export async function readManifestJson(filePath: string): Promise<Record<string,
   } catch {
     return null;
   }
-}
-
-/** Coerce a record timestamp (ISO string, or epoch ms as number/string) to epoch
- *  ms, or undefined. Workflow manifests store `startTime` as a numeric string and
- *  records store ISO `timestamp`s — both must become finite numbers for the
- *  timeline merge to order them (D3). */
-export function coerceTimestamp(value: unknown): number | undefined {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : undefined;
-  }
-  if (typeof value === "string" && value.trim() !== "") {
-    const asNum = Number(value);
-    if (Number.isFinite(asNum)) {
-      return asNum; // epoch-ms string, e.g. "1780072409110"
-    }
-    const ms = Date.parse(value);
-    return Number.isNaN(ms) ? undefined : ms; // ISO string
-  }
-  return undefined;
 }
 
 /** RAW user text (string content or joined text blocks), WITHOUT the
@@ -240,9 +222,7 @@ export async function readFirstUserRecord(filePath: string): Promise<{ text: str
       }
       const text = extractUserText(obj);
       if (text) {
-        const t = obj.timestamp;
-        const ts = typeof t === "string" ? Date.parse(t) : typeof t === "number" ? t : Number.NaN;
-        return { text, timestamp: Number.isNaN(ts) ? 0 : ts };
+        return { text, timestamp: parseStoredTimestamp(obj.timestamp) ?? 0 };
       }
     }
     return null;

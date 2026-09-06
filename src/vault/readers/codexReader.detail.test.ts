@@ -27,6 +27,13 @@ afterEach(async () => {
 });
 
 describe("classifyCodexRolloutEvents", () => {
+  it("rejects decimal-string rollout timestamps", () => {
+    const out = classifyCodexRolloutEvents([
+      rec("event_msg", { type: "user_message", message: "hello" }, "1750000000000"),
+    ]);
+    expect(out.timeline[0]).toMatchObject({ kind: "message", timestamp: 0 });
+  });
+
   it("maps user/agent messages, function/custom/web tool calls, and the token total", () => {
     const records = [
       rec("session_meta", { id: "abc" }),
