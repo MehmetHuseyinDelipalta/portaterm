@@ -321,6 +321,38 @@ describe("workflow board from manifest workflowProgress (1_2)", () => {
     }
   });
 
+  it("rejects impossible manifest dates in direct boards, parent composition, and fallback stubs", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "claude-workflow-impossible-date-"));
+    const configDir = path.join(root, "config");
+    try {
+      await fsp.cp(WF_FIXTURE_ROOT, configDir, { recursive: true });
+      const boardPath = path.join(configDir, "projects", "-Users-me-wf", "wfboard", "workflows", "wf_board1.json");
+      const boardManifest = JSON.parse(await fsp.readFile(boardPath, "utf8"));
+      boardManifest.startTime = "invalid";
+      boardManifest.timestamp = "2026-02-30T01:02:03Z";
+      await fsp.writeFile(boardPath, JSON.stringify(boardManifest));
+      const boardMtime = (await fsp.stat(boardPath)).mtimeMs;
+
+      const stubPath = path.join(configDir, "projects", "-Users-me-wf", "wfempty", "workflows", "wf_empty1.json");
+      const stubManifest = JSON.parse(await fsp.readFile(stubPath, "utf8"));
+      stubManifest.startTime = "invalid";
+      stubManifest.timestamp = "2026-02-30T01:02:03Z";
+      await fsp.writeFile(stubPath, JSON.stringify(stubManifest));
+
+      const direct = await readClaudeDetail("wfboard:workflow:wf_board1", { configDir });
+      expect(direct?.timeline[0]).not.toHaveProperty("timestamp");
+
+      const parent = await readClaudeDetail("wfboard", { configDir });
+      const board = parent?.timeline.find((item) => item.kind === "workflowBoard");
+      expect(board).toMatchObject({ kind: "workflowBoard", timestamp: boardMtime });
+
+      const stubs = await listClaudeWorkflowStubs("wfempty", { configDir });
+      expect(stubs[0]).not.toHaveProperty("timestamp");
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("resolves phase detail positionally without an off-by-one (1-based index → 0-based phases[])", async () => {
     const detail = await readClaudeDetail("wfboard:workflow:wf_board1", { configDir: WF_FIXTURE_ROOT });
     const board = detail?.timeline[0];
