@@ -115,7 +115,7 @@ stops if the count disagrees with design.md D1.
     3. If the split from 1_7 forces a circular value import, the seam is wrong: stop and re-plan rather than merging into one module over 500 lines (design.md Risk Map).
     4. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
-- [ ] 1_9 Extract the form fields
+- [x] 1_9 Extract the form fields — verified: pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_8
   - **Refs**: design.md D1, design.md D1a
   - **Boundary**: builds elements and returns them; decides nothing a collaborator owns
@@ -124,7 +124,7 @@ stops if the count disagrees with design.md D1.
     - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts
   - **Plan**:
     1. Enumerate in both directions (D1a).
-    2. Create `src/webview/worktree/createDialog/formFields.ts` building the branch, destination, mode, base, path and migration fields and returning them as a record the facade destructures.
+    2. Create `src/webview/worktree/createDialog/formFields.ts` building the branch, destination, mode, base, path and migration fields and returning them as a record the facade destructures, moving them out of `src/webview/worktree/WorktreeCreateDialog.ts`.
     3. Do not edit `src/webview/worktree/WorktreeCreateDialog.test.ts`.
 
 - [ ] 1_10 Extract the host bindings, and confirm every file is under 500
