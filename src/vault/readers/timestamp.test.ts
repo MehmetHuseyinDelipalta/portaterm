@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseEpochMilliseconds,
-  parseRfc3339Timestamp,
+  parseProviderTimestampString,
   parseStoredTimestamp,
   parseWorkflowStartTime,
 } from "./timestamp";
@@ -16,25 +16,26 @@ describe("timestamp store boundaries", () => {
     }
   });
 
-  it("keeps RFC3339-only fields string-only", () => {
-    expect(parseRfc3339Timestamp("2026-05-01T01:02:03Z")).toBe(Date.parse("2026-05-01T01:02:03Z"));
-    expect(parseRfc3339Timestamp(EPOCH)).toBeUndefined();
+  it("keeps provider-profile fields string-only", () => {
+    expect(parseProviderTimestampString("2026-05-01T01:02:03Z")).toBe(Date.parse("2026-05-01T01:02:03Z"));
+    expect(parseProviderTimestampString(EPOCH)).toBeUndefined();
   });
 
-  it("rejects impossible RFC3339 calendar and clock values", () => {
+  it("rejects values outside the provider timestamp profile", () => {
     for (const value of [
       "2026-02-30T01:02:03Z",
       "2026-04-31T01:02:03Z",
       "2026-01-01T24:00:00Z",
       "2026-01-01T01:60:00Z",
       "2026-01-01T01:02:60Z",
+      "2026-05-01t01:02:03z",
     ]) {
-      expect(parseRfc3339Timestamp(value)).toBeUndefined();
+      expect(parseProviderTimestampString(value)).toBeUndefined();
     }
-    expect(parseRfc3339Timestamp("2024-02-29T23:59:59Z")).toBe(Date.parse("2024-02-29T23:59:59Z"));
+    expect(parseProviderTimestampString("2024-02-29T23:59:59Z")).toBe(Date.parse("2024-02-29T23:59:59Z"));
   });
 
-  it("accepts RFC3339 transcript strings and numeric epoch milliseconds", () => {
+  it("accepts provider-profile transcript strings and numeric epoch milliseconds", () => {
     expect(parseStoredTimestamp("2026-05-01T01:02:03Z")).toBe(Date.parse("2026-05-01T01:02:03Z"));
     expect(parseStoredTimestamp("2026-05-01T01:02:03.456+07:00")).toBe(Date.parse("2026-05-01T01:02:03.456+07:00"));
     expect(parseStoredTimestamp(EPOCH)).toBe(EPOCH);

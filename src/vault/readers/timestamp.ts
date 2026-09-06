@@ -1,4 +1,4 @@
-const RFC3339 = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/;
+const PROVIDER_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/;
 const LEGACY_EPOCH_MS = /^[1-9]\d{12}$/;
 
 /** A store-native epoch-millisecond value. Strings are not numbers at this boundary. */
@@ -13,12 +13,12 @@ function daysInMonth(year: number, month: number): number {
   return [4, 6, 9, 11].includes(month) ? 30 : 31;
 }
 
-/** An RFC3339 timestamp string, without loose or normalizing date parsing. */
-export function parseRfc3339Timestamp(value: unknown): number | undefined {
+/** The provider timestamp profile: uppercase T/Z, numeric offsets, seconds 00-59. */
+export function parseProviderTimestampString(value: unknown): number | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
-  const match = RFC3339.exec(value);
+  const match = PROVIDER_TIMESTAMP.exec(value);
   if (!match) {
     return undefined;
   }
@@ -48,9 +48,9 @@ export function parseRfc3339Timestamp(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-/** A transcript timestamp: epoch milliseconds as a number, or an RFC3339 string. */
+/** A transcript timestamp: epoch milliseconds or the provider string profile. */
 export function parseStoredTimestamp(value: unknown): number | undefined {
-  return parseEpochMilliseconds(value) ?? parseRfc3339Timestamp(value);
+  return parseEpochMilliseconds(value) ?? parseProviderTimestampString(value);
 }
 
 /** Claude workflow manifests historically wrote startTime as a 13-digit string. */

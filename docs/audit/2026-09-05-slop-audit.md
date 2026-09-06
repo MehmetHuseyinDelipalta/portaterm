@@ -32,7 +32,7 @@ The pool was revalidated against `0de80546` before editing. This follow-up super
 - Applied the behavior-neutral consolidation subset: U-01, U-02's exact plain converters, U-03..06's equivalent leaves, U-05, U-09/10, U-16/17, U-19's three exact helpers and U-20's scheduler-preserving pumps.
 - After product review, resolved D-11 by retiring the unreleased receiver-only Vault fork path end-to-end; the shipped Vault remains Resume/Continue only.
 - Resolved D-12 by contributing the already-implemented `renameTab` command to the Command Palette and root-tab context menu, with cold activation and no default keybinding.
-- Resolved U-12 with field-specific timestamp parsing: decimal epoch strings remain compatible only for legacy Claude workflow `startTime`; transcript timestamps use RFC3339/number forms and SQLite timestamp columns remain number-only.
+- Resolved U-12 with field-specific timestamp parsing: decimal epoch strings remain compatible only for legacy Claude workflow `startTime`; transcript timestamps use the observed provider string profile or numeric forms and SQLite timestamp columns remain number-only.
 
 ### Retained or deferred after HEAD revalidation
 
@@ -49,7 +49,7 @@ The pool was revalidated against `0de80546` before editing. This follow-up super
 
 ### Product and behavior decisions
 
-U-12 remains intentionally unmodified pending resolution of the timestamp input contract. Static cleanup evidence is not authorization for those behavior changes.
+D-11, D-12 and U-12 are resolved. No product/behavior decision remains open in this audit.
 
 ### Verification outcome
 
@@ -60,7 +60,7 @@ U-12 remains intentionally unmodified pending resolution of the timestamp input 
 - Every edited batch's scoped Vitest suites pass.
 - Full `pnpm run test:unit`: **301 files, 7,822 tests passed**. The first run exposed a pre-existing stale `SetupTerminal` fake missing the live `retire()` method; adding that API-compatible no-op to the fake made its 17-test owner suite and the full gate pass.
 - Subsequent D-11 retirement removed another 418 net lines across 54 files. Focused Vault/provider verification passed 529 tests; the post-retirement full suite passed **301 files, 7,801 tests**. TypeScript, Biome check mode, `fsDeletionGate` and `git diff --check` also passed; Biome retained seven pre-existing warnings in touched files.
-- D-12/U-12 focused verification passed 204 rename tests and 308 timestamp tests. After review narrowed workflow `manifest.timestamp` fallback to RFC3339-only, the final full suite passed **303 files, 7,818 tests**; TypeScript, changed-file Biome check mode, `fsDeletionGate` and `git diff --check` passed.
+- D-12/U-12 focused verification passed 204 rename tests, 308 initial timestamp tests and 63 final review-fix tests. Review fixed numeric workflow fallbacks and impossible calendar normalization, then narrowed the advertised timestamp contract to the observed provider string profile; the final full suite passed **303 files, 7,818 tests**; TypeScript, changed-file Biome check mode, `fsDeletionGate` and `git diff --check` passed.
 
 ## Scope, method and confidence
 
@@ -975,7 +975,7 @@ These are not included in the cleanup pool. A registered command can be invoked 
 - **Verifier:** CONFIRMED. **Evidence:** `coerceTimestamp` has the epoch-ms-string branch at :41-44; the inline copy at :244 drops it; `codexReader.parseTs:643-651` drops it too. Real behavioural drift.
 - **Cut / repair:** Resolve the differing epoch-millisecond-string timestamp contract before choosing one coercer. Sharing coerceTimestamp may change accepted inputs; retain provider-specific cases and verify intended outputs.
 - **Estimated net lines removed:** ~8. **Risk:** medium — demonstrated semantic drift; not a behavior-neutral cleanup.
-- **Resolution (2026-09-06):** Decimal epoch strings are accepted only for legacy Claude workflow `startTime`. Claude/Codex transcript records accept RFC3339 strings or numeric epochs; Codex/OpenCode SQLite timestamp fields accept numbers only. Shared parsers preserve each caller's existing missing-value sentinel, and the Vault cache version was bumped because list-entry derivation changed.
+- **Resolution (2026-09-06):** Decimal epoch strings are accepted only for legacy Claude workflow `startTime`. Claude/Codex transcript records accept observed provider-profile strings or numeric epochs; Codex/OpenCode SQLite timestamp fields accept numbers only. Shared parsers preserve each caller's existing missing-value sentinel, and the Vault cache version was bumped because list-entry derivation changed.
 
 
 ## Looks like slop but is not — rejected or deferred
