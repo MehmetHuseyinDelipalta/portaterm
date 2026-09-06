@@ -47,7 +47,7 @@ stops if the count disagrees with design.md D1.
 
 ## 2. Closure collaborators (each invents a deps interface)
 
-- [ ] 1_4 Extract the branch listbox
+- [x] 1_4 Extract the branch listbox — verified: pnpm exec vitest run src/webview/worktree/WorktreeCreateDialog.test.ts && pnpm run check-types exit 0
   - **Deps**: 1_3
   - **Refs**: design.md D1, design.md D1a, design.md D4
   - **Boundary**: the facade holds no reference to `activeAt` or `listOpen`
