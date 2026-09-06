@@ -98,6 +98,7 @@ import {
 } from "../worktree/worktreeBlockers";
 import { type WorktreeWatch, watchRepoStructure } from "../worktree/worktreeWatchTargets";
 import type { WatcherPool } from "./fsWatcherPool";
+import { createRemovalActions } from "./worktreeHost/actions/removal";
 import { createShellActions } from "./worktreeHost/actions/shell";
 import type {
   AdmittedLaunch,
@@ -123,7 +124,6 @@ import {
   isKnownAfterCreate,
   isKnownCopyFileAsk,
   isKnownCreateMode,
-  isKnownDeleteBranchRequest,
   isKnownDisposition,
   isKnownMigration,
   isKnownProvision,
@@ -2410,6 +2410,14 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     launchTarget,
   });
 
+  const removal = createRemovalActions({
+    actionPath,
+    repoIdOf,
+    admitAssess,
+    perform,
+    hasSurface: (surface) => surfaces.has(surface),
+  });
+
   function handleAction(surface: WorktreeSurface, msg: WorktreeActionMessage): void {
     const actions = options.actions;
     if (!actions || disposed) {
@@ -2660,91 +2668,18 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
       case "worktreeSetupViewOutput":
         shell.worktreeSetupViewOutput(surface, msg, actions);
         return;
-      case "worktreeRemoveAssess": {
-        const assess = actions.assessRemovalReport;
-        const assessTarget = msg.worktreeId;
-        const assessRepo = repoIdOf(assessTarget);
-        // NOT `perform`: that wrapper publishes a mutation result, and a read
-        // must not announce itself as one. It also takes the rebuild gate — but
-        // that half was never a reason to avoid it, and the capability now takes
-        // that barrier itself, because a report read from the cache can describe
-        // a registration the confirmation will not act on (D10).
-        if (assess === undefined || assessRepo === undefined || actionPath(assessTarget, true) === undefined) {
-          // Answered, not dropped. D12 admits no exception: an unanswered
-          // request leaves the panel waiting on a reply that is never coming.
-          if (surfaces.has(surface)) {
-            surface.post({
-              type: "worktreeRemoveAssessment",
-              worktreeId: assessTarget,
-              token: msg.token,
-              result: { kind: "unavailable", unreadable: ["the worktree is no longer registered"] },
-            });
-          }
-          return;
-        }
-        // Admission is shared with fingerprint-free raw intents: both produce
-        // reports and therefore contribute to the same per-repository bound.
-        admitAssess(assessRepo, {
-          kind: "assessment",
-          surface,
-          worktreeId: assessTarget,
-          token: msg.token,
-        });
+      case "worktreeRemoveAssess":
+        removal.worktreeRemoveAssess(surface, msg, actions);
         return;
-      }
-      case "worktreeRemove": {
-        // A `missing` worktree still resolves: `git worktree remove` is how its
-        // stale registration gets pruned (worktree-rpc.md:241).
-        const remove = actions.removeWorktree;
-        // Gated on resolvability HERE and resolved for real later. The gate is
-        // a fail-fast so an id the host never published spawns nothing at all;
-        // it is not the resolution the action acts on (B2).
-        const gate = actionPath(msg.worktreeId, true);
-        // Deliberately NOT pre-resolved: the capability re-resolves this id
-        // after its own forced rebuild (B2). A `missing` worktree still
-        // resolves there — `git worktree remove` is how its stale registration
-        // gets pruned (worktree-rpc.md:241).
-        //
-        // The host forwards confirmation authority, not Git's execution mode.
-        // No fingerprint means "report this target"; only the service owns the
-        // fresh evidence that can choose ordinary versus forced execution (D7).
-        const repoId = repoIdOf(msg.worktreeId);
-        if (remove && repoId !== undefined && gate !== undefined) {
-          if (msg.fingerprint === undefined) {
-            admitAssess(repoId, { kind: "rawRemoval", surface, worktreeId: msg.worktreeId });
-          } else {
-            // Validated at runtime like every other inbound field on this
-            // message: an unrecognized or malformed `deleteBranch` is not a
-            // lesser opt-in, it is the same as none (round-1 W1 pattern).
-            const deleteBranchRequest = isKnownDeleteBranchRequest(msg.deleteBranch) ? msg.deleteBranch : undefined;
-            perform(() =>
-              deleteBranchRequest === undefined
-                ? remove({ repoId, worktreeId: msg.worktreeId, origin: surface }, msg.fingerprint)
-                : remove({ repoId, worktreeId: msg.worktreeId, origin: surface }, msg.fingerprint, deleteBranchRequest),
-            );
-          }
-        }
+      case "worktreeRemove":
+        removal.worktreeRemove(surface, msg, actions);
         return;
-      }
-      case "worktreeLock": {
-        const lock = actions.lockWorktree;
-        const repoId = repoIdOf(msg.worktreeId);
-        // A worktree whose directory is gone resolves for a copy and nothing
-        // else (design.md D3) — locking one would act on a path that is not
-        // there.
-        if (lock && repoId !== undefined && actionPath(msg.worktreeId, false) !== undefined) {
-          perform(() => lock({ repoId, worktreeId: msg.worktreeId, origin: surface }, msg.reason));
-        }
+      case "worktreeLock":
+        removal.worktreeLock(surface, msg, actions);
         return;
-      }
-      case "worktreeUnlock": {
-        const unlock = actions.unlockWorktree;
-        const repoId = repoIdOf(msg.worktreeId);
-        if (unlock && repoId !== undefined && actionPath(msg.worktreeId, false) !== undefined) {
-          perform(() => unlock({ repoId, worktreeId: msg.worktreeId, origin: surface }));
-        }
+      case "worktreeUnlock":
+        removal.worktreeUnlock(surface, msg, actions);
         return;
-      }
       case "worktreePickDestination": {
         // Type-checked before it enters async logic, like every other inbound
         // payload: the discriminant alone is not the payload (round-3 W1).
@@ -3650,15 +3585,9 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
           .catch(() => {});
         return;
       }
-      case "worktreePrune": {
-        // Repo-scoped, so it resolves against the repo id rather than a
-        // worktree — there is no single worktree a prune acts on.
-        const prune = actions.pruneRepo;
-        if (prune && typeof msg.repoId === "string" && msg.repoId.length > 0) {
-          perform(() => prune(msg.repoId, msg.confirmedCount, surface));
-        }
+      case "worktreePrune":
+        removal.worktreePrune(surface, msg, actions);
         return;
-      }
       case "worktreeRevealInOS":
         shell.worktreeRevealInOS(surface, msg, actions);
         return;

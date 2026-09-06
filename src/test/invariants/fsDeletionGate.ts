@@ -44,7 +44,16 @@ function isRemovalPath(rel: string): boolean {
   if (rel.includes(".test.") || rel.includes("/bench/")) {
     return false;
   }
-  return rel.startsWith("src/worktree/") || rel === "src/providers/WorktreeHost.ts";
+  return (
+    rel.startsWith("src/worktree/") ||
+    rel === "src/providers/WorktreeHost.ts" ||
+    // The removal arms moved out of `WorktreeHost.ts` here. Named by exact path,
+    // not by a `src/providers/worktreeHost/` prefix: this gate is a stated list
+    // rather than a repository-wide `fs.rm` rule (see the header above), and a
+    // prefix would pull the guards, the host types and the create, provisioning
+    // and shell modules into scope for no reason.
+    rel === "src/providers/worktreeHost/actions/removal.ts"
+  );
 }
 
 const FIXTURES = "src/test/invariants/fixtures/fsDeletion/";

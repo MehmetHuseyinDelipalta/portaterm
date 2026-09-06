@@ -55,7 +55,7 @@
     3. In `src/providers/WorktreeHost.ts`, call `createShellActions` once inside `createWorktreeHost` and spread its handlers into the action table that replaces those switch arms.
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/actions/shell.ts`; neither may fire `long-function`.
 
-- [ ] 2_2 Move the removal arms and repair the fs-deletion gate's scan set
+- [x] 2_2 Move the removal arms and repair the fs-deletion gate's scan set — verified: pnpm run gate:fs-deletion && pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts exit 0
   - **Deps**: 2_1
   - **Refs**: design.md D1, design.md D3, design.md D2
   - **Acceptance**:
@@ -63,7 +63,7 @@
     - Verify: command pnpm run gate:fs-deletion
   - **Plan**:
     1. Create `src/providers/worktreeHost/actions/removal.ts` exporting `RemovalDeps` and `createRemovalActions(deps)`, naming `surfaces`, `cache`, `perform`, `actionPath`, `repoIdOf`, `admitAssess`, `options` and `disposed: () => boolean`.
-    2. Move the arms for `worktreeRemoveAssess`, `worktreeRemove`, `worktreeLock`, `worktreeUnlock` and `worktreePrune` into it, and spread its handlers into the action table.
+    2. Move the arms for `worktreeRemoveAssess`, `worktreeRemove`, `worktreeLock`, `worktreeUnlock` and `worktreePrune` out of `src/providers/WorktreeHost.ts` into it, and route those cases through the action table.
     3. Extend the scan predicate at `src/test/invariants/fsDeletionGate.ts:47` with `|| rel === "src/providers/worktreeHost/actions/removal.ts"` — the exact path, not a directory prefix (design.md D3).
     4. Plant a temporary `fs.rm` call in `src/providers/worktreeHost/actions/removal.ts`, run `pnpm run gate:fs-deletion`, record that it fails, remove the plant, and confirm it passes (design.md OBL-1).
     5. Run `pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts`.
