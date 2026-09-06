@@ -18,7 +18,7 @@
     6. Do not edit `src/worktree/worktreeMutationService.test.ts`; it is the regression net and OBL-1's rotation witness.
     7. Close with `git diff --exit-code ef96ea01..HEAD -- src/types/messages.ts` and then `git diff --exit-code -- src/types/messages.ts` (OBL-4). The base sha is literal — a form that re-derives it from `HEAD` compares `HEAD..HEAD` and passes on a committed edit.
 
-- [ ] 1_2 Extract removal, which owns the fingerprint store
+- [x] 1_2 Extract removal, which owns the fingerprint store — verified: pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/worktree/mutationService/removal.test.ts && pnpm exec biome check src exit 0
   - **Deps**: 1_1
   - **Refs**: design.md D1, design.md D1a, design.md D1b, design.md D4
   - **Boundary**: the facade holds no reference to `fingerprints`; no `node:fs` deletion is introduced
@@ -28,7 +28,9 @@
   - **Plan**:
     1. Create `src/worktree/mutationService/removal.ts` exporting `createRemoval(deps)` over the `fingerprints` store, `assess`, `issueFingerprint`, `assessRemovalReport` and `removeWorktree`, moving them out of `src/worktree/worktreeMutationService.ts`. `removeWorktree` comes too: five of the nine store reads are inside it (D1a).
     2. Add `forgetAbsent(presentWorktreeIds)` over the fingerprint half of `reconcileFingerprints` (`:726-729`); the facade's member now calls this and 1_1's, and owns nothing itself.
-    3. `settled` (`:710`) is pure and read by removal and by 1_3's reattach — lift it to module scope in the facade and import it, never copy it (D4).
+    3. `settled` (`:710`) is pure and read by removal and by 1_3's reattach, and `paths` (`:1638`) is read by removal and by the lock and unlock members — both go to `src/worktree/mutationService/outcomes.ts` and are imported, never copied (D4). Not module scope in the facade as first written: removal.ts is imported BY the facade, so importing a value back would be a runtime cycle.
+    4. Add `src/worktree/mutationService/removal.test.ts` driving the module directly: a token is spent by its attempt, and a token issued for one worktree does not authorize removing another. The whole-service suite reaches the store through one worktree only, so neither case is visible there.
+    5. Close with the OBL-4 pair from 1_1 step 7, base sha literal.
     4. Add `src/worktree/mutationService/removal.test.ts` covering assess-without-performing and the fingerprint's target scoping.
     5. Do not edit `src/worktree/worktreeMutationService.test.ts`.
     6. Close with the OBL-4 pair from 1_1 step 7, base sha literal.

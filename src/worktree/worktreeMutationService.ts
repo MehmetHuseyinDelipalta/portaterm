@@ -49,21 +49,18 @@ import type {
 } from "./migrateChanges";
 import { createMutationCoordinator, type MutationCoordinator, type MutationSettle } from "./mutationCoordinator";
 import { createMutationQueue } from "./mutationQueue";
+import { paths, settled } from "./mutationService/outcomes";
+import { createRemoval } from "./mutationService/removal";
 import { createSetupExecution, type PendingSetupRetry } from "./mutationService/setupExecution";
 import { disposeProvisionMaterials, type ProvisionMaterial, provisionEntryOf } from "./provisioning/provisionMaterial";
 import type { ReattachVerdict } from "./reattachProbe";
 import type { RemovalAssessment, RemovalEvidence } from "./worktreeBlockers";
-import { createFingerprintStore } from "./worktreeFingerprint";
 import {
   branchNameIsValid,
   type CreateSource,
-  classifyRemoval,
   createWorktree,
   lockWorktree,
-  type MutationResult,
   pruneRepo,
-  type RemovalOutcome,
-  removeWorktree,
   repairWorktree,
   unlockWorktree,
 } from "./worktreeMutations";
@@ -566,7 +563,6 @@ export interface WorktreeMutationService extends WorktreeMutationCapabilities {
 }
 
 export function createWorktreeMutationService(deps: MutationServiceDeps): WorktreeMutationService {
-  const fingerprints = createFingerprintStore();
   const debrisAuthorizations = deps.debrisAuthorizations ?? createDebrisAuthorizationStore();
   // The module's own, not deps assembled from `pathDeps`: the boundary's
   // ordering rule holds only while every probe is synchronous, and the async
@@ -592,6 +588,22 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
     ...(deps.reportProvisioning === undefined ? {} : { reportProvisioning: deps.reportProvisioning }),
   });
   const { executeSetup, writeManifest, failedSetup, portEnvironment } = setup;
+  // The fingerprint store lives inside this, with every one of its readers. The
+  // facade holds no reference to it at all, which is what task 1_2's Boundary
+  // asks for: one owner, or the store has two across a module edge (D1a).
+  const removal = createRemoval({
+    runner: deps.runner,
+    resolve: (target) => deps.resolve(target),
+    now: () => deps.now(),
+    assessRemoval: (target) => deps.assessRemoval(target),
+    observation: (repoId) => deps.observation(repoId),
+    observeAfter: (target, journalledPath) => deps.observeAfter(target, journalledPath),
+    ...(deps.deleteBranch === undefined ? {} : { deleteBranch: deps.deleteBranch }),
+    // Shared with lock and unlock, so it stays here: a second wrapper would be a
+    // second report stamping for the same class of verb.
+    withTarget,
+    runCoordinated: (repoId, step) => coordinator.run(repoId, step),
+  });
 
   /**
    * Run `body` against whatever `target` names AFTER the rebuild.
@@ -626,35 +638,6 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
       );
   }
 
-  /** The report itself, once the barrier above has fixed what it reads. */
-  async function assess(target: WorktreeMutationTarget): Promise<RemovalReport | null> {
-    const assessment = await deps.assessRemoval(target);
-    if (assessment === null) {
-      return null;
-    }
-    if (assessment.kind === "unavailable") {
-      return { kind: "unavailable", unreadable: assessment.unreadable };
-    }
-    // A refusal carries no evidence BY CONSTRUCTION, so there is nothing to
-    // bind a fingerprint to and nothing a forced removal could redeem — the
-    // same null the blocked path already sends for one.
-    if (assessment.kind === "refused") {
-      return { kind: "assessed", assessment, fingerprint: null };
-    }
-    // Confirmation authority and Git force are orthogonal (D7). A clean report
-    // still needs proof that the dialog it opened was answered; fresh evidence
-    // later decides whether the resulting Git command needs force.
-    return {
-      kind: "assessed",
-      assessment,
-      fingerprint: fingerprints.issue({ worktreeId: target.worktreeId }, assessment.evidence, deps.now()),
-    };
-  }
-
-  function settled(verb: MutationVerb, repoId: string, result: MutationResult): MutationOutcome {
-    return result.ok ? { kind: "ok", verb, repoId } : { kind: "error", verb, repoId, message: result.message };
-  }
-
   const service: WorktreeMutationService = {
     /**
      * Drop the confirmation of every worktree the tree no longer holds.
@@ -669,39 +652,15 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
      */
     reconcileFingerprints(presentWorktreeIds: readonly string[]) {
       const present = new Set(presentWorktreeIds);
-      for (const worktreeId of fingerprints.worktreeIds()) {
-        if (!present.has(worktreeId)) {
-          fingerprints.forget(worktreeId);
-        }
-      }
+      removal.forgetAbsent(present);
       setup.forgetAbsent(present);
     },
 
     retrySetup: (target, retryId) => setup.retrySetup(target, retryId),
 
-    issueFingerprint(target, evidence) {
-      const resolved = deps.resolve(target);
-      if (resolved === null) {
-        return null;
-      }
-      return fingerprints.issue({ worktreeId: target.worktreeId }, evidence, deps.now());
-    },
+    issueFingerprint: (target, evidence) => removal.issueFingerprint(target, evidence),
 
-    assessRemovalReport(target) {
-      // Inside the coordinator, never `withTarget`: the barrier this read needs
-      // and the mutation result `withTarget` publishes are separable, and only
-      // the second is what D6 was right to avoid. Reading from the cache instead
-      // let a rebuild still pending hand the predecessor's report the
-      // replacement's evidence and removal authority (round-4 B3).
-      return coordinator.run<ResolvedTarget, RemovalReport | null>(target.repoId, {
-        resolve: async () => deps.resolve(target),
-        // The other silent exit. The departure is only the user's answer while
-        // the rebuild broadcasts it, and one whose presence projection rejects
-        // publishes nothing at all (D12).
-        missing: async () => ({ kind: "unavailable", unreadable: ["the worktree is no longer registered"] }),
-        body: () => assess(target),
-      });
-    },
+    assessRemovalReport: (target) => removal.assessRemovalReport(target),
 
     async issueDebrisAuthorization(path) {
       // ONE observation answers both halves: what the offer will state, and what
@@ -739,183 +698,7 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
       ),
 
     removeWorktree: (target, fingerprint, deleteBranchRequest?: BranchDeleteRequest) =>
-      withTarget(
-        "remove",
-        target,
-        async (t, ctx) => {
-          // Assessed on EVERY removal. A request with no fingerprint reports;
-          // a request with one re-evaluates before it may execute. Git refuses a
-          // dirty worktree itself, but idle panes and external sessions are not
-          // Git's concern and would otherwise be destroyed unannounced.
-          // EVERY confirmed exit spends the token, including the ones below that
-          // never reach git. Returning `reprompt` without redeeming left it live
-          // after an evidence-read failure, so the next message could retry a
-          // removal that may already have run half-way (round-2 B5).
-          const spend = (): void => {
-            if (fingerprint !== undefined) {
-              fingerprints.forget(target.worktreeId);
-            }
-          };
-
-          // A throw is a forced exit too. Every `return` below spends the
-          // token; an exception left it live, so the next message could retry a
-          // removal whose git call may already have run (round-4 S1).
-          // Taken BEFORE the assessment, so the window this closes covers the
-          // whole of it as well as the handoff below (round-10 B8).
-          const observed = deps.observation(target.repoId);
-          const assessment = await deps.assessRemoval(target).catch((error: unknown) => {
-            spend();
-            throw error;
-          });
-          if (assessment === null) {
-            spend();
-            return {
-              kind: "error",
-              verb: "remove",
-              repoId: target.repoId,
-              message: "The worktree this action names could not be assessed.",
-            };
-          }
-          if (assessment.kind === "unavailable") {
-            spend();
-            return { kind: "unavailable", verb: "remove", repoId: target.repoId, unreadable: assessment.unreadable };
-          }
-          if (assessment.kind === "refused") {
-            spend();
-            return {
-              kind: "blocked",
-              verb: "remove",
-              repoId: target.repoId,
-              worktreeId: target.worktreeId,
-              assessment,
-              fingerprint: null,
-            };
-          }
-
-          if (fingerprint === undefined) {
-            // A fingerprint-free request is an ask, never execution authority.
-            // Every readable non-refused assessment therefore returns the report
-            // and the one-shot token its dialog callback must send back (D7).
-            return {
-              kind: "blocked",
-              verb: "remove",
-              repoId: target.repoId,
-              worktreeId: target.worktreeId,
-              assessment,
-              fingerprint: fingerprints.issue({ worktreeId: target.worktreeId }, assessment.evidence, deps.now()),
-            };
-          }
-
-          const redemption = fingerprints.redeem(
-            { worktreeId: target.worktreeId },
-            fingerprint,
-            assessment.evidence,
-            deps.now(),
-          );
-          if (redemption.kind === "reprompt") {
-            return {
-              kind: "error",
-              verb: "remove",
-              repoId: target.repoId,
-              message: "What is at risk here changed since you confirmed it. Please review it again.",
-            };
-          }
-          const force = atRisk(assessment.evidence);
-          const journal = {
-            worktreePath: t.worktreePath,
-            wasRegistered: t.wasRegistered,
-            existedOnDisk: t.existedOnDisk,
-          };
-          // The last window, and the one every earlier check depends on: the
-          // assessment validated its own observation, but this caller resumes
-          // from an `await`, and a rebuild continuation already queued behind it
-          // lands first. Asked here, synchronously, with nothing between this
-          // line and the command — evidence gathered under one observation must
-          // not authorize a command issued under another (round-10 B8).
-          if (deps.observation(target.repoId) !== observed) {
-            spend();
-            return { kind: "unavailable", verb: "remove", repoId: target.repoId, unreadable: ["listing"] };
-          }
-          const { result, timedOut } = await removeWorktree(deps.runner, {
-            ...paths(t),
-            force,
-            locked: t.locked,
-          });
-          // The coordinator's own post-attempt rebuild, taken here rather than
-          // added to: `classifyRemoval` compares against what the rebuild found,
-          // and a third forced rebuild per removal was pure cost (round-3 W5).
-          await ctx.settle();
-          // The observation D15 names, made at the exact point it happens. The
-          // host reconciles after every rebuild too (round-3 B5); this one stays
-          // because a removal is where a stale token is most dangerous, and a
-          // cache read is not a rebuild.
-          if (deps.resolve(target) === null) {
-            fingerprints.forget(target.worktreeId);
-          }
-          const removal = asOutcome(
-            "remove",
-            target.repoId,
-            classifyRemoval({
-              journal,
-              timedOut,
-              result,
-              after: await deps.observeAfter(target, journal.worktreePath),
-            }),
-          );
-          if (removal.kind !== "ok" || deleteBranchRequest === undefined) {
-            return removal;
-          }
-          // The transaction's OIDs come from what was ISSUED with the
-          // fingerprint (`redemption.approved`), never from a fresh
-          // assessment and never from the caller's own claim — that is the
-          // exact substitution the guard exists to prevent (design.md D10).
-          const mergeEvidence = redemption.approved.proofs.mergeEvidence;
-          if (
-            mergeEvidence === undefined ||
-            deleteBranchRequest.fingerprint !== fingerprint ||
-            deleteBranchRequest.branch !== mergeEvidence.branch ||
-            deleteBranchRequest.expectedBranchOid !== mergeEvidence.branchOid ||
-            deleteBranchRequest.defaultBranch !== mergeEvidence.base ||
-            deleteBranchRequest.expectedDefaultOid !== mergeEvidence.baseOid
-          ) {
-            // The opt-in authorizes only the offer echoed from THIS report.
-            // Another report can replace the stored evidence while retaining
-            // the same removal-risk fingerprint, so every field is part of the
-            // consent binding even though none is trusted as Git evidence.
-            return { ...removal, branchDelete: { kind: "refused", reason: "holders-unavailable" } };
-          }
-          const guardedRequest: BranchDeleteRequest = {
-            branch: mergeEvidence.branch,
-            expectedBranchOid: mergeEvidence.branchOid,
-            defaultBranch: mergeEvidence.base,
-            expectedDefaultOid: mergeEvidence.baseOid,
-            fingerprint,
-          };
-          const branchDelete = await (
-            deps.deleteBranch?.(t.repoPath, guardedRequest) ??
-            Promise.resolve({ kind: "refused" as const, reason: "holders-unavailable" as const })
-          ).catch(() => ({
-            kind: "refused" as const,
-            reason: "holders-unavailable" as const,
-          }));
-          return { ...removal, branchDelete };
-        },
-        // The id resolved to nothing on the far side of the forced rebuild, so
-        // the worktree is already gone. That IS D15's observation, and it has to
-        // spend the token here: the coordinator used to throw straight past the
-        // body, leaving a live confirmation for whatever takes this location
-        // next (round-3 B5).
-        async () => {
-          fingerprints.forget(target.worktreeId);
-          return {
-            kind: "error",
-            verb: "remove",
-            repoId: target.repoId,
-            worktreeId: target.worktreeId,
-            message: "That worktree is already gone.",
-          };
-        },
-      ),
+      removal.removeWorktree(target, fingerprint, deleteBranchRequest),
 
     pruneRepo: (repoId, confirmedCount, origin) => {
       // The count arrives from a webview message. A prune authorized by a
@@ -1611,42 +1394,6 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
       }
     },
   };
-}
-
-/**
- * Anything a confirmation would need to name. A clean worktree has none.
- *
- * Ignored material counts, and so does a walk that could not finish: git refuses
- * a dirty worktree itself and knows nothing about the `node_modules` and copied
- * `.env` this extension provisions, so "unforced ran straight to git" is exactly
- * how those get destroyed unannounced. An unmeasured amount is still an amount
- * the user has to be told about before an irreversible delete — confirmable
- * throughout, never a refusal (worktree-removal.md § 2.3).
- */
-function atRisk(e: RemovalEvidence): boolean {
-  return (
-    e.dirtyPaths.length > 0 ||
-    e.untrackedPaths.length > 0 ||
-    e.paneIds.length > 0 ||
-    e.externalSessionIds.length > 0 ||
-    e.locked ||
-    e.ignored.kind === "unproven" ||
-    e.ignored.entries > 0
-  );
-}
-
-function paths(t: ResolvedTarget): { repoPath: string; worktreePath: string } {
-  return { repoPath: t.repoPath, worktreePath: t.worktreePath };
-}
-
-function asOutcome(verb: MutationVerb, repoId: string, outcome: RemovalOutcome): MutationOutcome {
-  if (outcome.outcome === "ok") {
-    return { kind: "ok", verb, repoId };
-  }
-  if (outcome.outcome === "error") {
-    return { kind: "error", verb, repoId, message: outcome.message };
-  }
-  return { kind: "indeterminate", verb, repoId, observed: outcome.observed };
 }
 
 /**
