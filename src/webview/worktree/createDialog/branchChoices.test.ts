@@ -133,8 +133,8 @@ describe("taking a row", () => {
     const branches = harness([ref("main", "api")]);
     branches.offer("main");
     expect(branches.commit(0)).toEqual({ kind: "refused", message: "main is checked out in api" });
-    // Refused means not taken: the choice is still what it was.
-    expect(branches.choice().kind).toBe("new");
+    // Refused means not taken: the mode the choice states is still what it was.
+    expect(branches.mode()).toBe("new");
   });
 
   it("states the ref's own name for an existing row", () => {

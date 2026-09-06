@@ -60,7 +60,6 @@ export interface DraftModel {
   readonly draft: WorktreeCreateDraft;
 
   pathIsDerived(): boolean;
-  usingChosen(): boolean;
   supplied(): string;
   afterChoice(): AfterChoice;
   folderMode(): WorktreeOpenAfter;
@@ -142,7 +141,6 @@ export function createDraftModel(deps: DraftModelDeps): DraftModel {
     draft,
 
     pathIsDerived: () => pathIsDerived,
-    usingChosen: () => usingChosen,
     supplied: () => supplied,
     afterChoice: () => afterChoice,
     folderMode: () => folderMode,

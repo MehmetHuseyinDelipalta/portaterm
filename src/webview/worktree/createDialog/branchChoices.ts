@@ -172,11 +172,14 @@ export interface BranchChoicesDeps {
 }
 
 export interface BranchChoices {
-  /** What the user picked, and the ONLY source of new-versus-existing (D4). */
-  choice(): BranchChoice;
   /** Rows the list is currently offering, in order. Index into the listbox. */
   rows(): readonly BranchChoice[];
-  /** The wire mode the current choice means. */
+  /**
+   * The wire mode the current choice means.
+   *
+   * The whole of what the choice is read FOR: it is the ONLY source of
+   * new-versus-existing (D4), and nothing outside needs the row it came from.
+   */
   mode(): WorktreeBranchMode;
 
   /** Re-decide the rows for the text currently typed, and return them. */
@@ -218,7 +221,6 @@ export function createBranchChoices(deps: BranchChoicesDeps): BranchChoices {
   let forkHead: ForkHead | null = null;
 
   return {
-    choice: () => choice,
     rows: () => choices,
     mode: () => choiceMode(choice),
 

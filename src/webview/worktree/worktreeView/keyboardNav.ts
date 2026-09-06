@@ -43,9 +43,15 @@ export interface KeyboardNav {
   onKeyDown(ev: KeyboardEvent): void;
   /** The host's `focusin` delegate: the tab stop follows focus that arrived by pointer. */
   onFocusIn(ev: Event): void;
-  /** The key of the row focus is on, or `null`. The view restores through this. */
+  /**
+   * The key of the row focus is on, or `null`. The view restores through this.
+   *
+   * Read-only on purpose. A setter would let a caller move the focused key
+   * without the tab-stop pass `focusRow` and `syncRovingTabindex` always run
+   * with it — the split ownership of roving focus this collaborator exists to
+   * end (.reviews/round-1.md F001).
+   */
   focusedKey(): string | null;
-  setFocusedKey(key: string | null): void;
 }
 
 export function createKeyboardNav(deps: KeyboardNavDeps): KeyboardNav {
@@ -262,8 +268,5 @@ export function createKeyboardNav(deps: KeyboardNavDeps): KeyboardNav {
     focusRow,
     onKeyDown,
     focusedKey: () => focusedKey,
-    setFocusedKey: (key) => {
-      focusedKey = key;
-    },
   };
 }

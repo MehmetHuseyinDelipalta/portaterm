@@ -52,8 +52,8 @@ describe("the destination's three states", () => {
     expect(m.supplied()).toBe("");
 
     m.stateDestination({ kind: "typed", path: "/tmp/other" });
+    // Carrying `useChosenFolder` alongside is what the absent key rules out.
     expect(m.destinationCandidate()).toEqual({ candidatePath: "/tmp/other" });
-    expect(m.usingChosen()).toBe(false);
   });
 
   it("drops the folder on a repo switch but keeps a typed path, which means the same in either repo", () => {

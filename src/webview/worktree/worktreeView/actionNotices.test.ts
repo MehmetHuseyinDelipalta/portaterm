@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorktreeViewData } from "../WorktreeView";
 import type { WorktreeActionResult } from "../worktreeViewTypes";
-import { type ActionNotices, createActionNotices } from "./actionNotices";
+import { type ActionNotices, createActionNotices, resultKey } from "./actionNotices";
 
 let host: HTMLElement;
 let notices: ActionNotices;
@@ -62,7 +62,9 @@ describe("auto-dismiss", () => {
     // The next push carries only one of them.
     place(result("w1"));
 
-    expect(notices.armedKeys()).toHaveLength(1);
+    // The key that SURVIVED, not how many did: a count is also satisfied by
+    // cancelling the wrong one (.reviews/round-1.md F003).
+    expect(notices.armedKeys()).toEqual([resultKey(result("w1"))]);
     // The handle itself is gone, which is the half "nothing ran" cannot see.
     expect(vi.getTimerCount()).toBeLessThan(armedBefore);
   });

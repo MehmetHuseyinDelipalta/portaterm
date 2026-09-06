@@ -74,3 +74,18 @@
     2. Add `src/webview/worktree/createDialog/branchChoices.test.ts` pinning the list order and the fork-head resolution. Its own file rather than cases appended to `draftModel.test.ts`: the two modules hold different state and a shared suite would let one's harness stand in for the other's. No environment pragma, for the same reason `draftModel.test.ts` has none.
     3. Run `bun run asm refactor shape` on both targets and every destination; RECORD the output in workflow.md Notes rather than chasing it (design.md Risk Map).
     4. Close with `git diff --exit-code -- src/types/messages.ts` (OBL-5).
+
+## 3. Review
+
+- [x] 3_1 Close round-1 findings — verified: pnpm exec vitest run src/webview/worktree/worktreeView src/webview/worktree/createDialog src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeCreateDialog.test.ts && pnpm run check-types exit 0
+  - **Deps**: 2_2
+  - **Refs**: `.reviews/round-1.md` F001, `.reviews/round-1.md` F003
+  - **Boundary**: no production behaviour changes — this drops unreferenced surface and retargets assertions, nothing else
+  - **Acceptance**:
+    - Outcome: no member of the five new factory interfaces is without a production consumer, and OBL-3's witness names the timer that survived rather than counting them.
+    - Verify: command pnpm exec vitest run src/webview/worktree/worktreeView src/webview/worktree/createDialog src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeCreateDialog.test.ts
+  - **Plan**:
+    1. Drop `setFocusedKey` from `KeyboardNav` in `src/webview/worktree/worktreeView/keyboardNav.ts` — declaration and implementation. It is a writer with no caller that bypasses the tab-stop pass, which is the ownership split task 1_2 closed (F001).
+    2. Drop `choice()` from `src/webview/worktree/createDialog/branchChoices.ts` and `usingChosen()` from `src/webview/worktree/createDialog/draftModel.ts`, retargeting their single assertions in `src/webview/worktree/createDialog/branchChoices.test.ts` and `src/webview/worktree/createDialog/draftModel.test.ts` onto the seam production reads (`mode()`, `destinationCandidate()`).
+    3. In `src/webview/worktree/worktreeView/actionNotices.test.ts`, name the surviving key in OBL-3's assertion (F003). A precision improvement, not a gap closure — the triage records that the finding's stated defeater does not survive execution.
+    4. Re-run the inverted-liveness mutation against the amended witness and confirm it still goes red.
