@@ -1,7 +1,7 @@
 // src/vault/VaultService.ts — Aggregate per-agent readers into one recency-sorted,
-// metadata-only session list with resolved fork support.
+// metadata-only session list.
 // See: specs/agent-session-index/spec.md (Aggregate and sort; Defensive parsing),
-//      specs/vault-session-launch/spec.md (Fork when supported), design.md D2,D8.
+//      specs/vault-session-launch/spec.md (Resume and Continue), design.md D2,D8.
 
 import { createHash, randomBytes } from "node:crypto";
 import * as path from "node:path";
@@ -13,7 +13,6 @@ import {
   type VaultListCacheFileV1,
   type VaultRefreshHint,
 } from "./cacheTypes";
-import { canForkOpenCode } from "./forkSupport";
 import { claudeRoots, resolveClaudeSessionPath } from "./readers/claudePaths";
 import {
   lookupClaudeEntry,
@@ -91,7 +90,7 @@ export type VaultDetailReaders = Record<
 >;
 
 /** Per-agent single-entry readers (resolve ONE launch entry by id, no full scan).
- *  Backs `getEntry`, the fast path for resume/fork. */
+ *  Backs `getEntry`, the fast path for stored-session launch. */
 export type VaultEntryReaders = Record<VaultAgentId, (sessionId: string) => Promise<VaultSessionEntry | null>>;
 
 /** Per-agent single-record readers: resolve the `msgRef` a timeline item carries
@@ -139,8 +138,6 @@ export interface VaultServiceDeps {
   detailReaders?: VaultDetailReaders;
   entryReaders?: VaultEntryReaders;
   recordReaders?: VaultRecordReaders;
-  /** Injectable opencode fork probe; defaults to the real version probe. */
-  canForkOpenCodeFn?: (minVersion: string) => Promise<boolean>;
   /**
    * Persistent list cache (cache-vault-load D2). When provided, `listCached()`
    * serves the last list instantly and `refresh()` reads incrementally + persists.
@@ -281,7 +278,6 @@ export class VaultService {
   /** One adapter per agent — the single registration list/detail/entry/record
    *  and the native renamer all resolve through (D6). */
   private readonly adapters: Record<VaultAgentId, VaultAgentAdapter>;
-  private readonly canForkOpenCodeFn: (minVersion: string) => Promise<boolean>;
   private readonly cacheStore?: VaultCacheStore;
   private readonly customNames?: VaultCustomNameRegistry;
   private readonly cursorReaderOptions: CursorCombinedReaderOptions;
@@ -383,7 +379,6 @@ export class VaultService {
         },
       ]),
     ) as Record<VaultAgentId, VaultAgentAdapter>;
-    this.canForkOpenCodeFn = deps.canForkOpenCodeFn ?? ((min) => canForkOpenCode(min));
     this.cacheStore = deps.cacheStore;
     this.customNames = deps.customNames;
     this.resolveCursorLaunchTargetFn = deps.resolveCursorLaunchTargetFn ?? resolveCursorLaunchTarget;
@@ -441,7 +436,7 @@ export class VaultService {
   }
 
   /**
-   * Read every agent store and aggregate into one recency-sorted, fork-resolved
+   * Read every agent store and aggregate into one recency-sorted
    * list. When `prev` is supplied, each reader reads INCREMENTALLY against its
    * prior per-agent cache (cache-vault-load D3). Returns both the public result
    * and the cache document to persist. A whole reader failing is surfaced as
@@ -516,26 +511,6 @@ export class VaultService {
         }
       }
     });
-
-    // A targeted run keeps untouched capability state too; only a refreshed
-    // OpenCode segment needs the external version probe again.
-    const resolvesOpenCode = !hint || hint.agent === "opencode";
-    const hasOpenCode = resolvesOpenCode && entries.some((e) => e.agent === "opencode");
-    const opencodeMin = getAgentDefinition("opencode")?.forkMinVersion ?? "1.1.54";
-    let opencodeCanFork = false;
-    if (hasOpenCode) {
-      try {
-        opencodeCanFork = await this.canForkOpenCodeFn(opencodeMin);
-      } catch {
-        opencodeCanFork = false;
-      }
-    }
-
-    for (const entry of entries) {
-      if (!hint || entry.agent === hint.agent) {
-        entry.canFork = resolveCanFork(entry, opencodeCanFork);
-      }
-    }
 
     entries.sort((a, b) => b.modified - a.modified);
     const result: VaultListResult = { entries, unreadable: { count: unreadable, reasons: dedupe(reasons) } };
@@ -905,12 +880,11 @@ export class VaultService {
   }
 
   /**
-   * Resolve ONE launch entry by id — the fast path for resume/fork. Reads only
-   * the relevant agent's store via a point/locate-by-id lookup (no aggregate
-   * `list()` over every store, no fork probe for agents other than opencode), so
+   * Resolve ONE launch entry by id. Reads only the relevant agent's store via
+   * a point/locate-by-id lookup (no aggregate `list()` over every store), so
    * launching is not gated on scanning the full session index. Mirrors getDetail
    * (resolve-by-id, no cache; D3). Returns null for an unknown agent or an
-   * unresolvable session. canFork is resolved the same way as in list().
+   * unresolvable session.
    */
   async lookupEntry(entryId: string): Promise<VaultEntryLookup> {
     const parsed = parseEntryId(entryId);
@@ -933,18 +907,7 @@ export class VaultService {
     if (found.status !== "found") {
       return found;
     }
-    const entry = found.entry;
-    let opencodeCanFork = false;
-    if (entry.agent === "opencode") {
-      const opencodeMin = getAgentDefinition("opencode")?.forkMinVersion ?? "1.1.54";
-      try {
-        opencodeCanFork = await this.canForkOpenCodeFn(opencodeMin);
-      } catch {
-        opencodeCanFork = false;
-      }
-    }
-    entry.canFork = resolveCanFork(entry, opencodeCanFork);
-    return { status: "found", entry };
+    return found;
   }
 
   /** The launchable-entry-or-nothing view of `lookupEntry`, unchanged for every
@@ -976,7 +939,6 @@ export class VaultService {
     if (!target) {
       return null;
     }
-    target.entry.canFork = resolveCanFork(target.entry, false);
     return {
       entry: target.entry,
       verify: () => this.verifyCursorLaunchTargetFn(target, this.cursorReaderOptions),
@@ -1027,16 +989,4 @@ function priorUnreadableContribution(total: number, reason: string): number {
 // the whole aggregation.
 function invokeReader(read: () => Promise<ReaderResultWithState>): Promise<ReaderResultWithState> {
   return Promise.resolve().then(read);
-}
-
-function resolveCanFork(entry: VaultSessionEntry, opencodeCanFork: boolean): boolean {
-  const def = getAgentDefinition(entry.agent);
-  if (!def?.forkCommand) {
-    return false;
-  }
-  if (def.forkMinVersion) {
-    // Version-gated agents (currently only opencode).
-    return entry.agent === "opencode" ? opencodeCanFork : false;
-  }
-  return true; // forkCommand present, no version gate (claude, codex)
 }

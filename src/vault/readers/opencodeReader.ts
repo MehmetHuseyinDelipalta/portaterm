@@ -182,7 +182,6 @@ function mapSessionRow(row: Record<string, unknown>): VaultSessionEntry | null {
     cwd: asString(row.directory) ?? "",
     modified: Number(row.time_updated) || 0,
     flags: { model, agent },
-    canFork: false, // resolved by VaultService (task 2_5)
   };
 }
 
@@ -285,7 +284,7 @@ export async function readOpenCodeSessions(
 /**
  * Resolve ONE OpenCode session to its launch entry by id — the single-entry
  * counterpart to readOpenCodeSessions, used by VaultService.getEntry for fast
- * resume/fork (a point lookup, not the full-store scan; D3). No `parent_id`
+ * stored-session launch (a point lookup, not the full-store scan; D3). No `parent_id`
  * filter so a child (subagent) session is still resolvable by id. Returns null
  * for an unsafe id or a missing row.
  */

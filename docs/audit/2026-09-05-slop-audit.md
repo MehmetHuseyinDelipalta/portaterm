@@ -30,6 +30,7 @@ The pool was revalidated against `0de80546` before editing. This follow-up super
 - Applied the validated Axis 1A/1B test cuts, including the now-reproducible T1-B08 replacement witness, while retaining or transferring every unique assertion found during the HEAD pass.
 - Removed the validated dead/test-only surfaces in Axes 2, 3 and 5, including A-01..07, A-10..12, A-14..16, D-01/03/07..10 and I-01/02/05.
 - Applied the behavior-neutral consolidation subset: U-01, U-02's exact plain converters, U-03..06's equivalent leaves, U-05, U-09/10, U-16/17, U-19's three exact helpers and U-20's scheduler-preserving pumps.
+- After product review, resolved D-11 by retiring the unreleased receiver-only Vault fork path end-to-end; the shipped Vault remains Resume/Continue only.
 
 ### Retained or deferred after HEAD revalidation
 
@@ -46,7 +47,7 @@ The pool was revalidated against `0de80546` before editing. This follow-up super
 
 ### Product and behavior decisions
 
-D-11, D-12 and U-12 remain intentionally unmodified. They require choosing product scope (restore or retire fork; contribute or retire rename) or a timestamp input contract. Static cleanup evidence is not authorization for those behavior changes.
+D-12 and U-12 remain intentionally unmodified. They require choosing product scope (contribute or retire rename) or a timestamp input contract. Static cleanup evidence is not authorization for those behavior changes.
 
 ### Verification outcome
 
@@ -56,6 +57,7 @@ D-11, D-12 and U-12 remain intentionally unmodified. They require choosing produ
 - `fsDeletionGate`: pass.
 - Every edited batch's scoped Vitest suites pass.
 - Full `pnpm run test:unit`: **301 files, 7,822 tests passed**. The first run exposed a pre-existing stale `SetupTerminal` fake missing the live `retire()` method; adding that API-compatible no-op to the fake made its 17-test owner suite and the full gate pass.
+- Subsequent D-11 retirement removed another 418 net lines across 54 files. Focused Vault/provider verification passed 529 tests; the post-retirement full suite passed **301 files, 7,801 tests**. TypeScript, Biome check mode, `fsDeletionGate` and `git diff --check` also passed; Biome retained seven pre-existing warnings in touched files.
 
 ## Scope, method and confidence
 
@@ -948,12 +950,13 @@ Each finding records its final priority, verified evidence, precise cut or repai
 
 These are not included in the cleanup pool. A registered command can be invoked programmatically or bound by a user even without shipped contributions; absence from package.json is not a proof that removing registration affects nobody.
 
-### D-11 [P2] The whole `vaultFork` path is receiver-only: the UI that sent it was removed and a test now pins its absence
+### D-11 [RESOLVED] Retire the receiver-only `vaultFork` path
 
 - **Location:** src/types/messages.ts:388-393; handler src/providers/TerminalViewProvider.ts:1166-1170
 - **Verifier:** CONFIRMED — product decision, excluded from the safe total. **Evidence:** `grep -rn vaultFork src` non-test → the type literal + the `case`; no webview sender. `VaultPanel.test.ts:255` pins the absence.
 - **Cut / repair:** either restore a fork affordance or retire the mode end-to-end (message, case, `LaunchMode` arm, `forkCommand` templates, `forkSupport.ts` + its probe call, `canFork` plumbing).
-- **Estimated net lines removed:** ~180. **Risk:** medium — this is a product decision, not a mechanical delete; `forkSupport`'s probe also costs a subprocess per vault refresh, so leaving it is not free.
+- **Estimated net lines removed:** ~180. **Risk:** medium — this is a product decision, not a mechanical delete; `forkSupport`'s memoized probe can also cost one subprocess per extension process, so leaving it is not free.
+- **Resolution (2026-09-06):** RETIRE. Fork UI was explicitly removed before the first Vault release; remove the preserved backend, capability plumbing and stale user-facing claims so the implementation matches the shipped Resume/Continue product.
 
 ### D-12 [P2] The registered renameTab command has no shipped palette/menu/keybinding contributions, despite documentation advertising them.
 

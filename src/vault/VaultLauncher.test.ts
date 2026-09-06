@@ -28,14 +28,13 @@ function makeEntry(overrides: Partial<VaultSessionEntry> = {}): VaultSessionEntr
     cwd: "/Users/me/proj",
     modified: 1,
     flags: {},
-    canFork: true,
     canResume: true,
     ...overrides,
   };
 }
 
 // The launcher resolves the single entry by id via getEntry (not the full list);
-// the stub returns the matching entry as-is, preserving the test's canFork.
+// the stub returns the matching entry as-is.
 function stubService(
   entries: VaultSessionEntry[],
   verify: (entry: VaultSessionEntry) => Promise<boolean> = async () => true,
@@ -64,7 +63,6 @@ function cursorCliEntry(): VaultSessionEntry {
     agent: "cursor",
     sessionId: "chat-1",
     source: "cli",
-    canFork: false,
     canResume: true,
   });
 }
@@ -94,23 +92,11 @@ describe("VaultLauncher.resolve", () => {
     expect(opts.env).toBeUndefined();
   });
 
-  it("resolves a fork when the entry is forkable", async () => {
-    const launcher = new VaultLauncher(stubService([makeEntry({ canFork: true })]), {});
-    const opts = await launcher.resolve("claude:sess-1", "fork");
-    expect(opts.shellArgs).toContain("--fork-session");
-  });
-
-  it("throws fork-unsupported when forking a non-forkable entry", async () => {
-    const launcher = new VaultLauncher(stubService([makeEntry({ canFork: false })]), {});
-    await expect(launcher.resolve("claude:sess-1", "fork")).rejects.toMatchObject({ code: "fork-unsupported" });
-  });
-
   it("throws resume-unsupported when selected resume compatibility is unproven", async () => {
     const entry = makeEntry({
       id: "cursor:chat-1",
       agent: "cursor",
       sessionId: "chat-1",
-      canFork: false,
       canResume: false,
     });
     const launcher = new VaultLauncher(stubService([entry]), {});
@@ -123,7 +109,6 @@ describe("VaultLauncher.resolve", () => {
       agent: "cursor",
       sessionId: "chat-1",
       source: "cli",
-      canFork: false,
       canResume: true,
     });
     const launcher = new VaultLauncher(stubService([entry]), {});
@@ -142,21 +127,18 @@ describe("VaultLauncher.resolve", () => {
         agent: "cursor",
         sessionId: "ide:d29ya3NwYWNlLTE:composer-1",
         source: "ide",
-        canFork: false,
         canResume: false,
       }),
       makeEntry({
         id: "cursor:project:cHJvamVjdC0x:chat-1",
         agent: "cursor",
         sessionId: "project:cHJvamVjdC0x:chat-1",
-        canFork: false,
         canResume: false,
       }),
       makeEntry({
         id: "cursor:stale",
         agent: "cursor",
         sessionId: "stale",
-        canFork: false,
         canResume: true,
       }),
       makeEntry({
@@ -164,7 +146,6 @@ describe("VaultLauncher.resolve", () => {
         agent: "cursor",
         sessionId: "forged",
         source: "ide",
-        canFork: false,
         canResume: true,
       }),
       // Source-qualified and marked resumable, but a forged path-traversing chat id —
@@ -174,7 +155,6 @@ describe("VaultLauncher.resolve", () => {
         agent: "cursor",
         sessionId: "../../etc/passwd",
         source: "cli",
-        canFork: false,
         canResume: true,
       }),
     ];
@@ -198,7 +178,6 @@ describe("VaultLauncher.resolve", () => {
       id: "cursor:chat-1",
       agent: "cursor",
       sessionId: "chat-1",
-      canFork: false,
       canResume: false,
     });
     const launcher = new VaultLauncher(stubService([entry]), {});
@@ -217,24 +196,12 @@ describe("VaultLauncher.resolve", () => {
       id: "cursor:chat-1",
       agent: "cursor",
       sessionId: "chat-1",
-      canFork: false,
       canResume: false,
     });
     const launcher = new VaultLauncher(stubService([entry]), {});
     await expect(launcher.resolve("cursor:chat-1", "continue", "continue this work")).rejects.toMatchObject({
       code: "executable-not-found",
     });
-  });
-
-  it("keeps unsupported Cursor fork refused", async () => {
-    const entry = makeEntry({
-      id: "cursor:chat-1",
-      agent: "cursor",
-      sessionId: "chat-1",
-      canFork: false,
-    });
-    const launcher = new VaultLauncher(stubService([entry]), {});
-    await expect(launcher.resolve("cursor:chat-1", "fork")).rejects.toMatchObject({ code: "fork-unsupported" });
   });
 
   it("refuses a Cursor resume whose stored identity fails the proof, before any executable probe", async () => {
@@ -247,7 +214,7 @@ describe("VaultLauncher.resolve", () => {
     expect(resolveAgentExecutable).not.toHaveBeenCalled();
   });
 
-  it("skips the resume proof for continue and fork", async () => {
+  it("skips the resume proof for continue", async () => {
     const verify = vi.fn(async () => false);
     const launcher = new VaultLauncher(stubService([cursorCliEntry()], verify), {});
     await expect(launcher.resolve("cursor:chat-1", "continue", "carry on")).resolves.toMatchObject({
@@ -277,7 +244,7 @@ describe("VaultLauncher.resolve", () => {
     expect(verify).toHaveBeenCalledTimes(1);
   });
 
-  /** B18: Continue/Fork must not require a CLI launch target — a Cursor IDE
+  /** B18: Continue must not require a CLI launch target — a Cursor IDE
    *  entry and an issued child locator resolve only through getEntry. */
   it("continues a Cursor IDE entry that has no CLI launch target", async () => {
     const ide = makeEntry({
@@ -285,7 +252,6 @@ describe("VaultLauncher.resolve", () => {
       agent: "cursor",
       sessionId: "ide:d29ya3NwYWNlLTE:composer-1",
       source: "ide",
-      canFork: false,
       canResume: false,
     });
     const launcher = new VaultLauncher(cliOnlyService(ide), {});
@@ -301,7 +267,6 @@ describe("VaultLauncher.resolve", () => {
       agent: "cursor",
       sessionId: "child:0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
       source: "cli",
-      canFork: false,
       canResume: false,
     });
     const launcher = new VaultLauncher(cliOnlyService(child), {});
@@ -347,7 +312,6 @@ describe("VaultLauncher.buildResumeCommand", () => {
       agent: "cursor",
       sessionId: "ide:d29ya3NwYWNlLTE:composer-1",
       source: "ide",
-      canFork: false,
       canResume: false,
     });
     const launcher = new VaultLauncher(stubService([ide]), {});
@@ -372,13 +336,6 @@ describe("VaultLauncher — launching somewhere else", () => {
   it("still honours the recorded directory when none is named", async () => {
     const launcher = new VaultLauncher(stubService([makeEntry({ cwd: "/recorded/proj" })]), {});
     await expect(launcher.resolve("claude:sess-1", "resume")).resolves.toMatchObject({ cwd: "/recorded/proj" });
-  });
-
-  it("overrides the directory for a fork too — the override is the mode's, not resume's", async () => {
-    const launcher = new VaultLauncher(stubService([makeEntry({ cwd: "/recorded/proj" })]), {});
-    await expect(launcher.resolve("claude:sess-1", "fork", undefined, undefined, "/wt/feat")).resolves.toMatchObject({
-      cwd: "/wt/feat",
-    });
   });
 });
 

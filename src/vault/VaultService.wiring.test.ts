@@ -32,7 +32,6 @@ const entry = (id: string): VaultSessionEntry => ({
   cwd: "/w",
   modified: 0,
   flags: {},
-  canFork: false,
 });
 
 const record = (): RecordLineResult => ({ ok: true, line: "{}" });

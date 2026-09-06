@@ -776,7 +776,6 @@ describe("TerminalViewProvider: vault fresh-response supersession (F4)", () => {
           cwd: "/x",
           modified: 1,
           flags: {},
-          canFork: false,
         },
       ],
       unreadable: { count: 0, reasons: [] },

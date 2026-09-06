@@ -13,7 +13,6 @@ function entry(overrides: Partial<VaultSessionEntry> = {}): VaultSessionEntry {
     cwd: "/Users/me/proj",
     modified: 1,
     flags: {},
-    canFork: true,
     canResume: true,
     ...overrides,
   };
@@ -48,11 +47,6 @@ describe("build: claude", () => {
     });
     expect(spec.env.CLAUDE_CONFIG_DIR).toBe("/captured/config");
   });
-
-  it("fork uses --fork-session", () => {
-    const spec = build(entry(), "fork", {});
-    expect(spec.args).toEqual(["--resume", "sess-1", "--fork-session"]);
-  });
 });
 
 describe("build: codex", () => {
@@ -83,11 +77,6 @@ describe("build: codex", () => {
   it("non-claude agents get an empty env override", () => {
     const spec = build(codexEntry({}), "resume", { ANTHROPIC_API_KEY: "sk" });
     expect(spec.env).toEqual({});
-  });
-
-  it("codex fork argv", () => {
-    const spec = build(codexEntry({}), "fork", {});
-    expect(spec.args).toEqual(["fork", "t1"]);
   });
 });
 
@@ -196,7 +185,6 @@ describe("build: cursor", () => {
       agent: "cursor",
       sessionId: "chat-1",
       cwd: "/cursor-project",
-      canFork: false,
       canResume: false,
       ...overrides,
     });
@@ -289,7 +277,7 @@ describe("buildResumeCommandString: complex-token quoting", () => {
 });
 
 describe("build: errors", () => {
-  it("throws no-fork-command when forking an agent without a fork template", () => {
+  it("throws unknown-agent for an unregistered agent", () => {
     // Construct a fake agent id with no registry record → unknown-agent path
     expect(() => build(entry({ agent: "ghost" }), "resume", {})).toThrow(VaultLaunchError);
     try {

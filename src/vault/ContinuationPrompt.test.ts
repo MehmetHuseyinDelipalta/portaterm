@@ -15,7 +15,6 @@ function entry(over: Partial<VaultSessionEntry> = {}): VaultSessionEntry {
     cwd: "/repo/app",
     modified: 0,
     flags: {},
-    canFork: true,
     sessionPath: "/home/u/.claude/projects/-repo-app/abc.jsonl",
     ...over,
   };

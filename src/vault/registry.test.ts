@@ -65,11 +65,10 @@ describe("AGENT_REGISTRY", () => {
     expect(CLAUDE_AUTH_ENV_ALLOWLIST).toHaveLength(8);
   });
 
-  it("claude resume injects model + permission-mode flags; fork uses --fork-session", () => {
+  it("claude resume injects model + permission-mode flags", () => {
     const claude = getAgentDefinition("claude");
     expect(claude?.resumeCommand.args).toContainEqual({ flag: "--model", from: "model" });
     expect(claude?.resumeCommand.args).toContainEqual({ flag: "--permission-mode", from: "permissionMode" });
-    expect(staticTokens(claude?.forkCommand as CommandTemplate)).toContain("--fork-session");
   });
 
   it("codex resume preserves flag order m,a,s and templates reasoning effort", () => {
@@ -84,10 +83,8 @@ describe("AGENT_REGISTRY", () => {
     expect(staticTokens(codex?.resumeCommand as CommandTemplate)).toEqual(["resume", "{{sessionId}}"]);
   });
 
-  it("opencode carries forkMinVersion 1.1.54 and a --fork command", () => {
+  it("opencode resume preserves the captured agent flag", () => {
     const opencode = getAgentDefinition("opencode");
-    expect(opencode?.forkMinVersion).toBe("1.1.54");
-    expect(staticTokens(opencode?.forkCommand as CommandTemplate)).toContain("--fork");
     expect(opencode?.resumeCommand.args).toContainEqual({ flag: "--agent", from: "agent" });
   });
 
@@ -100,11 +97,6 @@ describe("AGENT_REGISTRY", () => {
     });
     expect(cursor?.sessionStore.format).toBe("metadata-json");
     expect(cursor?.resumeCommand).toEqual({ executable: "{{executable}}", args: ["--resume", "{{sessionId}}"] });
-    expect(cursor?.forkCommand).toBeUndefined();
-  });
-
-  it("codex has no forkMinVersion (fork supported whenever a command exists)", () => {
-    expect(getAgentDefinition("codex")?.forkMinVersion).toBeUndefined();
   });
 
   it("getAgentDefinition returns undefined for unknown agents", () => {

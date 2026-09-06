@@ -216,7 +216,6 @@ function mapEntry(composer: ParsedComposer): VaultSessionEntry {
     cwd: composer.cwd,
     modified: composer.modified,
     flags: {},
-    canFork: false,
     canResume: false,
     source: "ide",
   };

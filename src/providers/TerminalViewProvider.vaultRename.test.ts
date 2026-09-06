@@ -33,9 +33,7 @@ afterEach(() => {
 
 function freshResult(id: string) {
   return {
-    entries: [
-      { id: `x:${id}`, agent: "x", sessionId: id, title: "t", cwd: "/x", modified: 1, flags: {}, canFork: false },
-    ],
+    entries: [{ id: `x:${id}`, agent: "x", sessionId: id, title: "t", cwd: "/x", modified: 1, flags: {} }],
     unreadable: { count: 0, reasons: [] },
   };
 }

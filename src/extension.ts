@@ -649,7 +649,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(fsWatcherPool);
 
   // AI coding vault — reads the user's existing CLI-agent session stores and
-  // resumes/forks them. Backed by a persistent list cache under globalStorageUri
+  // resumes them or continues their work in a new session. Backed by a persistent list cache under globalStorageUri
   // so the panel displays instantly on open, then refreshes only changed sources
   // (cache-vault-load D1/D2). The cache is machine-global (agent stores are not
   // workspace-scoped), so it uses `globalStorageUri`, not the workspace storageUri.

@@ -163,7 +163,6 @@ function mapThreadRow(row: Record<string, unknown>): VaultSessionEntry | null {
       sandbox: parseSandbox(row.sandbox_policy),
       reasoningEffort: asString(row.reasoning_effort),
     },
-    canFork: false, // resolved by VaultService (task 2_5)
     // File-backed iff a rollout transcript exists (UI hint only, D9). The host
     // re-derives this path by id; it never trusts a webview-supplied path.
     sessionPath: asString(row.rollout_path),
@@ -422,7 +421,6 @@ async function buildCodexJsonlEntry(filePath: string, sessionIdOverride?: string
     cwd: meta.cwd ?? "",
     modified: meta.timestamp ?? stat.mtimeMs,
     flags: {},
-    canFork: false,
     sessionPath: filePath, // the rollout jsonl backs this session (UI hint)
   };
 }
@@ -568,7 +566,7 @@ export async function readCodexSessions(
 /**
  * Resolve ONE Codex session to its launch entry by id — the single-entry
  * counterpart to readCodexSessions, used by VaultService.getEntry for fast
- * resume/fork (a `threads` point lookup, not the full-store scan; D3). Falls back
+ * stored-session launch (a `threads` point lookup, not the full-store scan; D3). Falls back
  * to the rollout jsonl (located by its filename uuid) when no SQLite DB exists.
  * Answers conclusively: `absent` only from a query that ran or a rollout walk
  * that completed, `unknown` from anything that failed to look.

@@ -2,8 +2,8 @@
 // See: asimov/changes/add-ai-coding-vault/specs/agent-vault-registry/spec.md,
 //      design.md D1, docs/research/20260528-cmux-vault-mechanism.md §1,§5,§6,§7.
 //
-// Launch (resume/fork) is fully data-driven from these records (D1): adding an
-// agent's launch needs only a record here. History *reading* still needs a
+// Launch is fully data-driven from these records (D1): adding an agent's
+// launch needs only a record here. History *reading* still needs a
 // small per-agent reader (src/vault/readers/) because path layout + schema
 // differ per agent.
 
@@ -24,7 +24,7 @@ export { VAULT_AGENT_IDS, type VaultAgentId } from "./types";
 
 /**
  * Claude's auth/config env allowlist — the only host env vars forwarded to a
- * resumed/forked Claude so it targets the same account (research §5,
+ * resumed or continued Claude so it targets the same account (research §5,
  * RestorableAgentSession.swift:276-286). Version-fragile by design: kept here
  * so a drift fix is one line.
  */
@@ -57,11 +57,6 @@ const claude: AgentVaultDefinition = {
       { flag: "--model", from: "model" },
       { flag: "--permission-mode", from: "permissionMode" },
     ],
-  },
-  // claude --resume <sessionId> --fork-session
-  forkCommand: {
-    executable: "claude",
-    args: ["--resume", "{{sessionId}}", "--fork-session"],
   },
   // claude [--model <m>] [--permission-mode <p>] "<prompt>" — a NEW session seeded
   // with the handoff prompt. Claude 2.x has no composer-prefill flag, so the
@@ -117,11 +112,6 @@ const codex: AgentVaultDefinition = {
       { flag: "-c", from: "reasoningEffort", valueTemplate: "model_reasoning_effort={{value}}" },
     ],
   },
-  // codex fork <sessionId>
-  forkCommand: {
-    executable: "codex",
-    args: ["fork", "{{sessionId}}"],
-  },
   // codex [-m <m>] [-a <approval>] [-s <sandbox>] [-c …] "<prompt>"
   continueCommand: {
     executable: "codex",
@@ -165,12 +155,6 @@ const opencode: AgentVaultDefinition = {
     executable: "opencode",
     args: ["--session", "{{sessionId}}", { flag: "-m", from: "model" }, { flag: "--agent", from: "agent" }],
   },
-  // opencode --session <sessionId> --fork (gated ≥ 1.1.54, when --fork landed)
-  forkCommand: {
-    executable: "opencode",
-    args: ["--session", "{{sessionId}}", "--fork"],
-  },
-  forkMinVersion: "1.1.54",
   // opencode [-m <model>] [--agent <agent>] --prompt "<prompt>"
   continueCommand: {
     executable: "opencode",

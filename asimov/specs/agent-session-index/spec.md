@@ -181,7 +181,7 @@ Project transcripts SHALL NOT appear as standalone Vault rows and MAY be used on
 
 The system SHALL enumerate supported Cursor IDE Composer history from the local Cursor `globalStorage/state.vscdb` store without requiring Cursor Agent CLI to be installed.
 
-Cursor IDE entries SHALL use a source-qualified identity and SHALL NOT claim CLI Resume or Fork capability.
+Cursor IDE entries SHALL use a source-qualified identity and SHALL NOT claim CLI Resume capability.
 
 A missing, locked, unsupported, or malformed IDE store SHALL degrade without failing Cursor CLI or other Vault providers.
 

@@ -14,7 +14,6 @@ function entry(over: Partial<VaultSessionEntry> = {}): VaultSessionEntry {
     cwd: "/work",
     modified: 100,
     flags: { model: "opus" },
-    canFork: false,
     ...over,
   };
 }
@@ -29,10 +28,6 @@ describe("entriesSignature", () => {
   it("is empty for an empty list and differs from a non-empty list", () => {
     expect(entriesSignature([])).toBe("");
     expect(entriesSignature([])).not.toBe(entriesSignature([entry()]));
-  });
-
-  it("changes when canFork flips (would otherwise be masked)", () => {
-    expect(entriesSignature([entry({ canFork: false })])).not.toBe(entriesSignature([entry({ canFork: true })]));
   });
 
   it("changes when selected resume capability is explicitly disabled", () => {

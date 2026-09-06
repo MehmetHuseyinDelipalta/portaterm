@@ -332,7 +332,7 @@ The editor provider's `onDidChangeViewState` only posts `viewShow` — it does n
 | Links | `openLink`, `openFile`, `requestFilePreview` | `:1208`, `:1214`, `:1236` |
 | File tree | `request-read-directory`, `request-open-folder`, `request-file-tree-search`, `cancel-file-tree-search`, `request-subscribe-fs-changes`, `request-unsubscribe-fs-changes`, `file-tree-reveal-in-os`, `file-tree-copy-path`, `file-tree-copy-relative-path`, `file-tree-delete` | `:1242-1251` (one shared body) |
 | Settings | `updateHoverPreviewSetting` | `:1258` |
-| AI vault | `requestVaultSessions`, `vaultRenameSession`, `vaultWatchSession`, `vaultResume`, `vaultFork`, `requestVaultSessionDetail`, `vaultContinueSession`, `requestVaultLaunchTargets`, `requestVaultMessageRecord`, `requestVaultContextCwd`, `requestSubagentPreview`, `vaultRevealInOS`, `vaultOpenSessionFile`, `vaultOpenWorkingDir`, `vaultCopyResumeCommand`, `vaultCopyFilePath` | `:1019-1112` |
+| AI vault | `requestVaultSessions`, `vaultRenameSession`, `vaultWatchSession`, `vaultResume`, `requestVaultSessionDetail`, `vaultContinueSession`, `requestVaultLaunchTargets`, `requestVaultMessageRecord`, `requestVaultContextCwd`, `requestSubagentPreview`, `vaultRevealInOS`, `vaultOpenSessionFile`, `vaultOpenWorkingDir`, `vaultCopyResumeCommand`, `vaultCopyFilePath` | `:1019-1112` |
 
 `TerminalEditorProvider.handleMessage` mirrors the non-vault subset; the vault cases are absent because no vault services are injected.
 

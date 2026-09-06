@@ -23,7 +23,6 @@ function entry(over: Partial<VaultSessionEntry> = {}): VaultSessionEntry {
     cwd: "/repo",
     modified: 1_700_000_000_000,
     flags: {},
-    canFork: true,
     sessionPath: "/vault/s1.jsonl",
     ...over,
   } as VaultSessionEntry;

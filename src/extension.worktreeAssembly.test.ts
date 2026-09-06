@@ -570,7 +570,6 @@ const STORED_ENTRY: VaultSessionEntry = {
   cwd: REPO,
   modified: 1,
   flags: {},
-  canFork: true,
   canResume: true,
 };
 

@@ -57,7 +57,6 @@ describe("readClaudeSessions", () => {
     expect(e.flags.permissionMode).toBe("acceptEdits");
     expect(e.flags.configDir).toBe(FIXTURE_ROOT);
     expect(e.modified).toBeGreaterThan(0);
-    expect(e.canFork).toBe(false);
   });
 
   it("falls back to the first user message when there is no ai-title", async () => {

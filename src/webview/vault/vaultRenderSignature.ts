@@ -3,8 +3,8 @@
 //
 // The signature covers EVERY field the row, the folder filter, and the row actions
 // read — not just id/modified/title — so a change the UI would reflect (e.g. a
-// `canFork` flip after an agent version change, or a `cwd` change that affects the
-// "This folder only" filter) never gets masked by the guard. It is order-sensitive:
+// `cwd` change that affects the "This folder only" filter never gets masked by
+// the guard. It is order-sensitive:
 // a reorder changes the signature (the list renders in array order).
 
 import type { VaultSessionEntry } from "../../vault/types";
@@ -28,7 +28,6 @@ export function entriesSignature(entries: readonly VaultSessionEntry[]): string 
         e.gitBranch ?? "",
         e.cwd,
         String(e.modified),
-        e.canFork ? "1" : "0",
         // Explicit false hides Resume; undefined preserves legacy resume behavior.
         e.canResume === false ? "0" : "1",
         e.sessionPath ?? "",

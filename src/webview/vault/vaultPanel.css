@@ -631,7 +631,7 @@
   );
 }
 
-/* Resume = single icon-only button. No text, no fork. */
+/* Resume = single icon-only button. */
 .vault-action {
   display: inline-flex;
   align-items: center;
@@ -652,11 +652,6 @@
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: 1px;
 }
-/* Retained as a CSS hook so any stray query doesn't break — no instances render. */
-.vault-action--fork {
-  display: none;
-}
-
 /* ── "Show N more" (per-group row cap) ─────────────────────────────────── */
 .vault-show-more {
   display: block;

@@ -220,7 +220,6 @@ function mapCursorMeta(
     cwd: meta.cwd as string,
     modified,
     flags: {},
-    canFork: false,
     canResume: true,
     source: "cli",
     // No sessionPath: the reader never surfaces a path into `store.db` (D3).
@@ -303,7 +302,6 @@ function mapCursorProjectEntry(candidate: CursorTranscriptCandidate, cwd: string
     cwd,
     modified: stamp.mtimeMs,
     flags: {},
-    canFork: false,
     canResume: false,
   };
 }

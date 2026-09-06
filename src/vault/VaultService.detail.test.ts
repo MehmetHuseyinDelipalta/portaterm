@@ -90,7 +90,7 @@ describe("VaultService.list: unreadable.reasons", () => {
       claude: async () => readerResult([], 2),
       codex: async () => readerResult([], 1),
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers });
     const { unreadable } = await svc.list();
     expect(unreadable.count).toBe(3);
     expect(unreadable.reasons).toEqual([
@@ -105,14 +105,14 @@ describe("VaultService.list: unreadable.reasons", () => {
         throw new Error("db locked");
       },
     });
-    const svc = new VaultService({ readers, canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers });
     const { unreadable } = await svc.list();
     expect(unreadable.count).toBe(1);
     expect(unreadable.reasons).toEqual(["OpenCode: reader failed"]);
   });
 
   it("has no reasons when nothing was unreadable", async () => {
-    const svc = new VaultService({ readers: emptyReaders(), canForkOpenCodeFn: async () => false });
+    const svc = new VaultService({ readers: emptyReaders() });
     const { unreadable } = await svc.list();
     expect(unreadable).toEqual({ count: 0, reasons: [] });
   });

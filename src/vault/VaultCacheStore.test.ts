@@ -84,7 +84,6 @@ function cursorEntry(sessionId: string, source?: "cli" | "ide") {
     cwd: "/work",
     modified: 10,
     flags: {},
-    canFork: false,
     canResume: source === "cli",
     ...(source ? { source } : {}),
   };
@@ -104,7 +103,6 @@ function doc(overrides: Partial<VaultListCacheFileV1> = {}): VaultListCacheFileV
         cwd: "/work",
         modified: 10,
         flags: {},
-        canFork: false,
       },
     ],
     unreadable: { count: 0, reasons: [] },

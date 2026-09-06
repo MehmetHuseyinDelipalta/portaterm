@@ -220,7 +220,7 @@ therefore cannot widen its own reach — it can only name a path, never a base.
 
 ### 4.6 Vault and agent status
 
-All fifteen vault requests are handled **only** by `TerminalViewProvider` (bodies at
+All fourteen vault requests are handled **only** by `TerminalViewProvider` (bodies at
 `TVP:373-867`) — see §8.1.
 
 | Type | Dir | Purpose | Defined | Handled |
@@ -229,7 +229,6 @@ All fifteen vault requests are handled **only** by `TerminalViewProvider` (bodie
 | `vaultRenameSession` | W→E | Rename a session | `:489` | TVP:1023 |
 | `vaultWatchSession` | W→E | Follow a session live | `:501` | TVP:1029 |
 | `vaultResume` | W→E | Resume into a terminal | `:378` | TVP:1035 |
-| `vaultFork` | W→E | Fork a session | `:385` | TVP:1041 |
 | `requestVaultSessionDetail` | W→E | Load a transcript | `:397` | TVP:1047 |
 | `vaultContinueSession` | W→E | Continue the latest session | `:433` | TVP:1058 |
 | `requestVaultLaunchTargets` | W→E | Available agents to launch | `:449` | TVP:1064 |

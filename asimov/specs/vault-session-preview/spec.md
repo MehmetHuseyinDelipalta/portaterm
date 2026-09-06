@@ -199,7 +199,7 @@ The mirror SHALL NOT be read when the canonical store is readable and claims a d
 
 A compatible Cursor IDE detail request SHALL render its local Composer conversation through the same bounded Vault timeline used by other providers.
 
-The preview SHALL identify the source as Cursor IDE and SHALL NOT expose Resume, Copy Resume Command, or Fork actions.
+The preview SHALL identify the source as Cursor IDE and SHALL NOT expose Resume or Copy Resume Command actions.
 
 ### Requirement: Cursor transcript capability fallback
 

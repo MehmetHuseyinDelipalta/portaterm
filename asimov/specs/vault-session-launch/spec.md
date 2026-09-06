@@ -7,17 +7,13 @@ The system SHALL resume a selected session by spawning the agent's native resume
 
 ### Requirement: Launch resolves a single entry by id
 
-WHEN resolving the launch options for a resume or fork, the system SHALL resolve the target entry directly by its id from only the relevant agent's store (a point or locate-by-id lookup), and SHALL NOT aggregate or scan every agent's session store to find it. Resolving a single entry SHALL NOT trigger work scoped to other agents (e.g. the OpenCode version probe SHALL run only when the target entry is an OpenCode session). The agent's store location SHALL be derived from the id host-side; a webview-supplied path SHALL NOT be trusted.
+WHEN resolving launch options for a stored session, the system SHALL resolve the target entry directly by its id from only the relevant agent's store (a point or locate-by-id lookup), and SHALL NOT aggregate or scan every agent's session store to find it. Resolving a single entry SHALL NOT trigger work scoped to other agents. The agent's store location SHALL be derived from the id host-side; a webview-supplied path SHALL NOT be trusted.
 
-Synthetic child/group/segment ids — those carrying a nesting marker (`:subagent:`, `:workflow:`, `:wfagent:`, `:turn:`) — are detail-view handles only and SHALL NOT resolve to a launchable entry: `getEntry` SHALL return null for them, so a nested view node never offers resume or fork. (An id containing `:` already fails the session-id safety check, so this holds without a separate guard.) A teammate turn (`:turn:`) is a view of a slice of a member session; the member session itself stays launchable by its plain `claude:<memberId>`.
-
-### Requirement: Fork a session when supported
-
-The system SHALL offer a fork action that runs the agent's fork command in a new terminal. For OpenCode, fork SHALL be available only when the detected `opencode --version` is ≥ 1.1.54 (the release that introduced `--fork`); when fork is unsupported for an agent or version, the fork action SHALL be unavailable for that entry rather than failing at launch.
+Synthetic child/group/segment ids — those carrying a nesting marker (`:subagent:`, `:workflow:`, `:wfagent:`, `:turn:`) — are detail-view handles only and SHALL NOT resolve to a launchable entry: `getEntry` SHALL return null for them, so a nested view node never offers Resume. (An id containing `:` already fails the session-id safety check, so this holds without a separate guard.) A teammate turn (`:turn:`) is a view of a slice of a member session; the member session itself stays launchable by its plain `claude:<memberId>`.
 
 ### Requirement: Preserve Claude auth/config on launch (best-effort)
 
-WHEN launching a Claude resume or fork, the system SHALL ensure the auth-env allowlist values present in the extension-host environment reach the spawned process: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, and `CLAUDE_CONFIG_DIR`, plus any `CLAUDE_CONFIG_DIR` captured at index time. This is best-effort: when the extension host lacks the user's login-shell environment, the resumed session targets the same account only insofar as those vars were available — the system SHALL NOT claim success it cannot guarantee, and SHALL surface launch/auth failures via the error notice.
+WHEN launching a Claude resume or continuation, the system SHALL ensure the auth-env allowlist values present in the extension-host environment reach the spawned process: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, and `CLAUDE_CONFIG_DIR`, plus any `CLAUDE_CONFIG_DIR` captured at index time. This is best-effort: when the extension host lacks the user's login-shell environment, the resumed session targets the same account only insofar as those vars were available — the system SHALL NOT claim success it cannot guarantee, and SHALL surface launch/auth failures via the error notice.
 
 ### Requirement: Injection-safe command construction
 
@@ -139,7 +135,7 @@ An unavailable, malformed, unsupported, or mismatched store SHALL reject the act
 
 ### Requirement: Cursor source capability enforcement
 
-Cursor IDE and unmatched project-transcript entries SHALL reject Resume, Copy Resume Command, and Fork requests in both the UI and extension host.
+Cursor IDE and unmatched project-transcript entries SHALL reject Resume and Copy Resume Command requests in both the UI and extension host.
 
 A forged or stale launch message MUST NOT cause a non-resumable source identifier to be substituted into a Cursor CLI command.
 
@@ -147,7 +143,6 @@ A forged or stale launch message MUST NOT cause a non-resumable source identifie
 
 Continuing into Cursor SHALL start a new visible terminal in the source entry's validated cwd and pass the confirmed handoff prompt as one positional argument.
 
-Cursor entries SHALL NOT offer Fork while no supported Cursor fork command exists.
 
 ### Requirement: Cursor continuation permission posture
 

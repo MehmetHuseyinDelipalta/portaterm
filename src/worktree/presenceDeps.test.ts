@@ -21,7 +21,7 @@ function running(over: Partial<RunningClaudeSession> = {}): RunningClaudeSession
 }
 
 function entry(over: Partial<VaultSessionEntry> & { id: string; agent: VaultAgentId; cwd: string; modified: number }) {
-  return { sessionId: over.id, title: "", flags: {}, canFork: false, ...over } as VaultSessionEntry;
+  return { sessionId: over.id, title: "", flags: {}, ...over } as VaultSessionEntry;
 }
 
 /**

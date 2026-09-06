@@ -74,7 +74,6 @@ function entry(over: Partial<VaultSessionEntry> = {}): VaultSessionEntry {
     cwd: "/work/repo",
     modified: Date.now(),
     flags: {},
-    canFork: false,
     ...over,
   };
 }
@@ -252,15 +251,12 @@ describe("VaultPanel row rendering (redesign 4_1)", () => {
     expect(Array.from(dot?.classList ?? []).some((c) => c.startsWith("vault-row-dot--"))).toBe(false);
   });
 
-  it("never renders a fork button and never posts vaultFork", () => {
+  it("renders Resume as the row's only launch action", () => {
     const host = createHost();
-    const posted: { type: string }[] = [];
-    const panel = new VaultPanel({ host, postMessage: (m) => posted.push(m), getInitialCollapsed: () => false });
-    // canFork:true would have produced a fork button under the old UI.
-    panel.render(result([entry({ id: "claude:a", canFork: true })]));
-    expect(host.querySelector(".vault-action--fork")).toBeNull();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "claude:a" })]));
+    expect(host.querySelectorAll(".vault-row-actions button")).toHaveLength(1);
     expect(host.querySelectorAll(".vault-action--resume")).toHaveLength(1);
-    expect(posted.some((m) => m.type === "vaultFork")).toBe(false);
   });
 
   it("writes the (untrusted) title via textContent, not innerHTML", () => {

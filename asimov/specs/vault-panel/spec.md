@@ -3,7 +3,7 @@
 
 ### Requirement: Searchable vault panel
 
-The system SHALL present the aggregated session list in a webview panel. Each row SHALL show, on a single line: the agent badge rendering the agent's **real brand icon** (inline SVG themed via the agent's accent color), the title preview, a `cwd` chip (folder icon + leaf segment), a relative timestamp, and an **icon-only Resume action revealed on row hover/focus**. Rows SHALL NOT render a fork action.
+The system SHALL present the aggregated session list in a webview panel. Each row SHALL show, on a single line: the agent badge rendering the agent's **real brand icon** (inline SVG themed via the agent's accent color), the title preview, a `cwd` chip (folder icon + leaf segment), a relative timestamp, and an **icon-only Resume action revealed on row hover/focus**.
 
 ### Requirement: In-panel client-side search
 

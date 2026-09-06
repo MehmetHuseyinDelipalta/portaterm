@@ -45,7 +45,6 @@ function isValidCachedEntry(e: unknown): e is VaultSessionEntry {
     !("contentKind" in v) &&
     !("limitedReason" in v) &&
     !("stats" in v) &&
-    typeof v.canFork === "boolean" &&
     (v.canResume === undefined || typeof v.canResume === "boolean") &&
     (v.source === undefined || v.source === "cli" || v.source === "ide") &&
     typeof v.flags === "object" &&
@@ -83,8 +82,7 @@ function isValidCursorEntry(
     value.id === `cursor:${sessionId}` &&
     value.sessionId === sessionId &&
     value.source === source &&
-    value.canResume === canResume &&
-    value.canFork === false
+    value.canResume === canResume
   );
 }
 

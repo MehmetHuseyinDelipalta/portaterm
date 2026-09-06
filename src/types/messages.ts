@@ -385,13 +385,6 @@ export interface VaultResumeMessage {
   entryId: string;
 }
 
-/** Webview → Extension: fork the given vault session in a new terminal. */
-export interface VaultForkMessage {
-  type: "vaultFork";
-  /** `<agent>:<sessionId>` id from a `VaultSessionEntry`. */
-  entryId: string;
-}
-
 // ── Session preview + context menu (redesign-vault-panel-ui D3, D9) ──
 // Every one of these carries the entry `id` ONLY. The host resolves the
 // session's on-disk location from the id within the agent's store and derives
@@ -1809,7 +1802,6 @@ export type WebViewToExtensionMessage =
   | ScrollbackDumpMessage
   | RequestVaultSessionsMessage
   | VaultResumeMessage
-  | VaultForkMessage
   | RequestVaultSessionDetailMessage
   | RequestVaultMessageRecordMessage
   | RequestVaultLaunchTargetsMessage
