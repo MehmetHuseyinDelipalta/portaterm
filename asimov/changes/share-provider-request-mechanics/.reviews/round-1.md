@@ -43,6 +43,7 @@ The chair also machine-checked the extraction's own premise at base: a normalise
 - SuggestedFix: Add the file-preview wiring case tasks.md `1_3` step 4 already specifies — force `previewFileLink` to reject through each real provider's `requestFilePreview` entry point and assert both exact warning strings, exactly as the vault-list pair is done at `providerRequestWiring.test.ts:144-175`. Then correct the `Witnesses:` line in workflow.md, which currently claims a witness that is not there.
 - Status: accepted
 - Triage: The record is wrong, not just thin: workflow.md's `Witnesses:` line asserts OBL-8 passes in both halves and the wiring half for the file-preview label does not exist. tasks.md 1_3 Plan step 4 required all four strings and I shipped two. Adding both provider cases and correcting the workflow.md line.
+- Rework: Fixed in `ebf30358`. Witness now exists: `pnpm exec vitest run src/providers/providerRequestWiring.test.ts`. Mutation check — `logSuffix: " (editor)"` → `""` in TerminalEditorProvider fails it, and `""` → `" (editor)"` in TerminalViewProvider fails it. workflow.md's `Witnesses:` line corrected.
 - Triage: pending
 
 ### F002
@@ -63,6 +64,7 @@ The chair also machine-checked the extraction's own premise at base: a normalise
 - SuggestedFix: Spy the mocked `vscode.CancellationTokenSource` constructor (`src/test/__mocks__/vscode.ts`) inside a `handleFilePreviewRequest` case and assert exactly one `dispose()` on the constructed source after the handler resolves. Keep the existing `cancel()`-does-not-dispose assertion — it carries the other half.
 - Status: accepted
 - Triage: Correct and it is my recurring defect: the second assertion observes the test's own `source.dispose()` call, so the handler's `finally` disposal has no witness at all. Spying the mocked `CancellationTokenSource` constructor inside a `handleFilePreviewRequest` case fixes it.
+- Rework: Fixed in `ebf30358`. The registry test now claims only the `cancel`-does-not-dispose half; two handler-level cases (success path and throw path) assert disposal against a spy on `CancellationTokenSource.prototype.dispose`, so every recorded call comes from production. Mutation check — deleting `source.dispose()` from the handler's `finally` fails 2 tests.
 - Triage: pending
 
 ### F003
@@ -83,6 +85,7 @@ The chair also machine-checked the extraction's own premise at base: a normalise
 - SuggestedFix: One line — add `expect(delivered).toContain("claude:renamed")` before the negative assertion.
 - Status: accepted
 - Triage: Weak rather than vacuous, as the chair traced — but one line closes it, and OBL-6 is the row whose whole point is that a delivery happened and the RIGHT one won.
+- Rework: Fixed in `ebf30358`. Mutation check — making the rename push's refresh never resolve fails it, where before it passed.
 - Triage: pending
 
 ### F004
@@ -103,6 +106,7 @@ The chair also machine-checked the extraction's own premise at base: a normalise
 - SuggestedFix: Either match D1 (`begin(sessionId): CancellationTokenSource`, registry constructs and returns) or record the deviation in design.md D1 before archive, so the accepted anchor and the code agree.
 - Status: accepted
 - Triage: Fixing the code to match D1 rather than the doc: `begin(sessionId)` will create, install and return the source. That keeps design.md untouched (no D# decision moves, so no handback) and removes the caller's ability to install a source the registry did not make.
+- Rework: Fixed in `ebf30358` by changing the code, not the doc: `begin(sessionId)` now creates, installs and returns the source. No behavioural difference, so no witness — `pnpm run check-types` and the 1059-test provider suite cover the call-site change.
 - Triage: pending
 
 ### F005
