@@ -54,7 +54,7 @@
     3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/assessLanes.ts` and split `src/providers/worktreeHost/assessLanes.ts` again if it fires.
 
-- [ ] 2_5 Extract reading one thing out of the current cache
+- [x] 2_5 Extract reading one thing out of the current cache — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_4
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/hostLookups.ts` is under 500 lines, and `src/providers/WorktreeHost.ts` never grows

@@ -29,7 +29,7 @@ import { createProvisionOfferStore } from "../worktree/provisioning/offerStore";
 import { conflictsWithProvisionDestination, MAX_MODEL_ROWS, rowsOf } from "../worktree/provisioning/providerKit";
 import type { HeldProvisionSource } from "../worktree/provisioning/provisionMaterial";
 import { createRebuildGate } from "../worktree/rebuildGate";
-import type { WorktreeInfo, WorktreeRepo } from "../worktree/types";
+import type { WorktreeRepo } from "../worktree/types";
 import { createWorktreeCache } from "../worktree/WorktreeCache";
 import {
   buildWorktreeTreeDetailed,
@@ -44,7 +44,8 @@ import { createRemovalActions } from "./worktreeHost/actions/removal";
 import { createShellActions } from "./worktreeHost/actions/shell";
 import { createAssessLanes } from "./worktreeHost/assessLanes";
 import { createDestinationResolve } from "./worktreeHost/destinationResolve";
-import type { LaunchTargetRecord, Opening, PickedCopyFile, WorktreeSurface } from "./worktreeHost/hostTypes";
+import { createHostLookups, observationOf } from "./worktreeHost/hostLookups";
+import type { Opening, PickedCopyFile, WorktreeSurface } from "./worktreeHost/hostTypes";
 import { createLaunchAdmission } from "./worktreeHost/launchAdmission";
 import { createOpeningLifecycle } from "./worktreeHost/openingLifecycle";
 
@@ -807,122 +808,15 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     return undefined;
   }
 
-  /** The worktree `worktreeId` names in the tree this host currently holds. */
-  function cachedWorktree(worktreeId: string): WorktreeInfo | undefined {
-    for (const repo of cache.read().repos) {
-      const found = repo.worktrees.find((wt) => wt.id === worktreeId);
-      if (found) {
-        return found;
-      }
-    }
-    return undefined;
-  }
-
   /**
-   * Which repository holds this worktree, derived rather than accepted.
-   *
-   * The inbound messages carry only a `worktreeId`, and that is the right
-   * shape: a webview-supplied `repoId` would let one repo's panel name
-   * another's queue, and the id it names is the only thing a mutation is
-   * entitled to act on. Resolved here for the queue key only — the TARGET is
-   * re-resolved from the id on the far side of the rebuild (round-1 B2).
+   * Every read over the tree this host currently holds — one worktree, one
+   * repository, one path, one registration, one agent row (task 2_5). Nothing
+   * here writes, which is why they travel together.
    */
-  function repoIdOf(worktreeId: string): string | undefined {
-    for (const repo of cache.read().repos) {
-      if (repo.worktrees.some((wt) => wt.id === worktreeId)) {
-        return repo.repoId;
-      }
-    }
-    return undefined;
-  }
-
-  /**
-   * The registration a repository publishes when the host OBSERVED its listing.
-   *
-   * Absent when the cache RETAINED the listing rather than reading it, and
-   * absent for every repository while git itself is unusable — a retained
-   * listing is right for DISPLAY (three worktrees marked degraded beats none)
-   * and wrong for authority, because admitting on it would mint fresh authority
-   * over registrations discovery just failed to verify (round-5 B7).
-   *
-   * Present for a repository nobody can watch: its listing WAS read, it may
-   * just go stale unnoticed, and refusing there would disable launches and
-   * removals on every host without file watching (D11).
-   *
-   * A launch and a removal ask this and nothing else (design.md D12). Nobody
-   * re-derives it from `degraded`, which is the composed line shown to the user
-   * and also carries the watch claim (round-7 W8).
-   */
-  function observationOf(repo: WorktreeRepo | undefined): number | undefined {
-    return repo?.generation;
-  }
-
-  function repoById(repoId: string): WorktreeRepo | undefined {
-    return cache.read().repos.find((r) => r.repoId === repoId);
-  }
-
-  /**
-   * The path to act on for a worktree request, or undefined to do nothing.
-   *
-   * A `missing` worktree resolves for a copy and for nothing else: copying the
-   * path is how a user goes and looks at what happened to a directory that is
-   * gone, but opening, revealing or spawning a terminal in one would act on a
-   * path that is not there (design.md D3).
-   */
-  /**
-   * Which observation of this worktree's registration the host currently holds,
-   * or `undefined` when it holds none.
-   *
-   * "Something is there" and "the same thing is there" are different questions,
-   * and remove-then-recreate at the same normalized id answers yes to the first.
-   * Nothing git reports answers the second: the same branch at the same commit
-   * lists identically, and git reuses `.git/worktrees/<name>` after a deletion
-   * (`worktreeFingerprint.ts`). So the answer is the cache's own — it advances
-   * the number whenever it re-observes a repository, because re-observing is
-   * exactly when it stops being able to prove continuity (design.md D10).
-   *
-   * Per repository, never the global `treeVersion`: a sibling repository
-   * rebuilding must not refuse this launch.
-   */
-  function launchTarget(worktreeId: string): LaunchTargetRecord | undefined {
-    for (const repo of cache.read().repos) {
-      const found = repo.worktrees.find((wt) => wt.id === worktreeId);
-      if (found === undefined) {
-        continue;
-      }
-      const observed = observationOf(repo);
-      if (found.missing === true || observed === undefined) {
-        return undefined;
-      }
-      // git's own display string, never the normalized id.
-      return { path: found.displayPath, generation: observed };
-    }
-    return undefined;
-  }
-
-  function actionPath(worktreeId: string, allowMissing: boolean): string | undefined {
-    const wt = cachedWorktree(worktreeId);
-    if (!wt || (wt.missing && !allowMissing)) {
-      return undefined;
-    }
-    return wt.displayPath;
-  }
-
-  /**
-   * The published row this request names, only if the value it carried still
-   * matches the host's own.
-   *
-   * The carried id is an expected-version token, never an argument: a surface
-   * whose last envelope was skipped still shows the previous session under a
-   * stable row id, and acting on the id it sent would act on the wrong session
-   * (D3). Returning the row rather than a boolean is what makes it impossible to
-   * check one value and then act on another.
-   */
-  function matchedRow(rowId: string, field: "paneId" | "entryId", carried: string): WorktreeAgentRow | undefined {
-    const row = publishedRow(rowId);
-    const own = row?.[field];
-    return own !== undefined && own === carried ? row : undefined;
-  }
+  const { repoIdOf, repoById, launchTarget, actionPath, matchedRow, locate } = createHostLookups({
+    repos: () => cache.read().repos,
+    publishedRow: (rowId) => publishedRow(rowId),
+  });
 
   /**
    * What this window will let a surface start, and whether the request in hand
@@ -1824,17 +1718,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
       default:
         return;
     }
-  }
-
-  /** The repo record holding `worktreeId`, paired with the worktree itself. */
-  function locate(worktreeId: string): { repo: WorktreeRepo; wt: WorktreeInfo } | null {
-    for (const repo of cache.read().repos) {
-      const wt = repo.worktrees.find((w) => w.id === worktreeId);
-      if (wt) {
-        return { repo, wt };
-      }
-    }
-    return null;
   }
 
   return {
