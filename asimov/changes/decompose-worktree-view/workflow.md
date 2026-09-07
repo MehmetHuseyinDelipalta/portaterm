@@ -12,11 +12,11 @@
 
 ## Implement
 
-- [ ] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [x] All tasks done (`tasks.md`)
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
-- [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
+- [-] Blueprint sync complete _(Blueprint: none)_
 
 ## Archive
 
@@ -50,3 +50,4 @@ Admission: in-contract — behaviour-preserving decomposition; no new invariant 
 - 3_13: The eight moved collaborators' 117-line mutual wiring also left `WorktreeView.ts` at 557; moved it mechanically to `worktreeView/composeViewCollaborators.ts`, preserving the object graph fields D5 pins.
 - 3_13: `WorktreeView.ts` 485. Under `worktreeView/`: actionNotices.test 91, keyboardNav.test 114, viewTypes 139, viewFilter 158, ceilingClock 166, foldState.test 183, summaries 184, composeViewCollaborators 184, viewDialogs 188, foldState 198, keyboardNav 272, worktreeRow 284, actionNotices 444, treeRender 473.
 - 3_13: OBL-4 both frozen-suite diffs pass (exit 0); OBL-5's controller and view inventories both print nothing.
+- Witnesses: OBL-1 pass [exit 0]; OBL-2 pass [exit 0]; OBL-3 pass [exit 0]; OBL-4 pass [exit 0]; OBL-5 pass [exit 0].
