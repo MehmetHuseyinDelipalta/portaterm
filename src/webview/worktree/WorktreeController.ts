@@ -31,6 +31,7 @@ import type { WorktreeControllerDeps } from "./controller/controllerTypes";
 import { type CreateFlow, createCreateFlow } from "./controller/createFlow";
 import { createDialogChannels } from "./controller/dialogChannels";
 import { createMutationResults, type MutationResults } from "./controller/mutationResults";
+import { createTreeReconcile, type TreeReconcile } from "./controller/treeReconcile";
 import { createVisibility, type Visibility } from "./controller/visibility";
 import type { WorktreeMenuActions } from "./WorktreeContextMenu";
 import { WorktreeView } from "./WorktreeView";
@@ -41,10 +42,8 @@ import type {
   WorktreeCreateMode,
   WorktreeInfo,
   WorktreeOpenAfter,
-  WorktreePresence,
   WorktreeProvisionOffer,
   WorktreeRowActivation,
-  WorktreeTree,
 } from "./worktreeViewTypes";
 
 // The controller's contract lives in `controller/controllerTypes.ts` (task
@@ -184,20 +183,6 @@ export function worktreeMenuActions(
   };
 }
 
-/** Enough to explain a burst of removals; never a session-long history (W6). */
-const MAX_ORPHAN_NOTICES = 4;
-const MAX_DEPARTED = 64;
-
-/** Drop the oldest entries until `map` fits. Insertion order is age. */
-function trim(map: Map<string, string>, limit: number): void {
-  for (const key of map.keys()) {
-    if (map.size <= limit) {
-      return;
-    }
-    map.delete(key);
-  }
-}
-
 /**
  * The create the form resolved onto a directory that already exists, or nothing
  * where it resolved something else.
@@ -224,10 +209,8 @@ export class WorktreeController {
   private readonly view: WorktreeView;
   /** Whether the panel is showing this body, and what that subscribes to (3_2). */
   private readonly visibility: Visibility;
-  private tree: WorktreeTree | null = null;
-  private presence: WorktreePresence | null = null;
-  private loading: boolean;
-  private refreshing = false;
+  /** The tree that arrived, what it replaced, and the push that follows (3_6). */
+  private readonly treeReconcile: TreeReconcile;
   private rowActivation: WorktreeRowActivation;
   /** The host's resolved create destination, per repo. Only it can know one. */
   private readonly createDefaults = new Map<string, WorktreeCreateDefaultsMessage>();
@@ -273,27 +256,10 @@ export class WorktreeController {
    * the rebuild that removed its row can still say what it was about.
    *
    * This exists because of the order production actually produces: the
-   * coordinator awaits its rebuild in a `finally`, so the tree without the row
-   * reaches the surface before the outcome does (round-4 B1).
-   */
-  private readonly departed = new Map<string, string>();
 
-  /**
-   * The repository holding `info`, from the tree this controller last rendered.
-   *
-   * `prunableCount` is the host's number, carried on the repo. Absent until the
-   * host sends one, and a prune with no count is not offered at all — the
-   * confirmation exists to name a number, so there is nothing to confirm.
-   */
+  /** The repository holding `info`, from the tree this controller last rendered. */
   private repoFor(info: WorktreeInfo): { repoId: string; prunableCount: number } | undefined {
-    const repo = this.tree?.repos.find((r) => r.worktrees.some((w) => w.id === info.id));
-    if (repo === undefined) {
-      return undefined;
-    }
-    // Counted from the tree the panel is already rendering: git's own
-    // `prunable` flag rides on every worktree, so this needs no protocol of its
-    // own (design.md D14). The host re-counts authoritatively before it acts.
-    return { repoId: repo.repoId, prunableCount: repo.worktrees.filter((w) => w.prunable).length };
+    return this.treeReconcile.repoFor(info);
   }
 
   static mount(deps: WorktreeControllerDeps): WorktreeController {
@@ -302,9 +268,36 @@ export class WorktreeController {
 
   private constructor(deps: WorktreeControllerDeps) {
     this.deps = deps;
+    // No folder means no tree is ever coming, so the skeleton would be a promise
+    // the workspace cannot keep.
+    this.treeReconcile = createTreeReconcile(
+      {
+        postMessage: (msg) => deps.postMessage(msg),
+        setData: (data) => {
+          this.view.setData(data);
+        },
+        bodyShown: () => this.visibility.bodyShown(),
+        emitAttribution: () => {
+          this.agentActions.emitAttribution();
+        },
+        createDefaults: () => this.createDefaults,
+        provisionOffers: () => this.provisionOffers,
+        repoRefs: () => this.repoRefs,
+        dialogChannels: () => this.dialogChannels,
+        createFlow: () => this.createFlow,
+        actionResults: () => this.actionResults,
+        setActionResults: (next) => {
+          this.actionResults = next;
+        },
+        rescope: (result, present) => this.mutationResults.rescope(result, present),
+        onCreateAvailability: (available) => deps.onCreateAvailability?.(available),
+        noFolder: () => deps.init.workspaceRoot === null,
+      },
+      deps.init.workspaceRoot !== null,
+    );
     this.createFlow = createCreateFlow({
       postMessage: (msg) => deps.postMessage(msg),
-      tree: () => this.tree,
+      tree: () => this.treeReconcile.tree(),
       repoFor: (info) => this.repoFor(info),
       createDefaults: () => this.createDefaults,
       provisionOffers: () => this.provisionOffers,
@@ -329,8 +322,8 @@ export class WorktreeController {
       setActionResults: (next) => {
         this.actionResults = next;
       },
-      tree: () => this.tree,
-      departed: () => this.departed,
+      tree: () => this.treeReconcile.tree(),
+      departed: () => this.treeReconcile.departed(),
       infoOf: (worktreeId) => this.infoOf(worktreeId),
       repoFor: (info) => this.repoFor(info),
       openPruneDialog: (seed, onConfirm) => {
@@ -346,7 +339,7 @@ export class WorktreeController {
     this.agentActions = createAgentActions({
       postMessage: (msg) => deps.postMessage(msg),
       onAttribution: (report) => deps.onAttribution?.(report),
-      presence: () => this.presence,
+      presence: () => this.treeReconcile.presence(),
       infoOf: (worktreeId) => this.infoOf(worktreeId),
       generationOf: (worktreeId) => this.generationOf(worktreeId),
       openLaunchDialog: (title, agents) => {
@@ -363,9 +356,9 @@ export class WorktreeController {
       clearPendingCreate: () => {
         this.createFlow.clearPendingCreate();
       },
-      refreshing: () => this.refreshing,
+      refreshing: () => this.treeReconcile.refreshing(),
       abandonRefresh: () => {
-        this.refreshing = false;
+        this.treeReconcile.abandonRefresh();
       },
       push: () => {
         this.push();
@@ -390,7 +383,6 @@ export class WorktreeController {
     this.menuActions.captureTarget = (row) => this.agentActions.captureMenuTarget(row);
     // No folder means no tree is ever coming, so the skeleton would be a promise
     // the workspace cannot keep.
-    this.loading = deps.init.workspaceRoot !== null;
     this.rowActivation = deps.init.rowActivation;
     this.view = new WorktreeView({
       host: deps.host,
@@ -751,14 +743,7 @@ export class WorktreeController {
 
   /** Toolbar refresh: rebuild the listings rather than re-serve the cache. */
   requestRefresh(): void {
-    // `bodyShown`, not the subscription: the toolbar this serves is in the body,
-    // so a scope holding presence open is not a reason to accept one (D4).
-    if (!this.visibility.bodyShown() || this.refreshing) {
-      return;
-    }
-    this.refreshing = true;
-    this.deps.postMessage({ type: "requestWorktreeTree", force: true });
-    this.push();
+    this.treeReconcile.requestRefresh();
   }
 
   /** Filter the tree by branch, path, and agent title. */
@@ -806,12 +791,12 @@ export class WorktreeController {
   }
 
   private infoOf(worktreeId: string): WorktreeInfo | undefined {
-    return this.tree?.repos.flatMap((repo) => repo.worktrees).find((wt) => wt.id === worktreeId);
+    return this.treeReconcile.infoOf(worktreeId);
   }
 
   /** The registration token the tree currently publishes for this worktree. */
   private generationOf(worktreeId: string): number | undefined {
-    return this.tree?.repos.find((repo) => repo.worktrees.some((wt) => wt.id === worktreeId))?.generation;
+    return this.treeReconcile.generationOf(worktreeId);
   }
 
   /** Every repo the host has answered for, as the form's seed. */
@@ -891,14 +876,7 @@ export class WorktreeController {
 
   /** A reply and an unsolicited push are the same message, handled the same way. */
   handleTreeResponse(msg: WorktreeTreeResponseMessage): void {
-    this.reconcile(msg.tree);
-    this.tree = msg.tree;
-    this.presence = msg.presence;
-    this.agentActions.emitAttribution();
-    this.loading = false;
-    this.refreshing = false;
-    this.deps.onCreateAvailability?.(msg.tree.repos.length > 0);
-    this.push();
+    this.treeReconcile.handleTreeResponse(msg);
   }
 
   /**
@@ -953,113 +931,7 @@ export class WorktreeController {
     this.view.dispose();
   }
 
-  /**
-   * Bring the two collections keyed by tree identity back onto the tree that
-   * has just arrived, BEFORE it replaces the one they were keyed against —
-   * the outgoing tree is the only place a departed row's label still exists.
-   *
-   * Two distinct failures, one pass (round-3 B1, W6):
-   * - a result whose worktree is gone renders nowhere, so a successful removal
-   *   reported nothing at all. Re-scoped to its repo, it stays dismissable.
-   * - both maps otherwise grow with every repository and worktree the surface
-   *   has ever seen, and a recreation at the same id inherits the old notice.
-   */
-  private reconcile(next: WorktreeTree): void {
-    const repos = new Set(next.repos.map((r) => r.repoId));
-    const worktrees = new Set(next.repos.flatMap((r) => r.worktrees.map((w) => w.id)));
-    const labels = new Map(
-      (this.tree?.repos ?? []).flatMap((r) => r.worktrees.map((w) => [w.id, w.displayPath] as const)),
-    );
-
-    for (const repoId of this.createDefaults.keys()) {
-      if (!repos.has(repoId)) {
-        this.createDefaults.delete(repoId);
-      }
-    }
-    for (const repoId of this.provisionOffers.keys()) {
-      if (!repos.has(repoId)) {
-        this.provisionOffers.delete(repoId);
-      }
-    }
-    for (const repoId of this.createFlow.migrationOffers().keys()) {
-      if (!repos.has(repoId)) {
-        this.createFlow.migrationOffers().delete(repoId);
-        this.dialogChannels.migration.push(repoId, undefined);
-      }
-    }
-    const source = this.createFlow.createSource();
-    if (
-      source !== null &&
-      !next.repos
-        .find((repo) => repo.repoId === source.repoId)
-        ?.worktrees.some((row) => row.id === source.worktreeId && !row.bare && !row.missing && !row.prunable)
-    ) {
-      this.createFlow.clearCreateSource();
-      this.createFlow.migrationOffers().delete(source.repoId);
-      this.dialogChannels.migration.push(source.repoId, undefined);
-    }
-    for (const repoId of this.repoRefs.keys()) {
-      if (!repos.has(repoId)) {
-        this.repoRefs.delete(repoId);
-      }
-    }
-
-    // A create waiting on a repository that has left is waiting for a message
-    // the host has no way to send: it answers only while the repo is in its
-    // cache, and there is no error reply. Unreconciled, one departure jams the
-    // create for every repository it asked (round-1 W1).
-    const pending = this.createFlow.pendingCreate();
-    if (pending !== null) {
-      for (const repoId of pending.outstanding) {
-        if (!repos.has(repoId)) {
-          pending.outstanding.delete(repoId);
-        }
-      }
-      if (pending.initialRepoId !== undefined && !repos.has(pending.initialRepoId)) {
-        delete pending.initialRepoId;
-      }
-      if (pending.outstanding.size === 0) {
-        this.createFlow.openPendingCreate(pending);
-      }
-    }
-
-    // Remember what left, so a result that arrives after this rebuild can name
-    // the row it outlived. Dropped again the moment the id comes back.
-    for (const [id, label] of labels) {
-      if (!worktrees.has(id)) {
-        this.departed.set(id, label);
-      }
-    }
-    for (const id of this.departed.keys()) {
-      if (worktrees.has(id)) {
-        this.departed.delete(id);
-      }
-    }
-    trim(this.departed, MAX_DEPARTED);
-
-    this.actionResults = this.actionResults.flatMap((r) => {
-      if (r.repoId !== undefined && !repos.has(r.repoId)) {
-        // The repository itself left the workspace. Nothing is left to report to.
-        return [];
-      }
-      return [this.mutationResults.rescope(r, worktrees)];
-    });
-    // W6: orphan notices answer to no row, so nothing else would ever bound them.
-    const orphans = this.actionResults.filter((r) => r.orphanedLabel !== undefined);
-    if (orphans.length > MAX_ORPHAN_NOTICES) {
-      const dropped = new Set(orphans.slice(0, orphans.length - MAX_ORPHAN_NOTICES));
-      this.actionResults = this.actionResults.filter((r) => !dropped.has(r));
-    }
-  }
-
   private push(): void {
-    this.view.setData({
-      tree: this.tree,
-      presence: this.presence,
-      loading: this.loading,
-      refreshing: this.refreshing,
-      actionResults: this.actionResults,
-      noFolder: this.deps.init.workspaceRoot === null,
-    });
+    this.treeReconcile.push();
   }
 }

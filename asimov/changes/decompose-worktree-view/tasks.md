@@ -69,7 +69,7 @@
     5. `pendingCreate` is MOVED, not copied — two records is OBL-3's defeater. Its two outside writers stay outside and reach it through the collaborator's accessors: visibility clears it at `src/webview/worktree/WorktreeController.ts:805-815`, tree reconciliation mutates it and calls `openPendingCreate` at `:1732-1748`.
     6. `provisionOffers`, `repoRefs`, `createDefaults` and `dialogChannels` stay as controller FIELDS — five suites read them through the instance (D5).
 
-- [ ] 3_6 Extract a tree arriving
+- [x] 3_6 Extract a tree arriving — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts exit 0
   - **Deps**: 3_5
   - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5
   - **Boundary**: `src/webview/worktree/controller/treeReconcile.ts` is under 500 lines, and `src/webview/worktree/WorktreeController.ts` never grows
