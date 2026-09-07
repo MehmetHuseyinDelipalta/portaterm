@@ -16,38 +16,17 @@ import { WorktreeContextMenu } from "./WorktreeContextMenu";
 import type { PruneDialogDeps } from "./WorktreePruneDialog";
 import type { WorktreeRemoveDialogDeps } from "./WorktreeRemoveDialog";
 import { activationFor as sharedActivationFor } from "./worktreeActivation";
-import {
-  agentCountLabel,
-  ageTimestamp,
-  compactAge,
-  displayedRows,
-  groupPresenceByActivity,
-  presentedActivity,
-  strongestActivity,
-} from "./worktreeFormat";
-import { agentRowFields, worktreeFields } from "./worktreeRenderSignature";
+import { displayedRows } from "./worktreeFormat";
 import { RosterRequests, rosterKey } from "./worktreeRosterRequests";
-import {
-  confidenceHint,
-  renderAgentRow,
-  renderAgentsHeader,
-  renderNotice,
-  renderPresencePill,
-  renderRefreshingMarker,
-  renderRepoHeader,
-  renderShowAll,
-  renderSkeleton,
-  renderSubagentSection,
-  renderWorktreeRow,
-  worktreeEmptyState,
-} from "./worktreeTreeView";
-import { type ActionNotices, createActionNotices } from "./worktreeView/actionNotices";
-import { type CeilingClock, createCeilingClock } from "./worktreeView/ceilingClock";
-import { createFoldState, type FoldRepoInput, type FoldState } from "./worktreeView/foldState";
-import { createKeyboardNav, type KeyboardNav } from "./worktreeView/keyboardNav";
-import { createTreeRender, IDLE_FOLD_THRESHOLD, type TreeRender } from "./worktreeView/treeRender";
-import { createViewDialogs, type ViewDialogs } from "./worktreeView/viewDialogs";
-import { createViewFilter, type ViewFilter } from "./worktreeView/viewFilter";
+import type { ActionNotices } from "./worktreeView/actionNotices";
+import type { CeilingClock } from "./worktreeView/ceilingClock";
+import { createViewCollaborators } from "./worktreeView/composeViewCollaborators";
+import type { FoldRepoInput, FoldState } from "./worktreeView/foldState";
+import type { KeyboardNav } from "./worktreeView/keyboardNav";
+import type { TreeRender } from "./worktreeView/treeRender";
+import type { ViewDialogs } from "./worktreeView/viewDialogs";
+import type { ViewFilter } from "./worktreeView/viewFilter";
+import type { WorktreeRowRenderer } from "./worktreeView/worktreeRow";
 import type {
   PresenceDegradation,
   WorktreeAgentRow,
@@ -90,6 +69,8 @@ export class WorktreeView {
   private readonly filter: ViewFilter;
   /** One render pass, and the signature that decides whether to run it (3_11). */
   private readonly tree: TreeRender;
+  /** One worktree's subtree, and the memo key that guards rebuilding it (3_13). */
+  private readonly row: WorktreeRowRenderer;
 
   private data: WorktreeViewData = { tree: null, presence: null, loading: true };
   /**
@@ -132,98 +113,57 @@ export class WorktreeView {
    * retained subtree is byte-identical to the one a full repaint would build.
    */
   private rowMemo = new Map<string, { key: string; nodes: Node[] }>();
-  private rowMemoSeen = new Set<string>();
 
   constructor(deps: WorktreeViewDeps) {
     this.deps = deps;
     // A restored set already carries the user's own decisions — including the
     // expansions it records by omission — so nothing in the first tree is reseeded.
     // Presence of the array is the signal; its length says nothing.
-    this.notices = createActionNotices({
-      data: () => this.data,
-      element: () => this.element,
-      disposed: () => this.disposed,
+    const collaborators = createViewCollaborators({
       view: deps,
+      renderCap: MAX_WORKTREES_PER_REPO,
+      element: () => this.element,
+      menu: () => this.menu,
+      data: () => this.data,
+      disposed: () => this.disposed,
       repoOf: (info) => this.repoOf(info),
       repoAnchors: this.repoAnchors,
-      renderedWorktreeRows: () => this.tree.renderedWorktreeRows(),
+      rowMemo: this.rowMemo,
       openRemoveReport: (info, report) => this.openRemoveReport(info, report),
-    });
-    this.ceilingClock = createCeilingClock({
-      ...(deps.now === undefined ? {} : { clock: deps.now }),
-      disposed: () => this.disposed,
-      degradedSources: () => this.degradedSources(),
-      renderedWorktreeIds: () => this.tree.renderedWorktreeIds(),
-      presentWorktreeIds: () => Object.keys(this.data.presence?.rowsByWorktreeId ?? {}),
-      rowsFor: (worktreeId) => this.rowsFor(worktreeId),
-      applyAt: (now) => {
-        this.tree.applyAt(now);
-      },
-    });
-    this.dialogs = createViewDialogs({
-      view: deps,
-      now: () => this.ceilingClock.now(),
-      rowsFor: (worktreeId) => this.rowsFor(worktreeId),
-      degradedSources: () => this.degradedSources(),
-    });
-    this.filter = createViewFilter({
-      fold: () => this.fold,
-      data: () => this.data,
       displayRows: (data, worktreeId) => WorktreeView.displayRows(data, worktreeId),
       rowsFor: (worktreeId) => this.rowsFor(worktreeId),
-      cap: MAX_WORKTREES_PER_REPO,
-      repaint: () => {
-        this.tree.repaint();
+      degradedSources: () => this.degradedSources(),
+      isExpanded: (info) => this.isExpanded(info),
+      selectedWorktreeId: () => this.selectedWorktreeId,
+      requestSubagents: (row) => {
+        this.requestSubagents(row);
       },
-    });
-    this.tree = createTreeRender({
-      view: deps,
-      element: () => this.element,
-      data: () => this.data,
-      disposed: () => this.disposed,
-      now: () => this.ceilingClock.now(),
-      armCeiling: (now) => {
-        this.ceilingClock.armCeiling(now);
-      },
-      nav: () => this.nav,
-      fold: () => this.fold,
-      filter: () => this.filter,
-      pruneStaleState: (data) => {
-        this.pruneStaleState(data);
-      },
-      placeResults: () => {
-        this.notices.placeResults();
-      },
-      flushRosterRequests: () => {
-        this.flushRosterRequests();
+      select: (worktreeId) => this.select(worktreeId),
+      openRowMenu: (info, ev, row) => {
+        this.openRowMenu(info, ev, row);
       },
       toggleCollapsed: (id) => {
         this.toggleCollapsed(id);
       },
-      renderWorktree: (info, now, inTail) => {
-        this.renderWorktree(info, now, inTail);
+      toggleRow: (rowId) => {
+        this.toggleRow(rowId);
       },
-      rowMemo: this.rowMemo,
-      rowMemoSeen: this.rowMemoSeen,
-      repoAnchors: this.repoAnchors,
+      activationFor: (row) => this.activationFor(row),
+      pruneStaleState: (data) => {
+        this.pruneStaleState(data);
+      },
+      flushRosterRequests: () => {
+        this.flushRosterRequests();
+      },
     });
-    this.nav = createKeyboardNav({
-      element: () => this.element,
-      toggleCollapsed: (id) => this.toggleCollapsed(id),
-      toggleIdleTail: (repoId) => this.filter.toggleIdleTail(repoId),
-      toggleRow: (rowId) => this.toggleRow(rowId),
-    });
-    this.fold = createFoldState({
-      persisted: deps.getInitialCollapsed?.(),
-      initialExpandedRows: deps.getInitialExpandedRows?.() ?? [],
-      initialIdleSeeded: deps.getInitialIdleSeeded?.() ?? [],
-      idleFoldThreshold: IDLE_FOLD_THRESHOLD,
-      persistCollapsed: (keys) => deps.persistCollapsed?.([...keys]),
-      persistExpandedRows: (ids) => deps.persistExpandedRows?.([...ids]),
-      persistIdleSeeded: (ids) => deps.persistIdleSeeded?.([...ids]),
-      query: () => this.filter.query(),
-      repaint: () => this.tree.repaint(),
-    });
+    this.notices = collaborators.notices;
+    this.ceilingClock = collaborators.ceilingClock;
+    this.dialogs = collaborators.dialogs;
+    this.filter = collaborators.filter;
+    this.row = collaborators.row;
+    this.tree = collaborators.tree;
+    this.nav = collaborators.nav;
+    this.fold = collaborators.fold;
     this.element = document.createElement("div");
     this.element.className = "wt-tree";
     this.element.setAttribute("role", "tree");
@@ -399,7 +339,6 @@ export class WorktreeView {
   dispose(): void {
     this.disposed = true;
     this.rowMemo.clear();
-    this.rowMemoSeen.clear();
     this.ceilingClock.dispose();
     this.notices.dispose();
     this.dialogs.dispose();
@@ -543,202 +482,4 @@ export class WorktreeView {
   }
 
   // -- Search --------------------------------------------------------------
-
-  /**
-   * PERF PROTOTYPE — the memo key for one worktree's subtree. Covers every field
-   * the row + its agent rows + subagent sections read, INCLUDING the clock-derived
-   * strings, so a key match means a repaint would produce identical DOM.
-   */
-  private worktreeMemoKey(
-    info: WorktreeInfo,
-    rows: readonly WorktreeAgentRow[],
-    now: number,
-    inTail: boolean,
-    expanded: boolean,
-    selected: boolean,
-  ): string {
-    const degraded = this.degradedSources();
-    const parts: string[] = [
-      worktreeFields(info),
-      inTail ? "1" : "0",
-      expanded ? "1" : "0",
-      selected ? "1" : "0",
-      this.filter.isIdle(info) ? "1" : "0",
-      strongestActivity(rows, degraded, now) ?? "",
-      this.ceilingClock.strongestConfidenceTip(rows, now) ?? "",
-      this.deps.actions?.launchAgentHere ? "1" : "0",
-      this.deps.actions?.openFolderInNewWindow ? "1" : "0",
-      this.menu ? "1" : "0",
-    ];
-    for (const row of rows) {
-      const activity = presentedActivity(row, degraded, now);
-      parts.push(
-        agentRowFields(row, degraded, now),
-        this.fold.isRowExpanded(row.rowId) ? "1" : "0",
-        // Clock-derived rendered strings — the only render inputs `agentRowFields`
-        // does not already hold.
-        compactAge(ageTimestamp(row), now),
-        confidenceHint(row, activity, now) ?? "",
-      );
-    }
-    return parts.join("\u0005");
-  }
-
-  private renderWorktree(info: WorktreeInfo, now: number, inTail = false): void {
-    const rows = this.rowsFor(info.id);
-    const expanded = rows.length > 0 && this.isExpanded(info);
-    const selected = this.selectedWorktreeId === info.id;
-    // Asked BEFORE the memo check: the roster request is owed by the render, not
-    // by the repaint, and `RosterRequests` already dedupes it.
-    if (expanded) {
-      for (const row of rows) {
-        if (this.fold.isRowExpanded(row.rowId)) {
-          this.requestSubagents(row);
-        }
-      }
-    }
-    this.rowMemoSeen.add(info.id);
-    const memoKey = this.worktreeMemoKey(info, rows, now, inTail, expanded, selected);
-    const hit = this.rowMemo.get(info.id);
-    if (hit !== undefined && hit.key === memoKey) {
-      for (const node of hit.nodes) {
-        this.element.appendChild(node);
-      }
-      return;
-    }
-    const produced: Node[] = [];
-    this.buildWorktree(info, rows, now, inTail, expanded, selected, produced);
-    this.rowMemo.set(info.id, { key: memoKey, nodes: produced });
-    for (const node of produced) {
-      this.element.appendChild(node);
-    }
-  }
-
-  private buildWorktree(
-    info: WorktreeInfo,
-    rows: readonly WorktreeAgentRow[],
-    now: number,
-    inTail: boolean,
-    expanded: boolean,
-    selected: boolean,
-    produced: Node[],
-  ): void {
-    // Grouping and selection are two jobs that shared one class. `.wt-card` used
-    // to mean "expanded", and it is the loudest treatment in the tree — so once
-    // selection exists it reads as a selection nobody made (design.md D5). The
-    // card marks selection alone; `.wt-group` does the grouping.
-    const grouped = expanded || selected;
-    // PERF PROTOTYPE: nodes are collected, not attached — `renderWorktree` owns
-    // the attach so a memo hit can re-attach the very same nodes.
-    const groupEl = grouped ? document.createElement("div") : undefined;
-    if (groupEl) {
-      groupEl.className = selected ? "wt-group wt-card" : "wt-group";
-      groupEl.setAttribute("role", "none");
-      produced.push(groupEl);
-    }
-    const container = {
-      appendChild(node: Node): void {
-        if (groupEl) {
-          groupEl.appendChild(node);
-        } else {
-          produced.push(node);
-        }
-      },
-    };
-
-    container.appendChild(
-      renderWorktreeRow(
-        info,
-        {
-          activity: strongestActivity(rows, this.degradedSources(), now),
-          // While collapsed this row IS the row: the pill below it is `aria-hidden`
-          // with `tabIndex = -1` and is not in the arrow-key set, so a keyboard
-          // user meets only this. A qualified glyph here without its qualification
-          // is the claim without the caveat.
-          confidenceTip: this.ceilingClock.strongestConfidenceTip(rows, now),
-          hasAgents: rows.length > 0,
-          idle: this.filter.isIdle(info),
-          inTail,
-          expanded,
-          selected,
-          agentSummary: rows.length > 0 ? agentCountLabel(rows.length) : undefined,
-        },
-        {
-          // Select and scope. NOTHING else: folding the agent block open from the
-          // same gesture is what made one click read as three events at once, and
-          // § 6 has always given disclosure to the chevron rather than the row.
-          onActivate: () => {
-            if (this.select(info.id)) {
-              this.tree.repaint();
-            }
-          },
-          onContextMenu: this.menu ? (i, ev, row) => this.menu?.openForWorktree(i, ev, row) : undefined,
-          // The affirmative action, on the row that owns it — absent when the
-          // capability was not supplied, and for a directory that is gone.
-          onLaunchAgent: this.deps.actions?.launchAgentHere
-            ? (i) => this.deps.actions?.launchAgentHere?.(i)
-            : undefined,
-          // Everything else, one press further in — the same menu the right-click
-          // opens, so the two can never offer different things.
-          onOverflowMenu: this.menu ? (i, ev, row) => this.openRowMenu(i, ev, row) : undefined,
-          // Same rule as the menu's: an affordance whose capability was not
-          // supplied is absent, not present and inert (design.md D10).
-          onOpenFolder: this.deps.actions?.openFolderInNewWindow
-            ? (i) => this.deps.actions?.openFolderInNewWindow?.(i)
-            : undefined,
-        },
-      ),
-    );
-
-    if (rows.length === 0) {
-      return;
-    }
-    if (!expanded) {
-      container.appendChild(
-        renderPresencePill(groupPresenceByActivity(rows, this.degradedSources(), now), () =>
-          this.toggleCollapsed(info.id),
-        ),
-      );
-      return;
-    }
-
-    container.appendChild(renderAgentsHeader(rows.length, () => this.toggleCollapsed(info.id)));
-    for (const row of rows) {
-      const rowExpanded = this.fold.isRowExpanded(row.rowId);
-      if (rowExpanded) {
-        // Asked from the render rather than the click, so a row restored into
-        // the expanded set on open asks too — otherwise it would sit on
-        // "Reading…" forever, having never been toggled.
-        this.requestSubagents(row);
-      }
-      container.appendChild(
-        renderAgentRow(
-          row,
-          {
-            activity: presentedActivity(row, this.degradedSources(), now),
-            expanded: rowExpanded,
-            now,
-          },
-          {
-            onActivate: (r) => this.deps.onActivateAgent?.(r, this.activationFor(r)),
-            onContextMenu: this.menu ? (r, ev, el) => this.menu?.openForAgent(r, ev, el) : undefined,
-            onToggleSubagents: (r) => this.toggleRow(r.rowId),
-          },
-        ),
-      );
-      // Always a section while the row is expanded: rendering nothing until
-      // rows exist is the same picture as a session that delegated nothing
-      // (design.md D10).
-      if (rowExpanded) {
-        container.appendChild(
-          renderSubagentSection(
-            row.delegations,
-            row,
-            (sub, parent) => this.deps.onActivateSubagent?.(sub, parent),
-            now,
-          ),
-        );
-      }
-    }
-  }
 }

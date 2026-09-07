@@ -175,7 +175,7 @@
     4. Run `bun run asm refactor shape src/webview/worktree/worktreeView/actionNotices.ts src/webview/worktree/worktreeView/actionNotices/summaries.ts` and split `src/webview/worktree/worktreeView/actionNotices/summaries.ts` again if it fires.
     5. The timer map and `dispose` stay in `src/webview/worktree/worktreeView/actionNotices.ts` — separating them is OBL-2's defeater.
 
-- [ ] 3_13 Extract the per-worktree row builder
+- [x] 3_13 Extract the per-worktree row builder — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts exit 0
   - **Deps**: 3_11
   - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5, design.md § Obligation ledger
   - **Boundary**: `src/webview/worktree/WorktreeView.ts` and every file under `src/webview/worktree/worktreeView/` is under 500 lines

@@ -47,3 +47,6 @@ Admission: in-contract — behaviour-preserving decomposition; no new invariant 
 - OBL-1's witness range corrected to `:2250-2272` — the first draft cited only the empty-listing half and missed the dispose half at `:2269-2272`.
 - 3_15: `WorktreeController.ts` 416. Under `controller/`: controllerTypes 63, dialogChannels 110, menuActions 131, visibility 135, composeCollaborators 168, composeCreateDialogDeps 215, composeViewDeps 221, createFlow 245, treeReconcile 316, agentActions 378, mutationResults 405, createAnswers 414.
 - 3_15: an orphaned doc-comment head left by the 3_6 cut (the `departed` field's) had swallowed `repoFor`'s own doc comment; removed with the wiring cut.
+- 3_13: The eight moved collaborators' 117-line mutual wiring also left `WorktreeView.ts` at 557; moved it mechanically to `worktreeView/composeViewCollaborators.ts`, preserving the object graph fields D5 pins.
+- 3_13: `WorktreeView.ts` 485. Under `worktreeView/`: actionNotices.test 91, keyboardNav.test 114, viewTypes 139, viewFilter 158, ceilingClock 166, foldState.test 183, summaries 184, composeViewCollaborators 184, viewDialogs 188, foldState 198, keyboardNav 272, worktreeRow 284, actionNotices 444, treeRender 473.
+- 3_13: OBL-4 both frozen-suite diffs pass (exit 0); OBL-5's controller and view inventories both print nothing.
