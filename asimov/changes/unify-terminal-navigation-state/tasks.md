@@ -153,9 +153,22 @@
 
 - [x] 5_2 Repair stable-owner obligation witness paths — verified: pnpm exec vitest run src/session/SessionManager.test.ts src/session/SessionManager.snapshot.test.ts src/webview/TabBar.test.ts exit 0
   - **Deps**: 5_1
-  - **Refs**: design.md OBL-1; docs/DESIGN.md § Cross-Cutting Invariants
+  - **Refs**: design.md OBL-1
   - **Acceptance**:
     - Outcome: OBL-1 cites existing tests that independently witness stable owner persistence and presence-independent projection.
     - Verify: command pnpm exec vitest run src/session/SessionManager.test.ts src/session/SessionManager.snapshot.test.ts src/webview/TabBar.test.ts
   - **Plan**:
     1. Replace the nonexistent OBL-1 witness paths in `asimov/changes/unify-terminal-navigation-state/design.md` with the shipped I18 and I19 witness suites.
+
+
+- [ ] 5_3 Close round-2 split convergence blockers
+  - **Deps**: 5_2
+  - **Refs**: design.md D3, design.md D7; design.md OBL-3, design.md OBL-7
+  - **Acceptance**:
+    - Outcome: A late split post is safe, and persistent effect failure rolls back its provisional child.
+    - Verify: command pnpm exec vitest run src/providers/TerminalViewProvider.test.ts src/webview/navigation/TerminalNavigationController.test.ts src/webview/navigation/TerminalNavigationComposition.test.ts src/webview/split/SplitTreeRenderer.test.ts
+  - **Plan**:
+    1. Remove unilateral delivery-timer destruction from `src/providers/TerminalViewProvider.ts`; update `src/providers/TerminalViewProvider.test.ts` for late true resolution, resolved-false delivery, explicit rejection, source loss, disposal, and capped pending ownership.
+    2. Add explicit failed-effect abandonment for rollback in `src/webview/navigation/TerminalNavigationController.ts` and `src/webview/navigation/TerminalNavigationController.test.ts` without weakening transient queued-intent recovery.
+    3. Add bounded scheduled recovery and provisional-child rollback composition in `src/webview/navigation/TerminalNavigationComposition.ts`, `src/webview/navigation/TerminalNavigationComposition.test.ts`, and `src/webview/main.ts`; reuse fact-only close from `src/webview/split/SplitTreeRenderer.ts`.
+    4. Reconcile the convergent protocol in `docs/design/worktree-scope.md`, `docs/design/xterm-integration.md`, `docs/design/message-protocol.md`, and `src/test/invariants/terminalNavigationDocs.test.ts`.

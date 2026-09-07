@@ -32,7 +32,7 @@
         }
       ],
       "firstAt": 1788779000411,
-      "lastAt": 1788792855162,
+      "lastAt": 1788795802413,
       "buckets": [
         {
           "runtime": "claude",
@@ -91,12 +91,12 @@
           "phase": "plan",
           "agent": "main",
           "model": "gpt-5.6-sol",
-          "messages": 230,
-          "inputTokens": 802475,
-          "outputTokens": 178061,
+          "messages": 277,
+          "inputTokens": 879990,
+          "outputTokens": 205349,
           "reasoningTokens": 0,
           "cacheWriteTokens": 0,
-          "cacheReadTokens": 45534336,
+          "cacheReadTokens": 52768384,
           "extra": {
             "cacheWrite5mTokens": 0,
             "cacheWrite1hTokens": 0,
@@ -163,12 +163,12 @@
           "phase": "plan",
           "agent": "asm-review-master",
           "model": "gpt-5.6-sol",
-          "messages": 22,
-          "inputTokens": 188125,
-          "outputTokens": 16862,
+          "messages": 28,
+          "inputTokens": 409085,
+          "outputTokens": 28738,
           "reasoningTokens": 0,
           "cacheWriteTokens": 0,
-          "cacheReadTokens": 3158016,
+          "cacheReadTokens": 4253824,
           "extra": {
             "cacheWrite5mTokens": 0,
             "cacheWrite1hTokens": 0,
@@ -181,12 +181,12 @@
           "phase": "plan",
           "agent": "asm-review-logic",
           "model": "gpt-5.6-sol",
-          "messages": 6,
-          "inputTokens": 74883,
-          "outputTokens": 4822,
+          "messages": 10,
+          "inputTokens": 117497,
+          "outputTokens": 8779,
           "reasoningTokens": 0,
           "cacheWriteTokens": 0,
-          "cacheReadTokens": 251008,
+          "cacheReadTokens": 375936,
           "extra": {
             "cacheWrite5mTokens": 0,
             "cacheWrite1hTokens": 0,
@@ -279,6 +279,24 @@
           "cacheReadTokens": 3165253,
           "extra": {
             "cacheWrite5mTokens": 149974,
+            "cacheWrite1hTokens": 0,
+            "webSearchRequests": 0,
+            "webFetchRequests": 0
+          }
+        },
+        {
+          "runtime": "claude",
+          "phase": "plan",
+          "agent": "asm-review-contracts",
+          "model": "gpt-5.6-terra",
+          "messages": 17,
+          "inputTokens": 101734,
+          "outputTokens": 6265,
+          "reasoningTokens": 0,
+          "cacheWriteTokens": 0,
+          "cacheReadTokens": 776192,
+          "extra": {
+            "cacheWrite5mTokens": 0,
             "cacheWrite1hTokens": 0,
             "webSearchRequests": 0,
             "webFetchRequests": 0
