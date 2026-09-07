@@ -14,7 +14,7 @@ import type {
 import { hasGitRepo } from "../worktree/hasGitRepo";
 import type { IgnoredMaterial } from "../worktree/ignoredMaterial";
 import type { MigrationOfferEvidence, MigrationRepositoryBinding } from "../worktree/migrateChanges";
-import type { DelegationRoster, WorktreePresence } from "../worktree/presenceTypes";
+import type { DelegationRoster } from "../worktree/presenceTypes";
 import { createProvisionOfferStore } from "../worktree/provisioning/offerStore";
 import { createRebuildGate } from "../worktree/rebuildGate";
 import { createWorktreeCache } from "../worktree/WorktreeCache";
@@ -38,6 +38,7 @@ import { createLaunchAdmission } from "./worktreeHost/launchAdmission";
 import { createOpeningLifecycle } from "./worktreeHost/openingLifecycle";
 import { createOpeningRegistry } from "./worktreeHost/openingRegistry";
 import { createPresenceProjection } from "./worktreeHost/presenceProjection";
+import { createProjectionLoop } from "./worktreeHost/projectionLoop";
 import {
   ADDED_COPY_SOURCE,
   createProvisionOffers,
@@ -85,17 +86,6 @@ export type {
   WorktreeMutationReport,
 } from "./worktreeHost/mutationBindings";
 
-/** What one projection request wants. */
-interface ProjectionRequest {
-  /** Skip the pane pass — the poll's mode (design.md D6). */
-  external?: boolean;
-  /**
-   * Join a run already in flight rather than marking it dirty. A caller with no
-   * new pane evidence wants an envelope, not a second projection.
-   */
-  join?: boolean;
-}
-
 interface SurfaceState {
   /**
    * False until the surface says otherwise. All three surfaces retain their DOM
@@ -131,19 +121,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   const projector = options.projector;
   let built = false;
   let disposed = false;
-  /** Last projection produced, and the tree version it describes. */
-  let projected: WorktreePresence | undefined;
-  let projectedVersion = -1;
-  /**
-   * The only thing any surface is ever shown.
-   *
-   * Committing the two halves together is what makes the envelope contract
-   * true: `rebuild()` mutates the cache before it can project, and a cached
-   * tree request, a surface becoming displayed, or a watch-failure write inside
-   * that window would otherwise deliver the new tree beside the previous
-   * presence (.reviews/round-2.md B1).
-   */
-  let published: { tree: ReturnType<typeof cache.read>; presence: WorktreePresence } | undefined;
 
   /**
    * The provisioning models this host has shown, and a stable name per surface
@@ -316,11 +293,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * like two different trees (.reviews/round-1.md B1).
    */
   let treeVersion = 0;
-  /** The projection currently in flight. One at a time: the projector is stateful. */
-  let projectionRun: Promise<void> | undefined;
-  let projectionDirty = false;
-  /** Whether the next projection iteration may skip the pane pass. */
-  let nextExternalOnly = false;
   /**
    * Pane events counted, and the count the last full projection actually
    * applied. Work is outstanding while they differ (design.md D11).
@@ -333,24 +305,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * scan cancels it, which must not destroy evidence (.reviews/round-2.md B1).
    */
   let paneEvidence = 0;
-  let paneEvidenceApplied = 0;
-  /**
-   * The rank revision the cached ORDER was built from.
-   *
-   * Advanced at exactly one site — after `cache.reorder`, the only cache-wide
-   * ordering operation. A rebuild's write must not acknowledge it: `applyRepo`
-   * orders one repository and rebuilds are serialized per scope, and `merge`
-   * retains the stored worktree array for a degraded listing, so neither write
-   * establishes the ranking it captured (design.md D12).
-   */
-  let appliedRankRevision = projector?.rankRevision() ?? 0;
-  /**
-   * Whether the projection behind `projected` ran per-row enrichment. A window
-   * whose only subscribers were presence-only publishes a deliberately bare
-   * envelope, and rebroadcasting that to a rail that just reopened would draw
-   * rows with no title and no preview until the next scan (round-2 W1).
-   */
-  let projectedEnriched = true;
   /** Enrichment a projection was asked for but did not deliver.
    *
    *  `projectedEnriched` records what was REQUESTED. A projection that loses the
@@ -384,14 +338,14 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     surfaceStates: () => surfaces.values(),
     disposed: () => disposed,
     built: () => built,
-    projectionRun: () => projectionRun,
-    requestProjection: (request) => requestProjection(request),
+    projectionRun: () => loop.projectionRun(),
+    requestProjection: (request) => loop.requestProjection(request),
     paneEvidence: () => paneEvidence,
     notePaneEvidence: () => {
       paneEvidence += 1;
     },
-    paneEvidenceApplied: () => paneEvidenceApplied,
-    projectedEnriched: () => projectedEnriched,
+    paneEvidenceApplied: () => loop.paneEvidenceApplied(),
+    projectedEnriched: () => loop.projectedEnriched(),
     enrichmentPending: () => enrichmentPending,
     notePendingEnrichment: () => {
       enrichmentPending = true;
@@ -401,6 +355,36 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     },
   });
   const { reconcileScan, anyDrawingRows, enrichmentOwed, reconcileRowDrawing, onPaneChange, reconcileWatches } = timers;
+
+  /**
+   * The single-flight run that asks the projector for presence, and the
+   * envelope it freezes when the answer still describes the tree we hold
+   * (task 2_11). Owns every value it is the only writer of; `treeVersion` and
+   * `enrichmentPending` have other writers and stay out here.
+   */
+  const loop = createProjectionLoop({
+    projector,
+    cache,
+    rank: () => discoveryDeps.rank,
+    presence: () => presence(),
+    withDelegations: (source) => withDelegations(source),
+    broadcast: () => {
+      broadcast();
+    },
+    anyDrawingRows: () => anyDrawingRows(),
+    enrichmentOwed: () => enrichmentOwed(),
+    disposed: () => disposed,
+    treeVersion: () => treeVersion,
+    paneEvidence: () => paneEvidence,
+    enrichmentPending: () => enrichmentPending,
+    setEnrichmentPending: (pending) => {
+      enrichmentPending = pending;
+    },
+    logWarn: (message, err) => {
+      console.warn(`${LOG_PREFIX} ${message}`, err);
+    },
+  });
+  const { worktreeIds, requestProjection, ensureProjection, commitAndBroadcast } = loop;
 
   /**
    * The ordering key the listing sorts by. Read through the projector on every
@@ -418,10 +402,10 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * written by the projection loop and read from here.
    */
   const { presence, withDelegations, publishedRow } = createPresenceProjection({
-    projected: () => projected,
+    projected: () => loop.projected(),
     now: () => now(),
     rosters,
-    published: () => published,
+    published: () => loop.published(),
   });
 
   /**
@@ -560,221 +544,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   });
 
   /**
-   * Freeze the current tree beside the presence that describes it.
-   *
-   * Refuses when the projection is behind the cache: half an envelope is worse
-   * than a late one, and the coordinator is about to produce the other half.
-   */
-  function commit(): boolean {
-    if (projector && projectedVersion !== treeVersion) {
-      return false;
-    }
-    // Ordering is baked into the cache at `assembleRepo` time, from the rank the
-    // projector held then. A presence-only projection never re-reads git, so
-    // re-applying the rank here is the only thing that moves a worktree which
-    // just gained — or just lost — an agent (design.md D8). Asked of the
-    // projector rather than assumed: the 5-second poll is the caller, and the
-    // poll that moved nothing is the common case (.reviews/round-2.md W2).
-    const revision = projector?.rankRevision();
-    if (revision !== undefined && revision !== appliedRankRevision) {
-      cache.reorder(discoveryDeps.rank);
-      appliedRankRevision = revision;
-    }
-    published = { tree: cache.read(), presence: withDelegations(presence()) };
-    return true;
-  }
-
-  function worktreeIds(): string[] {
-    return cache.read().repos.flatMap((repo) => repo.worktrees.map((worktree) => worktree.id));
-  }
-
-  /**
-   * Project once, committing only if the tree it read is still the tree we hold.
-   *
-   * A projection that raced a rebuild is not discarded — it is marked for a
-   * re-run. Dropping it is how a pane transition disappears until some later,
-   * unrelated evidence event happens to trigger another projection.
-   */
-  async function projectOnce(externalOnly: boolean): Promise<void> {
-    if (!projector || disposed) {
-      return;
-    }
-    const at = treeVersion;
-    // Read at call time, not captured: a rail can open or collapse while a
-    // projection is in flight, and the NEXT pass is the one that should react.
-    const enrich = anyDrawingRows();
-    const next = await projector.project(worktreeIds(), { external: externalOnly, enrich });
-    if (disposed) {
-      return;
-    }
-    if (treeVersion !== at) {
-      projectionDirty = true;
-      return;
-    }
-    projected = next;
-    projectedVersion = at;
-    // Remembered so a surface promoted to rows can tell whether what is
-    // published is worth redoing (round-2 W1).
-    projectedEnriched = enrich;
-  }
-
-  /**
-   * The single entry into the projector, for the pane path and the rebuild path
-   * alike.
-   *
-   * The projector holds per-pane resolution slots and per-row timestamps, so
-   * two concurrent `project()` calls interleave writes to the same maps and the
-   * older result can commit last. Everything funnels through here, and a caller
-   * arriving mid-flight joins the run in progress rather than starting a second
-   * (.reviews/round-1.md B1).
-   */
-  function requestProjection(request: ProjectionRequest = {}): Promise<void> {
-    if (disposed) {
-      return Promise.resolve();
-    }
-    if (!projector) {
-      // No projection to wait for; the tree is the whole envelope.
-      commitAndBroadcast();
-      return Promise.resolve();
-    }
-    if (projectionRun) {
-      if (request.join === true) {
-        // The poll wants an envelope, not fresh pane work. Dirtying the run in
-        // flight would buy a second projection to answer a scan the first one
-        // is already performing.
-        return projectionRun;
-      }
-      // Everything else carries pane evidence, and the run in flight may be an
-      // external-only pass that is skipping exactly those panes.
-      projectionDirty = true;
-      // New pane evidence: the re-run has to look at the panes.
-      nextExternalOnly = false;
-      return projectionRun;
-    }
-    nextExternalOnly = request.external === true;
-    const run = (async () => {
-      let clean = true;
-      let applied = paneEvidenceApplied;
-      // Remembered so a run whose projection REJECTS can put back what its passes
-      // took. A pass that threw left `projectedEnriched` holding what the
-      // cut-short pass requested, so an un-restored obligation reads as satisfied
-      // and the missing line waits for the next external scan (D1a).
-      let discharged = false;
-      try {
-        do {
-          projectionDirty = false;
-          const externalOnly = nextExternalOnly;
-          nextExternalOnly = false;
-          // The PASS discharges the obligation, not the run. A run is the wrong
-          // unit: it can hold any number of passes, and a surface reopening
-          // mid-run joins it above without ever reaching a run-level clear — the
-          // joined pass then finds the obligation still standing and dirties
-          // itself forever, publishing nothing (D1a).
-          //
-          // Only a pass that is going to ENRICH may clear it; one that is not
-          // cannot satisfy an enrichment obligation and has to leave it for the
-          // next rise. This and `projectOnce`'s own `anyDrawingRows()` read are
-          // one synchronous span — an await inserted between them lets the two
-          // disagree, clearing an obligation the pass then declines to satisfy.
-          //
-          // Defence in depth today: a non-enriching pass that COMPLETES records
-          // `projectedEnriched = false`, and the owed predicate's other disjunct
-          // catches it, so no test reaches this guard. It is what keeps the rule
-          // true for a pass that clears and then never records — invalidated, or
-          // disposed — if the self-healing rerun that covers those stops holding.
-          if (anyDrawingRows()) {
-            enrichmentPending = false;
-            discharged = true;
-          }
-          // Captured BEFORE the pass reads the panes, so an event arriving
-          // during it stays outstanding. The failure this chooses is one
-          // redundant full pass; the other choice loses the transition (D11).
-          const evidenceAt = paneEvidence;
-          await projectOnce(externalOnly);
-          // Captured BEFORE the enrichment obligation below can touch it. Dirty
-          // means this pass was INVALIDATED — by a tree that moved under it, or
-          // by pane evidence that arrived after it read the panes — and that is
-          // a different claim from "run again", which is what enrichment wants.
-          const wasInvalidated = projectionDirty;
-          // Dirty means this pass was invalidated. Either way it applied
-          // nothing. Defence in depth today: a dirty iteration always forces a
-          // FULL rerun, whose own capture is at least this one, so no test can
-          // reach it. It is what keeps D11 true if that ever stops holding.
-          if (!externalOnly && !wasInvalidated) {
-            applied = Math.max(applied, evidenceAt);
-          }
-          // A promotion that landed mid-pass joined this run without dirtying it
-          // — deliberately, so a polled scan does not buy a second projection —
-          // so the run is what has to notice it is finishing while enrichment is
-          // owed, and schedule exactly one more pass (design.md D3).
-          //
-          // Only when the pass was otherwise CLEAN. An invalidated pass reruns
-          // regardless and re-reads the predicate for itself, and forcing it
-          // external-only here would override the stronger full-rerun that new
-          // pane evidence just asked for — the rerun would skip the very panes
-          // it exists to read.
-          if (!wasInvalidated && enrichmentOwed()) {
-            projectionDirty = true;
-            nextExternalOnly = true;
-          }
-        } while (projectionDirty && !disposed);
-      } catch (err) {
-        clean = false;
-        if (discharged) {
-          enrichmentPending = true;
-        }
-        console.warn(`${LOG_PREFIX} presence projection threw — nothing published`, err);
-      }
-      // Cleared and published with no await between, so a caller arriving now
-      // either joined this cycle already or starts the next one — it cannot
-      // mark a cycle dirty that has stopped looking.
-      projectionRun = undefined;
-      if (clean) {
-        paneEvidenceApplied = Math.max(paneEvidenceApplied, applied);
-      }
-      if (disposed) {
-        return;
-      }
-      if (clean) {
-        commitAndBroadcast();
-      } else if (projectionDirty) {
-        // Someone joined the run that failed. Their work is not done just
-        // because this promise resolved, so it is re-run rather than dropped
-        // (.reviews/round-3.md W5).
-        void requestProjection();
-      }
-    })();
-    projectionRun = run;
-    return run;
-  }
-
-  /**
-   * The one publication point.
-   *
-   * Callers request work; they never attach a broadcast to it. Two of them
-   * joining one cycle used to publish its single result twice — single-flight
-   * projection is not single-flight publication (.reviews/round-2.md W3).
-   */
-  /**
-   * Make sure an envelope will exist, without asking for fresh work.
-   *
-   * A caller that only wants to be served is not a caller with new evidence:
-   * routing it through `requestProjection` would dirty the run already in
-   * flight and buy a second projection to answer a cached request.
-   */
-  function ensureProjection(): void {
-    if (!projectionRun) {
-      void requestProjection();
-    }
-  }
-
-  function commitAndBroadcast(): void {
-    if (commit()) {
-      broadcast();
-    }
-  }
-
-  /**
    * Is there anything honest to send?
    *
    * `built` turns true when the first rebuild writes the cache, which is before
@@ -784,12 +553,12 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * has no second half to wait for, so it is deliverable from its first build.
    */
   function deliverable(): boolean {
-    return published !== undefined || !projector;
+    return loop.published() !== undefined || !projector;
   }
 
   function currentMessage(): ExtensionToWebViewMessage {
     // Never the live cache: an uncommitted tree has no presence to pair with.
-    const envelope = published ?? { tree: cache.read(), presence: presence() };
+    const envelope = loop.published() ?? { tree: cache.read(), presence: presence() };
     return { type: "worktreeTreeResponse", tree: envelope.tree, presence: envelope.presence };
   }
 

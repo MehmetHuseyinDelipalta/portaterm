@@ -135,7 +135,7 @@
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/scanReconcile.ts` and split `src/providers/worktreeHost/scanReconcile.ts` again if it fires.
     5. `dispose` stays in the composition root and must still cancel both handles through the module — expose a teardown rather than leaving the facade reading a variable nobody writes (OBL-1).
 
-- [ ] 2_11 Extract the single-flight projection run
+- [x] 2_11 Extract the single-flight projection run — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_10
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/projectionLoop.ts` is under 500 lines, and `src/providers/WorktreeHost.ts` never grows
