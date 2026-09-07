@@ -169,7 +169,7 @@
 ## 2. `actions/create.ts` — one module per arm's subject
 
 
-- [ ] 2_13 Extract answering a create probe
+- [x] 2_13 Extract answering a create probe — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_12
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/actions/create/probes.ts` is under 500 lines, and `src/providers/worktreeHost/actions/create.ts` never grows
