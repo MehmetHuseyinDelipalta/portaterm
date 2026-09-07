@@ -108,7 +108,7 @@
     3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/provisionOffers.ts` and split `src/providers/worktreeHost/provisionOffers.ts` again if it fires.
 
-- [ ] 2_9 Extract action dispatch and the delegation requests it makes
+- [x] 2_9 Extract action dispatch and the delegation requests it makes — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_8
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/actionRouting.ts` is under 500 lines, and `src/providers/WorktreeHost.ts` never grows

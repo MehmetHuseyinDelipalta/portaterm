@@ -9,7 +9,6 @@
 import type {
   ExtensionToWebViewMessage,
   WebViewToExtensionMessage,
-  WorktreeActionMessage,
   WorktreeSubscriptionLevel,
 } from "../types/messages";
 import { hasGitRepo } from "../worktree/hasGitRepo";
@@ -26,6 +25,7 @@ import {
 } from "../worktree/WorktreeDiscovery";
 import { evaluateRemoval } from "../worktree/worktreeBlockers";
 import { type WorktreeWatch, watchRepoStructure } from "../worktree/worktreeWatchTargets";
+import { createActionRouting } from "./worktreeHost/actionRouting";
 import { createCreateActions } from "./worktreeHost/actions/create";
 import { createProvisionActions } from "./worktreeHost/actions/provision";
 import { createRemovalActions } from "./worktreeHost/actions/removal";
@@ -37,7 +37,7 @@ import type { WorktreeSurface } from "./worktreeHost/hostTypes";
 import { createLaunchAdmission } from "./worktreeHost/launchAdmission";
 import { createOpeningLifecycle } from "./worktreeHost/openingLifecycle";
 import { createOpeningRegistry } from "./worktreeHost/openingRegistry";
-import { createPresenceProjection, rosterKey } from "./worktreeHost/presenceProjection";
+import { createPresenceProjection } from "./worktreeHost/presenceProjection";
 import {
   ADDED_COPY_SOURCE,
   createProvisionOffers,
@@ -444,12 +444,29 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     launchTarget: (worktreeId) => launchTarget(worktreeId),
   });
 
-  /** Run one capability, keeping a rejection out of the message loop. */
-  function perform(run: () => Promise<void>): void {
-    void run().catch((err) => {
-      console.warn(`${LOG_PREFIX} worktree action failed`, err);
-    });
-  }
+  /**
+   * Which capability group answers an inbound action, and the one read the
+   * router makes on its own (task 2_9). Constructed BEFORE the four groups
+   * because `perform` is a dependency of the create group; the groups are read
+   * back when a message arrives, which is always after construction.
+   */
+  const { perform, handleAction, requestDelegations } = createActionRouting({
+    options,
+    disposed: () => disposed,
+    shell: () => shell,
+    create: () => create,
+    removal: () => removal,
+    provision: () => provision,
+    publishedRow: (rowId) => publishedRow(rowId),
+    rosters,
+    rosterReads,
+    commitAndBroadcast: () => {
+      commitAndBroadcast();
+    },
+    logWarn: (message, err) => {
+      console.warn(`${LOG_PREFIX} ${message}`, err);
+    },
+  });
 
   /**
    * Where a create for this branch would go, and what it stepped over.
@@ -541,142 +558,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     surfaceKey,
     vettedOverride,
   });
-
-  function handleAction(surface: WorktreeSurface, msg: WorktreeActionMessage): void {
-    const actions = options.actions;
-    if (!actions || disposed) {
-      return;
-    }
-    switch (msg.type) {
-      case "worktreeOpenFolder":
-        shell.worktreeOpenFolder(surface, msg, actions);
-        return;
-      case "worktreeCreate":
-        create.worktreeCreate(surface, msg, actions);
-        return;
-      case "worktreeSetupRetry":
-        create.worktreeSetupRetry(surface, msg, actions);
-        return;
-      case "worktreeSetupViewOutput":
-        shell.worktreeSetupViewOutput(surface, msg, actions);
-        return;
-      case "worktreeRemoveAssess":
-        removal.worktreeRemoveAssess(surface, msg, actions);
-        return;
-      case "worktreeRemove":
-        removal.worktreeRemove(surface, msg, actions);
-        return;
-      case "worktreeLock":
-        removal.worktreeLock(surface, msg, actions);
-        return;
-      case "worktreeUnlock":
-        removal.worktreeUnlock(surface, msg, actions);
-        return;
-      case "worktreePickDestination":
-        create.worktreePickDestination(surface, msg, actions);
-        return;
-      case "worktreeCreateProbe":
-        create.worktreeCreateProbe(surface, msg, actions);
-        return;
-      case "worktreeAuthorizeDebris":
-        create.worktreeAuthorizeDebris(surface, msg, actions);
-        return;
-      case "worktreeProvisionSwitch":
-        provision.worktreeProvisionSwitch(surface, msg);
-        return;
-      case "worktreeCopyFileAsk":
-        provision.worktreeCopyFileAsk(surface, msg);
-        return;
-      case "worktreeSetupStepAsk":
-        provision.worktreeSetupStepAsk(surface, msg);
-        return;
-      case "worktreeProvisionSave":
-        provision.worktreeProvisionSave(surface, msg);
-        return;
-      case "worktreeCreateClosed":
-        create.worktreeCreateClosed(surface, msg, actions);
-        return;
-      case "requestWorktreeCreateDefaults":
-        create.requestWorktreeCreateDefaults(surface, msg, actions);
-        return;
-      case "requestWorktreeRefs":
-        create.requestWorktreeRefs(surface, msg, actions);
-        return;
-      case "worktreePrune":
-        removal.worktreePrune(surface, msg, actions);
-        return;
-      case "worktreeRevealInOS":
-        shell.worktreeRevealInOS(surface, msg, actions);
-        return;
-      case "worktreeCopyPath":
-        shell.worktreeCopyPath(surface, msg, actions);
-        return;
-      case "worktreeOpenTerminal":
-        shell.worktreeOpenTerminal(surface, msg, actions);
-        return;
-      case "worktreeFocusPane":
-        shell.worktreeFocusPane(surface, msg, actions);
-        return;
-      case "worktreeOpenPreview":
-        shell.worktreeOpenPreview(surface, msg, actions);
-        return;
-      case "worktreeCopyResumeCommand":
-        shell.worktreeCopyResumeCommand(surface, msg, actions);
-        return;
-      case "worktreeRevealAgentCwd":
-        shell.worktreeRevealAgentCwd(surface, msg, actions);
-        return;
-      case "worktreeCopyAgentPath":
-        shell.worktreeCopyAgentPath(surface, msg, actions);
-        return;
-      case "worktreeLaunchAgent":
-        shell.worktreeLaunchAgent(surface, msg, actions);
-        return;
-      case "worktreeResumeHere":
-        shell.worktreeResumeHere(surface, msg, actions);
-        return;
-    }
-  }
-
-  /**
-   * Read what one row's session delegated — at most once per row per session.
-   *
-   * The request's entry id is an expected-version token, never an argument: the
-   * read uses the published row's OWN id, so a stale or forged one reads
-   * nothing rather than the wrong transcript (design.md D1). A second request
-   * while the first is in flight joins it; one already answered re-reads
-   * nothing (D8).
-   */
-  function requestDelegations(rowId: string, entryId: string): void {
-    const reader = options.readDelegations;
-    if (!reader || disposed) {
-      return;
-    }
-    const row = publishedRow(rowId);
-    const session = row?.entryId;
-    if (session === undefined || session !== entryId) {
-      return;
-    }
-    const key = rosterKey(rowId, session);
-    if (rosters.has(key) || rosterReads.has(key)) {
-      return;
-    }
-    const read = (async () => {
-      let roster: DelegationRoster;
-      try {
-        roster = await reader(session);
-      } catch (err) {
-        roster = { kind: "failed", reason: err instanceof Error ? err.message : String(err) };
-      }
-      if (disposed) {
-        return;
-      }
-      rosterReads.delete(key);
-      rosters.set(key, roster);
-      commitAndBroadcast();
-    })();
-    rosterReads.set(key, read);
-  }
 
   /**
    * Freeze the current tree beside the presence that describes it.
