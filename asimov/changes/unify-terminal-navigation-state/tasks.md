@@ -150,3 +150,12 @@
     3. Preserve and replay failed post-commit effects and queued intents in `src/webview/navigation/TerminalNavigationController.ts`; add the recovery composition to `src/webview/navigation/TerminalNavigationComposition.ts`, cover it in `src/webview/navigation/TerminalNavigationController.test.ts` and `src/webview/navigation/TerminalNavigationComposition.test.ts`, and gate attachment acknowledgment in `src/webview/main.ts` on successful reconciliation.
     4. Reuse `tabOwningPane` in `src/webview/navigation/TerminalNavigationState.ts` and encode `terminalNavigationCommitted` as a coherent nullable-pair union in `src/types/messages.ts`.
     5. Reconcile delivery-aware timeout and effect-recovery wording in `docs/design/worktree-scope.md`, `docs/design/xterm-integration.md`, `docs/design/message-protocol.md`, and `src/test/invariants/terminalNavigationDocs.test.ts`.
+
+- [x] 5_2 Repair stable-owner obligation witness paths — verified: pnpm exec vitest run src/session/SessionManager.test.ts src/session/SessionManager.snapshot.test.ts src/webview/TabBar.test.ts exit 0
+  - **Deps**: 5_1
+  - **Refs**: design.md OBL-1; docs/DESIGN.md § Cross-Cutting Invariants
+  - **Acceptance**:
+    - Outcome: OBL-1 cites existing tests that independently witness stable owner persistence and presence-independent projection.
+    - Verify: command pnpm exec vitest run src/session/SessionManager.test.ts src/session/SessionManager.snapshot.test.ts src/webview/TabBar.test.ts
+  - **Plan**:
+    1. Replace the nonexistent OBL-1 witness paths in `asimov/changes/unify-terminal-navigation-state/design.md` with the shipped I18 and I19 witness suites.
