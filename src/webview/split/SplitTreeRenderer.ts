@@ -32,7 +32,7 @@ export interface SplitTreeRendererDeps {
   postMessage: (msg: unknown) => void;
   onTabBarUpdate: () => void;
   /** Fired when the user selects a different pane (click-to-focus). Optional. */
-  onActivePaneChange?: () => void;
+  onPaneFocused?: (sessionId: string) => void;
 }
 
 /**
@@ -51,7 +51,7 @@ export class SplitTreeRenderer {
   private readonly flowControl: FlowControl;
   private readonly postMessage: (msg: unknown) => void;
   private readonly onTabBarUpdate: () => void;
-  private readonly onActivePaneChange?: () => void;
+  private readonly onPaneFocused?: (sessionId: string) => void;
 
   constructor(deps: SplitTreeRendererDeps) {
     this.store = deps.store;
@@ -59,7 +59,7 @@ export class SplitTreeRenderer {
     this.flowControl = deps.flowControl;
     this.postMessage = deps.postMessage;
     this.onTabBarUpdate = deps.onTabBarUpdate;
-    this.onActivePaneChange = deps.onActivePaneChange;
+    this.onPaneFocused = deps.onPaneFocused;
   }
 
   /**
@@ -112,30 +112,8 @@ export class SplitTreeRenderer {
           instance.container.style.height = "100%";
         }
 
-        // Click-to-focus: update activePaneId and focus terminal
         leafContainer.addEventListener("mousedown", () => {
-          if (!this.store.activeTabId) {
-            return;
-          }
-          const currentActive = this.store.tabActivePaneIds.get(this.store.activeTabId);
-          if (currentActive === sessionId) {
-            return; // Already active
-          }
-          this.store.tabActivePaneIds.set(this.store.activeTabId, sessionId);
-          this.updateActivePaneVisual(this.store.activeTabId);
-          this.store.persist();
-
-          const inst = this.store.terminals.get(sessionId);
-          if (inst) {
-            inst.terminal.focus();
-          }
-
-          // Update tab bar to reflect active pane name
-          this.onTabBarUpdate();
-          // Notify listeners (e.g. the vault refreshes when a different pane
-          // is selected) — only fires on a real active-pane change (the
-          // early-return above guards against re-selecting the same pane).
-          this.onActivePaneChange?.();
+          this.onPaneFocused?.(sessionId);
         });
       },
     });
@@ -362,55 +340,20 @@ export class SplitTreeRenderer {
     return paneSessionId;
   }
 
-  /**
-   * Handle a splitPaneCreated message — create the terminal, update the layout tree,
-   * re-render, and focus the new pane.
-   */
-  handleSplitPaneCreated(msg: SplitPaneCreatedMessage, factory: TerminalFactory): void {
-    if (!this.store.activeTabId) {
-      return;
-    }
-    const layout = this.store.tabLayouts.get(this.store.activeTabId);
-    if (!layout) {
-      return;
+  /** Attach a completed child to the tab captured by its request. */
+  handleSplitPaneCreated(msg: SplitPaneCreatedMessage, factory: TerminalFactory): boolean {
+    const layout = this.store.tabLayouts.get(msg.sourceTabId);
+    const source = this.store.terminals.get(msg.sourcePaneId);
+    if (!layout || !source || !getAllSessionIds(layout).includes(msg.sourcePaneId)) {
+      return false;
     }
 
-    // Create a new terminal for the split pane (not active tab-level, just a terminal instance).
-    // Passing `isSplitPane: true` skips the per-tab `tabLayouts` leaf init AND the
-    // setTimeout(0) fit pre-reparent (which would measure a 0×0 container and emit
-    // a spurious resize IPC). The post-layout `debouncedFitAllLeaves` below owns
-    // split-pane sizing. See round-3 follow-up to round-2 [S2].
-    const newInstance = factory.createTerminal(
-      msg.newSessionId,
-      msg.newSessionName,
-      this.store.currentConfig,
-      false,
-      null,
-      { isSplitPane: true, worktreeId: msg.worktreeId },
-    );
-
-    // Update the split tree: replace the source leaf with a branch containing source + new
-    const newBranch = createBranch(msg.direction, createLeaf(msg.sourcePaneId), createLeaf(msg.newSessionId));
-    const updatedLayout = replaceNode(layout, msg.sourcePaneId, newBranch);
-    this.store.tabLayouts.set(this.store.activeTabId, updatedLayout);
-
-    // Set the new pane as active
-    this.store.tabActivePaneIds.set(this.store.activeTabId, msg.newSessionId);
-
-    // Re-render the split tree
-    this.renderTabSplitTree(this.store.activeTabId);
-    this.showTabContainer(this.store.activeTabId);
-    this.store.persist();
-
-    // Fit all terminals after layout change
-    const activeTabId = this.store.activeTabId;
-    requestAnimationFrame(() => {
-      this.resizeCoordinator.debouncedFitAllLeaves(activeTabId!);
-      // Focus the new terminal
-      newInstance.terminal.focus();
+    factory.createTerminal(msg.newSessionId, msg.newSessionName, this.store.currentConfig, false, null, {
+      isSplitPane: true,
+      worktreeId: source.worktreeId,
     });
-
-    // Update tab bar to reflect active pane name
-    this.onTabBarUpdate();
+    const newBranch = createBranch(msg.direction, createLeaf(msg.sourcePaneId), createLeaf(msg.newSessionId));
+    this.store.tabLayouts.set(msg.sourceTabId, replaceNode(layout, msg.sourcePaneId, newBranch));
+    return true;
   }
 }

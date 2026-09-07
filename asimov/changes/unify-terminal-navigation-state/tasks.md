@@ -47,16 +47,16 @@
 
 ## 2. Make asynchronous lifecycle transitions coherent
 
-- [ ] 2_1 Correlate split requests and guarantee completion
+- [x] 2_1 Correlate split requests and guarantee completion — verified: pnpm exec vitest run src/providers/TerminalViewProvider.test.ts src/webview/split/SplitTreeRenderer.test.ts && pnpm exec vitest run src/webview/navigation/TerminalNavigationController.test.ts src/webview/messaging/MessageRouter.test.ts src/webview/navigation/TerminalNavigationComposition.test.ts exit 0
   - **Deps**: 1_4
   - **Refs**: specs/terminal-owner-navigation/spec.md#{every-terminal-has-one-stable-owner,split-completion-remains-attached-to-its-source-tab}; design.md D3, design.md D4, design.md D7
   - **Acceptance**:
     - Outcome: No completed split child remains unreachable from the terminal UI.
     - Verify: command pnpm exec vitest run src/providers/TerminalViewProvider.test.ts src/webview/split/SplitTreeRenderer.test.ts
   - **Plan**:
-    1. Extend split request, response, and attachment-result contracts in `src/types/messages.ts`; track correlated pending children in `src/providers/TerminalViewProvider.ts` with bounded cleanup on rejection, timeout, disposal, or source disappearance.
-    2. Add source-tab correlation and attachment acknowledgment in `src/webview/main.ts` and `src/webview/split/SplitTreeRenderer.ts`; derive local child owner from the current source fact and never from the currently active tab.
-    3. Add `src/webview/split/SplitTreeRenderer.test.ts` and provider cases for tab switching, owner reconciliation, failed delivery, missing source, attached-child retention, and no unreachable session.
+    1. Extend split request, response, and attachment-result contracts in `src/types/messages.ts`; track correlated pending children in `src/providers/TerminalViewProvider.ts` and `src/providers/TerminalViewProvider.test.ts` with bounded cleanup on rejection, timeout, disposal, or source disappearance.
+    2. Add source-tab correlation and attachment acknowledgment in `src/webview/main.ts` and `src/webview/split/SplitTreeRenderer.ts`; update `src/webview/navigation/TerminalNavigationController.ts` and `src/webview/navigation/TerminalNavigationController.test.ts` so catalog mutations receive one effect batch even when selection is unchanged.
+    3. Add `src/webview/split/SplitTreeRenderer.test.ts`, update `src/webview/messaging/MessageRouter.test.ts`, and add provider cases for tab switching, owner reconciliation, failed delivery, missing source, attached-child retention, and no unreachable session.
 
 - [ ] 2_2 Restore and reconcile navigation with explicit precedence
   - **Deps**: 2_1

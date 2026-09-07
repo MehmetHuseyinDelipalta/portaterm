@@ -1225,7 +1225,18 @@ describe("TerminalViewProvider: split pane ghost tab fix", () => {
 
     // Simulate split request
     for (const handler of messageHandlers) {
-      handler({ type: "requestSplitSession", direction: "vertical", sourcePaneId: rootTabId });
+      handler({
+        type: "requestSplitSession",
+        requestId: "split-flag",
+        direction: "vertical",
+        sourceTabId: rootTabId,
+        sourcePaneId: rootTabId,
+      });
+    }
+
+    const child = sm.getAllSessionsForView(provider.getViewId()).find((session) => session.isSplitPane)!.id;
+    for (const handler of messageHandlers) {
+      handler({ type: "splitPaneAttachmentResult", requestId: "split-flag", newSessionId: child, status: "attached" });
     }
 
     // getTabsForView should still return only the root tab (split pane filtered out)
@@ -1251,15 +1262,29 @@ describe("TerminalViewProvider: split pane ghost tab fix", () => {
     sm.setCurrentCwd(rootTabId, "/repo-wt/feat/packages/app");
 
     for (const handler of messageHandlers) {
-      handler({ type: "requestSplitSession", direction: "vertical", sourcePaneId: rootTabId });
+      handler({
+        type: "requestSplitSession",
+        requestId: "split-owner",
+        direction: "vertical",
+        sourceTabId: rootTabId,
+        sourcePaneId: rootTabId,
+      });
     }
 
     const split = sm.getAllSessionsForView(provider.getViewId()).find((session) => session.id !== rootTabId);
     expect(split?.worktreeId).toBe("/repo-wt/feat");
     expect(sm.getSession(split!.id)?.initialCwd).toBe("/repo-wt/feat/packages/app");
     expect(postMessageSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "splitPaneCreated", worktreeId: "/repo-wt/feat" }),
+      expect.objectContaining({ type: "splitPaneCreated", requestId: "split-owner", sourceTabId: rootTabId }),
     );
+    for (const handler of messageHandlers) {
+      handler({
+        type: "splitPaneAttachmentResult",
+        requestId: "split-owner",
+        newSessionId: split!.id,
+        status: "attached",
+      });
+    }
     sm.dispose();
   });
 
@@ -1281,7 +1306,22 @@ describe("TerminalViewProvider: split pane ghost tab fix", () => {
     const rootTabId = sm.getTabsForView(provider.getViewId())[0].id;
 
     for (const handler of mh1) {
-      handler({ type: "requestSplitSession", direction: "horizontal", sourcePaneId: rootTabId });
+      handler({
+        type: "requestSplitSession",
+        requestId: "split-restore",
+        direction: "horizontal",
+        sourceTabId: rootTabId,
+        sourcePaneId: rootTabId,
+      });
+    }
+    const splitSessionId = sm.getAllSessionsForView(provider.getViewId()).find((session) => session.isSplitPane)!.id;
+    for (const handler of mh1) {
+      handler({
+        type: "splitPaneAttachmentResult",
+        requestId: "split-restore",
+        newSessionId: splitSessionId,
+        status: "attached",
+      });
     }
 
     const { webviewView: wv2, messageHandlers: mh2, postMessageSpy: pms2 } = createMockWebviewView();
@@ -1437,6 +1477,198 @@ describe("TerminalViewProvider: committed navigation", () => {
     }
     expect(provider.getActiveSessionId()).toBe(root);
     expect(TerminalViewProvider.getLastFocusedProvider()).toBe(provider);
+    sm.dispose();
+  });
+});
+
+describe("TerminalViewProvider: split attachment lifecycle", () => {
+  it("destroys a child rejected by the webview", async () => {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const root = sm.getTabsForView(provider.getViewId())[0].id;
+
+    for (const handler of messageHandlers) {
+      handler({
+        type: "requestSplitSession",
+        requestId: "rejected",
+        sourceTabId: root,
+        sourcePaneId: root,
+        direction: "vertical",
+      });
+    }
+    const child = sm.getAllSessionsForView(provider.getViewId()).find((session) => session.isSplitPane)!.id;
+    for (const handler of messageHandlers) {
+      handler({ type: "splitPaneAttachmentResult", requestId: "rejected", newSessionId: child, status: "rejected" });
+    }
+    await vi.waitFor(() => expect(sm.getSession(child)).toBeUndefined());
+    sm.dispose();
+  });
+
+  it("never rolls back an acknowledged child", async () => {
+    vi.useFakeTimers();
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const root = sm.getTabsForView(provider.getViewId())[0].id;
+
+    for (const handler of messageHandlers) {
+      handler({
+        type: "requestSplitSession",
+        requestId: "attached",
+        sourceTabId: root,
+        sourcePaneId: root,
+        direction: "vertical",
+      });
+    }
+    const child = sm.getAllSessionsForView(provider.getViewId()).find((session) => session.isSplitPane)!.id;
+    for (const handler of messageHandlers) {
+      handler({ type: "splitPaneAttachmentResult", requestId: "attached", newSessionId: child, status: "attached" });
+    }
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(sm.getSession(child)).toBeDefined();
+    vi.useRealTimers();
+    sm.dispose();
+  });
+
+  it("rolls back a child when response delivery fails", async () => {
+    vi.useFakeTimers();
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers, postMessageSpy } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const root = sm.getTabsForView(provider.getViewId())[0].id;
+    postMessageSpy.mockResolvedValue(false);
+
+    for (const handler of messageHandlers) {
+      handler({
+        type: "requestSplitSession",
+        requestId: "undelivered",
+        sourceTabId: root,
+        sourcePaneId: root,
+        direction: "vertical",
+      });
+    }
+    const child = sm.getAllSessionsForView(provider.getViewId()).find((session) => session.isSplitPane)!.id;
+    await vi.advanceTimersByTimeAsync(200);
+    expect(sm.getSession(child)).toBeUndefined();
+    vi.useRealTimers();
+    sm.dispose();
+  });
+
+  it("rolls back an unacknowledged child at the attachment deadline", async () => {
+    vi.useFakeTimers();
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const root = sm.getTabsForView(provider.getViewId())[0].id;
+    for (const handler of messageHandlers) {
+      handler({
+        type: "requestSplitSession",
+        requestId: "timeout",
+        sourceTabId: root,
+        sourcePaneId: root,
+        direction: "vertical",
+      });
+    }
+    const child = sm.getAllSessionsForView(provider.getViewId()).find((session) => session.isSplitPane)!.id;
+
+    await vi.advanceTimersByTimeAsync(5001);
+    await vi.waitFor(() => expect(sm.getSession(child)).toBeUndefined());
+    vi.useRealTimers();
+    sm.dispose();
+  });
+
+  it("rolls back pending children when their source disappears", async () => {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const root = sm.getTabsForView(provider.getViewId())[0].id;
+    for (const handler of messageHandlers) {
+      handler({
+        type: "requestSplitSession",
+        requestId: "source-gone",
+        sourceTabId: root,
+        sourcePaneId: root,
+        direction: "vertical",
+      });
+    }
+    const child = sm.getAllSessionsForView(provider.getViewId()).find((session) => session.isSplitPane)!.id;
+    for (const handler of messageHandlers) {
+      handler({ type: "requestCloseSplitPane", sessionId: root });
+    }
+
+    await vi.waitFor(() => expect(sm.getSession(child)).toBeUndefined());
+    sm.dispose();
+  });
+
+  it("rolls back pending children when the surface is disposed", async () => {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers, disposeHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const root = sm.getTabsForView(provider.getViewId())[0].id;
+    for (const handler of messageHandlers) {
+      handler({
+        type: "requestSplitSession",
+        requestId: "disposed",
+        sourceTabId: root,
+        sourcePaneId: root,
+        direction: "vertical",
+      });
+    }
+    const child = sm.getAllSessionsForView(provider.getViewId()).find((session) => session.isSplitPane)!.id;
+    for (const dispose of disposeHandlers) {
+      dispose();
+    }
+
+    await vi.waitFor(() => expect(sm.getSession(child)).toBeUndefined());
+    expect(sm.getSession(root)).toBeDefined();
+    sm.dispose();
+  });
+
+  it("creates no child for a missing source", () => {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const before = sm.getAllSessionsForView(provider.getViewId()).length;
+
+    for (const handler of messageHandlers) {
+      handler({
+        type: "requestSplitSession",
+        requestId: "missing",
+        sourceTabId: "gone",
+        sourcePaneId: "gone",
+        direction: "vertical",
+      });
+    }
+    expect(sm.getAllSessionsForView(provider.getViewId())).toHaveLength(before);
     sm.dispose();
   });
 });

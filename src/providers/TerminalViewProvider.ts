@@ -69,6 +69,15 @@ export function themeKindFor(kind: vscode.ColorThemeKind): ThemeChangedMessage["
   }
 }
 
+interface PendingSplitChild {
+  sessionId: string;
+  sourcePaneId: string;
+  timer: NodeJS.Timeout;
+}
+
+const MAX_PENDING_SPLIT_CHILDREN = 64;
+const SPLIT_ATTACHMENT_TIMEOUT_MS = 5000;
+
 /**
  * WebviewViewProvider for sidebar and panel terminal views.
  *
@@ -92,6 +101,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   private _onDidReceiveInteraction: (() => void) | undefined;
 
   private _activeNavigation: { tabId: string; paneId: string } | null | undefined;
+  private readonly pendingSplitChildren = new Map<string, PendingSplitChild>();
 
   /**
    * Monotonic token for vault-list refreshes. Bumped per `requestVaultSessions`;
@@ -344,6 +354,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       // Cancel any in-flight preview tokens — see design.md D10. Disposal is
       // owned by the handlers.
       this._previewTokens.cancelAll();
+      this.rollbackAllPendingSplitChildren();
       // Release only the watcher client attached to this resolved webview.
       vaultWatchClient?.dispose();
       if (this._vaultWatchClient === vaultWatchClient) {
@@ -1098,20 +1109,21 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
             // Asked BEFORE anything is destroyed, and before the webview is told
             // to tear the tab down — the teardown is driven by `tabRemoved`, so
             // declining here leaves the tab exactly as it was.
-            void confirmKill(this.sessionManager.panesOfTab(tabId), "tab", this.paneEvidence, vscode.window).then(
-              (proceed) => {
-                if (!proceed) {
-                  return;
-                }
-                // Cancel any in-flight hover-preview for this session before destroying.
-                this._previewTokens.cancel(tabId);
-                this.sessionManager.destroySession(tabId);
-                this.safePostMessage(webviewView.webview, {
-                  type: "tabRemoved",
-                  tabId,
-                });
-              },
-            );
+            const panes = this.sessionManager.panesOfTab(tabId);
+            void confirmKill(panes, "tab", this.paneEvidence, vscode.window).then((proceed) => {
+              if (!proceed) {
+                return;
+              }
+              for (const paneId of panes) {
+                this.rollbackPendingSplitChildrenForSource(paneId);
+              }
+              this._previewTokens.cancel(tabId);
+              this.sessionManager.destroySession(tabId);
+              this.safePostMessage(webviewView.webview, {
+                type: "tabRemoved",
+                tabId,
+              });
+            });
           }
           break;
 
@@ -1128,57 +1140,93 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           break;
 
         case "requestSplitSession": {
+          const viewId = this.getViewId();
+          const source = this.sessionManager.getSession(message.sourcePaneId);
           if (
-            typeof (message as { direction?: unknown }).direction === "string" &&
-            typeof (message as { sourcePaneId?: unknown }).sourcePaneId === "string"
+            this.pendingSplitChildren.has(message.requestId) ||
+            this.pendingSplitChildren.size >= MAX_PENDING_SPLIT_CHILDREN ||
+            !source ||
+            source.viewId !== viewId ||
+            source.rootTabId !== message.sourceTabId
           ) {
-            const splitMsg = message as {
-              direction: "horizontal" | "vertical";
-              sourcePaneId: string;
-              rootTabId?: string;
-            };
-            const viewId = this.getViewId();
-            const splitSettings = readTerminalSettings();
-            try {
-              const source = this.sessionManager.getSession(splitMsg.sourcePaneId);
-              const newSessionId = this.sessionManager.createSession(viewId, webviewView.webview, {
-                isSplitPane: true,
-                shell: splitSettings.shell,
-                shellArgs: splitSettings.shellArgs,
-                cwd: source?.currentCwd ?? source?.initialCwd ?? splitSettings.cwd,
-                worktreeId: source?.worktreeId,
-                // Propagate root-tab identity for atomic group eviction (round-1 B4).
-                // Older webviews (legacy IPC shape) omit rootTabId — fall through.
-                rootTabId: splitMsg.rootTabId,
-              });
-              const newSession = this.sessionManager.getSession(newSessionId);
-              if (newSession) {
-                void this.safeSendWithRetry(webviewView.webview, {
-                  type: "splitPaneCreated",
-                  sourcePaneId: splitMsg.sourcePaneId,
-                  newSessionId,
-                  newSessionName: newSession.name,
-                  direction: splitMsg.direction,
-                  worktreeId: newSession.worktreeId,
-                });
-              }
-            } catch (err) {
-              console.error("[AnyWhere Terminal] Failed to create split session:", err);
-              void this.safeSendWithRetry(webviewView.webview, {
-                type: "error",
-                message: err instanceof Error ? err.message : "Failed to create split terminal",
-                severity: "error",
-              });
+            this.safePostMessage(webviewView.webview, {
+              type: "error",
+              message: "Split source is no longer available",
+              severity: "error",
+            });
+            break;
+          }
+          const splitSettings = readTerminalSettings();
+          try {
+            const newSessionId = this.sessionManager.createSession(viewId, webviewView.webview, {
+              isSplitPane: true,
+              shell: splitSettings.shell,
+              shellArgs: splitSettings.shellArgs,
+              cwd: source.currentCwd ?? source.initialCwd ?? splitSettings.cwd,
+              worktreeId: source.worktreeId,
+              rootTabId: message.sourceTabId,
+            });
+            const newSession = this.sessionManager.getSession(newSessionId);
+            if (!newSession) {
+              break;
             }
+            const timer = setTimeout(
+              () => this.rollbackPendingSplitChild(message.requestId),
+              SPLIT_ATTACHMENT_TIMEOUT_MS,
+            );
+            this.pendingSplitChildren.set(message.requestId, {
+              sessionId: newSessionId,
+              sourcePaneId: message.sourcePaneId,
+              timer,
+            });
+            void this.safeSendWithRetry(
+              webviewView.webview,
+              {
+                type: "splitPaneCreated",
+                requestId: message.requestId,
+                sourceTabId: message.sourceTabId,
+                sourcePaneId: message.sourcePaneId,
+                newSessionId,
+                newSessionName: newSession.name,
+                direction: message.direction,
+              },
+              2,
+              () => !this.pendingSplitChildren.has(message.requestId),
+            ).then((delivered) => {
+              if (!delivered) {
+                this.rollbackPendingSplitChild(message.requestId);
+              }
+            });
+          } catch (err) {
+            console.error("[AnyWhere Terminal] Failed to create split session:", err);
+            void this.safeSendWithRetry(webviewView.webview, {
+              type: "error",
+              message: err instanceof Error ? err.message : "Failed to create split terminal",
+              severity: "error",
+            });
+          }
+          break;
+        }
+
+        case "splitPaneAttachmentResult": {
+          const pending = this.pendingSplitChildren.get(message.requestId);
+          if (!pending || pending.sessionId !== message.newSessionId) {
+            break;
+          }
+          if (message.status === "attached") {
+            clearTimeout(pending.timer);
+            this.pendingSplitChildren.delete(message.requestId);
+          } else {
+            this.rollbackPendingSplitChild(message.requestId);
           }
           break;
         }
 
         case "requestCloseSplitPane": {
-          if (typeof (message as { sessionId?: unknown }).sessionId === "string") {
-            const closeMsg = message as { sessionId: string };
-            this._previewTokens.cancel(closeMsg.sessionId);
-            this.sessionManager.destroySession(closeMsg.sessionId);
+          if (typeof message.sessionId === "string") {
+            this.rollbackPendingSplitChildrenForSource(message.sessionId);
+            this._previewTokens.cancel(message.sessionId);
+            this.sessionManager.destroySession(message.sessionId);
           }
           break;
         }
@@ -1523,6 +1571,30 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
    * all three of this provider's branches type-checked clean (round-1 B3, and
    * still after the first fix — round-2 V0).
    */
+  private rollbackPendingSplitChild(requestId: string): void {
+    const pending = this.pendingSplitChildren.get(requestId);
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending.timer);
+    this.pendingSplitChildren.delete(requestId);
+    this.sessionManager.destroySession(pending.sessionId);
+  }
+
+  private rollbackPendingSplitChildrenForSource(sourcePaneId: string): void {
+    for (const [requestId, pending] of this.pendingSplitChildren) {
+      if (pending.sourcePaneId === sourcePaneId) {
+        this.rollbackPendingSplitChild(requestId);
+      }
+    }
+  }
+
+  private rollbackAllPendingSplitChildren(): void {
+    for (const requestId of [...this.pendingSplitChildren.keys()]) {
+      this.rollbackPendingSplitChild(requestId);
+    }
+  }
+
   private async safeSendWithRetry(
     webview: vscode.Webview,
     message: ExtensionToWebViewMessage,

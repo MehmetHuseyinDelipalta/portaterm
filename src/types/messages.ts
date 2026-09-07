@@ -144,17 +144,17 @@ export interface RenameTabMessage {
 /** User requested a new PTY session for a split pane. */
 export interface RequestSplitSessionMessage {
   type: "requestSplitSession";
-  /** Direction of the split */
+  requestId: string;
   direction: "horizontal" | "vertical";
-  /** Session ID of the pane being split */
+  sourceTabId: string;
   sourcePaneId: string;
-  /**
-   * Session ID of the root tab that owns the split tree containing
-   * `sourcePaneId`. The extension propagates this onto the new pane's
-   * `rootTabId` so cross-restart eviction can group split snapshots
-   * atomically. See restore-terminal-sessions design.md D12 + round-1 B4.
-   */
-  rootTabId: string;
+}
+
+export interface SplitPaneAttachmentResultMessage {
+  type: "splitPaneAttachmentResult";
+  requestId: string;
+  newSessionId: string;
+  status: "attached" | "rejected";
 }
 
 /** User requested destruction of a split pane's session. */
@@ -1791,6 +1791,7 @@ export type WebViewToExtensionMessage =
   | AckMessage
   | RequestSplitSessionMessage
   | RequestCloseSplitPaneMessage
+  | SplitPaneAttachmentResultMessage
   | FocusMessage
   | TerminalNavigationCommittedMessage
   | OpenLinkMessage
@@ -2152,16 +2153,12 @@ export interface SplitPaneMessage {
 /** Confirms a new split session was created by the extension host. */
 export interface SplitPaneCreatedMessage {
   type: "splitPaneCreated";
-  /** Session ID of the pane that was split */
+  requestId: string;
+  sourceTabId: string;
   sourcePaneId: string;
-  /** New session ID for the split pane */
   newSessionId: string;
-  /** Display name for the new session */
   newSessionName: string;
-  /** Direction of the split */
   direction: "horizontal" | "vertical";
-  /** Stable linked-worktree owner inherited from the source pane. */
-  worktreeId?: string;
 }
 
 /** Close a specific split pane by session ID (from context menu). */

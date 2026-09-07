@@ -32,8 +32,9 @@ export interface TerminalNavigationControllerDeps {
 export type TerminalNavigationDispatchResult = "committed" | "noop" | "queued";
 
 interface PendingTransaction {
-  mutateCatalog(): void;
+  mutateCatalog(): unknown;
   transition: TerminalNavigationTransition;
+  catalogChanged: boolean;
 }
 
 function cloneState(state: TerminalNavigationState): TerminalNavigationState {
@@ -77,11 +78,18 @@ export class TerminalNavigationController {
   }
 
   dispatch(transition: TerminalNavigationTransition): TerminalNavigationDispatchResult {
-    return this.transaction(() => {}, transition);
+    return this.enqueue({ mutateCatalog: () => {}, transition, catalogChanged: false });
   }
 
-  transaction(mutateCatalog: () => void, transition: TerminalNavigationTransition): TerminalNavigationDispatchResult {
-    this.pending.push({ mutateCatalog, transition });
+  transaction(
+    mutateCatalog: () => unknown,
+    transition: TerminalNavigationTransition,
+  ): TerminalNavigationDispatchResult {
+    return this.enqueue({ mutateCatalog, transition, catalogChanged: true });
+  }
+
+  private enqueue(transaction: PendingTransaction): TerminalNavigationDispatchResult {
+    this.pending.push(transaction);
     if (this.processing) {
       return "queued";
     }
@@ -111,13 +119,13 @@ export class TerminalNavigationController {
   }
 
   private runTransaction(transaction: PendingTransaction): TerminalNavigationDispatchResult {
-    transaction.mutateCatalog();
+    const catalogChanged = transaction.catalogChanged && transaction.mutateCatalog() !== false;
     const catalog = this.deps.readCatalog();
     const next = transaction.transition(catalog, cloneState(this.state));
     if (!isTerminalNavigationStateValid(catalog, next)) {
       throw new Error("Terminal navigation transition produced invalid state");
     }
-    if (statesEqual(this.state, next)) {
+    if (statesEqual(this.state, next) && !catalogChanged) {
       return "noop";
     }
 

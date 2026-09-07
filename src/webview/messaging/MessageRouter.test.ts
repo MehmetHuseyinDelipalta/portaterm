@@ -65,6 +65,8 @@ describe("createMessageRouter", () => {
       { type: "splitPane", direction: "horizontal" },
       {
         type: "splitPaneCreated",
+        requestId: "split-1",
+        sourceTabId: "t1",
         sourcePaneId: "t1",
         newSessionId: "t2",
         newSessionName: "Terminal 2",

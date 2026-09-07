@@ -187,9 +187,9 @@ const splitRenderer = new SplitTreeRenderer({
   flowControl,
   postMessage: (msg) => vscode.postMessage(msg),
   onTabBarUpdate: () => updateTabBar(),
-  // Selecting a different terminal pane points the vault's "This folder only"
-  // filter at the newly-focused terminal and re-reads the list.
-  onActivePaneChange: () => syncVaultToActivePane(),
+  onPaneFocused: (paneId) => {
+    navigationController.dispatch((catalog, state) => focusNavigationPane(catalog, state, paneId));
+  },
 });
 
 /**
@@ -384,7 +384,14 @@ const navigationController = new TerminalNavigationController(
           render: () => updateTabBar(),
         });
       },
-      displayActive: (state) => displayNavigationState(state),
+      displayActive: (state) => {
+        const tabs = [...splitTabsNeedingRender];
+        splitTabsNeedingRender.clear();
+        for (const tabId of tabs) {
+          splitRenderer.renderTabSplitTree(tabId);
+        }
+        displayNavigationState(state);
+      },
       updateSplitVisual: (state) => {
         if (state.activeTabId) {
           splitRenderer.updateActivePaneVisual(state.activeTabId);
@@ -424,6 +431,26 @@ function requestNewTerminal(
   worktreeId = worktreeIdForTerminalOwner(navigationController.getState().activeOwner),
 ): void {
   vscode.postMessage(worktreeId ? { type: "worktreeOpenTerminal", worktreeId } : { type: "createTab" });
+}
+
+interface PendingSplitRequest {
+  sourceTabId: string;
+  sourcePaneId: string;
+  direction: "horizontal" | "vertical";
+  timer: ReturnType<typeof setTimeout>;
+}
+
+let splitRequestSequence = 0;
+const pendingSplitRequests = new Map<string, PendingSplitRequest>();
+
+function requestSplitSession(direction: "horizontal" | "vertical", sourceTabId: string, sourcePaneId: string): void {
+  if (pendingSplitRequests.size >= 64) {
+    return;
+  }
+  const requestId = `split-${++splitRequestSequence}`;
+  const timer = setTimeout(() => pendingSplitRequests.delete(requestId), 15_000);
+  pendingSplitRequests.set(requestId, { sourceTabId, sourcePaneId, direction, timer });
+  vscode.postMessage({ type: "requestSplitSession", requestId, direction, sourceTabId, sourcePaneId });
 }
 
 function updateTabBar(): void {
@@ -692,19 +719,60 @@ const routeMessage = createMessageRouter({
     refreshVaultIfOpen();
   },
   onSplitPane(msg) {
-    if (!store.activeTabId) {
+    const state = navigationController.getState();
+    if (!state.activeTabId) {
       return;
     }
-    const activePaneId = store.tabActivePaneIds.get(store.activeTabId) ?? store.activeTabId;
-    vscode.postMessage({
-      type: "requestSplitSession",
-      direction: msg.direction,
-      sourcePaneId: activePaneId,
-      rootTabId: store.activeTabId,
-    });
+    const activePaneId = state.activePaneByTab[state.activeTabId];
+    if (activePaneId) {
+      requestSplitSession(msg.direction, state.activeTabId, activePaneId);
+    }
   },
   onSplitPaneCreated(msg) {
-    splitRenderer.handleSplitPaneCreated(msg, factory);
+    const pending = pendingSplitRequests.get(msg.requestId);
+    if (
+      !pending ||
+      pending.sourceTabId !== msg.sourceTabId ||
+      pending.sourcePaneId !== msg.sourcePaneId ||
+      pending.direction !== msg.direction
+    ) {
+      vscode.postMessage({
+        type: "splitPaneAttachmentResult",
+        requestId: msg.requestId,
+        newSessionId: msg.newSessionId,
+        status: "rejected",
+      });
+      return;
+    }
+    clearTimeout(pending.timer);
+    pendingSplitRequests.delete(msg.requestId);
+    let attached = false;
+    try {
+      navigationController.transaction(
+        () => {
+          attached = splitRenderer.handleSplitPaneCreated(msg, factory);
+          if (attached) {
+            splitTabsNeedingRender.add(msg.sourceTabId);
+          }
+          return attached;
+        },
+        (catalog, state) =>
+          attached && state.activeTabId === msg.sourceTabId
+            ? focusNavigationPane(catalog, state, msg.newSessionId)
+            : normalizeTerminalNavigationState(catalog, state, {
+                preserveExplicitEmpty: state.activeTabId === null,
+              }),
+      );
+    } catch {
+      // If the catalog mutation completed, the child is already attached and
+      // must not be rolled back because a later projection effect failed.
+    }
+    vscode.postMessage({
+      type: "splitPaneAttachmentResult",
+      requestId: msg.requestId,
+      newSessionId: msg.newSessionId,
+      status: attached ? "attached" : "rejected",
+    });
   },
   onCloseSplitPaneById(msg) {
     if (msg.sessionId) {
@@ -724,12 +792,7 @@ const routeMessage = createMessageRouter({
     navigationController.dispatch((catalog, state) => focusNavigationPane(catalog, state, msg.sourcePaneId!));
     const state = navigationController.getState();
     if (state.activeTabId && state.activePaneByTab[state.activeTabId] === msg.sourcePaneId) {
-      vscode.postMessage({
-        type: "requestSplitSession",
-        direction: msg.direction,
-        sourcePaneId: msg.sourcePaneId,
-        rootTabId: state.activeTabId,
-      });
+      requestSplitSession(msg.direction, state.activeTabId, msg.sourcePaneId);
     }
   },
   onCtxClear(msg) {

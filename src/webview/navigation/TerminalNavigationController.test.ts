@@ -156,3 +156,25 @@ describe("TerminalNavigationController", () => {
     expect(right.log).toContain("delayed:main");
   });
 });
+
+describe("TerminalNavigationController catalog transactions", () => {
+  it("runs one effect batch when topology changes without changing selection", () => {
+    const f = fixture();
+    const active = focusNavigationPane(f.catalog, f.initial, "main");
+    const controller = new TerminalNavigationController(active, {
+      readCatalog: () => f.catalog,
+      effects: f.effects,
+    });
+
+    expect(
+      controller.transaction(
+        () => {
+          f.ownerByPaneId.set("background", MAIN_TERMINAL_OWNER);
+          f.tabLayouts.set("background", createLeaf("background"));
+        },
+        (_catalog, state) => state,
+      ),
+    ).toBe("committed");
+    expect(f.log.filter((entry) => entry.startsWith("render:"))).toHaveLength(1);
+  });
+});
