@@ -14,7 +14,7 @@
 
 - [x] All tasks done (`tasks.md`)
 - [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
-- [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
+- [x] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
 
@@ -40,3 +40,4 @@ Plan attack: Opus and Astra findings triaged; accepted restore, split, witness, 
 Witnesses: I18 pass [exit 0]; I19 pass [exit 0]; I20 pass [exit 0]; I21 pass [exit 0]; I22 pass [exit 0]; OBL-1 pass [exit 0]; OBL-2 pass [exit 0]; OBL-3 pass [exit 0]; OBL-4 pass [exit 0]; OBL-5 pass [exit 0]; OBL-6 pass [exit 0]; OBL-7 pass [exit 0].
 Review handback: round-1 F001 replaced unilateral attachment-timeout destruction with the user-approved delivery-aware timeout; no new capability or external behavior.
 Review handback: round-2 closes the remaining delivery and persistent-effect boundaries within the approved delivery-aware safety direction.
+Review blocked: round-3 F002 sustained — failed rollback effects remain ahead of later navigation and abandonment drops queued intents. Unblock: replan the controller recovery lifecycle; any round 4 requires an explicit user grant.
