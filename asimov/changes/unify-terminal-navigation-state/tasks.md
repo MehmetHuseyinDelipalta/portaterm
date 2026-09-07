@@ -2,7 +2,7 @@
 
 ## 1. Establish one navigation authority
 
-- [ ] 1_1 Introduce total owner state and versioned checkpoint
+- [x] 1_1 Introduce total owner state and versioned checkpoint — verified: pnpm exec vitest run src/webview/navigation/TerminalNavigationState.test.ts src/webview/navigation/TerminalNavigationState.property.test.ts src/webview/state/WebviewStateStore.navigation.test.ts && pnpm exec vitest run src/webview/state/WebviewStateStore.test.ts src/webview/state/WebviewStateStore.searchMode.test.ts exit 0
   - **Deps**: none
   - **Refs**: specs/terminal-owner-navigation/spec.md#{every-terminal-has-one-stable-owner,restore-uses-one-versioned-navigation-checkpoint,restore-validates-saved-navigation-against-terminal-facts,presence-reports-activity-but-never-terminal-ownership}; design.md D1, design.md D2, design.md D3, design.md D6
   - **Acceptance**:
@@ -11,7 +11,7 @@
   - **Plan**:
     1. Add `src/webview/navigation/TerminalNavigationState.ts` with owner decoding, checkpoint schema, catalog queries, pure transitions, and deterministic clamping.
     2. Add `src/webview/navigation/TerminalNavigationState.test.ts` and `src/webview/navigation/TerminalNavigationState.property.test.ts`; assert invariants with independent predicates rather than the production validator.
-    3. Extend `src/webview/state/WebviewStateStore.ts` and add `src/webview/state/WebviewStateStore.navigation.test.ts` for versioned checkpoint persistence, validation, explicit owner-empty state, and legacy field access.
+    3. Extend `src/webview/state/WebviewState.ts` and `src/webview/state/WebviewStateStore.ts`, and add `src/webview/state/WebviewStateStore.navigation.test.ts` for versioned checkpoint persistence, validation, explicit owner-empty state, and legacy field access.
 
 - [ ] 1_2 Add a queued commit-before-effects controller
   - **Deps**: 1_1

@@ -9,6 +9,7 @@
 //      specs/file-tree-panel/spec.md#requirement-state-persistence-schema
 
 import type { FileTreePosition } from "../../types/messages";
+import type { TerminalNavigationCheckpointV1 } from "../navigation/TerminalNavigationState";
 import type { SplitNode } from "../SplitModel";
 
 /** Per-tab persisted file-tree state. */
@@ -53,6 +54,7 @@ export type TerminalLocationKey = "sidebar" | "panel" | "editor";
 export interface WebviewState {
   tabLayouts?: Record<string, SplitNode>;
   tabActivePaneIds?: Record<string, string>;
+  terminalNavigation?: TerminalNavigationCheckpointV1;
   /**
    * @deprecated — pre-bucketed shape. `WebviewStateStore.getState()` migrates
    * this slot into `fileTreeByLocation.sidebar` on first read and then writes

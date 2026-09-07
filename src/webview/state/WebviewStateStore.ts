@@ -7,6 +7,12 @@
 
 import type { Terminal } from "@xterm/xterm";
 import type { TerminalConfig } from "../../types/messages";
+import {
+  decodeTerminalNavigationCheckpoint,
+  type TerminalNavigationCheckpointV1,
+  type TerminalNavigationState,
+  toTerminalNavigationCheckpoint,
+} from "../navigation/TerminalNavigationState";
 import type { SplitNode } from "../SplitModel";
 import { getAllSessionIds } from "../SplitModel";
 import type { WebviewState } from "./WebviewState";
@@ -213,6 +219,19 @@ export class WebviewStateStore {
     const current = this.getState();
     const next: WebviewState = { ...current, ...patch };
     this.vscodeApi.setState(next);
+  }
+
+  getNavigationCheckpoint(): TerminalNavigationCheckpointV1 | null {
+    return decodeTerminalNavigationCheckpoint(this.getState().terminalNavigation);
+  }
+
+  persistNavigationCheckpoint(state: TerminalNavigationState): void {
+    this.updateState({ terminalNavigation: toTerminalNavigationCheckpoint(state) });
+  }
+
+  getLegacyWorktreeScope(): string | undefined {
+    const scope = this.getState().worktreeScope;
+    return typeof scope === "string" ? scope : undefined;
   }
 
   /**
