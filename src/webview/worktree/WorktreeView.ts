@@ -11,11 +11,10 @@
 // derivations in worktreeFormat.ts, and this class holds only the state the DOM
 // cannot — collapse sets, the focused row, the query, and the render guard.
 
-import type { BranchDeleteRequest } from "../../types/messages";
 import { attachTooltipDelegate } from "../ui/Tooltip";
-import { WorktreeContextMenu, type WorktreeMenuActions } from "./WorktreeContextMenu";
-import { openWorktreeCreateDialog, type WorktreeCreateDialogDeps } from "./WorktreeCreateDialog";
-import { openWorktreeLaunchDialog, type WorktreeLaunchRequest } from "./WorktreeLaunchDialog";
+import { WorktreeContextMenu } from "./WorktreeContextMenu";
+import { openWorktreeCreateDialog } from "./WorktreeCreateDialog";
+import { openWorktreeLaunchDialog } from "./WorktreeLaunchDialog";
 import { openWorktreePruneDialog, type PruneDialogDeps } from "./WorktreePruneDialog";
 import { openWorktreeRemoveDialog, type WorktreeRemoveDialogDeps } from "./WorktreeRemoveDialog";
 import { activationFor as sharedActivationFor } from "./worktreeActivation";
@@ -24,7 +23,6 @@ import {
   agentRowTitle,
   ageTimestamp,
   branchLabel,
-  CONFIRMATION_CEILING_MS,
   compactAge,
   displayedRows,
   groupPresenceByActivity,
@@ -49,11 +47,11 @@ import {
   worktreeEmptyState,
 } from "./worktreeTreeView";
 import { type ActionNotices, createActionNotices, resultKey } from "./worktreeView/actionNotices";
+import { type CeilingClock, createCeilingClock } from "./worktreeView/ceilingClock";
 import { createFoldState, type FoldRepoInput, type FoldState } from "./worktreeView/foldState";
 import { createKeyboardNav, type KeyboardNav } from "./worktreeView/keyboardNav";
 import type {
   PresenceDegradation,
-  WorktreeActionResult,
   WorktreeAgentRow,
   WorktreeInfo,
   WorktreeLaunchAgent,
@@ -78,9 +76,6 @@ function isUnbranched(repo: WorktreeRepo): boolean {
   return repo.degraded === undefined && repo.worktrees.length === 1 && repo.worktrees[0]?.kind === "main";
 }
 
-/** setTimeout's delay is a signed 32-bit int; anything larger wraps and fires now. */
-const MAX_TIMEOUT_MS = 2_147_483_647;
-
 // The view's contract lives in `worktreeView/viewTypes.ts` (task 3_7 of
 // `decompose-worktree-view`). Re-exported here so no importer moves, and
 // imported too, because a re-export is not a local binding.
@@ -101,10 +96,10 @@ export class WorktreeView {
   private readonly menu: WorktreeContextMenu | null;
   /** Which repos, worktrees and idle tails are folded (task 1_1). */
   private readonly fold: FoldState;
+  /** When a drawn row next outlives its evidence, and the timer for it (3_8). */
+  private readonly ceilingClock: CeilingClock;
 
   private data: WorktreeViewData = { tree: null, presence: null, loading: true };
-  /** Armed only while some row can still cross the ceiling; cleared on disposal. */
-  private ceilingTimer: ReturnType<typeof setTimeout> | undefined;
   /**
    * Countdowns for notices that get out of the way on their own, keyed by the
    * SAME per-result key the render signature uses — so a redraw of an unchanged
@@ -167,6 +162,17 @@ export class WorktreeView {
       renderedWorktreeRows: () => this.renderedWorktreeRows(),
       openRemoveReport: (info, report) => this.openRemoveReport(info, report),
     });
+    this.ceilingClock = createCeilingClock({
+      ...(deps.now === undefined ? {} : { clock: deps.now }),
+      disposed: () => this.disposed,
+      degradedSources: () => this.degradedSources(),
+      renderedWorktreeIds: () => this.renderedWorktreeIds(),
+      presentWorktreeIds: () => Object.keys(this.data.presence?.rowsByWorktreeId ?? {}),
+      rowsFor: (worktreeId) => this.rowsFor(worktreeId),
+      applyAt: (now) => {
+        this.applyAt(now);
+      },
+    });
     this.nav = createKeyboardNav({
       element: () => this.element,
       toggleCollapsed: (id) => this.toggleCollapsed(id),
@@ -215,10 +221,6 @@ export class WorktreeView {
       : null;
   }
 
-  private now(): number {
-    return this.deps.now?.() ?? Date.now();
-  }
-
   /** The repo holding `info`, from the tree this view last rendered. */
   private repoOf(info: WorktreeInfo): WorktreeRepo | undefined {
     return this.data.tree?.repos.find((r) => r.worktrees.some((w) => w.id === info.id));
@@ -237,7 +239,7 @@ export class WorktreeView {
       return;
     }
     this.data = data;
-    this.applyAt(this.now());
+    this.applyAt(this.ceilingClock.now());
   }
 
   /**
@@ -281,7 +283,7 @@ export class WorktreeView {
         throw err;
       }
     }
-    this.armCeiling(now);
+    this.ceilingClock.armCeiling(now);
   }
 
   /**
@@ -298,9 +300,9 @@ export class WorktreeView {
     if (this.disposed) {
       return;
     }
-    const now = this.now();
+    const now = this.ceilingClock.now();
     this.render(now);
-    this.armCeiling(now);
+    this.ceilingClock.armCeiling(now);
   }
 
   /**
@@ -396,76 +398,6 @@ export class WorktreeView {
     this.deps.onSelectWorktree?.(worktreeId);
     this.selectedWorktreeId = worktreeId;
     return true;
-  }
-
-  /**
-   * One deadline timer at the earliest crossing — never an interval, and no timer
-   * at all when no row can cross. Re-armed after it fires as well as on every
-   * push, or a second crossing behind the first would never be drawn.
-   */
-  private armCeiling(now: number): void {
-    if (this.ceilingTimer !== undefined) {
-      clearTimeout(this.ceilingTimer);
-      this.ceilingTimer = undefined;
-    }
-    // Guarding `setData` alone left `repaint()` — every interaction handler still
-    // bound to live DOM — free to plant one after disposal. This is the single
-    // place a timer is created, so it is the only place the check holds.
-    if (this.disposed) {
-      return;
-    }
-    const at = this.nextCeilingCrossing(now);
-    if (at === undefined) {
-      return;
-    }
-    this.ceilingTimer = setTimeout(
-      () => {
-        this.ceilingTimer = undefined;
-        this.applyAt(this.now());
-      },
-      // Clamped, because a `stateStartedAt` in the future is CONFIRMED — an
-      // impossible clock must not manufacture staleness — which is exactly what
-      // makes such a row an accepted crossing candidate. Unbounded, `at - now`
-      // overflows setTimeout's 32-bit delay past ~24.8 days and fires at once,
-      // re-deriving the same crossing and re-arming: a tight loop. Clamping ends
-      // it — the wake-up re-derives and arms the remainder, which terminates.
-      Math.min(Math.max(0, at - now), MAX_TIMEOUT_MS),
-    );
-  }
-
-  /**
-   * When the earliest still-confirmed claim will outlive its evidence, or
-   * undefined if none can. A row already presented as something else — crossed,
-   * or `unknown` because its source failed — has nothing left to cross.
-   */
-  private nextCeilingCrossing(now: number): number | undefined {
-    const degraded = this.degradedSources();
-    // Scoped to what is drawn. `render` opens with `replaceChildren()`, so waking
-    // for a row behind a collapsed repo, a filtered-out worktree, or one past the
-    // display cap would tear the whole list down to change nothing a user can see.
-    const drawn = this.renderedWorktreeIds();
-    let soonest: number | undefined;
-    for (const worktreeId of Object.keys(this.data.presence?.rowsByWorktreeId ?? {})) {
-      if (!drawn.has(worktreeId)) {
-        continue;
-      }
-      // Same reason the loop skips an undrawn worktree: a row this view does not
-      // draw cannot cross anything a user can see, and waking for it tears the
-      // whole list down to change nothing (round-1 F001).
-      for (const row of this.rowsFor(worktreeId)) {
-        if (row.stateStartedAt === undefined || presentedActivity(row, degraded, now) !== "running") {
-          continue;
-        }
-        if (row.activitySource !== "output") {
-          continue;
-        }
-        const at = row.stateStartedAt + CONFIRMATION_CEILING_MS;
-        if (at > now && (soonest === undefined || at < soonest)) {
-          soonest = at;
-        }
-      }
-    }
-    return soonest;
   }
 
   /** Filter the tree by branch, path, and agent title. Ancestors of a match stay. */
@@ -581,7 +513,7 @@ export class WorktreeView {
     this.beginDialog();
     this.closeDialog = openWorktreeRemoveDialog(this.deps.host, {
       ...args,
-      now: this.now(),
+      now: this.ceilingClock.now(),
       onConfirm: (fingerprint, deleteBranch) => {
         this.closeDialog = null;
         this.deps.onForceRemove?.(args.info, fingerprint, deleteBranch);
@@ -612,10 +544,7 @@ export class WorktreeView {
     this.disposed = true;
     this.rowMemo.clear();
     this.rowMemoSeen.clear();
-    if (this.ceilingTimer !== undefined) {
-      clearTimeout(this.ceilingTimer);
-      this.ceilingTimer = undefined;
-    }
+    this.ceilingClock.dispose();
     this.notices.dispose();
     this.closeDialog?.();
     this.closeDialog = null;
@@ -1029,36 +958,6 @@ export class WorktreeView {
   }
 
   /**
-   * What the worktree row's own glyph is qualified BY: the hint belonging to the
-   * first agent row presented as the state the worktree is showing. Undefined when
-   * that state needs no qualification.
-   */
-  private strongestConfidenceTip(rows: readonly WorktreeAgentRow[], now: number): string | undefined {
-    const degraded = this.degradedSources();
-    const strongest = strongestActivity(rows, degraded, now);
-    if (strongest !== "running-unconfirmed" && strongest !== "unknown") {
-      return undefined;
-    }
-    // The LONGEST-standing match, not the first: `rowsByWorktreeId` order is not a
-    // contract, and taking whichever came first made the collapsed worktree's
-    // elapsed figure depend on it. The oldest claim is also the truthful bound —
-    // it is the one that has stood unchanged the longest.
-    let source: WorktreeAgentRow | undefined;
-    for (const row of rows) {
-      if (presentedActivity(row, degraded, now) !== strongest) {
-        continue;
-      }
-      if (
-        source === undefined ||
-        (row.stateStartedAt ?? Number.POSITIVE_INFINITY) < (source.stateStartedAt ?? Number.POSITIVE_INFINITY)
-      ) {
-        source = row;
-      }
-    }
-    return source ? confidenceHint(source, strongest, now) : undefined;
-  }
-
-  /**
    * Every worktree id currently on screen, read back OUT OF THE DOM rather than
    * re-derived. `armCeiling` always runs after `render`, so the rows are already
    * there to be counted.
@@ -1198,7 +1097,7 @@ export class WorktreeView {
       selected ? "1" : "0",
       this.isIdle(info) ? "1" : "0",
       strongestActivity(rows, degraded, now) ?? "",
-      this.strongestConfidenceTip(rows, now) ?? "",
+      this.ceilingClock.strongestConfidenceTip(rows, now) ?? "",
       this.deps.actions?.launchAgentHere ? "1" : "0",
       this.deps.actions?.openFolderInNewWindow ? "1" : "0",
       this.menu ? "1" : "0",
@@ -1288,7 +1187,7 @@ export class WorktreeView {
           // with `tabIndex = -1` and is not in the arrow-key set, so a keyboard
           // user meets only this. A qualified glyph here without its qualification
           // is the claim without the caveat.
-          confidenceTip: this.strongestConfidenceTip(rows, now),
+          confidenceTip: this.ceilingClock.strongestConfidenceTip(rows, now),
           hasAgents: rows.length > 0,
           idle: this.isIdle(info),
           inTail,
