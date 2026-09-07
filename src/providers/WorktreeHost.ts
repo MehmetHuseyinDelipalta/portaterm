@@ -24,7 +24,7 @@ import {
   type WorktreeTreeDeps,
 } from "../worktree/WorktreeDiscovery";
 import { evaluateRemoval } from "../worktree/worktreeBlockers";
-import { type WorktreeWatch, watchRepoStructure } from "../worktree/worktreeWatchTargets";
+import type { WorktreeWatch } from "../worktree/worktreeWatchTargets";
 import { createActionRouting } from "./worktreeHost/actionRouting";
 import { createCreateActions } from "./worktreeHost/actions/create";
 import { createProvisionActions } from "./worktreeHost/actions/provision";
@@ -44,6 +44,7 @@ import {
   MAX_ADDED_COPY_FILES,
   MAX_ADDED_STEPS,
 } from "./worktreeHost/provisionOffers";
+import { createScanReconcile } from "./worktreeHost/scanReconcile";
 
 // Re-exported so no existing importer moved when these types did (task 2_0).
 export type {
@@ -60,22 +61,8 @@ import { isKnownSetupOutput } from "./worktreeHost/messageGuards";
 
 const LOG_PREFIX = "[worktree-host]";
 
-/**
- * How long presence may lag the evidence behind it.
- *
- * A max-latency cap, NOT a resettable debounce: an agent producing output for a
- * minute would push a debounce out for that whole minute and the row would
- * never move. The first change arms this; later ones ride it (design.md D3.1).
- */
-export const PRESENCE_MAX_LATENCY_MS = 150;
-
-/**
- * How often the running-session registry is scanned for agents outside this
- * window. Flat, because the registry emits no events and the scan is a readdir,
- * a JSON parse per entry and a liveness probe — tiered cadences would be more
- * machinery than the thing being paced.
- */
-export const EXTERNAL_SCAN_INTERVAL_MS = 5_000;
+/** The two cadences this host paces itself by, re-exported so no test moved. */
+export { EXTERNAL_SCAN_INTERVAL_MS, PRESENCE_MAX_LATENCY_MS } from "./worktreeHost/scanReconcile";
 
 /** The gate scope that rebuilds every repository; any other scope is a repoId. */
 export const WHOLE_TREE_SCOPE = "*";
@@ -332,9 +319,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   /** The projection currently in flight. One at a time: the projector is stateful. */
   let projectionRun: Promise<void> | undefined;
   let projectionDirty = false;
-  let capHandle: unknown;
-  /** The external-scan timer, armed only while some surface is showing the view. */
-  let scanHandle: unknown;
   /** Whether the next projection iteration may skip the pane pass. */
   let nextExternalOnly = false;
   /**
@@ -386,21 +370,37 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   const rosters = new Map<string, DelegationRoster>();
   const rosterReads = new Map<string, Promise<void>>();
 
-  function armCap(fn: () => void): unknown {
-    return arm(fn, PRESENCE_MAX_LATENCY_MS);
-  }
-
-  function arm(fn: () => void, ms: number): unknown {
-    return options.clock ? options.clock.setTimeout(fn, ms) : setTimeout(fn, ms);
-  }
-
-  function cancelCap(handle: unknown): void {
-    if (options.clock) {
-      options.clock.clearTimeout(handle);
-    } else {
-      clearTimeout(handle as ReturnType<typeof setTimeout>);
-    }
-  }
+  /**
+   * Every timer this host arms, and the window-level facts that decide whether
+   * one should be armed at all (task 2_10). Both handles live in there, and
+   * `dispose` above clears them through it.
+   */
+  const timers = createScanReconcile({
+    options,
+    projector,
+    cache,
+    watches,
+    gate: () => gate,
+    surfaceStates: () => surfaces.values(),
+    disposed: () => disposed,
+    built: () => built,
+    projectionRun: () => projectionRun,
+    requestProjection: (request) => requestProjection(request),
+    paneEvidence: () => paneEvidence,
+    notePaneEvidence: () => {
+      paneEvidence += 1;
+    },
+    paneEvidenceApplied: () => paneEvidenceApplied,
+    projectedEnriched: () => projectedEnriched,
+    enrichmentPending: () => enrichmentPending,
+    notePendingEnrichment: () => {
+      enrichmentPending = true;
+    },
+    bumpTreeVersion: () => {
+      treeVersion += 1;
+    },
+  });
+  const { reconcileScan, anyDrawingRows, enrichmentOwed, reconcileRowDrawing, onPaneChange, reconcileWatches } = timers;
 
   /**
    * The ordering key the listing sorts by. Read through the projector on every
@@ -775,137 +775,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   }
 
   /**
-   * Arm or clear the scan against one window-level fact: is any attached surface
-   * showing the view right now?
-   *
-   * Read live rather than from `state.showing`, which stays false after a post
-   * that was skipped or threw and so is not a safe predicate for this.
-   */
-  function reconcileScan(): void {
-    const wanted = !disposed && projector !== undefined && anyShowing();
-    if (wanted === (scanHandle !== undefined)) {
-      return;
-    }
-    if (!wanted) {
-      cancelCap(scanHandle);
-      scanHandle = undefined;
-      return;
-    }
-    armScan();
-  }
-
-  function anyShowing(): boolean {
-    for (const state of surfaces.values()) {
-      if (state.visible && state.displayed) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Is any surface actually drawing agent rows right now?
-   *
-   * Narrower than `anyShowing`, and deliberately a separate question. Presence
-   * is what arms the scan, because a scope's count is built from it and that
-   * count outlives the rail. Titles and previews are drawn on rows or not at
-   * all, so a window where every subscriber is presence-only pays the registry
-   * pass and skips roughly one preview lookup and stat per live external
-   * session per poll (design.md D2).
-   */
-  function anyDrawingRows(): boolean {
-    for (const state of surfaces.values()) {
-      if (state.visible && state.displayed && state.level === "rows") {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Is this window drawing rows against an envelope that was built WITHOUT
-   * enrichment?
-   *
-   * The one join of those two facts. `anyDrawingRows()` alone is not the
-   * question — a drawing window whose envelope is already enriched is owed
-   * nothing — and spelling the conjunction inline at each site is how it came to
-   * be checked at one boundary and missed at two (design.md D1).
-   */
-  function enrichmentOwed(): boolean {
-    return anyDrawingRows() && (!projectedEnriched || enrichmentPending);
-  }
-
-  /**
-   * Settle the row-drawing state after any change to `visible`, `level` or
-   * `displayed` — the three inputs to the predicate — exactly as
-   * `reconcileScan` settles the scan.
-   *
-   * Deliberately NOT an edge check. "Did this call change it" is a different
-   * question from "what is owed now", and only the second one matters: a call
-   * that changed nothing while the window sits on a bare envelope should still
-   * ask for the pass, and one that changed nothing while nothing is drawing
-   * should still leave no turn order standing. It also removes the `wasDrawing`
-   * snapshot that every mutation site would otherwise have to remember to take.
-   *
-   * `join: true` because this re-runs the projection and re-reads no git; a poll
-   * already in flight is the right thing to join (design.md D2).
-   */
-  function reconcileRowDrawing(): void {
-    // The falling direction, which had no owner anywhere: the projector's turn
-    // order holds exactly the ids being drawn, and the only thing that
-    // reconciles it is an enriched projection — which is exactly what stops
-    // arriving once nothing is drawing rows. Left unsaid, the order survives
-    // hide, detach and the drop to presence-only, and a reopened window grants
-    // by pre-hide position (round-4 B1, design.md D10).
-    if (!anyDrawingRows()) {
-      projector?.forgetDrawOrder();
-      // Only while a projection is in flight: that is the pass whose preview half
-      // the projector's fence skips. A falling edge with none running skips
-      // nothing, and recording here unconditionally is what moved 19 cases — this
-      // reconcile is deliberately a state settle, so it runs on EVERY mutation
-      // while nothing draws (D2). The edge records; the rise spends it.
-      if (projectionRun !== undefined) {
-        enrichmentPending = true;
-      }
-      return;
-    }
-    if (enrichmentOwed()) {
-      void requestProjection({ external: true, join: true });
-    }
-  }
-
-  function armScan(): void {
-    scanHandle = arm(() => {
-      scanHandle = undefined;
-      // A pending cap means pane evidence is waiting to be projected. Absorbing
-      // it is only honest if this projection actually looks at the panes — the
-      // external-only pass is precisely the one that does not, so absorbing into
-      // it would drop that evidence for good (.reviews/round-1.md B1).
-      if (capHandle !== undefined) {
-        cancelCap(capHandle);
-        capHandle = undefined;
-      }
-      void requestProjection(paneEvidence !== paneEvidenceApplied ? {} : { external: true, join: true });
-      reconcileScan();
-    }, EXTERNAL_SCAN_INTERVAL_MS);
-  }
-
-  function onPaneChange(): void {
-    // Nothing to attribute a pane to yet; the first build projects for itself.
-    if (disposed || !projector || !built) {
-      return;
-    }
-    paneEvidence += 1;
-    if (capHandle !== undefined) {
-      return;
-    }
-    capHandle = armCap(() => {
-      capHandle = undefined;
-      void requestProjection();
-    });
-  }
-
-  /**
    * Is there anything honest to send?
    *
    * `built` turns true when the first rebuild writes the cache, which is before
@@ -1045,54 +914,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   }
 
   const gate = createRebuildGate(rebuild, options.clock);
-
-  /**
-   * Bring the watch set in line with the repositories the cache now holds. An
-   * already-watched repository keeps its subscriptions, so neither a rebuild
-   * nor a second surface creates another watcher.
-   */
-  function reconcileWatches(): void {
-    const wanted = new Set(cache.roots().map((root) => root.repoId));
-    for (const [repoId, watch] of watches) {
-      if (!wanted.has(repoId)) {
-        watch.dispose();
-        watches.delete(repoId);
-      }
-    }
-    for (const repoId of wanted) {
-      if (!watches.has(repoId)) {
-        watches.set(
-          repoId,
-          watchRepoStructure(repoId, options.pool, () => {
-            // `signal`: git state moved, so a rebuild already running cannot
-            // answer this one — it may have read git before the move.
-            void gate.request(repoId, { signal: true });
-          }),
-        );
-      }
-    }
-    for (const [repoId, watch] of watches) {
-      // An unestablished watch means the listing this repo produced can go stale
-      // unnoticed. Saying so is the difference between a stale tree and a tree
-      // KNOWN to be stale — which is the condition D11's launch authority rests
-      // on, so it has to survive every rebuild rather than be re-asserted after
-      // some of them (round-7 W8).
-      //
-      // Reported in both directions: a watcher that came back must clear the
-      // warning, or the panel keeps telling the user about a limitation that is
-      // over. Annotated, not re-listed — an unwatched repository's worktrees
-      // were still observed by the rebuild that just ran, so this must not
-      // travel the retain path and withdraw their registration token.
-      const reason =
-        watch.failureReason === undefined
-          ? undefined
-          : `This repository is not being watched, so its worktrees may be out of date: ${watch.failureReason}`;
-      cache.markUnwatched(repoId, reason);
-      // A cache write is a tree move, wherever it comes from. Delivery waits
-      // for the projection that describes it.
-      treeVersion += 1;
-    }
-  }
 
   const paneSub = options.onPaneChange?.(onPaneChange);
 
@@ -1378,14 +1199,8 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
         return;
       }
       disposed = true;
-      if (capHandle !== undefined) {
-        cancelCap(capHandle);
-        capHandle = undefined;
-      }
-      if (scanHandle !== undefined) {
-        cancelCap(scanHandle);
-        scanHandle = undefined;
-      }
+      // Both timer handles, cleared by the module that arms them (OBL-1).
+      timers.dispose();
       gate.dispose();
       paneSub?.dispose();
       folderSub?.dispose();

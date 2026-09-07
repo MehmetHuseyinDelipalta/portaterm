@@ -26,6 +26,9 @@
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
 
 ## Notes
+- Auto-decision (task 2_10): `asm refactor shape` still reports `giant-literal` on `scanReconcile.ts` at 25% against a 25% bar. `arm`, `cancelCap`, `anyShowing`, `anyDrawingRows`, `enrichmentOwed`, `reconcileRowDrawing` and `reconcileWatches` were hoisted to module scope; the residue is exactly `capHandle`, `scanHandle` and the four members that read or write them, and is not split further.
+- OBL-1 (task 2_10) mutation-checked: emptying `scanReconcile`'s `dispose` fails 2 of 519. Disposition stays `supported`.
+- Knowledge candidate: the scan handle's cancellation on dispose is witnessed; the CAP handle's is not | Surprise: neutering only the `capHandle` branch of `dispose` leaves 519 of 519 green, so half of OBL-1's claim rests on no test | Evidence: src/providers/worktreeHost/scanReconcile.ts#dispose | Consumer: plan | Action: a presence-cap-armed-then-disposed case, in whichever change next touches the timers.
 - Auto-decision (task 2_4): `asm refactor shape` still reports `long-function` on `assessLanes.ts` at 26% against a 25% bar, and the body it names is the factory itself — the map plus its three closures. `takeNextAssess`, `serveAssess` and `serveRawRemoval` were hoisted to module scope to answer it; the residue is the seam this change chose and is not split further.
 
 <!-- Blueprint source, lane, and the SHA the plan is written against below. Optional: one-line orphan decisions only — scope boundaries, deviations, rejected alternatives with no home elsewhere. -->
