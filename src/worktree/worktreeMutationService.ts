@@ -12,29 +12,20 @@
 import * as nodePath from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { WorktreeMutationTarget } from "../providers/WorktreeHost";
-import type {
-  BranchDeleteRequest,
-  ProvisionPortResult,
-  ProvisionPortWarning,
-  ProvisionStepResult,
-  WorktreeCreateMode,
-} from "../types/messages";
-import type { AuthorizedDirectory } from "../utils/authorizedDirectory";
+import type { BranchDeleteRequest, WorktreeCreateMode } from "../types/messages";
 import { provesAbsence } from "../utils/fsPresence";
-import { normalizePathForCompare } from "../utils/pathBoundary";
 import { type ClearDebrisDeps, clearDebris, nodeClearDebrisDeps } from "./clearDebris";
 import { identityOf, intentFor, validateCreatePath } from "./createPath";
 import { createDebrisAuthorizationStore } from "./debrisAuthorization";
 import { messageOf } from "./errorMessage";
-import { excludePatternFor } from "./gitExclude";
-import type { MigrationSourceEvidence } from "./migrateChanges";
 import { createMutationCoordinator, type MutationSettle } from "./mutationCoordinator";
 import { createMutationQueue } from "./mutationQueue";
+import { createCreateProvisioning } from "./mutationService/createProvisioning";
 import { paths, settled } from "./mutationService/outcomes";
 import { createRegisterExisting } from "./mutationService/registerExisting";
 import { createRemoval } from "./mutationService/removal";
 import { createSetupExecution, type PendingSetupRetry } from "./mutationService/setupExecution";
-import { disposeProvisionMaterials, provisionEntryOf } from "./provisioning/provisionMaterial";
+import { disposeProvisionMaterials } from "./provisioning/provisionMaterial";
 import {
   branchNameIsValid,
   type CreateSource,
@@ -57,15 +48,6 @@ export function existenceFromStatError(error: NodeJS.ErrnoException): false | nu
   return provesAbsence(error) ? false : null;
 }
 
-function migrationReasonOf(error: unknown): string {
-  try {
-    const text = error instanceof Error ? error.message : String(error);
-    return text.trim().slice(0, 1_000) || "the Git integration did not complete the migration";
-  } catch {
-    return "the Git integration did not complete the migration";
-  }
-}
-
 // The service's contract lives in `mutationService/serviceTypes.ts` (task 4_1).
 // Re-exported here so no importer moves, and imported too because a re-export
 // is not a local binding.
@@ -86,7 +68,6 @@ import type {
   MutationServiceDeps,
   MutationVerb,
   ResolvedTarget,
-  SetupExecutionOutcome,
   WorktreeMutationService,
 } from "./mutationService/serviceTypes";
 
@@ -115,7 +96,7 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
     ...(deps.retireSetupOutput === undefined ? {} : { retireSetupOutput: deps.retireSetupOutput }),
     ...(deps.reportProvisioning === undefined ? {} : { reportProvisioning: deps.reportProvisioning }),
   });
-  const { executeSetup, writeManifest, failedSetup, portEnvironment } = setup;
+  const provisioning = createCreateProvisioning({ service: deps, setup });
   // The fingerprint store lives inside this, with every one of its readers. The
   // facade holds no reference to it at all, which is what task 1_2's Boundary
   // asks for: one owner, or the store has two across a module edge (D1a).
@@ -294,10 +275,6 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
       // BETWEEN them; validating only on the far side is one observation with a
       // wait in front of it, which cannot detect a change because it never saw
       // the earlier state (round-2 B4). This is the "earlier state".
-      // Reported after the create's own outcome, never in place of it: the
-      // worktree exists whether or not a window opened (round-3 W7).
-      let openFailure: string | null = null;
-
       if (request.migration !== undefined && (request.mode.kind === "reattach" || request.mode.kind === "adopt")) {
         deps.report(fail("Migration is available only when creating a new checkout."), request.origin);
         return;
@@ -444,268 +421,14 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
             if (!result.ok) {
               return settled("create", request.repoId, result);
             }
-            const wanted = request.provision ?? [];
-            const wantedEntries = wanted.map(provisionEntryOf);
-            const wantedPorts = request.ports ?? [];
-            const wantedSetup = request.setup ?? [];
-            const migrationIndeterminate = async (reason: string): Promise<MutationOutcome> => ({
-              kind: "ok",
-              verb: "create",
-              repoId: request.repoId,
-              worktreeId: (await deps.normalizeWorktreeId?.(check.path).catch(() => null)) ?? check.path,
-              migrationIndeterminate: reason.slice(0, 1_000),
+            return provisioning.provisionCreated({
+              request,
+              repoPath,
+              worktreePath: check.path,
+              setPendingSetupRetry: (retry) => {
+                pendingSetupRetry = retry;
+              },
             });
-            let destinationEvidence: MigrationSourceEvidence | undefined;
-            if (request.migration !== undefined) {
-              if (deps.captureMigrationDestination === undefined) {
-                return migrationIndeterminate("migration destination authorization is unavailable in this window");
-              }
-              try {
-                destinationEvidence = await deps.captureMigrationDestination(
-                  request.repoId,
-                  check.path,
-                  request.migration.binding.registration,
-                );
-              } catch (error) {
-                return migrationIndeterminate(
-                  `the migration destination registration could not be verified: ${migrationReasonOf(error)}`,
-                );
-              }
-              if (destinationEvidence === undefined) {
-                return migrationIndeterminate("the migration destination registration could not be verified");
-              }
-            }
-
-            const writtenExclusions = new Set<string>();
-            const writeExclusion = async (
-              exclusion: { gitDir: string; relativePath: string } | null,
-              critical: boolean,
-            ): Promise<MutationOutcome | undefined> => {
-              if (exclusion === null) {
-                return undefined;
-              }
-              const pattern = excludePatternFor(exclusion.relativePath);
-              const key = `${normalizePathForCompare(exclusion.gitDir)}\0${pattern}`;
-              if (writtenExclusions.has(key)) {
-                return undefined;
-              }
-              try {
-                await deps.addToGitExclude(exclusion.gitDir, pattern);
-                writtenExclusions.add(key);
-                return undefined;
-              } catch (error) {
-                return critical
-                  ? migrationIndeterminate(
-                      `the selected-source destination exclusion could not be established: ${migrationReasonOf(error)}`,
-                    )
-                  : undefined;
-              }
-            };
-
-            if (request.migration !== undefined) {
-              const exclusionFailure = await writeExclusion(
-                deps.migrationGitExcludeDirFor(request.repoId, request.migration.sourcePath, check.path),
-                true,
-              );
-              if (exclusionFailure !== undefined) {
-                return exclusionFailure;
-              }
-            }
-            await writeExclusion(deps.gitExcludeDirFor(request.repoId, repoPath, check.path), false);
-
-            if (request.migration !== undefined && destinationEvidence !== undefined) {
-              const migration =
-                deps.migrateChanges === undefined
-                  ? ({ kind: "indeterminate", reason: "migration is unavailable in this window" } as const)
-                  : await deps
-                      .migrateChanges({
-                        sourcePath: request.migration.sourcePath,
-                        destinationPath: check.path,
-                        source: request.migration.source,
-                        destination: destinationEvidence,
-                        snapshot: request.migration.snapshot,
-                        binding: request.migration.binding,
-                      })
-                      .catch((error) => ({ kind: "indeterminate" as const, reason: migrationReasonOf(error) }));
-              if (migration.kind === "indeterminate") {
-                return migrationIndeterminate(migration.reason);
-              }
-            }
-            let sourceAuthorization: AuthorizedDirectory | undefined;
-            let destinationAuthorization: AuthorizedDirectory | undefined;
-            if (wanted.length > 0) {
-              [sourceAuthorization, destinationAuthorization] = await Promise.all([
-                deps.authorizeDirectory(repoPath).catch(() => undefined),
-                deps.authorizeDirectory(check.path).catch(() => undefined),
-              ]);
-            } else {
-              destinationAuthorization = await deps.authorizeDirectory(check.path).catch(() => undefined);
-            }
-            // BEFORE afterCreate, which launches an agent or a terminal INTO
-            // this worktree: the whole point of copying `.env` is that whatever
-            // starts here can read it (design.md D1).
-            //
-            // Inside its own catch, exactly like afterCreate's below. Without
-            // one, a rejection reaches this body's outer arm and reports a
-            // SUCCESSFUL git create as a create error — the defect the plan
-            // attack found by reading that arm rather than this line.
-            let provisioned: readonly ProvisionStepResult[] | undefined;
-            let allocatedPorts: readonly ProvisionPortResult[] | undefined;
-            let setupOutcome: SetupExecutionOutcome | undefined;
-            let portWarnings: readonly ProvisionPortWarning[] = [];
-            let manifestWarning: string | undefined;
-            let provisionedAt: string | undefined;
-            if (wanted.length > 0) {
-              const failed = (reason: string): readonly ProvisionStepResult[] =>
-                wantedEntries.map((entry) => ({
-                  id: entry.id,
-                  path: entry.path,
-                  outcome: { kind: "failed" as const, reason },
-                }));
-              const unavailableReason =
-                destinationAuthorization === undefined
-                  ? "the worktree could not be read after it was created"
-                  : "the main checkout could not be read after the worktree was created";
-              provisioned =
-                sourceAuthorization === undefined || destinationAuthorization === undefined
-                  ? (deps.provisionUnavailable?.(check.path, wantedEntries, unavailableReason) ??
-                    failed(unavailableReason))
-                  : deps.applyProvision === undefined
-                    ? // A host with no binding cannot provision, but it CAN say so.
-                      // Dropping the selection produced an outcome byte-identical
-                      // to "the user selected nothing", which is the one answer
-                      // nobody can tell from the truth (round-1 F009).
-                      failed("this window cannot bring files over")
-                    : await deps
-                        .applyProvision(repoPath, check.path, wanted, {
-                          source: sourceAuthorization,
-                          destination: destinationAuthorization,
-                        })
-                        .catch((error) => failed(messageOf(error)));
-            }
-            if (wantedPorts.length > 0) {
-              const failed = (reason: string): readonly ProvisionPortResult[] =>
-                wantedPorts.map((port) => ({
-                  id: port.id,
-                  name: port.name,
-                  ...(port.port === undefined ? {} : { preview: port.port }),
-                  outcome: { kind: "failed" as const, reason },
-                }));
-              const applied =
-                destinationAuthorization === undefined
-                  ? { ports: failed("the worktree identity could not be verified after creation"), warnings: [] }
-                  : deps.applyPorts === undefined
-                    ? { ports: failed("this window cannot allocate ports"), warnings: [] }
-                    : await deps
-                        .applyPorts({
-                          repoId: request.repoId,
-                          repoPath,
-                          worktreePath: check.path,
-                          ports: wantedPorts,
-                          authorization: destinationAuthorization,
-                        })
-                        .catch((error) => ({ ports: failed(messageOf(error)), warnings: [] }));
-              allocatedPorts = applied.ports;
-              portWarnings = applied.warnings;
-            }
-            // Every fresh create owns a manifest, including a truthful empty one.
-            // Use the id the tree will key this worktree on, not the path git was handed.
-            provisionedAt = (await deps.normalizeWorktreeId?.(check.path).catch(() => null)) ?? check.path;
-
-            const launch = async (): Promise<void> => {
-              await deps.afterCreate(check.path, request.afterCreate, request.origin).catch((error: unknown) => {
-                const reason = messageOf(error);
-                openFailure = request.afterCreate.kind === "agent" ? `Agent did not start: ${reason}` : reason;
-              });
-            };
-
-            if (wantedSetup.length > 0) {
-              const run =
-                destinationAuthorization !== undefined && provisionedAt !== undefined
-                  ? executeSetup(
-                      {
-                        repoId: request.repoId,
-                        mainPath: repoPath,
-                        worktreeId: provisionedAt,
-                        worktreePath: check.path,
-                        branch: setupBranch(request.mode),
-                        steps: wantedSetup,
-                        asimovEnvironment: request.asimovEnvironment ?? false,
-                        ports: portEnvironment(allocatedPorts ?? []),
-                        authorization: destinationAuthorization,
-                      },
-                      request.origin,
-                    )
-                  : Promise.resolve({
-                      steps: failedSetup(wantedSetup, "the worktree identity could not be verified after creation"),
-                      succeeded: false,
-                    });
-              if (request.afterCreate.kind === "agent" && request.afterCreate.waitForSetup) {
-                // The choice is ORDER, not permission: "wait for setup to finish
-                // before starting the agent" is what the checkbox says, and a
-                // failed step is exactly when the user wants the agent there to
-                // look at it. Gating the launch on success stranded the create
-                // with nothing running in it and no way forward but a retry.
-                setupOutcome = await run;
-                await launch();
-              } else {
-                const launchPromise = launch();
-                setupOutcome = await run;
-                await launchPromise;
-              }
-            } else {
-              await launch();
-            }
-
-            const setupResults = setupOutcome?.steps ?? [];
-            if (provisionedAt !== undefined) {
-              manifestWarning = await writeManifest(check.path, provisioned ?? [], allocatedPorts ?? [], setupResults);
-              if (!setupOutcome?.succeeded && destinationAuthorization !== undefined && wantedSetup.length > 0) {
-                pendingSetupRetry = {
-                  repoId: request.repoId,
-                  worktreeId: provisionedAt,
-                  worktreePath: check.path,
-                  mainPath: repoPath,
-                  branch: setupBranch(request.mode),
-                  steps: wantedSetup,
-                  asimovEnvironment: request.asimovEnvironment ?? false,
-                  ports: portEnvironment(allocatedPorts ?? []),
-                  authorization: destinationAuthorization,
-                  materialized: provisioned ?? [],
-                  portResults: allocatedPorts ?? [],
-                };
-              }
-            }
-            return {
-              kind: "ok",
-              verb: "create",
-              repoId: request.repoId,
-              ...(openFailure === null ? {} : { openFailed: openFailure }),
-              // A repair provisions nothing, so this rides the create branch only:
-              // a reattach rewrites a link to a directory git already registered.
-              //
-              // The id travels WITH the steps, on one outcome. Without it the
-              // create notice carried no `worktreeId` at all, so the merge key
-              // the provisioning message arrives under matched nothing and every
-              // real create grew a second, invented notice (round-2 F017).
-              ...(provisionedAt === undefined
-                ? {}
-                : {
-                    worktreeId: provisionedAt,
-                    provision: {
-                      path: provisionedAt,
-                      steps: provisioned ?? [],
-                      ports: allocatedPorts ?? [],
-                      ...(portWarnings.length === 0 ? {} : { portWarnings }),
-                      ...(setupOutcome === undefined ? {} : { setup: setupOutcome.steps }),
-                      ...(setupOutcome?.outputId === undefined ? {} : { setupOutputId: setupOutcome.outputId }),
-                      ...(manifestWarning === undefined ? {} : { manifestWarning }),
-                    },
-                  }),
-              // Only a SURFACE can open a terminal — it needs a view id and a
-              // webview (D2). The host performs it on the origin.
-              ...(request.afterCreate.kind === "terminal" ? { openTerminalAt: check.path } : {}),
-            };
           },
         })
         .then(
@@ -746,20 +469,6 @@ export function createWorktreeMutationService(deps: MutationServiceDeps): Worktr
  */
 function branchOf(mode: WorktreeCreateMode): string | undefined {
   return mode.kind === "fresh" ? mode.branch : undefined;
-}
-
-function setupBranch(mode: WorktreeCreateMode): string {
-  switch (mode.kind) {
-    case "fresh":
-    case "reuse":
-      return mode.branch;
-    case "fresh-detached":
-      return mode.baseRef;
-    case "reattach":
-      return mode.branch;
-    case "adopt":
-      return mode.branch;
-  }
 }
 
 /**

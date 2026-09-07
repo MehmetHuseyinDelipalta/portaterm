@@ -14,7 +14,7 @@
     4. Trim the imports the cut leaves unused in `src/worktree/worktreeMutationService.ts`.
     5. Run `bun run asm refactor shape src/worktree/worktreeMutationService.ts src/worktree/mutationService/serviceTypes.ts` and split again if it fires.
 
-- [ ] 4_2 Extract what a created worktree is then given
+- [x] 4_2 Extract what a created worktree is then given — verified: pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/worktree/mutationService/ src/extension.worktreeMutations.test.ts exit 0
   - **Deps**: 4_1
   - **Refs**: design.md D1, design.md D1a, design.md D4
   - **Boundary**: `src/worktree/mutationService/createProvisioning.ts` is under 500 lines
