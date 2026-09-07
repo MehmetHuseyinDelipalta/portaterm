@@ -618,23 +618,23 @@ describe("the tab bar filters by stable terminal owner", () => {
   });
 
   it("shows only terminals owned by the selected linked worktree", () => {
-    const scope: TabBarScope = { worktreeId: HERE, attribution: new Map() };
+    const scope: TabBarScope = { worktreeId: HERE };
     expect([...buildTabBarData(ownedStore(), scope).tabs.keys()]).toEqual(["here"]);
   });
 
   it("[I18] does not let presence attribution move a terminal between owners", () => {
-    const scope: TabBarScope = {
-      worktreeId: HERE,
-      attribution: new Map([
-        ["main", HERE],
-        ["here", ELSEWHERE],
-      ]),
-    };
+    const presenceAttribution = new Map([
+      ["main", HERE],
+      ["here", ELSEWHERE],
+    ]);
+    const scope: TabBarScope = { worktreeId: HERE };
+    expect(presenceAttribution.size).toBe(2);
+    expect(scope).not.toHaveProperty("attribution");
     expect([...buildTabBarData(ownedStore(), scope).tabs.keys()]).toEqual(["here"]);
   });
 
   it("counts hidden waiting tabs without changing their owner", () => {
-    const data = buildTabBarData(ownedStore(), { worktreeId: HERE, attribution: new Map() });
+    const data = buildTabBarData(ownedStore(), { worktreeId: HERE });
     expect(data.hiddenWaiting).toBe(1);
   });
 
@@ -647,7 +647,7 @@ describe("the tab bar filters by stable terminal owner", () => {
         ["child", { name: "child", exited: false, activityStatus: "waiting", worktreeId: HERE }],
       ]) as never,
     };
-    const tab = buildTabBarData(store, { worktreeId: HERE, attribution: new Map() }).tabs.get("root");
+    const tab = buildTabBarData(store, { worktreeId: HERE }).tabs.get("root");
     expect(tab?.name).toBe("child");
     expect(tab?.activityStatus).toBe("waiting");
     expect(tab?.worktreeId).toBe(HERE);

@@ -30,7 +30,6 @@ export function applyTerminalNavigationProjection(
   state: TerminalNavigationState,
   deps: {
     store: TerminalNavigationStoreProjection;
-    selectOwner(worktreeId?: string): void;
     render(): void;
   },
 ): void {
@@ -39,6 +38,5 @@ export function applyTerminalNavigationProjection(
   for (const [tabId, paneId] of Object.entries(state.activePaneByTab)) {
     deps.store.tabActivePaneIds.set(tabId, paneId);
   }
-  deps.selectOwner(worktreeIdForTerminalOwner(state.activeOwner));
   deps.render();
 }

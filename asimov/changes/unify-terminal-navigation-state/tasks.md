@@ -71,14 +71,14 @@
 
 ## 3. Render committed navigation without mirror state
 
-- [ ] 3_1 Convert tab scope into active-owner projection
+- [x] 3_1 Convert tab scope into active-owner projection — verified: pnpm exec vitest run src/webview/tabBarScope.test.ts src/webview/tabBarScopeWiring.test.ts src/webview/emptyScopeRegion.test.ts src/webview/TabBar.test.ts && pnpm exec vitest run src/webview/navigation/TerminalNavigationComposition.test.ts exit 0
   - **Deps**: 2_2
   - **Refs**: specs/tab-bar-component/spec.md#{tab-bar-rendering,the-tab-bar-is-presented-whenever-it-is-filtered,a-scope-is-named-wherever-it-is-in-force,a-push-that-moves-no-attribution-redraws-no-tab-bar,a-hidden-tab-that-needs-a-human-is-counted,a-scope-holding-no-pane-says-so-and-offers-what-is-worth-doing}; design.md D2, design.md D8
   - **Acceptance**:
     - Outcome: Tab membership, linked indicator, waiting count, and empty state are pure active-owner projections.
     - Verify: command pnpm exec vitest run src/webview/tabBarScope.test.ts src/webview/tabBarScopeWiring.test.ts src/webview/emptyScopeRegion.test.ts src/webview/TabBar.test.ts
   - **Plan**:
-    1. Remove mutable scope, resolution, and navigation persistence from `src/webview/tabBarScope.ts` and `src/webview/tabBarScopeWiring.ts`, retaining only projection helpers where reuse remains useful.
+    1. Remove mutable scope, resolution, and navigation persistence from `src/webview/tabBarScope.ts` and `src/webview/tabBarScopeWiring.ts`, retaining only projection helpers where reuse remains useful; remove owner callbacks from `src/webview/navigation/TerminalNavigationComposition.ts` and compose owner intents and projections in `src/webview/main.ts`.
     2. Update `src/webview/TabBarUtils.ts` and `src/webview/emptyScopeRegion.ts` to consume total active owner, exact stable membership, linked-only indicators, waiting counts, and owner-empty state.
     3. Rewrite focused tests to delete `All` and presence-membership assertions and to enforce no owner projection callback can dispatch navigation.
 

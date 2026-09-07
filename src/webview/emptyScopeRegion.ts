@@ -5,21 +5,14 @@
 // (worktree-scope.md § 4.3). WHEN it shows is the seam's, decided together with
 // which pane to activate: the two are one calculation's outcomes (design.md D4).
 
+import type { TerminalOwner } from "./navigation/TerminalNavigationState";
 import { ICON_TERMINAL } from "./vault/icons";
 import { type EmptyStateAction, emptyState } from "./vault/renderAtoms";
 
 export interface EmptyScopeRegionDeps {
-  /**
-   * The scoped worktree. What the offers below ACT on, and therefore what the
-   * region's identity is — the label is not it: two repos in a multi-root
-   * workspace can each hold a `main` worktree, and a selection carries no
-   * teardown between them (round-3 B3).
-   */
-  id: string;
-  /** The scoped worktree's branch, as the chip names it. Never a path. */
+  owner: TerminalOwner;
   label: string;
   onOpenTerminal: () => void;
-  /** Absent when no agent can start a session — an inert button would claim one could. */
   onLaunchAgent?: () => void;
 }
 
@@ -65,8 +58,8 @@ export function mountEmptyScopeRegion(container: HTMLElement, deps: EmptyScopeRe
   if (parent === null) {
     return;
   }
-  // Keyed on what the closures capture, id first — see `id` above.
-  const identity = [deps.id, deps.label, deps.onLaunchAgent === undefined ? "" : "launch"].join("\u0002");
+  const ownerIdentity = deps.owner.kind === "main" ? "main" : `linked:${deps.owner.id}`;
+  const identity = [ownerIdentity, deps.label, deps.onLaunchAgent === undefined ? "" : "launch"].join("\u0002");
   // Idempotent on purpose. This runs from the render path, which fires on every
   // activity transition of any pane in the window — and while the scope is empty
   // every running pane is out of scope, so that is the NORMAL case. Rebuilding

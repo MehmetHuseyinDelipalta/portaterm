@@ -1,261 +1,116 @@
-// src/webview/tabBarScopeWiring.ts — the panel, the coordinator and the bar, joined.
-//
-// The join used to be six call sites scattered through a 1400-line side-effectful
-// bootstrap no test imports, and round-1 found three blockers living in exactly
-// the gaps between them: a chip naming the wrong worktree, a chip whose clear left
-// the panel still marking a row, and an ordering only a comment held. Owning the
-// join here is what makes those provable. `main.ts` keeps the surface objects and
-// hands them over — this is the wiring, not a second controller (design.md D8).
-
+import { MAIN_TERMINAL_OWNER, type TerminalOwner } from "./navigation/TerminalNavigationState";
 import type { PaneReport } from "./paneAttribution";
-import { getAllSessionIds } from "./SplitModel";
 import { buildTabBarData, type TabBarDataSource, type TabBarScope } from "./TabBarUtils";
-import { TabBarScopeCoordinator, type TabBarScopeStore } from "./tabBarScope";
+import {
+  emptyOwnerProjection,
+  labelForTerminalOwner,
+  labelsForWorktreeTree,
+  tabBarProjectionSignature,
+  tabBarScopeForOwner,
+} from "./tabBarScope";
 import type { WorktreeTree } from "./worktree/worktreeViewTypes";
 
-/**
- * The worktree panel, as this seam needs it — only what the seam ASKS OF the
- * panel. The traffic in the other direction is the callbacks below, and keeping
- * the two apart is what stops them from calling each other.
- */
-export interface TabBarScopePanel {
-  /**
-   * Record that the scope went because the worktree left, WITHOUT repainting —
-   * the tree that caused it is handed over immediately after, and one push then
-   * carries both.
-   */
-  stageScopeCleared(worktreeId: string, label: string): void;
-}
-
 export interface TabBarScopeWiringDeps {
-  store: TabBarScopeStore;
-  /**
-   * The panel, once it exists. A getter because the coordinator is constructed
-   * FIRST — the panel's first push already carries a tree, and the coordinator has
-   * to be holding the persisted scope by then.
-   */
-  panel: () => TabBarScopePanel | null;
-  /**
-   * What the bar is currently drawing from. The SAME source `buildTabBarData`
-   * reads, so the guard's count, the presented panes and the drawn tabs are three
-   * readings of one state rather than three derivations of it (round-1 B2/W3/W4).
-   */
-  source: () => TabBarDataSource;
-  /** Redraw the tab bar. */
-  render: () => void;
-  /**
-   * The surface's need for presence has changed. Separate from `render` because
-   * the two answer to different state: the bar redraws on a visual signature
-   * built from the confirmed scope, while a subscription follows the raw one and
-   * can move while nothing visible does (round-2 B1).
-   */
+  activeOwner(): TerminalOwner;
+  selectOwner(owner: TerminalOwner): void;
+  source(): TabBarDataSource;
+  render(): void;
   revalidatePresence?: () => void;
-  /** The pane currently active, or `null`. */
-  activePane: () => string | null;
-  /** Bring this pane forward. Never called with the pane already active. */
-  activatePane: (paneId: string) => void;
-  /** Show the empty owner region, or take it down with `null`. */
-  showEmptyScope: (owner: { id: string; label: string; worktreeId?: string } | null) => void;
+  showEmptyScope(projection: { owner: TerminalOwner; label: string } | null): void;
 }
 
 export interface TabBarScopeWiring {
-  /** For `WorktreeController`'s `onSelectWorktree`. */
   onSelectWorktree(worktreeId: string | null): void;
-  /** For `WorktreeController`'s `onAttribution`. */
   onAttribution(report: PaneReport): void;
-  /**
-   * A tree arrived. `deliver` hands the same tree to the panel, and it runs in the
-   * middle on purpose: the coordinator has to re-resolve BEFORE the panel prunes,
-   * because the panel's pruning clears the selection when a worktree leaves and
-   * reaches the coordinator as a plain clear — a scope already cleared has nothing
-   * left to report. The order was a comment in `main.ts`; here it is the code.
-   */
   applyTree(tree: WorktreeTree | null, deliver: () => void): void;
-  /** What `buildTabBarData` filters by, or `undefined`. */
   effectiveScope(): TabBarScope | undefined;
-  /** See `TabBarScopeCoordinator.needsPresence`. */
   needsPresence(): boolean;
-  /**
-   * Re-decide whether the region stands, without touching the active pane. Called
-   * from the render path, which is the only place that sees every route a pane can
-   * arrive or leave by.
-   */
   syncEmptyScope(): void;
-  /**
-   * The chip the bar carries while this surface is filtered, or `undefined`. One
-   * value for both the chip and the bar's second reason to be visible, so a filter
-   * without its own escape hatch is not expressible.
-   */
   chip(hiddenWaiting?: number): { worktreeId: string; label: string; hiddenWaiting?: number } | undefined;
 }
 
 export function wireTabBarScope(deps: TabBarScopeWiringDeps): TabBarScopeWiring {
-  // Deferred, because the drop lands during `applyTree` — before `deliver` — and
-  // the panel it is reported to is the same one the getter resolves.
-  const dropped: [string, string][] = [];
-  const coordinator = new TabBarScopeCoordinator({
-    store: deps.store,
-    onScopeDropped: (worktreeId, label) => dropped.push([worktreeId, label]),
-  });
+  let labels: ReadonlyMap<string, string> = new Map();
+  let waiting: ReadonlySet<string> = new Set();
+  let signature: string | null = null;
+  let deliveringTree = false;
+  let presenceNeeded = deps.activeOwner().kind === "linked";
 
-  /**
-   * Where a selection lands: the first pane the new scope presents, or the region
-   * saying it holds none. ONE calculation with two exhaustive outcomes — split it
-   * and two definitions of "the scope holds a pane" appear, one for the bar and
-   * one for the activation (design.md D3).
-   */
-  /**
-   * The pane a selection would land on, or `null` when the scope holds none.
-   *
-   * Traversed with `getAllSessionIds`, exactly as `buildTabBarData` traverses it: a
-   * split collapsed onto its non-original pane keeps the ORIGINAL tab id while the
-   * live leaf carries another, so reading tab ids reported nothing for it and the
-   * region claimed a running worktree was empty (round-1 W3).
-   */
-  const firstPresentedPane = (): string | null => {
+  const ownerLabel = (): string | null => {
+    const owner = deps.activeOwner();
+    return owner.kind === "linked" ? labelForTerminalOwner(owner, labels) : null;
+  };
+
+  const effectiveScope = (): TabBarScope | undefined => tabBarScopeForOwner(deps.activeOwner(), waiting);
+
+  const currentSignature = (): string => {
     const source = deps.source();
-    for (const layout of source.tabLayouts.values()) {
-      for (const paneId of getAllSessionIds(layout)) {
-        if (
-          source.terminals.has(paneId) &&
-          coordinator.presents(paneId, source.terminals.get(paneId)?.worktreeId)
-        ) {
-          return paneId;
-        }
-      }
-    }
-    return null;
+    const { hiddenWaiting } = buildTabBarData(source, effectiveScope());
+    return tabBarProjectionSignature(source, deps.activeOwner(), ownerLabel(), hiddenWaiting);
   };
 
-  /**
-   * Whether the scope holds a pane, and what follows — ONE calculation with two
-   * exhaustive outcomes (design.md D3).
-   *
-   * The region half runs on EVERY redraw; the activation half only on a selection.
-   * Deciding the region at selection alone left it standing over a hidden terminal
-   * the moment its own "Open a terminal" offer was taken — the pane arrives by a
-   * path no selection passes through (round-1 B1/W2). Activation stays gated
-   * because a tree push is not a selection and must not take focus.
-   */
-  const sourceOwner = (source: TabBarDataSource, paneId: string): string | undefined =>
-    source.terminals.get(paneId)?.worktreeId;
-
-  const settleScope = (activateIfNeeded: boolean): void => {
-    const worktreeId = coordinator.scopedWorktreeId();
-    const first = firstPresentedPane();
-    if (first === null) {
-      deps.showEmptyScope(
-        worktreeId === null
-          ? { id: "main", label: "Main" }
-          : { id: worktreeId, label: coordinator.scopedLabel() ?? worktreeId, worktreeId },
-      );
-      return;
-    }
-    deps.showEmptyScope(null);
-    if (!activateIfNeeded) {
-      return;
-    }
-    const active = deps.activePane();
-    // `first` is presented and `active` is not, so they cannot be the same pane —
-    // the "never with the pane already active" contract holds without a guard.
-    if (
-      active === null ||
-      !coordinator.presents(active, sourceOwner(deps.source(), active))
-    ) {
-      deps.activatePane(first);
-    }
-  };
-
-  /**
-   * Whether a presence subscription was needed at the last settle. Compared
-   * rather than recomputed on demand, so the transition is what fires.
-   */
-  let neededPresence = coordinator.needsPresence();
-
-  /**
-   * Everything a mutator has to do after changing the coordinator.
-   *
-   * The presence half is deliberately NOT behind `renderIfMoved`'s gate. That
-   * gate compares a visual signature built from `effectiveScope()` — the
-   * CONFIRMED scope — so a need that moves while the scope is unresolved is
-   * invisible to it: a rollout flip on a restored scope, or a stale scope being
-   * dropped, would leave the surface unsubscribed or leave the five-second scan
-   * running with nothing left to draw (round-2 B1).
-   */
-  const settle = (): void => {
-    const needs = coordinator.needsPresence();
-    if (needs !== neededPresence) {
-      neededPresence = needs;
+  const syncPresence = (): void => {
+    const next = deps.activeOwner().kind === "linked";
+    if (next !== presenceNeeded) {
+      presenceNeeded = next;
       deps.revalidatePresence?.();
     }
-    renderIfMoved();
   };
 
   const renderIfMoved = (): void => {
-    const source = deps.source();
-    // The count the badge would draw, from the pass that draws it — see D2 and the
-    // guard's own note on why deriving it twice suppressed a redraw.
-    const { hiddenWaiting } = buildTabBarData(source, coordinator.effectiveScope());
-    if (coordinator.shouldRender(source, hiddenWaiting)) {
-      deps.render();
+    const next = currentSignature();
+    if (next === signature) {
+      return;
     }
+    deps.render();
+    signature = currentSignature();
   };
 
   return {
     onSelectWorktree(worktreeId) {
-      coordinator.select(worktreeId);
-      // Between the new scope and the one draw: the in-scope test runs against the
-      // scope being adopted, and the whole selection costs a single render.
-      settleScope(true);
-      settle();
+      deps.selectOwner(worktreeId === null ? MAIN_TERMINAL_OWNER : { kind: "linked", id: worktreeId });
     },
 
     onAttribution(report) {
-      coordinator.setAttribution(report);
-      // Gated like every other mutator. Today the only caller is followed by the
-      // tree push that would have caught it anyway, so this is a no-op — and not
-      // relying on that is the point (round-2 V7).
-      settle();
+      waiting = report.waiting;
+      if (!deliveringTree) {
+        syncPresence();
+        renderIfMoved();
+      }
     },
 
     applyTree(tree, deliver) {
-      coordinator.applyTree(tree);
-      // Staged BEFORE the tree is handed over, so the push that draws the new tree
-      // is the same one that draws the notice: it is never painted beside the row
-      // it says is gone (round-1 W2), and the panel is built once (round-2 V5).
-      // Drained rather than read — a second tree must not re-announce the first.
-      const panel = deps.panel();
-      for (const [worktreeId, label] of dropped.splice(0)) {
-        panel?.stageScopeCleared(worktreeId, label);
+      const nextLabels = labelsForWorktreeTree(tree);
+      if (nextLabels !== null) {
+        labels = nextLabels;
       }
-      // `finally`, because a throwing deliver would otherwise leave the queue to
-      // fire against the NEXT tree — W2's own failure, through the error path
-      // (round-2 V3) — and leave the bar drawing a scope that is gone.
+      deliveringTree = true;
       try {
         deliver();
       } finally {
-        settleScope(false);
-        settle();
+        deliveringTree = false;
+        syncPresence();
+        renderIfMoved();
       }
     },
 
-    effectiveScope: () => coordinator.effectiveScope(),
-    needsPresence: () => coordinator.needsPresence(),
+    effectiveScope,
+    needsPresence: () => deps.activeOwner().kind === "linked",
 
-    syncEmptyScope: () => settleScope(false),
+    syncEmptyScope() {
+      syncPresence();
+      deps.showEmptyScope(emptyOwnerProjection(deps.source(), deps.activeOwner(), labels));
+      signature = currentSignature();
+    },
 
-    // The count is passed IN rather than computed here: `buildTabBarData` derives
-    // it from the same pass that drops the tab, and a second derivation is a
-    // second definition of "hidden" (design.md D2).
     chip(hiddenWaiting) {
-      const worktreeId = coordinator.scopedWorktreeId();
-      const label = coordinator.scopedLabel();
-      if (worktreeId === null || label === null) {
+      const owner = deps.activeOwner();
+      if (owner.kind === "main") {
         return undefined;
       }
       return {
-        worktreeId,
-        label,
+        worktreeId: owner.id,
+        label: labelForTerminalOwner(owner, labels),
         ...(hiddenWaiting === undefined || hiddenWaiting === 0 ? {} : { hiddenWaiting }),
       };
     },

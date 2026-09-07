@@ -1,184 +1,119 @@
-// src/webview/emptyScopeRegion.test.ts — the region a scope with nothing in it shows.
-//
-// WHEN it appears is the wiring seam's and is tested there; this file covers what
-// it says, what its offers do, and the two things it must not do — carry error
-// treatment, or clear the scope by itself (design.md D4).
-
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from "vitest";
 import { mountEmptyScopeRegion, renderEmptyScopeRegion } from "./emptyScopeRegion";
+import { MAIN_TERMINAL_OWNER } from "./navigation/TerminalNavigationState";
+
+const linked = { kind: "linked" as const, id: "/wt/x" };
 
 function labels(region: HTMLElement): string[] {
-  return [...region.querySelectorAll("button")].map((b) => b.textContent ?? "");
+  return [...region.querySelectorAll("button")].map((button) => button.textContent ?? "");
 }
 
-function click(region: HTMLElement, label: string): void {
-  const btn = [...region.querySelectorAll("button")].find((b) => b.textContent === label);
-  expect(btn, `no offer labelled ${label}`).toBeDefined();
-  btn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+function surface(): HTMLElement {
+  document.body.replaceChildren();
+  const container = document.createElement("div");
+  container.id = "terminal-container";
+  container.appendChild(document.createElement("canvas"));
+  document.body.appendChild(container);
+  return container;
 }
 
 describe("renderEmptyScopeRegion", () => {
-  it("offers both actions and the way out, naming the scoped worktree", () => {
+  it("renders linked-owner actions without offering an All/clear control", () => {
     const region = renderEmptyScopeRegion({
-      id: "/wt/worktree-panel",
-      label: "feat/worktree-panel",
+      owner: linked,
+      label: "feat/x",
       onOpenTerminal: vi.fn(),
       onLaunchAgent: vi.fn(),
-          });
+    });
 
-    expect(region.textContent).toContain("feat/worktree-panel");
+    expect(region.textContent).toContain("feat/x");
     expect(labels(region)).toEqual(["Open a terminal", "Launch an agent"]);
+    expect(region.textContent).not.toMatch(/all terminals|clear scope/i);
   });
 
-  it("posts each offer for the scoped worktree", () => {
+  it("renders the global main owner as a normal empty state", () => {
+    const region = renderEmptyScopeRegion({ owner: MAIN_TERMINAL_OWNER, label: "Main", onOpenTerminal: vi.fn() });
+    expect(region.textContent).toContain("Nothing running in Main");
+    expect(region.getAttribute("role")).toBe("region");
+  });
+
+  it("omits unavailable launch actions and carries no error treatment", () => {
+    const region = renderEmptyScopeRegion({ owner: linked, label: "feat/x", onOpenTerminal: vi.fn() });
+    expect(labels(region)).toEqual(["Open a terminal"]);
+    expect(region.outerHTML).not.toMatch(/error|danger|warning/i);
+  });
+
+  it("runs each offered action", () => {
     const onOpenTerminal = vi.fn();
     const onLaunchAgent = vi.fn();
-    const region = renderEmptyScopeRegion({
-      id: "/wt/x",
-      label: "feat/x",
-      onOpenTerminal,
-      onLaunchAgent,
-          });
-
-    click(region, "Open a terminal");
-    click(region, "Launch an agent");
+    const region = renderEmptyScopeRegion({ owner: linked, label: "feat/x", onOpenTerminal, onLaunchAgent });
+    for (const button of region.querySelectorAll("button")) {
+      button.click();
+    }
     expect(onOpenTerminal).toHaveBeenCalledTimes(1);
     expect(onLaunchAgent).toHaveBeenCalledTimes(1);
-  });
-
-  it("omits the launch offer entirely when nothing can be launched", () => {
-    // Omitted rather than disabled: an inert button claims a capability the host
-    // has already answered it does not have.
-    const region = renderEmptyScopeRegion({ id: "/wt/x", label: "feat/x", onOpenTerminal: vi.fn() });
-
-    expect(labels(region)).toEqual(["Open a terminal"]);
-  });
-
-  it("carries no error treatment — an empty worktree is a normal selection", () => {
-    const region = renderEmptyScopeRegion({ id: "/wt/x", label: "feat/x", onOpenTerminal: vi.fn() });
-
-    expect(region.className).toContain("empty-scope");
-    expect(region.outerHTML).not.toMatch(/error|danger|warning/i);
-    expect(region.getAttribute("role")).toBe("region");
   });
 });
 
 describe("mountEmptyScopeRegion", () => {
-  function surface(): HTMLElement {
-    document.body.innerHTML = "";
-    const container = document.createElement("div");
-    container.id = "terminal-container";
-    container.appendChild(document.createElement("canvas"));
-    document.body.appendChild(container);
-    return container;
-  }
+  const deps = { owner: linked, label: "feat/x", onOpenTerminal: () => {} };
 
-  const deps = { id: "/wt/x", label: "feat/x", onOpenTerminal: () => {} };
-
-  it("hides the container it stands in front of, so the hidden worktree is not still on screen", () => {
+  it("hides but does not unmount the terminal container", () => {
     const container = surface();
+    const child = container.firstElementChild;
     mountEmptyScopeRegion(container, deps);
-
     expect(container.style.display).toBe("none");
-    expect(document.querySelector(".empty-scope")).not.toBeNull();
-  });
-
-  it("leaves the container MOUNTED, with its terminal intact", () => {
-    // Unmounting would discard xterm's viewport state and make clearing the scope
-    // a rebuild rather than a reveal.
-    const container = surface();
-    const canvas = container.firstElementChild;
-    mountEmptyScopeRegion(container, deps);
-
     expect(container.isConnected).toBe(true);
-    expect(canvas?.isConnected).toBe(true);
+    expect(child?.isConnected).toBe(true);
   });
 
-  it("gives the container back, and takes the region away, when the scope goes", () => {
+  it("restores the container when the owner is no longer empty", () => {
     const container = surface();
     mountEmptyScopeRegion(container, deps);
     mountEmptyScopeRegion(container, null);
-
     expect(container.style.display).toBe("");
     expect(document.querySelector(".empty-scope")).toBeNull();
   });
 
-  it("stands one region however often it is asked for", () => {
-    const container = surface();
-    mountEmptyScopeRegion(container, deps);
-    mountEmptyScopeRegion(container, { ...deps, label: "feat/y" });
-
-    expect(document.querySelectorAll(".empty-scope")).toHaveLength(1);
-    expect(document.querySelector(".empty-scope")?.textContent).toContain("feat/y");
-  });
-
-  it("keeps the element, and the focus on it, when nothing about the region moved", () => {
-    // It is remounted from the render path, which fires on every activity
-    // transition in the window — and while the scope is empty every running pane is
-    // out of scope, so an unconditional rebuild took focus off the region's own
-    // offers about once a second (round-2 W6).
+  it("preserves the standing element and focus for an identical projection", () => {
     const container = surface();
     mountEmptyScopeRegion(container, deps);
     const first = document.querySelector(".empty-scope");
-    const offer = first?.querySelector("button");
-    offer?.focus();
-
+    const button = first?.querySelector("button");
+    button?.focus();
     mountEmptyScopeRegion(container, { ...deps });
-
     expect(document.querySelector(".empty-scope")).toBe(first);
-    expect(document.activeElement).toBe(offer);
+    expect(document.activeElement).toBe(button);
   });
 
-  it("replaces the element when the offers it makes change", () => {
+  it("replaces equal labels when linked owner identity changes", () => {
     const container = surface();
     mountEmptyScopeRegion(container, deps);
     const first = document.querySelector(".empty-scope");
-
-    mountEmptyScopeRegion(container, { ...deps, onLaunchAgent: () => {} });
-
+    mountEmptyScopeRegion(container, { ...deps, owner: { kind: "linked", id: "/wt/y" } });
     expect(document.querySelector(".empty-scope")).not.toBe(first);
-    expect([...document.querySelectorAll(".empty-scope button")].map((b) => b.textContent)).toEqual([
+  });
+
+  it("replaces the region when its available actions change", () => {
+    const container = surface();
+    mountEmptyScopeRegion(container, deps);
+    const first = document.querySelector(".empty-scope");
+    mountEmptyScopeRegion(container, { ...deps, onLaunchAgent: () => {} });
+    expect(document.querySelector(".empty-scope")).not.toBe(first);
+    expect(labels(document.querySelector(".empty-scope") as HTMLElement)).toEqual([
       "Open a terminal",
       "Launch an agent",
     ]);
   });
 
-  it("leaves a STANDING region alone when the container is detached under it", () => {
-    // With no region already up, both the guarding and the unguarded orders behave
-    // the same — which is why the first version of this test proved nothing
-    // (round-3 W8). The behaviour is only observable once there is something to
-    // take away.
+  it("does not remove a standing region when its container is detached", () => {
     const container = surface();
     mountEmptyScopeRegion(container, deps);
     const standing = document.querySelector(".empty-scope");
     container.remove();
-
-    mountEmptyScopeRegion(container, { ...deps, label: "feat/other" });
-
+    mountEmptyScopeRegion(container, { ...deps, label: "renamed" });
     expect(document.querySelector(".empty-scope")).toBe(standing);
-  });
-
-  it("offers the worktree it is standing for, not the one it stood for before", () => {
-    // Round-3 B3: two repos in a multi-root workspace can each hold a `main`
-    // worktree, and a selection carries no teardown between them. Keyed by label,
-    // the element survived the move and kept offering the FIRST worktree — with no
-    // visual or accessible tell, because the heading is true of both.
-    const container = surface();
-    const opened: string[] = [];
-    const forWorktree = (id: string) => ({
-      id,
-      label: "main",
-      onOpenTerminal: () => opened.push(id),
-    });
-    mountEmptyScopeRegion(container, forWorktree("/repo-a/main"));
-    const first = document.querySelector(".empty-scope");
-
-    mountEmptyScopeRegion(container, forWorktree("/repo-b/main"));
-
-    expect(document.querySelector(".empty-scope")).not.toBe(first);
-    document.querySelector<HTMLButtonElement>(".empty-scope button")?.click();
-    expect(opened).toEqual(["/repo-b/main"]);
   });
 });

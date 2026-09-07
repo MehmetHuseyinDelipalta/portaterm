@@ -84,29 +84,14 @@ export interface TabBarDataSource {
   terminals: Map<string, TerminalInstance>;
 }
 
-/**
- * A surface's scope, and the evidence it filters by. Absent → unscoped, and every
- * tab is presented.
- */
+/** Linked-owner filter projected from the total active owner. Main is absent. */
 export interface TabBarScope {
-  /** The worktree this surface is scoped to. */
   worktreeId: string;
-  /**
-   * Panes the last presence scan called waiting. One half of the badge's union —
-   * the other is each pane's own `activityStatus`, which has different coverage
-   * (design.md D2). Optional so a caller that only wants the filter need not
-   * assemble one; absent behaves as empty.
-   */
+  /** Presence decorates hidden waiting counts; it never decides membership. */
   waiting?: ReadonlySet<string>;
-  /**
-   * paneId → worktreeId, from the presence projection (design.md D2). An ABSENT
-   * key means the evidence does not place that pane, which is presented in every
-   * scope — there is no third value, because one would invite a fourth outcome.
-   */
-  attribution: ReadonlyMap<string, string>;
 }
 
-/** Main is the absence of a linked owner; a linked scope matches exactly one id. */
+/** Main is the absence of a linked owner; linked membership matches one stable id. */
 export function inScope(scope: TabBarScope | undefined, _paneId: string, stableOwner?: string): boolean {
   return scope ? stableOwner === scope.worktreeId : stableOwner === undefined;
 }
@@ -178,10 +163,8 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
       const activePaneId = store.tabActivePaneIds.get(tabId) ?? tabId;
       const activeInstance = store.terminals.get(activePaneId);
       const rootInstance = store.terminals.get(tabId);
-      // A split is one tab over several panes, so the same "prove it belongs
-      // elsewhere" rule applies to the SET: it survives while any one of its
-      // panes is in scope or unplaced, and is dropped only when every one of
-      // them is attributed somewhere else.
+      // Split children inherit their source owner's stable id. Membership is
+      // still checked per live leaf so collapsed layouts keep their owner.
       const sessionIds = getAllSessionIds(layout);
       if (!sessionIds.some((sid) => inScope(scope, sid, ownerOf(store, sid)))) {
         // Counted HERE, at the drop, which is why a split can never be presented

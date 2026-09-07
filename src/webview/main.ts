@@ -53,6 +53,7 @@ import {
   selectNavigationOwner,
   selectNavigationTab,
   type TerminalNavigationState,
+  type TerminalOwner,
 } from "./navigation/TerminalNavigationState";
 import { ResizeCoordinator } from "./resize/ResizeCoordinator";
 import { SplitTreeRenderer } from "./split/SplitTreeRenderer";
@@ -380,7 +381,6 @@ const navigationController = new TerminalNavigationController(
       renderProjections: (state) => {
         applyTerminalNavigationProjection(state, {
           store,
-          selectOwner: (worktreeId) => worktreeController?.selectTerminalOwner(worktreeId),
           render: () => updateTabBar(),
         });
       },
@@ -544,20 +544,21 @@ function switchTab(newTabId: string): void {
 }
 
 /** Resolve what the empty-scope region offers here, and hand it to the mount. */
-function showEmptyScope(worktree: { id: string; label: string; worktreeId?: string } | null): void {
+function showEmptyScope(projection: { owner: TerminalOwner; label: string } | null): void {
   const containerEl = document.getElementById("terminal-container");
   if (containerEl === null) {
     return;
   }
-  if (worktree === null) {
+  if (projection === null) {
     mountEmptyScopeRegion(containerEl, null);
     return;
   }
-  const launch = worktree.worktreeId ? worktreeController?.launchOfferFor(worktree.worktreeId) : undefined;
+  const worktreeId = worktreeIdForTerminalOwner(projection.owner);
+  const launch = worktreeId ? worktreeController?.launchOfferFor(worktreeId) : undefined;
   mountEmptyScopeRegion(containerEl, {
-    id: worktree.id,
-    label: worktree.label,
-    onOpenTerminal: () => requestNewTerminal(worktree.worktreeId),
+    owner: projection.owner,
+    label: projection.label,
+    onOpenTerminal: () => requestNewTerminal(worktreeId),
     ...(launch === undefined ? {} : { onLaunchAgent: launch }),
   });
 }
@@ -1173,24 +1174,13 @@ function handleInit(msg: InitMessage): void {
     // Before the controller: its first push already carries a tree, and the
     // coordinator has to be holding the persisted scope when that arrives.
     tabBarScope = wireTabBarScope({
-      store,
-      panel: () => worktreeController,
+      activeOwner: () => navigationController.getState().activeOwner,
+      selectOwner: (owner) => {
+        navigationController.dispatch((catalog, state) => selectNavigationOwner(catalog, state, owner));
+      },
       source: () => store,
       render: () => updateTabBar(),
-      // Its own dependency, not a line inside `render`: the bar's redraw is
-      // gated on a visual signature that cannot see a presence need moving while
-      // the scope is unresolved (round-2 B1).
       revalidatePresence: () => worktreeController?.revalidateVisibility(),
-      activePane: () => {
-        const tabId = store.activeTabId;
-        return tabId === null ? null : (store.tabActivePaneIds.get(tabId) ?? tabId);
-      },
-      // The pane-level primitive, NOT `switchTab`: a mixed split is presented for
-      // one leaf while another leaf is active inside it, and only this moves the
-      // right one (design.md D3).
-      activatePane: (paneId) => {
-        activatePaneById(paneId);
-      },
       showEmptyScope,
     });
     worktreeController = WorktreeController.mount({

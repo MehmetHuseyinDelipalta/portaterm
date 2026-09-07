@@ -36,11 +36,11 @@ function noEffects(overrides: Partial<TerminalNavigationEffects> = {}): Terminal
 }
 
 describe("terminal navigation composition", () => {
-  it("projects owner only after owner, tab, and pane are committed to the store", () => {
+  it("projects committed tab and pane facts without an owner callback", () => {
     const store = storeFixture();
     store.terminals.set("a", { worktreeId: "/wt/a" });
     store.tabLayouts.set("a", createLeaf("a"));
-    let nestedActivation = false;
+    let rendered = false;
 
     applyTerminalNavigationProjection(
       {
@@ -50,14 +50,13 @@ describe("terminal navigation composition", () => {
       },
       {
         store,
-        selectOwner: () => {
-          nestedActivation = store.activeTabId !== "a" || store.tabActivePaneIds.get("a") !== "a";
+        render: () => {
+          rendered = store.activeTabId === "a" && store.tabActivePaneIds.get("a") === "a";
         },
-        render: () => {},
       },
     );
 
-    expect(nestedActivation).toBe(false);
+    expect(rendered).toBe(true);
   });
 
   it("registers a created terminal before projecting only that terminal", () => {
@@ -74,7 +73,7 @@ describe("terminal navigation composition", () => {
       readCatalog: () => navigationCatalogFromStore(store),
       effects: noEffects({
         renderProjections: (state) => {
-          applyTerminalNavigationProjection(state, { store, selectOwner: () => {}, render: () => {} });
+          applyTerminalNavigationProjection(state, { store, render: () => {} });
           projected.push(store.activeTabId);
         },
       }),
@@ -104,7 +103,7 @@ describe("terminal navigation composition", () => {
         effects: noEffects({
           renderProjections: (state) => {
             renders += 1;
-            applyTerminalNavigationProjection(state, { store, selectOwner: () => {}, render: () => {} });
+            applyTerminalNavigationProjection(state, { store, render: () => {} });
           },
           focusActivePane: (paneId) => {
             if (paneId) {
