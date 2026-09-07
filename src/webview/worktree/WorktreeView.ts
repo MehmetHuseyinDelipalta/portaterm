@@ -19,20 +19,18 @@ import { activationFor as sharedActivationFor } from "./worktreeActivation";
 import {
   agentCountLabel,
   ageTimestamp,
-  branchLabel,
   compactAge,
   displayedRows,
   groupPresenceByActivity,
   presentedActivity,
   strongestActivity,
 } from "./worktreeFormat";
-import { agentRowFields, worktreeFields, worktreeSignature } from "./worktreeRenderSignature";
+import { agentRowFields, worktreeFields } from "./worktreeRenderSignature";
 import { RosterRequests, rosterKey } from "./worktreeRosterRequests";
 import {
   confidenceHint,
   renderAgentRow,
   renderAgentsHeader,
-  renderIdleDisclosure,
   renderNotice,
   renderPresencePill,
   renderRefreshingMarker,
@@ -43,10 +41,11 @@ import {
   renderWorktreeRow,
   worktreeEmptyState,
 } from "./worktreeTreeView";
-import { type ActionNotices, createActionNotices, resultKey } from "./worktreeView/actionNotices";
+import { type ActionNotices, createActionNotices } from "./worktreeView/actionNotices";
 import { type CeilingClock, createCeilingClock } from "./worktreeView/ceilingClock";
 import { createFoldState, type FoldRepoInput, type FoldState } from "./worktreeView/foldState";
 import { createKeyboardNav, type KeyboardNav } from "./worktreeView/keyboardNav";
+import { createTreeRender, IDLE_FOLD_THRESHOLD, type TreeRender } from "./worktreeView/treeRender";
 import { createViewDialogs, type ViewDialogs } from "./worktreeView/viewDialogs";
 import { createViewFilter, type ViewFilter } from "./worktreeView/viewFilter";
 import type {
@@ -57,7 +56,6 @@ import type {
   WorktreeRemoveReport,
   WorktreeRepo,
   WorktreeRowActivation,
-  WorktreeTree,
 } from "./worktreeViewTypes";
 
 /** Worktrees rendered per repo before the cap offers "Show all" (§ 8). The cap
@@ -65,13 +63,9 @@ import type {
  *  visible affordance, never a silent truncation. */
 export const MAX_WORKTREES_PER_REPO = 20;
 
-/** Below this many agentless worktrees, a disclosure hides less than it costs (§ 3.6). */
-export const IDLE_FOLD_THRESHOLD = 4;
-
-/** A repository that has been cloned but never branched out — one worktree, the main one. */
-function isUnbranched(repo: WorktreeRepo): boolean {
-  return repo.degraded === undefined && repo.worktrees.length === 1 && repo.worktrees[0]?.kind === "main";
-}
+// The fold threshold lives in `worktreeView/treeRender.ts` (task 3_11), which is
+// what reads it. Re-exported here so no importer moves.
+export { IDLE_FOLD_THRESHOLD } from "./worktreeView/treeRender";
 
 // The view's contract lives in `worktreeView/viewTypes.ts` (task 3_7 of
 // `decompose-worktree-view`). Re-exported here so no importer moves, and
@@ -94,6 +88,8 @@ export class WorktreeView {
   private readonly dialogs: ViewDialogs;
   /** The query, the idle partition and the render cap (3_10). */
   private readonly filter: ViewFilter;
+  /** One render pass, and the signature that decides whether to run it (3_11). */
+  private readonly tree: TreeRender;
 
   private data: WorktreeViewData = { tree: null, presence: null, loading: true };
   /**
@@ -106,7 +102,6 @@ export class WorktreeView {
   /** Placing, naming and dismissing action notices (task 1_3). */
   private readonly notices: ActionNotices;
   private disposed = false;
-  private signature: string | null = null;
   /** Repo/worktree ids whose children are hidden. */
   /** Agent rowIds whose subagents are shown. */
   /** Worktree ids whose default collapse has already been decided once. */
@@ -151,18 +146,18 @@ export class WorktreeView {
       view: deps,
       repoOf: (info) => this.repoOf(info),
       repoAnchors: this.repoAnchors,
-      renderedWorktreeRows: () => this.renderedWorktreeRows(),
+      renderedWorktreeRows: () => this.tree.renderedWorktreeRows(),
       openRemoveReport: (info, report) => this.openRemoveReport(info, report),
     });
     this.ceilingClock = createCeilingClock({
       ...(deps.now === undefined ? {} : { clock: deps.now }),
       disposed: () => this.disposed,
       degradedSources: () => this.degradedSources(),
-      renderedWorktreeIds: () => this.renderedWorktreeIds(),
+      renderedWorktreeIds: () => this.tree.renderedWorktreeIds(),
       presentWorktreeIds: () => Object.keys(this.data.presence?.rowsByWorktreeId ?? {}),
       rowsFor: (worktreeId) => this.rowsFor(worktreeId),
       applyAt: (now) => {
-        this.applyAt(now);
+        this.tree.applyAt(now);
       },
     });
     this.dialogs = createViewDialogs({
@@ -178,8 +173,39 @@ export class WorktreeView {
       rowsFor: (worktreeId) => this.rowsFor(worktreeId),
       cap: MAX_WORKTREES_PER_REPO,
       repaint: () => {
-        this.repaint();
+        this.tree.repaint();
       },
+    });
+    this.tree = createTreeRender({
+      view: deps,
+      element: () => this.element,
+      data: () => this.data,
+      disposed: () => this.disposed,
+      now: () => this.ceilingClock.now(),
+      armCeiling: (now) => {
+        this.ceilingClock.armCeiling(now);
+      },
+      nav: () => this.nav,
+      fold: () => this.fold,
+      filter: () => this.filter,
+      pruneStaleState: (data) => {
+        this.pruneStaleState(data);
+      },
+      placeResults: () => {
+        this.notices.placeResults();
+      },
+      flushRosterRequests: () => {
+        this.flushRosterRequests();
+      },
+      toggleCollapsed: (id) => {
+        this.toggleCollapsed(id);
+      },
+      renderWorktree: (info, now, inTail) => {
+        this.renderWorktree(info, now, inTail);
+      },
+      rowMemo: this.rowMemo,
+      rowMemoSeen: this.rowMemoSeen,
+      repoAnchors: this.repoAnchors,
     });
     this.nav = createKeyboardNav({
       element: () => this.element,
@@ -196,7 +222,7 @@ export class WorktreeView {
       persistExpandedRows: (ids) => deps.persistExpandedRows?.([...ids]),
       persistIdleSeeded: (ids) => deps.persistIdleSeeded?.([...ids]),
       query: () => this.filter.query(),
-      repaint: () => this.repaint(),
+      repaint: () => this.tree.repaint(),
     });
     this.element = document.createElement("div");
     this.element.className = "wt-tree";
@@ -247,70 +273,7 @@ export class WorktreeView {
       return;
     }
     this.data = data;
-    this.applyAt(this.ceilingClock.now());
-  }
-
-  /**
-   * Render if anything moved, then schedule the next moment something can move
-   * on its own.
-   *
-   * ONE reading of the clock serves all three of the signature, what it renders,
-   * and the next deadline. Reading it again between them would let a row be drawn
-   * against one moment and scheduled against another, which is how a crossing
-   * gets skipped by a millisecond.
-   */
-  private applyAt(now: number): void {
-    const { tree, presence, loading, refreshing, noFolder, actionResults } = this.data;
-    const stateKey = [
-      worktreeSignature(tree, presence, now),
-      loading ? "1" : "0",
-      refreshing ? "1" : "0",
-      noFolder ? "1" : "0",
-      (actionResults ?? []).map(resultKey).join("|"),
-      // The capabilities the ROWS draw, not just the ones the menu resolves at
-      // click time. `actions` is a record the host mutates in place, so a launch
-      // target arriving moves no field above it — and the row's launch control
-      // is built at paint. Without this the button appears only if some
-      // unrelated tree or presence delta happens to force a repaint later
-      // (.reviews/round-1.md B3, re-found on the row toolbar).
-      this.deps.actions?.launchAgentHere ? "1" : "0",
-    ].join(String.fromCharCode(4));
-    if (stateKey !== this.signature) {
-      this.signature = stateKey;
-      // Expansion state for a worktree that disappeared is dropped, not resurrected.
-      this.pruneStaleState(this.data);
-      try {
-        this.render(now);
-      } catch (err) {
-        // The key above already claims this envelope is drawn. A render that
-        // threw part-way — in practice a roster dispatch the host refused —
-        // leaves `RosterRequests` correctly holding the rows it could not send,
-        // behind a guard that turns the next identical envelope into a no-op, so
-        // nothing ever asks again (.reviews/round-3.md W4).
-        this.signature = null;
-        throw err;
-      }
-    }
-    this.ceilingClock.armCeiling(now);
-  }
-
-  /**
-   * A repaint forced by an interaction rather than by data — collapsing a repo,
-   * lifting the display cap, expanding a row. `applyAt` cannot serve these: the
-   * signature covers the DATA, and none of this moves it, so the render would be
-   * skipped. Still one reading of the clock, and still re-armed, because what is
-   * drawn is what can cross.
-   */
-  private repaint(): void {
-    // `dispose()` tears down the tooltip delegates, so a rebuild after it produces
-    // a tree whose hints are permanently dead — a half-live view is worse than a
-    // stale one. Guarding only the arming left the DOM work happening anyway.
-    if (this.disposed) {
-      return;
-    }
-    const now = this.ceilingClock.now();
-    this.render(now);
-    this.ceilingClock.armCeiling(now);
+    this.tree.applyAt(this.ceilingClock.now());
   }
 
   /**
@@ -361,7 +324,7 @@ export class WorktreeView {
     // Announced BEFORE the field moves, for the reason `select` gives.
     this.deps.onSelectWorktree?.(null);
     this.selectedWorktreeId = null;
-    this.repaint();
+    this.tree.repaint();
   }
 
   /**
@@ -581,315 +544,6 @@ export class WorktreeView {
 
   // -- Search --------------------------------------------------------------
 
-  // -- Render --------------------------------------------------------------
-
-  private render(now: number): void {
-    const scrollTop = this.element.scrollTop;
-    // `renderListing` keeps its early exits — a skeleton and an empty state have
-    // no tree to lay out — but placement must not sit behind any of them, so it
-    // runs here, once, on every path.
-    // Read once, here, and handed down: every path below has to know whether the
-    // user was inside this tree when it was torn down, including the empty states
-    // that return no key at all (.reviews/round-2.md B6).
-    const focusWasInside = this.element.contains(document.activeElement);
-    const restoreFocusTo = this.renderListing(now, focusWasInside);
-    this.notices.placeResults();
-    this.restoreFocus(restoreFocusTo, focusWasInside, scrollTop);
-    // Last, and after focus is back: this is the only step here that reaches the
-    // host, so it is the only one that can throw — and a throw before the restore
-    // above would leave the user on `<body>` (.reviews/round-3.md W4). Never from
-    // inside the loop that queued them either: a dep answering synchronously
-    // re-enters `renderListing`, which replaces the half-built tree and places
-    // every notice twice. Runs on every path, including the empty states — a
-    // queued request is owed either way.
-    this.flushRosterRequests();
-  }
-
-  /** Put the user back where they were, or at least back inside the tree. */
-  private restoreFocus(restoreFocusTo: string | null | undefined, focusWasInside: boolean, scrollTop: number): void {
-    if (restoreFocusTo === undefined) {
-      // A skeleton or an empty state. It replaced the children like any other
-      // render, so a user who was inside is now on `<body>` — the top of the
-      // whole document — unless the tree takes them back.
-      if (focusWasInside) {
-        this.element.focus();
-      }
-      return;
-    }
-    this.element.scrollTop = scrollTop;
-    this.nav.syncRovingTabindex();
-    if (restoreFocusTo !== null) {
-      const rows = this.nav.navRows();
-      // The row can have left in this very render — a worktree removed, a query
-      // typed. `syncRovingTabindex` above has already moved the tab stop to a row
-      // that exists, so that is where focus belongs; with no rows at all the tree
-      // itself is the last thing standing between the user and `<body>`.
-      const target =
-        rows.find((r) => this.nav.keyOf(r) === restoreFocusTo) ??
-        rows.find((r) => this.nav.keyOf(r) === this.nav.focusedKey());
-      if (target === undefined) {
-        this.element.focus();
-        return;
-      }
-      target.focus();
-    }
-  }
-
-  /**
-   * Draws the tree. Returns the focus key to restore, or `undefined` when there was
-   * no tree to lay out. Returned rather than parked on the instance so the key
-   * belongs to the render that computed it.
-   *
-   * This does NOT make the render re-entrant, and no longer needs to: subagent
-   * rosters are QUEUED from inside the repo loop and dispatched by `render` once
-   * this has returned, so a dep that answers synchronously can no longer replace
-   * the half-built DOM or make `placeResults` run twice over `repoAnchors`. The
-   * shipped host answers over `postMessage`, so nothing reaches it synchronously
-   * today — the ordering is a rule so that a caller which did could not break it.
-   */
-  private renderListing(now: number, focusWasInside: boolean): string | null | undefined {
-    try {
-      return this.renderListingInner(now, focusWasInside);
-    } finally {
-      // On EVERY exit, not only the one that walked the repos: the loading and
-      // empty states return early with nothing on screen, and a memo that kept
-      // the last listing's detached rows (and their listener closures) across
-      // them would retain an uncapped tree for as long as the state lasted.
-      for (const id of [...this.rowMemo.keys()]) {
-        if (!this.rowMemoSeen.has(id)) {
-          this.rowMemo.delete(id);
-        }
-      }
-    }
-  }
-
-  private renderListingInner(now: number, focusWasInside: boolean): string | null | undefined {
-    // `replaceChildren` detaches the focused row, and focus falls to <body> — a
-    // keyboard user loses their place on every disclosure toggle. Restored by
-    // `render` from this key, which is why subagent rows had to gain one.
-    const restoreFocusTo = focusWasInside ? this.nav.focusedKey() : null;
-    // Cleared with the DOM it describes, never later: every anchor in it points at
-    // a node this call is about to detach, and `placeResults` runs on paths that
-    // never reach the repo loop. An anchor map outliving its nodes is a drawing
-    // artifact deciding what gets reported — the exact coupling this change removes.
-    this.repoAnchors.clear();
-    this.rowMemoSeen.clear();
-    this.element.replaceChildren();
-    const { tree, presence, loading, refreshing, noFolder } = this.data;
-
-    if (loading && !tree) {
-      this.element.setAttribute("aria-busy", "true");
-      this.element.appendChild(renderSkeleton());
-      return undefined;
-    }
-    this.element.removeAttribute("aria-busy");
-
-    if (noFolder) {
-      this.element.appendChild(worktreeEmptyState("noFolder"));
-      return undefined;
-    }
-    // Only when nothing was retained: an unusable git with a last good listing
-    // is a stale tree, not an empty one, and hiding it behind this state was
-    // what made the cache's retention invisible.
-    if (tree && !tree.gitAvailable && tree.repos.length === 0) {
-      this.element.appendChild(worktreeEmptyState("gitMissing"));
-      return undefined;
-    }
-    if (!tree || tree.repos.length === 0) {
-      this.element.appendChild(worktreeEmptyState("noRepo"));
-      return undefined;
-    }
-
-    // A refresh that already holds a tree keeps it and marks itself quietly (§ 5).
-    if (refreshing) {
-      this.element.appendChild(renderRefreshingMarker());
-    }
-
-    // Staleness the user did not cause is a status, not an alert: nothing here
-    // needs acting on, and the tree below it is still worth reading.
-    if (!tree.gitAvailable) {
-      this.element.appendChild(
-        renderNotice({
-          tone: "warn",
-          live: "status",
-          title: "Git is unavailable.",
-          body: "Showing the last known worktrees.",
-          reason: tree.unreadable.reasons.join("\n"),
-        }),
-      );
-    }
-
-    // Presence sources that failed are named on the whole tree — they are not
-    // scoped to one repo. An EMPTY result that is genuinely empty is not degraded
-    // and gets no affordance at all (§ 4.5).
-    for (const degradation of presence?.degradedSources ?? []) {
-      this.element.appendChild(
-        renderNotice({
-          tone: "warn",
-          title: "Agent list may be stale.",
-          reason: `${degradation.source}: ${degradation.reason}`,
-        }),
-      );
-    }
-    // Suppressed while git is unavailable: the notice above already carries
-    // every reason, and saying it twice reads as two separate problems.
-    if (tree.gitAvailable && tree.unreadable.count > 0) {
-      this.element.appendChild(
-        renderNotice({
-          tone: "warn",
-          // `count` is occurrences and `reasons` is deduplicated for display, so
-          // the two numbers deliberately differ and each is shown as what it is.
-          title: `${tree.unreadable.count} path${tree.unreadable.count === 1 ? "" : "s"} could not be read.`,
-          reason: tree.unreadable.reasons.join("\n"),
-        }),
-      );
-    }
-
-    // A group header per repo, but ONLY when the tree holds more than one (§ 3.1).
-    const multiRepo = tree.repos.length > 1;
-    let rendered = 0;
-    for (const repo of tree.repos) {
-      // Where this repo's section ends, so a repo-scoped result still lands with
-      // its repository. Recorded here rather than inside `renderRepo` because that
-      // method has an early return of its own, and an anchor missing for exactly
-      // the collapsed case is how the collapsed hole opened.
-      const before = this.element.childElementCount;
-      rendered += this.renderRepo(repo, multiRepo, now);
-      const last = this.element.lastElementChild;
-      // ONLY when this repository actually drew something. A filter can empty one
-      // entirely, and then the last element belongs to the repository before it —
-      // a repo-scoped notice carries no name, so nothing on screen would contradict
-      // the wrong attribution.
-      if (this.element.childElementCount > before && last instanceof HTMLElement) {
-        this.repoAnchors.set(repo.repoId, last);
-      }
-    }
-    if (rendered === 0 && this.filter.query()) {
-      this.element.appendChild(worktreeEmptyState("noMatch"));
-    }
-    this.nav.stampLevels(multiRepo);
-    return restoreFocusTo;
-  }
-
-  /**
-   * Every worktree id currently on screen, read back OUT OF THE DOM rather than
-   * re-derived. `armCeiling` always runs after `render`, so the rows are already
-   * there to be counted.
-   *
-   * The previous version restated the render's own predicate, and the restatement
-   * drifted twice: once on `gitAvailable`, which drew a retained listing no
-   * crossing could repaint, and once on `noFolder`. There is no third term to miss
-   * — a row is here because it was drawn, which is the actual question.
-   */
-  private renderedWorktreeIds(): Set<string> {
-    return new Set(this.renderedWorktreeRows().keys());
-  }
-
-  /** The drawn rows by worktree id. One implementation behind both the ceiling
-   *  scheduler and result placement — two copies of this selector drifted twice
-   *  before. They still scan separately, at the different moments each needs. */
-  private renderedWorktreeRows(): Map<string, HTMLElement> {
-    const rows = new Map<string, HTMLElement>();
-    for (const el of this.element.querySelectorAll<HTMLElement>("[data-worktree-id]")) {
-      const id = el.dataset.worktreeId;
-      if (id !== undefined && !rows.has(id)) {
-        rows.set(id, el);
-      }
-    }
-    return rows;
-  }
-
-  /** Returns how many worktree rows this repo contributed (0 → filtered away). */
-  private renderRepo(repo: WorktreeRepo, multiRepo: boolean, now: number): number {
-    const visible = repo.worktrees.filter((w) => this.filter.matches(w));
-    if (visible.length === 0 && !repo.degraded) {
-      return 0;
-    }
-    // Only a rendered header can reopen a repo, so a single repo is never honoured
-    // as collapsed — a persisted id from a two-repo session would otherwise blank
-    // the view with no control to recover it.
-    const collapsed = multiRepo && this.fold.isCollapsed(repo.repoId);
-    if (multiRepo) {
-      this.element.appendChild(
-        renderRepoHeader(
-          repo,
-          visible.length,
-          collapsed,
-          () => this.toggleCollapsed(repo.repoId),
-          this.deps.onCreateForRepo ? () => this.deps.onCreateForRepo?.(repo.repoId) : undefined,
-        ),
-      );
-    }
-    if (collapsed) {
-      return visible.length;
-    }
-
-    // Degraded is scoped to the repo that failed, and names the source and reason.
-    if (repo.degraded) {
-      this.element.appendChild(
-        renderNotice({
-          tone: "warn",
-          title: "Worktree list may be stale.",
-          reason: repo.degraded,
-          actions: this.deps.onRetryRepo
-            ? [{ label: "Retry", onClick: () => this.deps.onRetryRepo?.(repo.repoId) }]
-            : undefined,
-        }),
-      );
-    }
-
-    const shown = this.filter.shownWorktrees(repo, multiRepo);
-    const tail = shown.filter((w) => this.filter.isIdle(w));
-    // A filter reveals the tail, so there is nothing left for a disclosure to
-    // disclose — and one that hides zero rows is not merely useless, it is a trap:
-    // `expandOrDescend` treats any row carrying `aria-expanded` as expandable, so
-    // Left enters the toggle branch and returns before `parentOf` ever runs. The
-    // row cannot be left. Not rendering it is what keeps the tail climbable.
-    const folds = tail.length >= IDLE_FOLD_THRESHOLD && !this.filter.query();
-    const folded = folds && this.filter.idleTailFolded(repo.repoId);
-    for (const info of shown) {
-      if (folds && this.filter.isIdle(info)) {
-        continue;
-      }
-      this.renderWorktree(info, now, false);
-    }
-    if (folds) {
-      this.element.appendChild(
-        renderIdleDisclosure(repo.repoId, tail.length, folded, () => this.filter.toggleIdleTail(repo.repoId)),
-        // levels are stamped after the whole tree is drawn — see `stampLevels`.
-      );
-      if (!folded) {
-        for (const info of tail) {
-          // Notices travel with the row they concern wherever it is drawn: a
-          // worktree does not stop reporting what an action did to it because
-          // it happens to be quiet enough to sit under the disclosure.
-          this.renderWorktree(info, now, true);
-        }
-      }
-    }
-    // Read off the REPOSITORY, never off what got drawn. A degraded listing
-    // carries zero worktrees, and a filter, the cap, and the fold each reduce the
-    // rows without saying anything about what the repository holds — deciding
-    // from visible rows would call four different things unbranched.
-    if (isUnbranched(repo)) {
-      this.element.appendChild(
-        worktreeEmptyState(
-          "unbranched",
-          this.deps.onCreateForRepo ? () => this.deps.onCreateForRepo?.(repo.repoId) : undefined,
-        ),
-      );
-    }
-    if (shown.length < visible.length) {
-      this.element.appendChild(
-        renderShowAll(visible.length, () => {
-          this.filter.uncap(repo.repoId);
-          this.repaint();
-        }),
-      );
-    }
-    return visible.length;
-  }
-
   /**
    * PERF PROTOTYPE — the memo key for one worktree's subtree. Covers every field
    * the row + its agent rows + subagent sections read, INCLUDING the clock-derived
@@ -1015,7 +669,7 @@ export class WorktreeView {
           // § 6 has always given disclosure to the chevron rather than the row.
           onActivate: () => {
             if (this.select(info.id)) {
-              this.repaint();
+              this.tree.repaint();
             }
           },
           onContextMenu: this.menu ? (i, ev, row) => this.menu?.openForWorktree(i, ev, row) : undefined,

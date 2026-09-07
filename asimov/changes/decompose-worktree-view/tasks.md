@@ -143,7 +143,7 @@
     3. Trim the imports the cut leaves unused in `src/webview/worktree/WorktreeView.ts`.
     4. Run `bun run asm refactor shape src/webview/worktree/WorktreeView.ts src/webview/worktree/worktreeView/viewFilter.ts` and split `src/webview/worktree/worktreeView/viewFilter.ts` again if it fires.
 
-- [ ] 3_11 Extract the render pass and its memo
+- [x] 3_11 Extract the render pass and its memo — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts exit 0
   - **Deps**: 3_10
   - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5, design.md § Obligation ledger
   - **Boundary**: `src/webview/worktree/worktreeView/treeRender.ts` is under 500 lines, and `src/webview/worktree/WorktreeView.ts` never grows
