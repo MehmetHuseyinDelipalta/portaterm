@@ -361,6 +361,11 @@ let tabBarScope: TabBarScopeWiring | null = null;
 
 // ─── Orchestration ──────────────────────────────────────────────────
 
+/** Create in the selected linked worktree; main uses the generic route. */
+function requestNewTerminal(worktreeId = tabBarScope?.effectiveScope()?.worktreeId): void {
+  vscode.postMessage(worktreeId ? { type: "worktreeOpenTerminal", worktreeId } : { type: "createTab" });
+}
+
 function updateTabBar(): void {
   // Every route a pane arrives or leaves by ends in a redraw: the region's own
   // offers, the `+` button, a split, a close, a tree push. Deciding the region at
@@ -383,7 +388,7 @@ function updateTabBar(): void {
     activeTabId: store.activeTabId,
     onTabClick: (tabId) => switchTab(tabId),
     onTabClose: (tabId) => vscode.postMessage({ type: "closeTab", tabId }),
-    onAddClick: () => vscode.postMessage({ type: "createTab" }),
+    onAddClick: (worktreeId) => requestNewTerminal(worktreeId),
     onTabRename: (tabId, tabEl) => startInlineRename(tabId, tabEl, tabBarEl),
     onAfterRender: () => {
       // If an inline rename is in progress, re-anchor the overlay to the
@@ -555,7 +560,7 @@ function removeTerminal(id: string): void {
       switchTab(remaining[remaining.length - 1]);
     } else {
       store.activeTabId = null;
-      vscode.postMessage({ type: "createTab" });
+      requestNewTerminal();
     }
   }
   updateTabBar();
@@ -621,7 +626,9 @@ const routeMessage = createMessageRouter({
     }
   },
   onTabCreated(msg) {
-    const instance = factory.createTerminal(msg.tabId, msg.name, store.currentConfig, false, msg.customName);
+    const instance = factory.createTerminal(msg.tabId, msg.name, store.currentConfig, false, msg.customName, {
+      worktreeId: msg.worktreeId,
+    });
     instance.terminal.onTitleChange((title) => clearWaitingOnCursorTitleLoss(msg.tabId, title));
     instance.terminal.onResize(() => activityTracker.setWaiting(msg.tabId, false));
     switchTab(msg.tabId);
@@ -915,7 +922,7 @@ const routeMessage = createMessageRouter({
         store.currentConfig,
         store.activeTabId === msg.tabId,
         null,
-        { deferOpen: true, isSplitPane: msg.isSplitPane === true },
+        { deferOpen: true, isSplitPane: msg.isSplitPane === true, worktreeId: msg.worktreeId },
       );
       instance.terminal.onTitleChange((title) => clearWaitingOnCursorTitleLoss(msg.tabId, title));
       instance.terminal.onResize(() => activityTracker.setWaiting(msg.tabId, false));
@@ -980,6 +987,7 @@ function handleInit(msg: InitMessage): void {
   for (const tab of msg.tabs) {
     const instance = factory.createTerminal(tab.id, tab.name, msg.config, tab.isActive, tab.customName, {
       isSplitPane: tab.isSplitPane,
+      worktreeId: tab.worktreeId,
     });
     instance.terminal.onTitleChange((title) => clearWaitingOnCursorTitleLoss(tab.id, title));
     instance.terminal.onResize(() => activityTracker.setWaiting(tab.id, false));

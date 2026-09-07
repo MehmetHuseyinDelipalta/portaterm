@@ -247,7 +247,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * repository, one path, one registration, one agent row (task 2_5). Nothing
    * here writes, which is why they travel together.
    */
-  const { repoIdOf, repoById, launchTarget, actionPath, matchedRow, locate } = createHostLookups({
+  const { cachedWorktree, repoIdOf, repoById, launchTarget, actionPath, matchedRow, locate } = createHostLookups({
     repos: () => cache.read().repos,
     publishedRow: (rowId) => publishedRow(rowId),
   });
@@ -297,6 +297,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    */
   const shell = createShellActions({
     actionPath,
+    terminalOwner: (worktreeId) => (cachedWorktree(worktreeId)?.kind === "linked" ? worktreeId : undefined),
     perform,
     matchedRow,
     admittedTarget,
@@ -382,7 +383,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
         report.origin?.post(report.provisionResult);
       }
       if (report.openTerminalAt !== undefined) {
-        void report.origin?.openTerminal?.(report.openTerminalAt);
+        void report.origin?.openTerminal?.(report.openTerminalAt, report.message.worktreeId);
       }
     },
 

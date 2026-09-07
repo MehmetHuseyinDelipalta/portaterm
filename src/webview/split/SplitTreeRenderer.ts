@@ -386,7 +386,7 @@ export class SplitTreeRenderer {
       this.store.currentConfig,
       false,
       null,
-      { isSplitPane: true },
+      { isSplitPane: true, worktreeId: msg.worktreeId },
     );
 
     // Update the split tree: replace the source leaf with a branch containing source + new

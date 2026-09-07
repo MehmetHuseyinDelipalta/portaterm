@@ -475,8 +475,8 @@ export class TerminalEditorProvider {
       post: (msg) => this.safePostMessage(msg),
       // See TerminalViewProvider: only the provider owning the view can create a
       // pane, and the cwd arrives already resolved by the host (design.md D2).
-      openTerminal: async (cwd) => {
-        this.newTerminalAt(cwd);
+      openTerminal: async (cwd, worktreeId) => {
+        this.newTerminalAt(cwd, worktreeId);
       },
     };
     worktreeAttachment = this.worktreeHost?.attach(this.worktreeSurface);
@@ -557,12 +557,13 @@ export class TerminalEditorProvider {
    * directory — the worktree panel's "Open Terminal Here" passes a path the
    * HOST resolved, and everything else takes the setting.
    */
-  private newTerminalAt(cwd?: string): void {
+  private newTerminalAt(cwd?: string, worktreeId?: string): void {
     const createSettings = readTerminalSettings();
     const newSessionId = this.sessionManager.createSession(this._viewId, this._panel.webview, {
       shell: createSettings.shell,
       shellArgs: createSettings.shellArgs,
       cwd: cwd ?? createSettings.cwd,
+      worktreeId,
     });
     this.sessionManager.attachSessionToPanel(this._panelId, newSessionId);
     const newSession = this.sessionManager.getSession(newSessionId);
@@ -572,6 +573,7 @@ export class TerminalEditorProvider {
         tabId: newSessionId,
         name: newSession.name,
         customName: newSession.customName,
+        worktreeId: newSession.worktreeId,
       });
     }
   }
@@ -1027,6 +1029,7 @@ export class TerminalEditorProvider {
             shellExited: snap.metadata.shellExited,
             exitCode: snap.metadata.exitCode,
             isSplitPane: snap.metadata.isSplitPane,
+            worktreeId: snap.metadata.worktreeId,
           });
         }
         // Resume output flushing for sessions paused by createSession({restoreFrom}).

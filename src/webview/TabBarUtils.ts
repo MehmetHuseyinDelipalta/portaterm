@@ -187,7 +187,8 @@ export interface RenderTabBarDeps {
   activeTabId: string | null;
   onTabClick: (tabId: string) => void;
   onTabClose: (tabId: string) => void;
-  onAddClick: () => void;
+  /** Create in the scoped worktree when one is selected; otherwise use main. */
+  onAddClick: (worktreeId?: string) => void;
   /**
    * Double-click on a tab triggers inline rename. Receives the tab id and the
    * tab element so the caller can spawn an overlay anchored to it.
@@ -208,6 +209,7 @@ export interface RenderTabBarDeps {
    * scope filtering down to one tab cannot hide its own escape hatch (D3, D4).
    */
   scope?: {
+    worktreeId: string;
     label: string;
     onClear: () => void;
     /**
@@ -407,7 +409,7 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     addBtn.type = "button";
     addBtn.setAttribute("aria-label", "Create terminal tab");
   }
-  addBtn.onclick = () => onAddClick();
+  addBtn.onclick = () => onAddClick(scope?.worktreeId);
 
   // Preserve nodes that are already in the right position. Avoiding even a
   // same-parent remove/reinsert is what keeps pointerdown/up targeting stable.

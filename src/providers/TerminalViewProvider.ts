@@ -205,8 +205,8 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       // capability lives on the surface rather than among the host's injected
       // ones. The cwd arrives already resolved by the host — it is a worktree's
       // own path, never an id the webview sent (design.md D2).
-      openTerminal: async (cwd) => {
-        this.newTerminalAt(webviewView.webview, cwd);
+      openTerminal: async (cwd, worktreeId) => {
+        this.newTerminalAt(webviewView.webview, cwd, worktreeId);
       },
       // Same reason as `openTerminal`: the host resolves WHAT to run and where,
       // and only the provider owning this view can hold the pane it runs in.
@@ -442,6 +442,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       cwd: opts.cwd,
       env: opts.env,
       isAgentLaunch: opts.isAgentLaunch,
+      worktreeId: opts.worktreeId,
     });
     const newSession = this.sessionManager.getSession(newSessionId);
     if (newSession) {
@@ -450,6 +451,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         tabId: newSessionId,
         name: newSession.name,
         customName: newSession.customName,
+        worktreeId: newSession.worktreeId,
       });
     }
   }
@@ -788,7 +790,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
    * directory — the worktree panel's "Open Terminal Here" passes a path the
    * HOST resolved, and everything else takes the setting.
    */
-  private newTerminalAt(webview: vscode.Webview, cwd?: string): void {
+  private newTerminalAt(webview: vscode.Webview, cwd?: string, worktreeId?: string): void {
     const viewId = this.getViewId();
     const settings = readTerminalSettings();
     try {
@@ -796,6 +798,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         shell: settings.shell,
         shellArgs: settings.shellArgs,
         cwd: cwd ?? settings.cwd,
+        worktreeId,
       });
       const newSession = this.sessionManager.getSession(newSessionId);
       if (newSession) {
@@ -804,6 +807,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           tabId: newSessionId,
           name: newSession.name,
           customName: newSession.customName,
+          worktreeId: newSession.worktreeId,
         });
       }
     } catch (err) {
@@ -1111,11 +1115,13 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
             const viewId = this.getViewId();
             const splitSettings = readTerminalSettings();
             try {
+              const source = this.sessionManager.getSession(splitMsg.sourcePaneId);
               const newSessionId = this.sessionManager.createSession(viewId, webviewView.webview, {
                 isSplitPane: true,
                 shell: splitSettings.shell,
                 shellArgs: splitSettings.shellArgs,
-                cwd: splitSettings.cwd,
+                cwd: source?.currentCwd ?? source?.initialCwd ?? splitSettings.cwd,
+                worktreeId: source?.worktreeId,
                 // Propagate root-tab identity for atomic group eviction (round-1 B4).
                 // Older webviews (legacy IPC shape) omit rootTabId — fall through.
                 rootTabId: splitMsg.rootTabId,
@@ -1128,6 +1134,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
                   newSessionId,
                   newSessionName: newSession.name,
                   direction: splitMsg.direction,
+                  worktreeId: newSession.worktreeId,
                 });
               }
             } catch (err) {
@@ -1412,6 +1419,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
             shellExited: snap.metadata.shellExited,
             exitCode: snap.metadata.exitCode,
             isSplitPane: snap.metadata.isSplitPane,
+            worktreeId: snap.metadata.worktreeId,
           });
         }
         // Resume output flushing for sessions paused by createSession({restoreFrom}).

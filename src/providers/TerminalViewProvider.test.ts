@@ -1239,6 +1239,30 @@ describe("TerminalViewProvider: split pane ghost tab fix", () => {
     sm.dispose();
   });
 
+  it("inherits the source pane's stable owner and cwd", () => {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers, postMessageSpy } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    const rootTabId = sm.createSession(provider.getViewId(), webviewView.webview, {
+      cwd: "/repo-wt/feat",
+      worktreeId: "/repo-wt/feat",
+    });
+    sm.setCurrentCwd(rootTabId, "/repo-wt/feat/packages/app");
+
+    for (const handler of messageHandlers) {
+      handler({ type: "requestSplitSession", direction: "vertical", sourcePaneId: rootTabId });
+    }
+
+    const split = sm.getAllSessionsForView(provider.getViewId()).find((session) => session.id !== rootTabId);
+    expect(split?.worktreeId).toBe("/repo-wt/feat");
+    expect(sm.getSession(split!.id)?.initialCwd).toBe("/repo-wt/feat/packages/app");
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "splitPaneCreated", worktreeId: "/repo-wt/feat" }),
+    );
+    sm.dispose();
+  });
+
   it("init on re-creation includes split pane sessions with isSplitPane flag", () => {
     // Contract change (restore-terminal-sessions design.md D12): init MUST
     // carry every session — roots AND split-pane children — so the webview

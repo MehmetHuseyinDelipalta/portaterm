@@ -24,6 +24,8 @@ type Arm<T extends WorktreeActionMessage["type"]> = (
 export interface ShellDeps {
   /** The worktree's path, or undefined when it no longer resolves. */
   actionPath(worktreeId: string, allowMissing: boolean): string | undefined;
+  /** Linked owner for this worktree; main worktrees return undefined. */
+  terminalOwner(worktreeId: string): string | undefined;
   /** Run a capability, logging a rejection rather than surfacing it. */
   perform(run: () => Promise<void>): void;
   /** The published row, only while it still carries the value the message quoted. */
@@ -39,6 +41,7 @@ export interface ShellDeps {
 export function createShellActions(deps: ShellDeps) {
   const {
     actionPath,
+    terminalOwner,
     perform,
     matchedRow,
     admittedTarget,
@@ -79,7 +82,7 @@ export function createShellActions(deps: ShellDeps) {
         const path = now.path;
         // Re-resolved rather than reusing the pre-await path: git's own display
         // string for the registration that is there now.
-        return { ...launchOptions, cwd: path };
+        return { ...launchOptions, cwd: path, worktreeId: terminalOwner(admitted.worktreeId) };
       })
       .then((options) => (options === undefined ? undefined : open.call(surface, options)))
       .catch((err: unknown) => {
@@ -132,7 +135,7 @@ export function createShellActions(deps: ShellDeps) {
     const path = actionPath(msg.worktreeId, false);
     const open = surface.openTerminal;
     if (path !== undefined && open) {
-      perform(() => open.call(surface, path));
+      perform(() => open.call(surface, path, terminalOwner(msg.worktreeId)));
     }
     return;
   };

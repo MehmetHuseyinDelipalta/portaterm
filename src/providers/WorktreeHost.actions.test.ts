@@ -317,14 +317,17 @@ function recordingActions(assessReport?: AssessReport | (() => Promise<AssessRep
 function surface(canOpenTerminal = true): WorktreeSurface & {
   posts: ExtensionToWebViewMessage[];
   terminals: string[];
+  terminalOwners: Array<string | undefined>;
   launches: CreateSessionOptions[];
 } {
   const posts: ExtensionToWebViewMessage[] = [];
   const terminals: string[] = [];
+  const terminalOwners: Array<string | undefined> = [];
   const launches: CreateSessionOptions[] = [];
   return {
     posts,
     terminals,
+    terminalOwners,
     launches,
     isReady: () => true,
     post: (m) => posts.push(m),
@@ -333,8 +336,9 @@ function surface(canOpenTerminal = true): WorktreeSurface & {
     },
     ...(canOpenTerminal
       ? {
-          openTerminal: async (cwd: string) => {
+          openTerminal: async (cwd: string, worktreeId?: string) => {
             terminals.push(cwd);
+            terminalOwners.push(worktreeId);
           },
         }
       : {}),
@@ -733,7 +737,18 @@ describe("a worktree action acts on the worktree the id names", () => {
     await settle();
 
     expect(other.terminals).toEqual([FEAT_PATH]);
+    expect(other.terminalOwners).toEqual([FEAT_PATH]);
     expect(view.terminals).toEqual([]);
+    dispose();
+  });
+
+  it("opens a main-worktree terminal in the main owner bucket", async () => {
+    const { host, view, dispose } = await builtHost();
+    host.handleMessage(view, { type: "worktreeOpenTerminal", worktreeId: MAIN_PATH });
+    await settle();
+
+    expect(view.terminals).toEqual([MAIN_PATH]);
+    expect(view.terminalOwners).toEqual([undefined]);
     dispose();
   });
 
@@ -1795,7 +1810,7 @@ describe("launching an agent", () => {
     });
     await settle();
     expect(startAgent).toHaveBeenCalledWith("claude", FEAT_PATH, {});
-    expect(view.launches).toEqual([OPTS]);
+    expect(view.launches).toEqual([{ ...OPTS, worktreeId: FEAT_PATH }]);
     dispose();
   });
 
@@ -2344,7 +2359,7 @@ describe("resuming a session into a worktree", () => {
     });
     await settle();
     expect(resumeSessionAt).toHaveBeenCalledWith(SESSION, FEAT_PATH);
-    expect(view.launches).toEqual([OPTS]);
+    expect(view.launches).toEqual([{ ...OPTS, worktreeId: FEAT_PATH }]);
     dispose();
   });
 

@@ -58,7 +58,7 @@ export interface WorktreeSurface {
    * Optional like every other capability: a surface that does not implement it
    * offers no terminals, exactly as it behaved before actions existed.
    */
-  openTerminal?(cwd: string): Promise<void>;
+  openTerminal?(cwd: string, worktreeId?: string): Promise<void>;
   /**
    * Open a pane running an already-resolved launch, in THIS surface's view.
    *
