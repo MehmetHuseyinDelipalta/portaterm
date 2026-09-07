@@ -12,8 +12,8 @@
 
 ## Implement
 
-- [ ] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [x] All tasks done (`tasks.md`)
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
@@ -37,3 +37,4 @@ Gate 1: independent adjudication selected webview navigation authority with host
 Real-dependency: task 2_1 — SessionManager snapshot ownership enters webview restore; Verify runs snapshot and navigation restore suites.
 Main projection: global main marks no repository-specific worktree row; linked owners mark exactly one linked row.
 Plan attack: Opus and Astra findings triaged; accepted restore, split, witness, migration, and stale-contract defects; rejected host-impossibility and startup-main-mark claims.
+Witnesses: I18 pass [exit 0]; I19 pass [exit 0]; I20 pass [exit 0]; I21 pass [exit 0]; I22 pass [exit 0].
