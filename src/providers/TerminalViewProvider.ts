@@ -72,7 +72,7 @@ export function themeKindFor(kind: vscode.ColorThemeKind): ThemeChangedMessage["
 interface PendingSplitChild {
   sessionId: string;
   sourcePaneId: string;
-  timer: NodeJS.Timeout;
+  deliveryTimer: NodeJS.Timeout | null;
 }
 
 const MAX_PENDING_SPLIT_CHILDREN = 64;
@@ -1170,14 +1170,14 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
             if (!newSession) {
               break;
             }
-            const timer = setTimeout(
+            const deliveryTimer = setTimeout(
               () => this.rollbackPendingSplitChild(message.requestId),
               SPLIT_ATTACHMENT_TIMEOUT_MS,
             );
             this.pendingSplitChildren.set(message.requestId, {
               sessionId: newSessionId,
               sourcePaneId: message.sourcePaneId,
-              timer,
+              deliveryTimer,
             });
             void this.safeSendWithRetry(
               webviewView.webview,
@@ -1193,8 +1193,17 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
               2,
               () => !this.pendingSplitChildren.has(message.requestId),
             ).then((delivered) => {
+              const pending = this.pendingSplitChildren.get(message.requestId);
+              if (!pending || pending.sessionId !== newSessionId) {
+                return;
+              }
               if (!delivered) {
                 this.rollbackPendingSplitChild(message.requestId);
+                return;
+              }
+              if (pending.deliveryTimer !== null) {
+                clearTimeout(pending.deliveryTimer);
+                pending.deliveryTimer = null;
               }
             });
           } catch (err) {
@@ -1210,13 +1219,18 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
 
         case "splitPaneAttachmentResult": {
           const pending = this.pendingSplitChildren.get(message.requestId);
-          if (!pending || pending.sessionId !== message.newSessionId) {
+          if (!pending) {
             break;
           }
           if (message.status === "attached") {
-            clearTimeout(pending.timer);
+            if (pending.sessionId !== message.newSessionId) {
+              break;
+            }
+            if (pending.deliveryTimer !== null) {
+              clearTimeout(pending.deliveryTimer);
+            }
             this.pendingSplitChildren.delete(message.requestId);
-          } else {
+          } else if (message.newSessionId === undefined || pending.sessionId === message.newSessionId) {
             this.rollbackPendingSplitChild(message.requestId);
           }
           break;
@@ -1585,7 +1599,9 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     if (!pending) {
       return;
     }
-    clearTimeout(pending.timer);
+    if (pending.deliveryTimer !== null) {
+      clearTimeout(pending.deliveryTimer);
+    }
     this.pendingSplitChildren.delete(requestId);
     this.sessionManager.destroySession(pending.sessionId);
   }

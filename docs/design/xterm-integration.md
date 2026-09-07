@@ -347,9 +347,11 @@ sequenceDiagram
     WV->>EH: splitPaneAttachmentResult { attached | rejected }
 ```
 
-The response never targets the currently active tab. Rejection, failed delivery, source loss,
-surface disposal, or attachment timeout destroys a never-attached child. An attached acknowledgment
-removes it from pending rollback ownership.
+The response never targets the currently active tab. The host delivery deadline applies only until
+`splitPaneCreated` is posted successfully; delivery cancels unilateral destruction. The webview's
+request deadline sends an explicit rejection, while source loss and surface disposal still release
+pending children. A throwing committed effect batch remains replayable with queued intents intact,
+and `attached` is sent only after projection, persistence, and host echo complete.
 
 ### 7.6 Active Navigation
 

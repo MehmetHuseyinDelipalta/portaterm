@@ -37,6 +37,11 @@ interface PendingTransaction {
   catalogChanged: boolean;
 }
 
+interface PendingCommittedEffects {
+  state: TerminalNavigationState;
+  generation: number;
+}
+
 function cloneState(state: TerminalNavigationState): TerminalNavigationState {
   return {
     activeOwner: state.activeOwner.kind === "main" ? { kind: "main" } : { kind: "linked", id: state.activeOwner.id },
@@ -60,6 +65,7 @@ function statesEqual(left: TerminalNavigationState, right: TerminalNavigationSta
 export class TerminalNavigationController {
   private state: TerminalNavigationState;
   private readonly pending: PendingTransaction[] = [];
+  private pendingEffects: PendingCommittedEffects | null = null;
   private processing = false;
   private generation = 0;
 
@@ -88,16 +94,32 @@ export class TerminalNavigationController {
     return this.enqueue({ mutateCatalog, transition, catalogChanged: true });
   }
 
+  reconcileEffects(): boolean {
+    if (this.processing || this.pendingEffects === null) {
+      return false;
+    }
+    this.drainPending();
+    return true;
+  }
+
   private enqueue(transaction: PendingTransaction): TerminalNavigationDispatchResult {
-    this.pending.push(transaction);
     if (this.processing) {
+      this.pending.push(transaction);
       return "queued";
     }
+    if (this.pendingEffects !== null || this.pending.length > 0) {
+      this.drainPending();
+    }
+    this.pending.push(transaction);
+    return this.drainPending();
+  }
 
+  private drainPending(): TerminalNavigationDispatchResult {
     this.processing = true;
     let firstResult: TerminalNavigationDispatchResult = "noop";
     let first = true;
     try {
+      this.runPendingEffects();
       while (this.pending.length > 0) {
         const next = this.pending.shift();
         if (!next) {
@@ -110,9 +132,6 @@ export class TerminalNavigationController {
         }
       }
       return firstResult;
-    } catch (error) {
-      this.pending.length = 0;
-      throw error;
     } finally {
       this.processing = false;
     }
@@ -131,8 +150,20 @@ export class TerminalNavigationController {
 
     this.state = cloneState(next);
     this.generation += 1;
-    const generation = this.generation;
-    const committed = cloneState(this.state);
+    this.pendingEffects = {
+      state: cloneState(this.state),
+      generation: this.generation,
+    };
+    this.runPendingEffects();
+    return "committed";
+  }
+
+  private runPendingEffects(): void {
+    const pending = this.pendingEffects;
+    if (pending === null) {
+      return;
+    }
+    const committed = cloneState(pending.state);
     const activePaneId =
       committed.activeTabId === null ? null : (committed.activePaneByTab[committed.activeTabId] ?? null);
 
@@ -145,12 +176,13 @@ export class TerminalNavigationController {
     this.deps.effects.emitHostEcho(committed.activeTabId, activePaneId);
 
     if (this.deps.effects.scheduleDelayed && this.deps.effects.runDelayedFocusAndFit) {
+      const generation = pending.generation;
       this.deps.effects.scheduleDelayed(() => {
         if (this.generation === generation) {
           this.deps.effects.runDelayedFocusAndFit?.(cloneState(committed));
         }
       });
     }
-    return "committed";
+    this.pendingEffects = null;
   }
 }

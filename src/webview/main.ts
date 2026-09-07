@@ -42,6 +42,8 @@ import { createScrollbackDumpHandler } from "./messaging/scrollbackDumpHandler";
 import {
   applyTerminalNavigationProjection,
   navigationCatalogFromStore,
+  rejectExpiredSplitRequest,
+  runRecoverableNavigationTransaction,
   worktreeIdForTerminalOwner,
 } from "./navigation/TerminalNavigationComposition";
 import { TerminalNavigationController } from "./navigation/TerminalNavigationController";
@@ -375,6 +377,20 @@ let worktreeController: WorktreeController | null = null;
 // Constructed on init beside the controller that feeds it, and owning the join
 // itself. See: webview/tabBarScopeWiring.ts and design.md D8.
 let tabBarScope: TabBarScopeWiring | null = null;
+const pendingSplitAttachmentAcks = new Map<string, string>();
+
+function flushPendingSplitAttachmentAcks(): void {
+  for (const [requestId, newSessionId] of pendingSplitAttachmentAcks) {
+    vscode.postMessage({
+      type: "splitPaneAttachmentResult",
+      requestId,
+      newSessionId,
+      status: "attached",
+    });
+    pendingSplitAttachmentAcks.delete(requestId);
+  }
+}
+
 const navigationController = new TerminalNavigationController(
   { activeOwner: MAIN_TERMINAL_OWNER, activeTabId: null, activePaneByTab: {} },
   {
@@ -413,7 +429,12 @@ const navigationController = new TerminalNavigationController(
         store.persistNavigationCheckpoint(checkpoint);
       },
       emitHostEcho: (activeTabId, activePaneId) => {
-        vscode.postMessage({ type: "terminalNavigationCommitted", activeTabId, activePaneId });
+        vscode.postMessage(
+          activeTabId === null || activePaneId === null
+            ? { type: "terminalNavigationCommitted", activeTabId: null, activePaneId: null }
+            : { type: "terminalNavigationCommitted", activeTabId, activePaneId },
+        );
+        flushPendingSplitAttachmentAcks();
       },
       scheduleDelayed: (run) => requestAnimationFrame(run),
       runDelayedFocusAndFit: (state) => {
@@ -453,7 +474,9 @@ function requestSplitSession(direction: "horizontal" | "vertical", sourceTabId: 
     return;
   }
   const requestId = `split-${++splitRequestSequence}`;
-  const timer = setTimeout(() => pendingSplitRequests.delete(requestId), 15_000);
+  const timer = setTimeout(() => {
+    rejectExpiredSplitRequest(pendingSplitRequests, requestId, (message) => vscode.postMessage(message));
+  }, 15_000);
   pendingSplitRequests.set(requestId, { sourceTabId, sourcePaneId, direction, timer });
   vscode.postMessage({ type: "requestSplitSession", requestId, direction, sourceTabId, sourcePaneId });
 }
@@ -753,32 +776,31 @@ const routeMessage = createMessageRouter({
     clearTimeout(pending.timer);
     pendingSplitRequests.delete(msg.requestId);
     let attached = false;
-    try {
-      navigationController.transaction(
-        () => {
-          attached = splitRenderer.handleSplitPaneCreated(msg, factory);
-          if (attached) {
-            splitTabsNeedingRender.add(msg.sourceTabId);
-          }
-          return attached;
-        },
-        (catalog, state) =>
-          attached && state.activeTabId === msg.sourceTabId
-            ? focusNavigationPane(catalog, state, msg.newSessionId)
-            : normalizeTerminalNavigationState(catalog, state, {
-                preserveExplicitEmpty: state.activeTabId === null,
-              }),
-      );
-    } catch {
-      // If the catalog mutation completed, the child is already attached and
-      // must not be rolled back because a later projection effect failed.
+    runRecoverableNavigationTransaction(
+      navigationController,
+      () => {
+        attached = splitRenderer.handleSplitPaneCreated(msg, factory);
+        if (attached) {
+          splitTabsNeedingRender.add(msg.sourceTabId);
+          pendingSplitAttachmentAcks.set(msg.requestId, msg.newSessionId);
+        }
+        return attached;
+      },
+      (catalog, state) =>
+        attached && state.activeTabId === msg.sourceTabId
+          ? focusNavigationPane(catalog, state, msg.newSessionId)
+          : normalizeTerminalNavigationState(catalog, state, {
+              preserveExplicitEmpty: state.activeTabId === null,
+            }),
+    );
+    if (!attached) {
+      vscode.postMessage({
+        type: "splitPaneAttachmentResult",
+        requestId: msg.requestId,
+        newSessionId: msg.newSessionId,
+        status: "rejected",
+      });
     }
-    vscode.postMessage({
-      type: "splitPaneAttachmentResult",
-      requestId: msg.requestId,
-      newSessionId: msg.newSessionId,
-      status: attached ? "attached" : "rejected",
-    });
   },
   onCloseSplitPaneById(msg) {
     if (!msg.sessionId) {

@@ -150,12 +150,19 @@ export interface RequestSplitSessionMessage {
   sourcePaneId: string;
 }
 
-export interface SplitPaneAttachmentResultMessage {
-  type: "splitPaneAttachmentResult";
-  requestId: string;
-  newSessionId: string;
-  status: "attached" | "rejected";
-}
+export type SplitPaneAttachmentResultMessage =
+  | {
+      type: "splitPaneAttachmentResult";
+      requestId: string;
+      newSessionId: string;
+      status: "attached";
+    }
+  | {
+      type: "splitPaneAttachmentResult";
+      requestId: string;
+      newSessionId?: string;
+      status: "rejected";
+    };
 
 /** User requested destruction of a split pane's session. */
 export interface RequestCloseSplitPaneMessage {
@@ -188,11 +195,17 @@ export interface FocusMessage {
 }
 
 /** One atomically committed per-surface tab and pane routing result. */
-export interface TerminalNavigationCommittedMessage {
-  type: "terminalNavigationCommitted";
-  activeTabId: string | null;
-  activePaneId: string | null;
-}
+export type TerminalNavigationCommittedMessage =
+  | {
+      type: "terminalNavigationCommitted";
+      activeTabId: string;
+      activePaneId: string;
+    }
+  | {
+      type: "terminalNavigationCommitted";
+      activeTabId: null;
+      activePaneId: null;
+    };
 
 /** Request the extension host to open an external link (e.g. Cmd+Click on a URL in the terminal). */
 export interface OpenLinkMessage {

@@ -75,6 +75,17 @@ describe("terminal navigation documentation", () => {
     expect(text).toMatch(/Snapshot replay order therefore cannot choose navigation/);
   });
 
+  it("documents delivery-aware split timeout and recoverable attachment effects", () => {
+    const scope = read("docs/design/worktree-scope.md");
+    expect(scope).toMatch(/delivery deadline.*only while.*not been delivered/is);
+    expect(scope).toMatch(/request deadline sends rejection/is);
+    expect(scope).toMatch(/acknowledged only after replayable.*effects complete/is);
+
+    const xterm = read("docs/design/xterm-integration.md");
+    expect(xterm).toMatch(/delivery cancels unilateral destruction/is);
+    expect(xterm).toMatch(/effect batch remains replayable.*queued intents intact/is);
+  });
+
   it("documents committed navigation and legacy message boundaries", () => {
     const text = read("docs/design/message-protocol.md");
     expect(text).toMatch(/`focus`.*recency only/);

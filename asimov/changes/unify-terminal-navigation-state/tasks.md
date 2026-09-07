@@ -138,7 +138,7 @@
 
 ## 5. Close review findings
 
-- [ ] 5_1 Close round-1 split completion blockers
+- [x] 5_1 Close round-1 split completion blockers — verified: pnpm exec vitest run src/providers/TerminalViewProvider.test.ts src/webview/navigation/TerminalNavigationController.test.ts src/webview/navigation/TerminalNavigationComposition.test.ts src/webview/navigation/TerminalNavigationState.test.ts src/webview/messaging/MessageRouter.test.ts && pnpm exec vitest run src/test/invariants/terminalNavigationDocs.test.ts exit 0
   - **Deps**: 4_2
   - **Refs**: design.md D3, design.md D7; design.md OBL-3, design.md OBL-7
   - **Acceptance**:
@@ -147,6 +147,6 @@
   - **Plan**:
     1. Distinguish undelivered from delivered-pending children in `src/providers/TerminalViewProvider.ts`; make `src/providers/TerminalViewProvider.test.ts` prove the host delivery deadline cannot destroy a delivered child and that failed delivery, explicit rejection, source loss, and disposal still clean up.
     2. Make the webview request deadline send a correlated rejection in `src/webview/main.ts` and update the split result union in `src/types/messages.ts` plus `src/webview/messaging/MessageRouter.test.ts`.
-    3. Preserve and replay failed post-commit effects and queued intents in `src/webview/navigation/TerminalNavigationController.ts`; cover recovery in `src/webview/navigation/TerminalNavigationController.test.ts` and `src/webview/navigation/TerminalNavigationComposition.test.ts`, and gate attachment acknowledgment in `src/webview/main.ts` on successful reconciliation.
+    3. Preserve and replay failed post-commit effects and queued intents in `src/webview/navigation/TerminalNavigationController.ts`; add the recovery composition to `src/webview/navigation/TerminalNavigationComposition.ts`, cover it in `src/webview/navigation/TerminalNavigationController.test.ts` and `src/webview/navigation/TerminalNavigationComposition.test.ts`, and gate attachment acknowledgment in `src/webview/main.ts` on successful reconciliation.
     4. Reuse `tabOwningPane` in `src/webview/navigation/TerminalNavigationState.ts` and encode `terminalNavigationCommitted` as a coherent nullable-pair union in `src/types/messages.ts`.
     5. Reconcile delivery-aware timeout and effect-recovery wording in `docs/design/worktree-scope.md`, `docs/design/xterm-integration.md`, `docs/design/message-protocol.md`, and `src/test/invariants/terminalNavigationDocs.test.ts`.

@@ -157,6 +157,71 @@ describe("TerminalNavigationController", () => {
   });
 });
 
+describe("TerminalNavigationController effect recovery", () => {
+  it("replays a failed effect batch before preserving queued intents", () => {
+    const f = fixture();
+    f.ownerByPaneId.set("other", MAIN_TERMINAL_OWNER);
+    f.tabLayouts.set("other", createLeaf("other"));
+    let failPersist = true;
+    let queued = false;
+    let controller!: TerminalNavigationController;
+    f.effects.renderProjections = (state) => {
+      f.log.push(`render:${state.activeTabId}`);
+      if (state.activeTabId === "main" && !queued) {
+        queued = true;
+        controller.dispatch((catalog, current) => focusNavigationPane(catalog, current, "other"));
+      }
+    };
+    f.effects.persistCheckpoint = (checkpoint) => {
+      f.log.push(`persist:${checkpoint.activeTabId}`);
+      if (failPersist) {
+        failPersist = false;
+        throw new Error("transient persistence failure");
+      }
+    };
+    controller = new TerminalNavigationController(f.initial, {
+      readCatalog: () => f.catalog,
+      effects: f.effects,
+    });
+
+    expect(() => controller.dispatch((catalog, state) => focusNavigationPane(catalog, state, "main"))).toThrow(
+      "transient persistence failure",
+    );
+    expect(controller.getState().activeTabId).toBe("main");
+    expect(f.log).not.toContain("echo:main:main");
+
+    expect(controller.reconcileEffects()).toBe(true);
+    expect(f.log).toContain("echo:main:main");
+    expect(controller.getState().activeTabId).toBe("other");
+    expect(f.log.indexOf("echo:main:main")).toBeLessThan(f.log.lastIndexOf("render:other"));
+  });
+
+  it("does not queue a new catalog mutation behind effects that still fail", () => {
+    const f = fixture();
+    f.effects.persistCheckpoint = () => {
+      throw new Error("persistent persistence failure");
+    };
+    const controller = new TerminalNavigationController(f.initial, {
+      readCatalog: () => f.catalog,
+      effects: f.effects,
+    });
+    expect(() => controller.dispatch((catalog, state) => focusNavigationPane(catalog, state, "main"))).toThrow(
+      "persistent persistence failure",
+    );
+    let mutated = false;
+
+    expect(() =>
+      controller.transaction(
+        () => {
+          mutated = true;
+        },
+        (_catalog, state) => state,
+      ),
+    ).toThrow("persistent persistence failure");
+    expect(mutated).toBe(false);
+  });
+});
+
 describe("TerminalNavigationController catalog transactions", () => {
   it("runs one effect batch when topology changes without changing selection", () => {
     const f = fixture();

@@ -1,5 +1,5 @@
 import type { SplitNode } from "../SplitModel";
-import { getAllSessionIds } from "../SplitModel";
+import { getAllSessionIds, tabOwningPane } from "../SplitModel";
 
 export type TerminalOwner = { kind: "main" } | { kind: "linked"; id: string };
 
@@ -94,12 +94,7 @@ export function tabContainingPane(catalog: TerminalNavigationCatalog, paneId: st
   if (!catalog.ownerByPaneId.has(paneId)) {
     return null;
   }
-  for (const [tabId, layout] of catalog.tabLayouts) {
-    if (getAllSessionIds(layout).includes(paneId)) {
-      return tabId;
-    }
-  }
-  return null;
+  return tabOwningPane(catalog.tabLayouts, paneId);
 }
 
 function sanitizePaneSelections(
