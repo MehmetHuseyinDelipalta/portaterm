@@ -42,3 +42,14 @@
     4. Record `wc -l` for `src/worktree/worktreeMutationService.ts` and every file under `src/worktree/mutationService/` in workflow.md Notes. Any file at 500 or above is split before ticking, not deferred.
     5. Confirm OBL-4 by running design.md § Frozen inventory's command verbatim; it must print nothing. Then check the composition root's line count against the ~350 the same section names — a root still large after every cluster moved is holding something under another name.
     6. Run `pnpm run gate:fs-deletion` and record its carve-out count (OBL-5).
+
+- [x] 4_4 Close round-1 rationale-preservation findings — verified: pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/worktree/mutationService/ src/extension.worktreeMutations.test.ts exit 0
+  - **Deps**: 4_3
+  - **Refs**: design.md D4, design.md § Obligation ledger
+  - **Boundary**: No executable statement or ordering changes; restore only the moved destructive-path rationale and the unreachable throw text accepted from round 1.
+  - **Acceptance**:
+    - Outcome: F001 and F002 are closed, while the 218-case net and every destructive ordering remain unchanged.
+    - Verify: command pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/worktree/mutationService/ src/extension.worktreeMutations.test.ts
+  - **Plan**:
+    1. Restore the base's phase-1, adopt/reattach, changed-path, current-emptiness, branch-name, unreadable-debris and `sourceOf` rationale beside the same guards in `src/worktree/mutationService/createRun.ts`.
+    2. Restore `sourceOf`'s exact unreachable throw message.
