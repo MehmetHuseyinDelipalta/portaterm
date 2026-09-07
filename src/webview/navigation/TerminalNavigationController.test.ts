@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createLeaf } from "../SplitModel";
+import { createBranch, createLeaf, type SplitNode } from "../SplitModel";
 import { TerminalNavigationController, type TerminalNavigationEffects } from "./TerminalNavigationController";
 import {
   focusNavigationPane,
@@ -10,7 +10,7 @@ import {
 
 function fixture() {
   const ownerByPaneId = new Map([["main", MAIN_TERMINAL_OWNER]]);
-  const tabLayouts = new Map([["main", createLeaf("main")]]);
+  const tabLayouts = new Map<string, SplitNode>([["main", createLeaf("main")]]);
   const catalog: TerminalNavigationCatalog = { ownerByPaneId, tabLayouts };
   const initial: TerminalNavigationState = {
     activeOwner: MAIN_TERMINAL_OWNER,
@@ -176,5 +176,34 @@ describe("TerminalNavigationController catalog transactions", () => {
       ),
     ).toBe("committed");
     expect(f.log.filter((entry) => entry.startsWith("render:"))).toHaveLength(1);
+  });
+
+  it("commits split-close facts before one effect batch", () => {
+    const f = fixture();
+    f.ownerByPaneId.set("child", MAIN_TERMINAL_OWNER);
+    f.tabLayouts.set("main", createBranch("vertical", createLeaf("main"), createLeaf("child")));
+    const active: TerminalNavigationState = {
+      activeOwner: MAIN_TERMINAL_OWNER,
+      activeTabId: "main",
+      activePaneByTab: { main: "main" },
+    };
+    const controller = new TerminalNavigationController(active, {
+      readCatalog: () => f.catalog,
+      effects: f.effects,
+    });
+
+    controller.transaction(
+      () => {
+        expect(f.log).toEqual([]);
+        f.ownerByPaneId.delete("main");
+        f.tabLayouts.set("main", createLeaf("child"));
+      },
+      (catalog, state) => focusNavigationPane(catalog, state, "child"),
+    );
+
+    expect(controller.getState()).toMatchObject({ activeTabId: "main", activePaneByTab: { main: "child" } });
+    expect(f.log.filter((entry) => entry.startsWith("render:"))).toHaveLength(1);
+    expect(f.log).toContain("focus:child");
+    expect(f.log).toContain("echo:main:child");
   });
 });

@@ -102,6 +102,16 @@
   - **Plan**:
     1. Restore the split-render queue declaration in `src/webview/main.ts` and correct the committed-message test callback typing in `src/providers/TerminalEditorProvider.test.ts`.
 
+- [x] 3_4 Route split-pane close through atomic navigation — verified: pnpm exec vitest run src/webview/split/SplitTreeRenderer.test.ts src/webview/navigation/TerminalNavigationController.test.ts && pnpm exec vitest run src/webview/messaging/MessageRouter.test.ts exit 0
+  - **Deps**: 3_3
+  - **Refs**: specs/terminal-owner-navigation/spec.md#navigation-changes-owner-tab-and-pane-as-one-action; design.md D4, design.md D8
+  - **Acceptance**:
+    - Outcome: Closing a split pane produces one atomic navigation effect batch.
+    - Verify: command pnpm exec vitest run src/webview/split/SplitTreeRenderer.test.ts src/webview/navigation/TerminalNavigationController.test.ts
+  - **Plan**:
+    1. Make `src/webview/split/SplitTreeRenderer.ts` split-close handling fact-only and return the owning tab plus surviving pane.
+    2. Compose the close inside one controller transaction in `src/webview/main.ts`; update `src/webview/split/SplitTreeRenderer.test.ts` and `src/webview/navigation/TerminalNavigationController.test.ts` to reject direct render, persist, focus, or host-routing effects before commit.
+
 ## 4. Reconcile contracts and enforcement
 
 - [x] 4_1 Rewrite worktree-facing navigation documentation — verified: pnpm exec vitest run src/test/invariants/terminalNavigationDocs.test.ts exit 0
@@ -116,11 +126,11 @@
     3. Add `src/test/invariants/terminalNavigationDocs.test.ts` to inspect every changed navigation document for required authority statements and retired terms.
 
 - [ ] 4_2 Reconcile terminal architecture and invariant registry
-  - **Deps**: 4_1
+  - **Deps**: 4_1, 3_4
   - **Refs**: specs/terminal-owner-navigation/spec.md#{every-terminal-has-one-stable-owner,restore-uses-one-versioned-navigation-checkpoint,restore-validates-saved-navigation-against-terminal-facts,snapshot-replay-order-never-chooses-restored-navigation,presence-reports-activity-but-never-terminal-ownership}; design.md D1, design.md D3, design.md D5, design.md D6
   - **Acceptance**:
     - Outcome: Architecture and invariant registry enforce stable owner, coherent navigation, split completion, and restore precedence.
     - Verify: command pnpm exec vitest run src/test/invariants/coverage.test.ts src/test/invariants/terminalNavigationDocs.test.ts
   - **Plan**:
     1. Update `docs/design/xterm-integration.md`, `docs/design/session-manager.md`, `docs/design/message-protocol.md`, and `docs/DESIGN.md`; supersede D50 and document checkpoint and host echo boundaries.
-    2. Update `src/test/invariants/registry.ts` and tagged production-boundary tests so stable ownership, atomic navigation, split reachability, and presence non-authority replace obsolete attribution behavior.
+    2. Update `src/test/invariants/registry.ts`, `src/session/SessionManager.test.ts`, `src/session/SessionManager.snapshot.test.ts`, `src/providers/TerminalViewProvider.test.ts`, `src/webview/navigation/TerminalNavigationState.property.test.ts`, `src/webview/navigation/TerminalNavigationRestore.integration.test.ts`, and `src/test/invariants/terminalNavigationDocs.test.ts` so stable ownership, atomic navigation, split reachability, restore precedence, and presence non-authority replace obsolete attribution behavior.

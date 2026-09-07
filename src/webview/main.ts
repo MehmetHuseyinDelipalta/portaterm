@@ -781,14 +781,39 @@ const routeMessage = createMessageRouter({
     });
   },
   onCloseSplitPaneById(msg) {
-    if (msg.sessionId) {
-      const closed = splitRenderer.closeSplitPaneById(msg.sessionId);
-      if (closed) {
-        activityTracker.delete(closed);
-        paneEvidenceReporter.forget(closed);
-        factory.disposeHoverController(closed);
+    if (!msg.sessionId) {
+      return;
+    }
+    factory.disposeSubagentPopup();
+    const outcome: { result: ReturnType<typeof splitRenderer.closeSplitPaneById> } = { result: null };
+    try {
+      navigationController.transaction(
+        () => {
+          outcome.result = splitRenderer.closeSplitPaneById(msg.sessionId!);
+          const result = outcome.result;
+          if (result?.kind !== "closed") {
+            return false;
+          }
+          activityTracker.delete(result.closedPaneId);
+          paneEvidenceReporter.forget(result.closedPaneId);
+          factory.disposeHoverController(result.closedPaneId);
+          splitTabsNeedingRender.add(result.tabId);
+          return true;
+        },
+        (catalog, state) =>
+          outcome.result?.kind === "closed" && state.activeTabId === outcome.result.tabId
+            ? focusNavigationPane(catalog, state, outcome.result.survivingPaneId)
+            : normalizeTerminalNavigationState(catalog, state, {
+                preserveExplicitEmpty: state.activeTabId === null,
+              }),
+      );
+    } finally {
+      const result = outcome.result;
+      if (result?.kind === "close-tab") {
+        vscode.postMessage({ type: "closeTab", tabId: result.tabId });
+      } else if (result?.kind === "closed") {
+        vscode.postMessage({ type: "requestCloseSplitPane", sessionId: result.closedPaneId });
       }
-      factory.disposeSubagentPopup(); // closing any pane dismisses the singleton popup (D7)
     }
   },
   onSplitPaneAt(msg) {
