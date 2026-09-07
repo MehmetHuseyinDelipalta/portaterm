@@ -287,3 +287,16 @@ the create-form cluster's own wiring.
     3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
     4. Record `wc -l` for `src/providers/WorktreeHost.ts` and every file under `src/providers/worktreeHost/` in workflow.md Notes.
     5. Run design.md OBL-4's BOTH diff forms, `&&`-joined, and OBL-5's command verbatim.
+
+- [x] 2_21 Re-point the one-owner structural test at the module that now owns the sweep — verified: pnpm exec vitest run src/worktree/provisioning/oneOwner.test.ts exit 0
+  - **Deps**: 2_20
+  - **Refs**: None
+  - **Boundary**: the test's CLAIM is unchanged — one bulk owner, every flat state map swept exactly once, in one routine rather than per repository. Only the file it reads and the form it matches move.
+  - **Acceptance**:
+    - Outcome: `pnpm run test:unit` is green, and the re-pointed assertion still fails against a per-repository helper.
+    - Verify: command pnpm exec vitest run src/worktree/provisioning/oneOwner.test.ts
+  - **Plan**:
+    1. `src/worktree/provisioning/oneOwner.test.ts` reads `src/providers/WorktreeHost.ts` for `forgetDepartedRepos`; task `2_7` moved that routine to `src/providers/worktreeHost/openingRegistry.ts` and the seven-suite net could not see it. Point the read at the new owner.
+    2. The sweep is no longer spelled `[...map.keys()]` inline — `openingRegistry` owns one `sweep(slots, drop)` and the departure routine calls it once per map. Match the call, not the inlined scan, and keep the eight maps and their order.
+    3. Re-point the negative control at the same form, so a per-repository helper still fails it.
+    4. Widen `DESTINATION_CONFLICT_SOURCES` to the whole `src/providers/worktreeHost/` tree: it named `WorktreeHost.ts` to catch a second implementation there, and the code that could carry one has moved under that directory.

@@ -58,7 +58,25 @@ describe("one owner for the quoting rule", () => {
 
 const DESTINATION_CONFLICT_IMPLEMENTATION =
   /identityOf\(candidate\.path\)[\s\S]{0,300}?occupied\.some\([\s\S]{0,200}?contendersOf\(\[\.\.\.occupied,\s*candidate\]\)/;
-const DESTINATION_CONFLICT_SOURCES = [...SHIPPED, "../../providers/WorktreeHost.ts"];
+/**
+ * Every file that could carry a second implementation.
+ *
+ * Named `WorktreeHost.ts` alone until `decompose-worktree-host` moved the
+ * create and provisioning arms under `worktreeHost/`; naming only the root
+ * after that would have left the guard watching an empty file.
+ */
+const HOST_TREE = ((dir: string): string[] => {
+  const walk = (at: string): string[] =>
+    fs.readdirSync(at, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(at, entry.name);
+      if (entry.isDirectory()) {
+        return walk(full);
+      }
+      return entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") ? [path.relative(__dirname, full)] : [];
+    });
+  return walk(dir).sort();
+})(path.join(__dirname, "../../providers"));
+const DESTINATION_CONFLICT_SOURCES = [...SHIPPED, ...HOST_TREE];
 
 describe("one owner for provisioning destination conflicts", () => {
   it("is providerKit alone", () => {
@@ -96,7 +114,18 @@ const DEPARTURE_SCAN_MAPS = [
   "migrationReading",
   "migrationOffers",
 ] as const;
-const DEPARTURE_MAP_SCAN = new RegExp(String.raw`\[\.\.\.(${DEPARTURE_SCAN_MAPS.join("|")})\.keys\(\)\]`, "g");
+/**
+ * One sweep per map, in the routine itself.
+ *
+ * `openingRegistry` owns a single `sweep(slots, drop)` — and `sweepCopyFiles`
+ * for the one slot whose value holds an OS handle — so the scan is no longer
+ * spelled inline. The property is unchanged: every flat state map is swept
+ * exactly once, from one bulk routine, never once per departed repository.
+ */
+const DEPARTURE_MAP_SCAN = new RegExp(
+  String.raw`sweep(?:CopyFiles)?\(\s*(?:deps\.)?(${DEPARTURE_SCAN_MAPS.join("|")})\b`,
+  "g",
+);
 
 function departureScans(source: string): string[] {
   return [...source.matchAll(DEPARTURE_MAP_SCAN)].map((match) => match[1] ?? "");
@@ -104,7 +133,9 @@ function departureScans(source: string): string[] {
 
 describe("one bulk owner for repository-departure map scans", () => {
   it("scans every flat state map once in forgetDepartedRepos itself", () => {
-    const source = sourceOf("../../providers/WorktreeHost.ts");
+    // Task 2_7 of `decompose-worktree-host` moved this routine out of the
+    // composition root and into the module that owns the slot key format.
+    const source = sourceOf("../../providers/worktreeHost/openingRegistry.ts");
 
     expect(departureScans(bodyOf(source, "forgetDepartedRepos"))).toEqual(DEPARTURE_SCAN_MAPS);
   });
@@ -115,7 +146,7 @@ describe("one bulk owner for repository-departure map scans", () => {
       "  for (const repoId of departed) retireRepository(repoId);",
       "};",
       "const retireRepository = () => {",
-      "  for (const slot of [...addedCopyFiles.keys()]) addedCopyFiles.delete(slot);",
+      "  sweepCopyFiles(deps.addedCopyFiles, (slot) => slot.startsWith(gone));",
       "};",
     ].join("\n");
     expect(departureScans(bodyOf(repeated, "forgetDepartedRepos"))).toEqual([]);
@@ -311,18 +342,34 @@ const ts: typeof tsmod = (tsmod as { default?: typeof tsmod }).default ?? tsmod;
  * Declarations, `const f = () => {}`, `const f = function () {}`, and object or
  * class methods. Nesting is walked too: a helper declared inside another
  * function is still a helper.
+ *
+ * One name, one entry, and the OUTERMOST spelling wins. A module that keeps its
+ * routine at module scope and re-exposes it as a one-line method on the object
+ * its factory returns spells the name twice, and it is the routine that owns
+ * the behavior — indexing the delegate instead reports an empty body for every
+ * question asked about it.
  */
 function callablesOf(source: string): Map<string, tsmod.Node> {
   const file = ts.createSourceFile("probe.ts", source, ts.ScriptTarget.Latest, true);
-  const found = new Map<string, tsmod.Node>();
+  const found = new Map<string, { node: tsmod.Node; depth: number }>();
 
-  const visit = (node: tsmod.Node): void => {
+  const record = (name: string, node: tsmod.Node, depth: number): void => {
+    const held = found.get(name);
+    if (held === undefined || depth < held.depth) {
+      found.set(name, { node, depth });
+    }
+  };
+
+  const visit = (node: tsmod.Node, depth: number): void => {
+    let inner = depth;
     if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
-      found.set(node.name.text, node);
+      record(node.name.text, node, depth);
+      inner = depth + 1;
     } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined) {
       const init = node.initializer;
       if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) {
-        found.set(node.name.text, init);
+        record(node.name.text, init, depth);
+        inner = depth + 1;
       }
     } else if ((ts.isMethodDeclaration(node) || ts.isPropertyAssignment(node)) && ts.isIdentifier(node.name)) {
       const body = ts.isMethodDeclaration(node) ? node : node.initializer;
@@ -330,14 +377,17 @@ function callablesOf(source: string): Map<string, tsmod.Node> {
         body !== undefined &&
         (ts.isMethodDeclaration(body) || ts.isArrowFunction(body) || ts.isFunctionExpression(body))
       ) {
-        found.set(node.name.text, body);
+        record(node.name.text, body, depth);
+        inner = depth + 1;
       }
     }
-    ts.forEachChild(node, visit);
+    ts.forEachChild(node, (child) => {
+      visit(child, inner);
+    });
   };
 
-  visit(file);
-  return found;
+  visit(file, 0);
+  return new Map([...found].map(([name, held]) => [name, held.node]));
 }
 
 /** Every identifier a node mentions — a reference, not only a call. */
