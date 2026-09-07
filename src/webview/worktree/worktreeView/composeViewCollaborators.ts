@@ -54,9 +54,9 @@ export interface ViewCollaboratorSeam {
   rowsFor(worktreeId: string): WorktreeAgentRow[];
   degradedSources(): readonly PresenceDegradation[];
   isExpanded(info: WorktreeInfo): boolean;
-  selectedWorktreeId(): string | null;
+  activeLinkedOwnerId(): string | null;
   requestSubagents(row: WorktreeAgentRow): void;
-  select(info: WorktreeInfo): boolean;
+  select(info: WorktreeInfo): void;
   openRowMenu(info: WorktreeInfo, ev: MouseEvent, row: HTMLElement): void;
   toggleCollapsed(id: string): void;
   toggleRow(rowId: string): void;
@@ -123,7 +123,7 @@ export function createViewCollaborators(seam: ViewCollaboratorSeam): ViewCollabo
     strongestConfidenceTip: (rows, now) => built.ceilingClock.strongestConfidenceTip(rows, now),
     rowsFor: seam.rowsFor,
     isExpanded: seam.isExpanded,
-    selectedWorktreeId: seam.selectedWorktreeId,
+    activeLinkedOwnerId: seam.activeLinkedOwnerId,
     requestSubagents: seam.requestSubagents,
     repaint,
     select: seam.select,

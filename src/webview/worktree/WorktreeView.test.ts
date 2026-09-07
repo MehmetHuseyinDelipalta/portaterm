@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MAIN_TERMINAL_OWNER, type TerminalOwner } from "../navigation/TerminalNavigationState";
 import { resetTooltipForTests } from "../ui/Tooltip";
 import type { WorktreeMenuActions } from "./WorktreeContextMenu";
 import { MAX_WORKTREES_PER_REPO, WorktreeView, type WorktreeViewData, type WorktreeViewDeps } from "./WorktreeView";
@@ -2614,165 +2615,109 @@ describe("row activation", () => {
 
 // ── § 7.3 + design.md D5: selection, and the treatment that marks it ──────
 
-describe("worktree selection", () => {
-  function selectable(over: Partial<WorktreeViewDeps> = {}) {
-    const selected: (string | null)[] = [];
-    const { view } = mount({ onSelectWorktree: (id) => selected.push(id), ...over });
-    return { view, selected };
+describe("active terminal owner projection", () => {
+  function projected(initial = MAIN_TERMINAL_OWNER, over: Partial<WorktreeViewDeps> = {}) {
+    let owner: TerminalOwner = initial;
+    const intents: (string | null)[] = [];
+    const { view } = mount({
+      activeOwner: () => owner,
+      onSelectWorktree: (id) => intents.push(id),
+      ...over,
+    });
+    return {
+      view,
+      intents,
+      project(next: TerminalOwner) {
+        owner = next;
+        view.projectActiveOwner();
+      },
+    };
   }
 
   function cardFor(view: WorktreeView, branch: string): HTMLElement | null {
     return rowFor(view, branch)?.closest<HTMLElement>(".wt-card") ?? null;
   }
 
-  it("announces the selection before it commits to it", () => {
-    // The listener persists the scope, and a write that throws must not leave this
-    // panel marking a row the scope never took — the equality guard in `select`
-    // would then make the very row that fixes it a no-op (round-2 V1). Observable
-    // without a throw: at the moment the listener runs, nothing is committed yet.
-    let committedWhenTold: string | null | undefined;
-    const { view } = mount({
-      onSelectWorktree: () => {
-        committedWhenTold = view.selectedWorktree();
-      },
-    });
-    view.setData(populated());
-
-    rowFor(view, "main")?.click();
-    expect(committedWhenTold, "committed before the listener could refuse").toBeNull();
-    expect(view.selectedWorktree()).toBe("/Users/dev/Projects/ai-oss/anywhere-terminal");
-  });
-
-  it("keeps the mark it had when a refused clear throws", () => {
-    // The other direction, and this one can be driven to the throw directly.
-    let armed = false;
-    const { view } = mount({
-      onSelectWorktree: () => {
-        if (armed) {
-          throw new Error("setState failed");
-        }
-      },
-    });
-    view.setData(populated());
-    rowFor(view, "main")?.click();
-
-    armed = true;
-    expect(() => view.clearSelection()).toThrow("setState failed");
-    expect(view.selectedWorktree()).toBe("/Users/dev/Projects/ai-oss/anywhere-terminal");
-    expect(rowFor(view, "main")?.getAttribute("aria-selected")).toBe("true");
-  });
-
-  it("marks nothing on a first render, and nothing after a push", () => {
-    // Selection is an act, never an inference: neither the workspace folder, nor
-    // the busiest worktree, nor whatever the user last disclosed gets marked on
-    // their behalf.
-    const { view } = selectable();
-    view.setData(populated());
+  it("marks no repository-specific row for the global main owner", () => {
+    const { view } = projected();
+    view.setData(populated({ tree: twoRepoTree() }));
     expect(view.element.querySelectorAll(".wt-card")).toHaveLength(0);
     expect(view.element.querySelector("[aria-selected='true']")).toBeNull();
+  });
 
-    view.setData({ ...populated(), refreshing: true });
+  it("marks exactly the active linked owner without emitting an owner intent", () => {
+    const { view, intents, project } = projected();
+    view.setData(populated());
+    project({ kind: "linked", id: RELEASE_WT });
+    expect(view.element.querySelectorAll(".wt-card")).toHaveLength(1);
+    expect(cardFor(view, "release/0.4.x")).not.toBeNull();
+    expect(intents).toEqual([]);
+  });
+
+  it("row activation emits one owner intent and does not mutate the mark", () => {
+    const { view, intents } = projected();
+    view.setData(populated());
+    rowFor(view, "main")?.click();
+    rowFor(view, "release/0.4.x")?.click();
+    expect(intents).toEqual([null, RELEASE_WT]);
     expect(view.element.querySelectorAll(".wt-card")).toHaveLength(0);
   });
 
-  it("keeps one wrapper around a collapsed worktree row and its presence before selection", () => {
-    const { view } = selectable();
+  it("moves the linked mark programmatically without moving keyboard focus", () => {
+    const { view, project } = projected({ kind: "linked", id: RELEASE_WT });
     view.setData(populated());
-
-    const row = rowFor(view, "feat/worktree-panel");
-    const block = row?.parentElement;
-    expect(block?.classList.contains("wt-block")).toBe(true);
-    expect(block?.querySelector(":scope > .wt-presence")).not.toBeNull();
-
-    row?.click();
-    const selectedRow = rowFor(view, "feat/worktree-panel");
-    expect(selectedRow?.parentElement?.classList.contains("wt-block")).toBe(true);
-    expect(selectedRow?.parentElement?.classList.contains("wt-card")).toBe(true);
-    expect(selectedRow?.parentElement?.querySelector(":scope > .wt-presence")).not.toBeNull();
-
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    const css = fs.readFileSync(path.join(here, "worktreePanel.css"), "utf8");
-    const cardRule = /\.wt-card\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-    expect(cardRule).toMatch(/outline:\s*1px solid/);
-    expect(cardRule).not.toMatch(/^\s*(?:margin|padding|border):/m);
+    const focused = rowFor(view, "main");
+    focused?.focus();
+    project({ kind: "linked", id: PANEL_WT });
+    expect(cardFor(view, "feat/worktree-panel")).not.toBeNull();
+    expect(cardFor(view, "release/0.4.x")).toBeNull();
+    expect(document.activeElement).toBe(focused);
   });
 
-  it("moves the mark rather than adding one", () => {
-    const { view, selected } = selectable();
+  it("keeps expansion grouping separate from the active-owner mark", () => {
+    const { view } = projected(MAIN_TERMINAL_OWNER, { getInitialCollapsed: () => [] });
     view.setData(populated());
-
-    rowFor(view, "main")?.click();
-    expect(cardFor(view, "main")).not.toBeNull();
-
-    rowFor(view, "release/0.4.x")?.click();
-    expect(view.element.querySelectorAll(".wt-card")).toHaveLength(1);
-    expect(cardFor(view, "release/0.4.x")).not.toBeNull();
-    expect(cardFor(view, "main")).toBeNull();
-    expect(selected).toEqual([null, RELEASE_WT]);
-  });
-
-  it("keeps the card off a worktree that is merely expanded", () => {
-    // The card used to mean "expanded", which once selection exists reads as a
-    // selection nobody made. Grouping keeps happening — under its own class.
-    const { view } = selectable({ getInitialCollapsed: () => [] });
-    view.setData(populated());
-
     const panel = rowFor(view, "feat/worktree-panel");
     expect(panel?.getAttribute("aria-expanded")).toBe("true");
     expect(panel?.parentElement?.classList.contains("wt-group")).toBe(true);
     expect(panel?.parentElement?.classList.contains("wt-card")).toBe(false);
-    expect(panel?.getAttribute("aria-selected")).toBe("false");
   });
 
-  it("does not displace the open-folder mark", () => {
-    const { view } = selectable();
+  it("keeps one wrapper around a row and its presence when the mark appears", () => {
+    const { view, project } = projected();
     view.setData(populated());
-    rowFor(view, "release/0.4.x")?.click();
-
-    expect(cardFor(view, "release/0.4.x")).not.toBeNull();
-    expect(rowFor(view, "main")?.querySelector(".wt-pill--open")).not.toBeNull();
-    expect(rowFor(view, "main")?.getAttribute("aria-selected")).toBe("false");
+    project({ kind: "linked", id: PANEL_WT });
+    const row = rowFor(view, "feat/worktree-panel");
+    expect(row?.parentElement?.classList.contains("wt-block")).toBe(true);
+    expect(row?.parentElement?.classList.contains("wt-card")).toBe(true);
+    expect(row?.parentElement?.querySelector(":scope > .wt-presence")).not.toBeNull();
   });
 
-  it("selects from the pointer and from both activation keys", () => {
+  it("emits one intent from pointer and either activation key", () => {
     for (const activate of [
       (row: HTMLElement) => row.click(),
       (row: HTMLElement) => row.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
       (row: HTMLElement) => row.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true })),
     ]) {
-      const { view, selected } = selectable();
+      const { view, intents } = projected();
       view.setData(populated());
       const row = rowFor(view, "release/0.4.x");
       if (!row) {
         throw new Error("no row to activate");
       }
       activate(row);
-      expect(selected).toHaveLength(1);
-      expect(cardFor(view, "release/0.4.x")).not.toBeNull();
+      expect(intents).toEqual([RELEASE_WT]);
     }
   });
 
-  it("keeps a selection whose worktree is still in the tree, and drops one that left", () => {
-    const { view, selected } = selectable();
+  it("does not synthesize a main intent when an active linked row leaves the tree", () => {
+    const { view, intents } = projected({ kind: "linked", id: RELEASE_WT });
     view.setData(populated());
-    rowFor(view, "release/0.4.x")?.click();
-    selected.length = 0;
-
-    // A push carrying the same worktree keeps it — including a `missing` one,
-    // which is still registered (design.md D7).
-    view.setData({ ...populated(), refreshing: true });
-    expect(cardFor(view, "release/0.4.x")).not.toBeNull();
-    expect(selected).toEqual([]);
-
-    const tree = singleRepoTree();
-    const repo = tree.repos[0];
-    if (!repo) {
-      throw new Error("fixture lost its repo");
-    }
-    repo.worktrees = repo.worktrees.filter((w) => w.branch !== "release/0.4.x");
-    view.setData({ ...populated({ tree }) });
+    const next = singleRepoTree();
+    next.repos[0]!.worktrees = next.repos[0]!.worktrees.filter((worktree) => worktree.id !== RELEASE_WT);
+    view.setData(populated({ tree: next }));
     expect(view.element.querySelectorAll(".wt-card")).toHaveLength(0);
-    expect(selected).toEqual([null]);
+    expect(intents).toEqual([]);
   });
 });
 

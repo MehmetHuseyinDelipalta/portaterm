@@ -11,6 +11,7 @@
 // derivations in worktreeFormat.ts, and this class holds only the state the DOM
 // cannot — collapse sets, the focused row, the query, and the render guard.
 
+import { MAIN_TERMINAL_OWNER, type TerminalOwner } from "../navigation/TerminalNavigationState";
 import { attachTooltipDelegate } from "../ui/Tooltip";
 import { WorktreeContextMenu } from "./WorktreeContextMenu";
 import type { PruneDialogDeps } from "./WorktreePruneDialog";
@@ -87,11 +88,8 @@ export class WorktreeView {
   /** Roving tabindex target — the row keyboard navigation last landed on. */
   /** Roving tabindex and tree traversal (task 1_2). */
   private readonly nav: KeyboardNav;
-  /**
-   * The worktree the user selected, or `null` for none. Never seeded: selection
-   * is an act, so a first render, a reload and a push all leave it alone.
-   */
-  private selectedWorktreeId: string | null = null;
+  /** Last owner rendered, used only to suppress projection-only repaints. */
+  private ownerProjectionKey: string;
   /** repoId → the last node of that repository's section, so a result with no
    *  drawn row still lands with its repository. */
   private readonly repoAnchors = new Map<string, HTMLElement>();
@@ -112,6 +110,7 @@ export class WorktreeView {
 
   constructor(deps: WorktreeViewDeps) {
     this.deps = deps;
+    this.ownerProjectionKey = this.ownerKey(this.activeOwner());
     // A restored set already carries the user's own decisions — including the
     // expansions it records by omission — so nothing in the first tree is reseeded.
     // Presence of the array is the signal; its length says nothing.
@@ -130,11 +129,11 @@ export class WorktreeView {
       rowsFor: (worktreeId) => this.rowsFor(worktreeId),
       degradedSources: () => this.degradedSources(),
       isExpanded: (info) => this.isExpanded(info),
-      selectedWorktreeId: () => this.selectedWorktreeId,
+      activeLinkedOwnerId: () => this.activeLinkedOwnerId(),
       requestSubagents: (row) => {
         this.requestSubagents(row);
       },
-      select: (worktreeId) => this.select(worktreeId),
+      select: (worktree) => this.select(worktree),
       openRowMenu: (info, ev, row) => {
         this.openRowMenu(info, ev, row);
       },
@@ -243,23 +242,26 @@ export class WorktreeView {
     this.nav.focusRow(target);
   }
 
-  /** The worktree this panel marks as selected, or `null`. The only copy there is. */
-  selectedWorktree(): string | null {
-    return this.selectedWorktreeId;
+  private activeOwner(): TerminalOwner {
+    return this.deps.activeOwner?.() ?? MAIN_TERMINAL_OWNER;
   }
 
-  /**
-   * Drop the selection from outside — the tab bar's chip clearing its own scope.
-   * Announced exactly as a click would announce it, and repaints, because the row
-   * that was marked has to stop being marked (round-1 B2).
-   */
-  clearSelection(): void {
-    if (this.selectedWorktreeId === null) {
+  private ownerKey(owner: TerminalOwner): string {
+    return owner.kind === "main" ? "main" : `linked:${owner.id}`;
+  }
+
+  private activeLinkedOwnerId(): string | null {
+    const owner = this.activeOwner();
+    return owner.kind === "linked" ? owner.id : null;
+  }
+
+  /** Repaint only when the committed owner projection moved. */
+  projectActiveOwner(): void {
+    const next = this.ownerKey(this.activeOwner());
+    if (next === this.ownerProjectionKey) {
       return;
     }
-    // Announced BEFORE the field moves, for the reason `select` gives.
-    this.deps.onSelectWorktree?.(null);
-    this.selectedWorktreeId = null;
+    this.ownerProjectionKey = next;
     this.tree.repaint();
   }
 
@@ -288,40 +290,9 @@ export class WorktreeView {
     );
   }
 
-  /**
-   * Select a worktree. Returns whether the selection moved, so the caller
-   * repaints once or not at all — the mark is a render input, and repainting on
-   * a re-select would rebuild the tree and throw focus away for nothing.
-   */
-  private select(info: WorktreeInfo): boolean {
-    if (this.selectedWorktreeId === info.id) {
-      return false;
-    }
-    // Main selects the main terminal bucket; only linked worktrees become a
-    // named owner scope. The row id stays selected separately for visual state.
+  /** Row activation requests one owner transition and mutates no row state. */
+  private select(info: WorktreeInfo): void {
     this.deps.onSelectWorktree?.(info.kind === "linked" ? info.id : null);
-    this.selectedWorktreeId = info.id;
-    return true;
-  }
-
-  /** Follow a newly created terminal to its stable owner. */
-  selectTerminalOwner(worktreeId?: string): void {
-    if (worktreeId === undefined) {
-      const selected = this.data.tree?.repos
-        .flatMap((repo) => repo.worktrees)
-        .find((worktree) => worktree.id === this.selectedWorktreeId);
-      if (selected?.kind === "main") {
-        return;
-      }
-      this.clearSelection();
-      return;
-    }
-    if (this.selectedWorktreeId === worktreeId) {
-      return;
-    }
-    this.deps.onSelectWorktree?.(worktreeId);
-    this.selectedWorktreeId = worktreeId;
-    this.tree.repaint();
   }
 
   /** Filter the tree by branch, path, and agent title. Ancestors of a match stay. */
@@ -479,13 +450,6 @@ export class WorktreeView {
         idleCount: repo.worktrees.filter((w) => this.filter.isIdleIn(data, w)).length,
         worktrees: repo.worktrees.map((wt) => ({ id: wt.id, inWorkspace: wt.inWorkspace })),
       });
-    }
-    // A selection whose worktree LEFT the tree is dropped, and the drop is
-    // reported. A worktree reported `missing` is still in the tree and keeps it —
-    // the registration exists and panes may still be attributed to it (D7).
-    if (this.selectedWorktreeId !== null && !liveIds.has(this.selectedWorktreeId)) {
-      this.selectedWorktreeId = null;
-      this.deps.onSelectWorktree?.(null);
     }
     this.fold.prune({ repos, liveIds, liveRowIds, sessionRowIds });
     // Dropping the asked-key is what lets a row that left and returned under the

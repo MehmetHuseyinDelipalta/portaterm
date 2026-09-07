@@ -171,6 +171,7 @@ export class WorktreeController {
         store: deps.store,
         ...(deps.now === undefined ? {} : { now: deps.now }),
         ...(deps.onSelectWorktree === undefined ? {} : { onSelectWorktree: deps.onSelectWorktree }),
+        ...(deps.activeOwner === undefined ? {} : { activeOwner: deps.activeOwner }),
         menuActions: this.menuActions,
         createFlow: this.createFlow,
         dialogChannels: this.dialogChannels,
@@ -373,19 +374,9 @@ export class WorktreeController {
     this.rowActivation = activation;
   }
 
-  /** The worktree the panel has selected, or `null` for none. */
-  selectedWorktree(): string | null {
-    return this.view.selectedWorktree();
-  }
-
-  /** Drop the panel's selection. */
-  clearSelection(): void {
-    this.view.clearSelection();
-  }
-
-  /** Follow a newly created terminal to its stable main-or-linked owner. */
-  selectTerminalOwner(worktreeId?: string): void {
-    this.view.selectTerminalOwner(worktreeId);
+  /** Refresh linked-owner row treatment from the committed navigation state. */
+  projectActiveOwner(): void {
+    this.view.projectActiveOwner();
   }
 
   /**

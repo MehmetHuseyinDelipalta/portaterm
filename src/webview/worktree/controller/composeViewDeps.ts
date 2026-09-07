@@ -216,6 +216,7 @@ export function buildViewDeps(seam: ViewDepsSeam): WorktreeViewDeps {
     // Forwarded, not mirrored: the view owns the selection because the view is
     // what marks it, and a second copy here is a second thing to keep right.
     onSelectWorktree: (worktreeId) => seam.onSelectWorktree?.(worktreeId),
+    activeOwner: seam.activeOwner,
     now: seam.now,
   };
 }

@@ -11,6 +11,7 @@
 // contract.
 
 import type { WebViewToExtensionMessage } from "../../../types/messages";
+import type { TerminalOwner } from "../../navigation/TerminalNavigationState";
 import type { PaneReport } from "../../paneAttribution";
 import type { WebviewState } from "../../state/WebviewState";
 import type { WorktreeRowActivation } from "../worktreeViewTypes";
@@ -33,6 +34,8 @@ export interface WorktreeControllerDeps {
    * The scope consumer subscribes here; the controller only relays and holds.
    */
   onSelectWorktree?: (worktreeId: string | null) => void;
+  /** Current committed terminal owner, read only for row projection. */
+  activeOwner?: () => TerminalOwner;
   /**
    * Which worktree each of this window's panes is running in. Emitted on every
    * push whose attribution moved, and never otherwise.

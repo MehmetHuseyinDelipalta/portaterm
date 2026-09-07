@@ -7,6 +7,7 @@ import type {
   WorktreeTreeResponseMessage,
 } from "../../types/messages";
 import { createMessageRouter, type MessageHandlers } from "../messaging/MessageRouter";
+import { MAIN_TERMINAL_OWNER, type TerminalOwner } from "../navigation/TerminalNavigationState";
 import type { PaneAttribution, PaneReport } from "../paneAttribution";
 import type { DialogChannels } from "./controller/dialogChannels";
 import { WorktreeController, worktreeMenuActions } from "./WorktreeController";
@@ -47,6 +48,7 @@ function mount(
     workspaceRoot?: string | null;
     rowActivation?: WorktreeRowActivation;
     onSelectWorktree?: (worktreeId: string | null) => void;
+    activeOwner?: () => TerminalOwner;
     onAttribution?: (report: PaneReport) => void;
     showPreview?: (entryId: string) => boolean;
     activatePane?: (paneId: string) => boolean;
@@ -68,6 +70,7 @@ function mount(
       rowActivation: over.rowActivation ?? "focus",
     },
     onSelectWorktree: over.onSelectWorktree,
+    activeOwner: over.activeOwner,
     onAttribution: over.onAttribution,
     showPreview: over.showPreview,
     activatePane: over.activatePane,
@@ -197,61 +200,38 @@ describe("the tree", () => {
   });
 });
 
-describe("the worktree the panel has selected", () => {
-  /** The row for a branch, from whatever the controller drew. */
+describe("the active terminal owner projected into the panel", () => {
   function row(branch: string): HTMLElement | undefined {
     return [...document.querySelectorAll<HTMLElement>(".wt-row")].find(
-      (r) => r.querySelector(".wt-branch")?.textContent === branch,
+      (candidate) => candidate.querySelector(".wt-branch")?.textContent === branch,
     );
   }
 
-  it("holds nothing until the user selects, then relays what they picked", () => {
+  it("relays row activation without marking a row before navigation commits", () => {
     const picked: (string | null)[] = [];
     const { controller } = mount({ onSelectWorktree: (id) => picked.push(id) });
     controller.setVisible(true);
     controller.handleTreeResponse(response());
-    expect(controller.selectedWorktree()).toBeNull();
-    expect(picked).toEqual([]);
-
     row("main")?.click();
-    expect(controller.selectedWorktree()).toBe("/Users/dev/Projects/ai-oss/anywhere-terminal");
-    expect(picked).toEqual([null]);
-
     row("feat/worktree-panel")?.click();
     expect(picked).toEqual([null, "/Users/dev/Projects/ai-oss/anywhere-terminal-wt/worktree-panel"]);
+    expect(document.querySelectorAll(".wt-card")).toHaveLength(0);
   });
 
-  it("follows a newly created terminal to its linked owner and returns to main", () => {
+  it("projects linked and main owners without relaying another navigation intent", () => {
+    let owner: TerminalOwner = MAIN_TERMINAL_OWNER;
     const picked: (string | null)[] = [];
-    const { controller } = mount({ onSelectWorktree: (id) => picked.push(id) });
+    const { controller } = mount({ activeOwner: () => owner, onSelectWorktree: (id) => picked.push(id) });
     controller.setVisible(true);
     controller.handleTreeResponse(response());
 
-    controller.selectTerminalOwner("/Users/dev/Projects/ai-oss/anywhere-terminal-wt/worktree-panel");
-    expect(controller.selectedWorktree()).toBe("/Users/dev/Projects/ai-oss/anywhere-terminal-wt/worktree-panel");
-    controller.selectTerminalOwner(undefined);
-
-    expect(controller.selectedWorktree()).toBeNull();
-    expect(picked).toEqual(["/Users/dev/Projects/ai-oss/anywhere-terminal-wt/worktree-panel", null]);
-  });
-
-  it("relays the drop when the selected worktree leaves the tree", () => {
-    const picked: (string | null)[] = [];
-    const { controller } = mount({ onSelectWorktree: (id) => picked.push(id) });
-    controller.setVisible(true);
-    controller.handleTreeResponse(response());
-    row("main")?.click();
-    picked.length = 0;
-
-    const tree = singleRepoTree();
-    const repo = tree.repos[0];
-    if (!repo) {
-      throw new Error("fixture lost its repo");
-    }
-    repo.worktrees = repo.worktrees.filter((w) => w.branch !== "main");
-    controller.handleTreeResponse({ ...response(), tree });
-    expect(controller.selectedWorktree()).toBeNull();
-    expect(picked).toEqual([null]);
+    owner = { kind: "linked", id: "/Users/dev/Projects/ai-oss/anywhere-terminal-wt/worktree-panel" };
+    controller.projectActiveOwner();
+    expect(row("feat/worktree-panel")?.getAttribute("aria-selected")).toBe("true");
+    owner = MAIN_TERMINAL_OWNER;
+    controller.projectActiveOwner();
+    expect(document.querySelector("[aria-selected='true']")).toBeNull();
+    expect(picked).toEqual([]);
   });
 });
 

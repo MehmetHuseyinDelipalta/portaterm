@@ -15,6 +15,7 @@
 // one way: `composeViewDeps` imports this module, never the reverse.
 
 import type { WebViewToExtensionMessage } from "../../../types/messages";
+import type { TerminalOwner } from "../../navigation/TerminalNavigationState";
 import type { WorktreeMenuActions } from "../WorktreeContextMenu";
 import type { WorktreeCreateDialogDeps } from "../WorktreeCreateDialog";
 import type {
@@ -40,6 +41,7 @@ export interface ViewDepsSeam {
   store: WorktreeStateStore;
   now?(): number;
   onSelectWorktree?: (worktreeId: string | null) => void;
+  activeOwner?: () => TerminalOwner;
   /** Held rather than passed: the two launch items appear only once one can act. */
   menuActions: WorktreeMenuActions;
   createFlow: CreateFlow;

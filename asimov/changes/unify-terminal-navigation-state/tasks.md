@@ -82,14 +82,14 @@
     2. Update `src/webview/TabBarUtils.ts` and `src/webview/emptyScopeRegion.ts` to consume total active owner, exact stable membership, linked-only indicators, waiting counts, and owner-empty state.
     3. Rewrite focused tests to delete `All` and presence-membership assertions and to enforce no owner projection callback can dispatch navigation.
 
-- [ ] 3_2 Project linked owner into the worktree tree
+- [x] 3_2 Project linked owner into the worktree tree — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/tabBarScopeWiring.test.ts exit 0
   - **Deps**: 3_1
   - **Refs**: specs/tab-bar-component/spec.md#selecting-a-worktree-goes-to-a-pane-of-that-worktree; specs/worktree-panel/spec.md#{only-an-active-linked-owner-marks-a-worktree-row,worktree-row-activation-requests-one-navigation-transition,a-selection-leaves-the-rail-as-the-user-left-it,scope-does-not-depend-on-the-layout}; design.md D4, design.md D8
   - **Acceptance**:
     - Outcome: Only a linked active owner marks a row; main and keyboard focus create no owner mark.
     - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/tabBarScopeWiring.test.ts
   - **Plan**:
-    1. Replace `selectedWorktreeId` navigation writes in `src/webview/worktree/WorktreeView.ts`, `src/webview/worktree/WorktreeController.ts`, and `src/webview/worktree/worktreeView/worktreeRow.ts` with linked-owner rendering input and owner intents.
+    1. Replace `selectedWorktreeId` navigation writes in `src/webview/worktree/WorktreeView.ts`, `src/webview/worktree/WorktreeController.ts`, `src/webview/worktree/worktreeView/viewTypes.ts`, `src/webview/worktree/worktreeView/composeViewCollaborators.ts`, and `src/webview/worktree/worktreeView/worktreeRow.ts` with linked-owner rendering input and owner intents; project controller commits from `src/webview/main.ts`.
     2. Update controller composition files under `src/webview/worktree/controller/` so terminal focus and creation change the projection without changing roving keyboard focus, expansion, rail visibility, search, or menus.
     3. Add multi-root main, linked programmatic focus, row activation, and no-focus-jump cases to worktree tests.
 

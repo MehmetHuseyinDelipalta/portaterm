@@ -10,6 +10,7 @@
 // `view.deps.actions` off the instance, so the class keeps holding it (D5).
 
 import type { BranchDeleteRequest } from "../../../types/messages";
+import type { TerminalOwner } from "../../navigation/TerminalNavigationState";
 import type { WorktreeMenuActions } from "../WorktreeContextMenu";
 import type { WorktreeCreateDialogDeps } from "../WorktreeCreateDialog";
 import type { WorktreeLaunchRequest } from "../WorktreeLaunchDialog";
@@ -55,6 +56,8 @@ export interface WorktreeViewDeps {
    * naming a worktree that is gone.
    */
   onSelectWorktree?: (worktreeId: string | null) => void;
+  /** Total terminal owner projected into row treatment; absent means main. */
+  activeOwner?: () => TerminalOwner;
   /** Activating an agent row — focus its pane, or open its preview (§ 6). */
   onActivateAgent?: (row: WorktreeAgentRow, activation: WorktreeRowActivation) => void;
   /** Activating a subagent row targets the PARENT's pane; it has none of its own. */

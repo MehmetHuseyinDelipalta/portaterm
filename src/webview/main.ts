@@ -381,7 +381,10 @@ const navigationController = new TerminalNavigationController(
       renderProjections: (state) => {
         applyTerminalNavigationProjection(state, {
           store,
-          render: () => updateTabBar(),
+          render: () => {
+            worktreeController?.projectActiveOwner();
+            updateTabBar();
+          },
         });
       },
       displayActive: (state) => {
@@ -1207,6 +1210,7 @@ function handleInit(msg: InitMessage): void {
       // exactly as the user left it. It used to collapse itself here, which read
       // as the panel closing on a click the user made inside it.
       onSelectWorktree: (worktreeId) => tabBarScope?.onSelectWorktree(worktreeId),
+      activeOwner: () => navigationController.getState().activeOwner,
       onAttribution: (map) => tabBarScope?.onAttribution(map),
     });
     vaultPanel = new VaultPanel({

@@ -48,10 +48,10 @@ export interface WorktreeRowDeps {
   strongestConfidenceTip(rows: readonly WorktreeAgentRow[], now: number): string | undefined;
   rowsFor(worktreeId: string): WorktreeAgentRow[];
   isExpanded(info: WorktreeInfo): boolean;
-  selectedWorktreeId(): string | null;
+  activeLinkedOwnerId(): string | null;
   requestSubagents(row: WorktreeAgentRow): void;
   repaint(): void;
-  select(info: WorktreeInfo): boolean;
+  select(info: WorktreeInfo): void;
   openRowMenu(info: WorktreeInfo, ev: MouseEvent, row: HTMLElement): void;
   toggleCollapsed(id: string): void;
   toggleRow(rowId: string): void;
@@ -110,7 +110,7 @@ function worktreeMemoKey(
 function renderWorktree(deps: WorktreeRowDeps, info: WorktreeInfo, now: number, inTail = false): void {
   const rows = deps.rowsFor(info.id);
   const expanded = rows.length > 0 && deps.isExpanded(info);
-  const selected = deps.selectedWorktreeId() === info.id;
+  const selected = info.kind === "linked" && deps.activeLinkedOwnerId() === info.id;
   // Asked BEFORE the memo check: the roster request is owed by the render, not
   // by the repaint, and `RosterRequests` already dedupes it.
   if (expanded) {
@@ -247,11 +247,7 @@ function buildWorktree(
         // Select and scope. NOTHING else: folding the agent block open from the
         // same gesture is what made one click read as three events at once, and
         // § 6 has always given disclosure to the chevron rather than the row.
-        onActivate: () => {
-          if (deps.select(info)) {
-            deps.repaint();
-          }
-        },
+        onActivate: () => deps.select(info),
         onContextMenu: deps.menu() ? (i, ev, row) => deps.menu()?.openForWorktree(i, ev, row) : undefined,
         // The affirmative action, on the row that owns it — absent when the
         // capability was not supplied, and for a directory that is gone.
