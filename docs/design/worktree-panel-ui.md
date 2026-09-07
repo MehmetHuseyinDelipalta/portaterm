@@ -6,7 +6,7 @@
 Structure, states, and interaction for the Worktree view. Data comes from
 [worktree-model.md](worktree-model.md) and
 [worktree-agent-presence.md](worktree-agent-presence.md); actions from
-[worktree-actions.md](worktree-actions.md); the tab-bar scope a selection drives from
+[worktree-actions.md](worktree-actions.md); terminal owner projection from
 [worktree-scope.md](worktree-scope.md); the confidence a row's activity carries from
 [worktree-activity-ceiling.md](worktree-activity-ceiling.md).
 
@@ -24,7 +24,7 @@ graph TD
     WT --> AGENT["Agent row<br>state glyph, identity, preview"]
     AGENT --> SUB["Subagent row (lazy, history)"]
     WT --> TOOLS["Row controls<br>launch + … menu"]
-    WT --> SCOPE["Tab-bar scope<br>worktree-scope.md"]
+    WT --> OWNER["Owner-navigation intent<br>worktree-scope.md"]
 ```
 
 ## 2. Where it lives
@@ -85,7 +85,6 @@ vaultGroupMode?: "recent" | "agent" | "folder" // grouping WITHIN the sessions b
 worktreeCollapsed?: string[]                   // collapsed repoIds and worktreeIds
 worktreeExpandedRows?: string[]                // expanded agent rowIds
 worktreeIdleTailSeeded?: string[]              // repoIds whose idle tail has been presented (§ 3.6)
-worktreeScope?: string                         // scoped worktreeId — worktree-scope.md § 6
 ```
 
 **An absent array and an empty one mean different things, and conflating them loses user
@@ -119,9 +118,8 @@ reads as a broken panel rather than a default.
 
 ### 2.3 Rollout
 
-The structural changes — the two-level toggle, the rail composition, the scoped tab bar, and the
-inspector drawer (since withdrawn, D49) — shipped behind a boolean setting that defaulted off, until the composition was
-whole. It is: WT-010.1 through WT-010.5 are built and reviewed, and WT-010.6 retired the setting
+The structural changes — the two-level toggle, the rail composition, and owner-filtered terminals —
+shipped behind a boolean setting that defaulted off until the composition was whole. It is: WT-010.1 through WT-010.5 are built and reviewed, and WT-010.6 retired the setting
 rather than defaulting it on, because a key that still declared a way back would have kept every
 OFF arm alive. There is no supported way to ask for the pre-workbench layout, and nothing reads a
 value a user's settings may still hold.
@@ -129,17 +127,11 @@ value a user's settings may still hold.
 The row-level work in § 3.3, § 3.6, and § 7.2 was never gated: it improves the view the user
 already chose, and a truthfulness fix hidden behind an opt-in keeps lying by default.
 
-### 2.4 Handing the room back after a selection
+### 2.4 Owner navigation leaves the rail alone
 
-**Withdrawn.** Selecting a worktree in the stacked (sidebar) composition used to collapse the
-rail to its header strip, so the selection would read as *choose, then view*. It read instead as
-the panel closing on a click the user had just made inside it, and commit `10977d40` removed it:
-selection now sets the tab-bar scope and leaves the rail's open state entirely to the controls
-the user operates.
-
-This is the same failure D49 records one level down — a click acquiring consequences the user did
-not ask for — and the two were fixed for the same reason. The collapse machinery itself is intact
-and still serves the header control; nothing calls it from a selection.
+Activating a worktree row requests one owner-navigation transition. It never opens or collapses
+the rail. The collapse machinery serves only the header control, so the rail stays exactly as the
+user left it in sidebar, panel, and editor layouts.
 
 ## 3. Tree structure
 
@@ -181,8 +173,7 @@ gesture would create AND collapse.
 
 **The path is not a row element.** At sidebar width a truncated path crowds out the branch,
 which is the identity the user actually navigates by. The path lives in the row hint, the
-context menu's copy action, and the create form — and nowhere else. It had a fourth home in
-the inspector drawer; D49 withdrew the drawer and did not move the path anywhere new.
+context menu's copy action, and the create form — and nowhere else.
 
 The agent presence block is the row's most valuable pixel. Group by state first, identity
 second — "2 waiting, 1 working" is the question a user scanning the list is asking; "which
@@ -208,9 +199,7 @@ tells them what to do; a title and a timestamp do not.
 
 The model id is **not** on the row. It competed with the preview for the same scarce width and
 lost. It is carried by the agent row's own hint — appended to the title / preview / confidence
-lines that hint already composes — and omitted entirely when unknown, never a placeholder. It
-was shown in the inspector drawer until D49 withdrew it; no surface gained the room in exchange,
-so the hint is its only home.
+lines that hint already composes — and omitted entirely when unknown, never a placeholder.
 
 **Age means two different things and must not be conflated.** For a row that has finished, it is
 time since it finished. For a row still working, it is time since the current state began. One
@@ -295,20 +284,13 @@ popover itself stays deferred (§ 7.5).
 
 ### 3.7 The row's own controls
 
-**Superseded:** an inspector drawer used to open under the tree whenever a worktree was
-selected (D29). It is gone, and D49 records why: it was never opened by request. It arrived
-as a fourth consequence of a click that already selected the worktree, re-scoped the terminal
-tab bar and folded the agent block, and it then spent half the rail's height restating the
-agent rows and delegations the expanded tree was already showing. In a ~300 px rail a surface
-that opens by itself and duplicates its neighbour is not a detail view; it reads as a dialog.
-
-What replaces it is the platform's own tree pattern — the row carries its actions.
+The row follows the platform tree pattern and carries its own actions.
 
 | Property | Rule |
 |----------|------|
 | Placement | On the worktree row's trailing edge, after the pills and badges |
 | Contents | The launch, as its own button, because starting an agent is what most worktrees exist for; then `…`, which opens the same menu the right-click opens. Nothing else earns a permanent glyph at this width |
-| Availability | Revealed on hover, on focus, on the **selected** row (`aria-selected="true"` — a worktree row carries no `is-selected` class; that belongs to agent rows), and while the row's own menu is open (`is-context-open` — the shell moves focus into the menu, so `:focus-within` alone would hide the control underneath it). They are always in the DOM, and join the tab order the moment their row becomes the tree's single stop, which is how Tab from a focused row reaches them |
+| Availability | Revealed on hover, on focus, on the **active linked-owner** row (`aria-selected="true"`), and while the row's own menu is open (`is-context-open` — the shell moves focus into the menu, so `:focus-within` alone would hide the control underneath it). They are always in the DOM, and join the tab order the moment their row becomes the tree's single stop, which is how Tab from a focused row reaches them |
 | Absence | An action whose capability was not supplied is absent, not inert — the same rule the menu follows (D10). Capability presence is a **render input**: the host mutates the action record in place, so a launch target arriving moves nothing in the tree or presence envelope, and a control built at paint would otherwise appear only if some unrelated delta forced a repaint (§ 6.1) |
 | Independence | Both controls stop the gesture — `click`, Enter/Space, **and `dblclick`**, which is a third event the click's `stopPropagation` does not cover and which the row answers by opening the folder in a new window. Pressing one must not also select the row or open anything, or the coupling § 6 removes would reappear one level down |
 | Naming | The row sets its own `aria-label` unconditionally. A `treeitem` with no name computes one from its contents, and the controls' labels are contents — an agentless row otherwise announced as "feature-x Start an agent in feature-x More actions for feature-x". The repo header carries the same rule for the same reason |
@@ -362,14 +344,14 @@ These are not stylistic preferences; each one prevents a specific false claim.
 | Action unavailable | outcome `unavailable` | Inline, and **not** error styling: nothing was attempted, because what the action would affect could not be read. It names what was unreadable |
 | Action blocked | outcome `blocked` | The confirmation or refusal surface of [worktree-removal.md](worktree-removal.md) § 3, carrying the check set the fingerprint authorizes |
 
-The scoped-terminal empty state belongs to the tab bar, not the panel — see
-[worktree-scope.md](worktree-scope.md) § 4.3.
+The owner-empty terminal state belongs to the tab bar, not the panel — see
+[worktree-scope.md](worktree-scope.md) § 3.4.
 
 ## 6. Interaction
 
 | Input | Target | Result |
 |-------|--------|--------|
-| Click / Enter | Worktree row | Select it, and scope this surface's tab bar (worktree-scope.md). **That is the whole effect.** Disclosure is the chevron's job — the presence pill while collapsed, the agents header while expanded — and Left/Right drive it from the keyboard. A gesture that both scoped the terminal and folded the row open is what made one click read as several unrelated events |
+| Click / Enter | Worktree row | Request one owner-navigation transition: linked rows request their linked owner; any main row requests the global main owner. The row does not mutate a mark, tab, pane, disclosure, or rail state |
 | Click / Enter | Idle-tail disclosure | Fold / unfold the tail |
 | Click / Enter | Agent row, window scope | Per `anywhereTerminal.worktree.rowActivation`: focus that pane (default) or open its preview. A row with no session falls back to focus, whatever the setting says |
 | Click / Enter | Agent row, external | Open the session preview — never focus, whatever the setting says |
@@ -382,7 +364,7 @@ The scoped-terminal empty state belongs to the tab bar, not the panel — see
 
 Keyboard model, roles, and focus handling follow the existing file-tree panel rather than
 inventing a second tree idiom in the same webview. Focus survives every disclosure toggle, a row control being
-pressed, and a scope change.
+pressed, and an owner change. Keyboard focus is independent from the active-owner mark.
 
 The `rowActivation` setting's value is delivered in the init payload and **re-sent whenever it
 changes**, so a view already open picks it up without being reopened.
@@ -404,8 +386,8 @@ pane a row would focus, just as load-bearing as a visible one. Exclusions are na
 a time with a reason, never a whole shape, and the only standing ones are a rescan timestamp that
 moves on every poll and fields that cannot vary.
 
-Two derived inputs join the key: the **scope** this surface holds, and each row's **activity
-confidence** (§ 7.2).
+Two derived inputs join the key: the **active linked owner** projected by terminal navigation, and
+each row's **activity confidence** (§ 7.2).
 
 Confidence changes with the passage of time rather than with a push, so it needs a clock the
 push cycle does not provide. The renderer rebuilds the tree wholesale behind the signature guard
@@ -497,16 +479,17 @@ line. Two pairs are the ones a change here is most likely to collapse — `idle`
 width by rendering the shipped DOM through the shipped stylesheet with reduced motion forced and
 every colour channel removed.
 
-### 7.3 Selection, scope, and grouping
+### 7.3 Active owner, focus, and grouping
 
-- **The card is selection.** A bordered, slightly raised surface wraps the selected worktree's
-  row and its agent rows together. Exactly one worktree is selected at a time, and the card is
-  what says which — it is not an emphasis for "has agents", which was read as selection by users
-  who had selected nothing.
-- Presence is expressed **inside** a uniform row — the leading glyph plus the presence pill —
-  so every worktree row is the same kind of object whether or not agents are in it.
+- **The card marks the active linked owner.** Exactly the matching linked worktree receives the
+  card and `aria-selected="true"`. Main is one global terminal owner, so Main marks no worktree row,
+  even when several repositories each render a main row.
+- **Keyboard focus is independent.** Roving focus, expansion, search, and menus never create or move
+  the active-owner mark. Programmatic terminal focus may move the mark without moving tree focus.
+- Presence remains inside a uniform row — the leading glyph plus presence pill — so rows keep one
+  stable wrapper before and after the owner mark changes.
 - Repo group headers use the repo name at the strongest emphasis with no leading glyph slot, so
-  they read as separators rather than as another tree row.
+  they read as separators rather than another tree row.
 
 ### 7.4 Colour
 
@@ -529,7 +512,7 @@ considered and rejected, and the rejection is recorded so it is not silently re-
 | PR-linked worktree rows | Requires a forge integration this extension does not have |
 | Group-by / sort-by / filter popover | Ordering is deterministic and counts are tens. § 3.6 takes the one part of it that pays for itself; the popover stays deferred |
 | Path shown on a list row | Crowds out the branch at sidebar width — see § 3.2 |
-| Cross-surface scope sync, editor tab per worktree | [worktree-scope.md](worktree-scope.md) § 2.3 |
+| Cross-surface owner sync, editor tab per worktree | [worktree-scope.md](worktree-scope.md) § 2 |
 
 ### 7.6 What the shell task settles
 
@@ -555,14 +538,9 @@ surface in both directions and are recorded so neither side re-introduces them s
 | Point | Resolution |
 |-------|------------|
 | Two-line agent rows vs the old single-line rule | **Mockup.** The preview line is the row's most-read content; the single-line rule predates it (§ 7.1) |
-| The model id dropped from the row | **Mockup**, with a correction: it is not cut, it moves to the inspector (§ 3.3). *The inspector was later withdrawn (D49); the id now lives in the agent row hint.* |
-| The inspector as a fourth place the path appears | **Mockup.** § 3.2 named the four places explicitly rather than treating the drawer as an exception. *D49 withdrew the drawer, so § 3.2 now names three.* |
-| "Default scope is main" | **This document.** Scope defaults to `All`; a filter the user never chose is never on at first open, which is the mockup's own stated principle (worktree-scope.md § 6) |
 | "Create's destination default is a sibling directory" | **Neither** — the premise is false. The shipped default already is `.claude/worktrees`, per DESIGN.md § 10. No change |
 
-The mockup's remaining open questions are answered here: the scope chip lives on the tab bar only
-(§ 3.7 — one selection, one consequence, no second control); selection scopes immediately, because
-a selection that does nothing until a second gesture is not a selection; the idle-tail threshold
+The idle-tail threshold
 is four (§ 3.6).
 
 ## 8. Edge Cases
@@ -576,7 +554,7 @@ is four (§ 3.6).
 | Very long branch name | Truncate with the full value on hover |
 | Path needed | Not on a list row; available from the row hint, the copy-path action, and the create form |
 | Many worktrees | Virtualization is **not** in scope; if a repo exceeds a render budget, cap with a "show all" affordance rather than silently truncating |
-| Expansion or scope state for a worktree that disappeared | Dropped from persisted state on the next push |
+| Expansion state for a worktree that disappeared | Dropped from persisted state on the next push |
 | Search matches only a subagent | Its agent and worktree ancestors stay visible |
 | Search matches a worktree inside the folded tail | The tail unfolds |
 | Panel is very narrow | Each line ellipsizes within itself — the preview never competes with the title, and is never hidden by width; the age column and the leading glyphs never truncate |
@@ -605,8 +583,8 @@ is four (§ 3.6).
 - [ ] The worktree glyph reflects the strongest agent state; `unconfirmed` does not change the rank
 - [ ] An agent row renders two lines, with the preview truncating before the title and never wrapping to a third
 - [ ] The model id appears in the agent row's hint and on no list row, and is absent entirely when unknown
-- [ ] Selecting a worktree scopes the tab bar and does nothing else — no surface opens, and the row's `aria-expanded` is unchanged
-- [ ] Working the chevron discloses and leaves the selection and the scope alone
+- [ ] Activating a worktree row requests one owner-navigation transition and leaves `aria-expanded` and rail visibility unchanged
+- [ ] Working the chevron changes disclosure without requesting owner navigation
 - [ ] A row control fires its action without also selecting the row, and is reachable by Tab once its row is the tree's stop
 - [ ] The launch control is absent for a `missing` directory and when the capability was not supplied — in the row toolbar, the right-click and the `…` alike
 - [ ] A `missing` worktree's row ignores a double-click, the same way its openers are withdrawn
@@ -614,7 +592,7 @@ is four (§ 3.6).
 - [ ] A worktree row announces its own name, with its controls' labels excluded from it
 - [ ] Double-clicking a row control fires its action and does not open the folder
 - [ ] Dismissing the `…` menu returns focus to the `…`, not to the row
-- [ ] The selection card wraps exactly the selected worktree, and a worktree with agents that is not selected gets no card
+- [ ] The owner card wraps exactly the active linked worktree; global main and keyboard focus mark no row
 - [ ] Collapsed presence renders the pill with grouped glyphs and a `+N` overflow; expanded renders an `N agents` header plus per-agent rows
 - [ ] A worktree with nine agents collapsed occupies the same height as one with two
 - [ ] External row exposes no focus affordance and is visibly labelled
@@ -626,9 +604,9 @@ is four (§ 3.6).
 - [ ] A row with no subagents still reserves the disclosure gutter
 - [ ] The two disclosure levels are independent and persist separately
 - [ ] Age on a finished row counts from when it finished; on a working row, from when the state began
-- [ ] Spinner-only title change produces no re-render; collapse, expansion, and scope survive a no-op push
+- [ ] Spinner-only title change produces no re-render; collapse, expansion, and the owner mark survive a no-op push
 - [ ] A confidence crossing repaints only the rows that crossed; a re-derivation that crosses nothing performs no DOM work
-- [ ] Keyboard: arrows traverse, right/left expand/collapse, focus visible and preserved across disclosure, row controls, and scope changes
+- [ ] Keyboard: arrows traverse, right/left expand/collapse, focus visible and preserved across disclosure, row controls, and owner changes
 - [ ] Every empty state (no folder / no repo / no git / one worktree) renders its own copy
 
 ---

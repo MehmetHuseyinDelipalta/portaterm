@@ -119,7 +119,12 @@ For every live session in this window (`SessionManager` is window-scoped, so its
    attribute correctly.
 5. No match → the pane belongs to no worktree in this workspace and is not rendered.
 
-A pane can appear under exactly one worktree. A worktree can hold many panes.
+A pane can appear under exactly one worktree row. A worktree can hold many presence rows.
+
+This cwd projection is presentation only. Presence does not own terminal ownership: a terminal's
+main-or-linked owner is the stable fact recorded at creation, split, or restore. A shell `cd` can
+move the pane's presence row on the next scan, but does not change its terminal owner, tab
+membership, active owner, or navigation checkpoint.
 
 ### 3.2 Agent identity per pane
 
@@ -184,6 +189,8 @@ cannot consume that tracker**, and assuming it can is a mistake worth stating pl
 
 So the host projects activity itself, from evidence held per pane in a window-scoped registry
 (`src/session/PaneEvidenceStore.ts`) that surfaces report into and the host writes directly.
+Waiting is activity decoration for both the worktree row and hidden-tab badge; it never becomes
+owner or membership evidence.
 The projection **rules** are shared with the tracker — extracted as pure logic used by both
 (`src/shared/paneEvidence.ts`) — so the two cannot drift into disagreeing about what
 `running` means. Duplicating the rules instead of sharing them is how the tab bar and the
@@ -508,7 +515,7 @@ graph LR
 
 | Condition | Behavior |
 |-----------|----------|
-| Pane `cd`s from worktree A into worktree B | Row moves on the next cwd event; no duplicate |
+| Pane `cd`s from worktree A into worktree B | Presence row moves on the next cwd event; the terminal owner and tab membership do not change |
 | Pane in the repo root but not in any worktree path | Impossible — the main worktree *is* the repo root |
 | Two panes running the same agent session (split, `tmux`-style) | Two rows; both may resolve to the same `entryId` — allowed and rendered |
 | Worktree disappears while a pane is inside it | The worktree row shows `missing`; the pane row stays attached so the user can see what is stranded |

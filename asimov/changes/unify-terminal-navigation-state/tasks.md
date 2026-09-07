@@ -104,7 +104,7 @@
 
 ## 4. Reconcile contracts and enforcement
 
-- [ ] 4_1 Rewrite worktree-facing navigation documentation
+- [x] 4_1 Rewrite worktree-facing navigation documentation — verified: pnpm exec vitest run src/test/invariants/terminalNavigationDocs.test.ts exit 0
   - **Deps**: 3_3
   - **Refs**: specs/terminal-owner-navigation/spec.md#{navigation-changes-owner-tab-and-pane-as-one-action,navigation-is-isolated-per-surface,presence-reports-activity-but-never-terminal-ownership}; specs/worktree-panel/spec.md#a-history-is-requested-once-per-session-and-again-if-that-session-returns; design.md D7, design.md D8
   - **Acceptance**:

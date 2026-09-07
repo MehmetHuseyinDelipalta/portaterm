@@ -1,292 +1,169 @@
-# Worktree Scope & the Scoped Tab Bar
+# Terminal Ownership and Worktree Navigation
 
-> **Ref**: docs/DESIGN.md § 8.7 — "Selecting a worktree scopes that surface"
-> **Consumer**: `asimov-plan` reads this to turn a PLAN.md task into spec deltas and builder tasks.
+> **Ref**: docs/DESIGN.md § 8.7 — stable terminal ownership and per-surface navigation
+> **Consumer**: `asimov-plan` reads this to derive terminal/worktree navigation changes.
 
-Selecting a worktree in the Worktree view filters **that surface's own tab bar** to the panes
-running inside it. This document owns the scope model, the join it rests on, the escape hatch,
-and the layout the composition takes at each location.
+This document owns the relationship between terminals, linked worktrees, tab presentation, and
+navigation. Worktree row anatomy lives in [worktree-panel-ui.md](worktree-panel-ui.md); activity
+evidence lives in [worktree-agent-presence.md](worktree-agent-presence.md).
 
-Row anatomy and the panel's own structure live in
-[worktree-panel-ui.md](worktree-panel-ui.md); the evidence each row carries comes from
-[worktree-agent-presence.md](worktree-agent-presence.md).
-
-## 1. Overview
-
-```mermaid
-graph TD
-    SEL["User selects a worktree row"] --> SCOPE["Surface scope := worktreeId"]
-    SCOPE --> JOIN{"For each tab this surface owns"}
-    JOIN -->|"presence attributes it to the scope"| SHOW["Rendered"]
-    JOIN -->|"presence attributes it elsewhere"| HIDE["Hidden"]
-    JOIN -->|"presence could not attribute it"| SHOW
-    HIDE --> BADGE["Hidden + waiting → counted on the All chip"]
-    SCOPE --> CHIP["Scope chip at the head of the tab bar<br>with the All escape control"]
-```
-
-Three properties define the model:
-
-1. **Scope is a filter over a list the extension already owns.** The workbench the redesign
-   draws is one webview document — the tab bar, the terminal container, and the vault panel are
-   siblings in it (`src/providers/webviewHtml.ts:695-703`), identical across sidebar, panel, and
-   editor. No VS Code editor, tab-group, or native-terminal API is involved.
-2. **Scope is per surface, and that is the feature.** The sidebar sitting on `main` while the
-   panel is scoped to a feature worktree is legal and useful, not a state to reconcile.
-3. **A filter that can hide something a human is waited on by must announce it.** The escape
-   control carries the count; § 4.2.
-
-## 2. The scope model
-
-### 2.1 What scope is
+## 1. Model
 
 ```ts
-/**
- * Which worktree this surface's tab bar is scoped to.
- * `null` is "All" — every pane this surface owns is shown.
- */
-type WorktreeScope = string | null; // a WorktreeInfo.id
+type TerminalOwner =
+  | { kind: "main" }
+  | { kind: "linked"; id: string };
 ```
 
-Scope is webview-local state. It is not sent to the host, it is not in the tree or presence
-message, and no host handler reads it. Selecting a row changes what this surface renders and
-nothing else.
+Main is one global owner for the surface. It is not one owner per repository and therefore never
+names a repository-specific main row. A linked terminal stores its canonical stable `worktreeId`.
+An ownerless legacy terminal decodes as main.
 
-**Scope does not change what a pane is.** A hidden pane keeps running, keeps producing output,
-keeps its session, and keeps its place in every other surface. Scope decides what this tab bar
-draws, never what exists.
+Ownership is assigned when a terminal is created or restored:
 
-### 2.2 Per surface, not per window
+- an ordinary main terminal has no `worktreeId`;
+- a terminal created for a linked worktree stores that linked id;
+- a split inherits its source pane's owner;
+- a snapshot persists the owner;
+- changing shell cwd never changes the owner.
 
-Each surface runs its own `VaultPanel` over its own persisted state (DESIGN.md § 8.6), so scope
-follows the same rule as scroll, collapse, and expansion: it is per-surface state, persisted
-per surface, and never broadcast. A second surface adopting the first's scope would need a
-primary-surface concept the extension does not have.
+Presence may report cwd, agent identity, activity, or waiting evidence, but presence never decides
+terminal ownership. This separation prevents a shell `cd`, a delayed scan, or missing evidence from
+moving tabs between owners.
 
-### 2.3 Considered and out of scope for this round
+## 2. Per-surface navigation state
 
-Recorded so they are not silently re-litigated.
+Each sidebar, panel, and editor surface owns one navigation state:
 
-| Model | Shape | Why not now |
-|-------|-------|-------------|
-| Cross-surface sync | A rail broadcasts `scopeChanged` through the host; other surfaces follow | The host-as-hub RPC exists, but panes belong to one surface, so a sidebar "remote control" needs a *primary terminal surface* concept and a fan-out policy for multi-panel and editor. Revisit as an opt-in "sync scope across surfaces" setting holding one host-side scope every surface follows — which needs no primary |
-| Editor tab per worktree | Selecting a worktree opens or focuses a dedicated editor tab | Closest to the reference's feel, but it proliferates tabs, and the editor surface is second-class today — 15 of 16 vault messages are unhandled there. That debt is paid before any default UX bets on the editor. Acceptable later as a manual "Open worktree as tab" action, never as the selection default |
-
-## 3. The join: tab → pane → worktree
-
-### 3.1 Where attribution comes from
-
-The presence projection already maps this window's panes into worktrees: each window-scope row
-carries the pane it was projected from, under the worktree that contains that pane's working
-directory ([worktree-agent-presence.md](worktree-agent-presence.md) § 3.1). The tab bar joins
-its own tabs to those rows by pane identity. No new message, no new field, no second attribution
-path — a second one is how the tab bar and the worktree row start disagreeing about the same
-pane.
-
-External rows are not this surface's panes and never appear in a tab bar; they are irrelevant
-to the join.
-
-### 3.2 What scope hides — and what it never hides
-
-**Scope hides a pane only when presence proves it belongs to a different worktree.** Three
-cases, and the third is the one that matters:
-
-| Presence says | Scoped tab bar |
-|---------------|----------------|
-| This pane is in the scoped worktree | Shown |
-| This pane is in some other worktree | Hidden |
-| Nothing — no row for this pane | **Shown, in every scope** |
-
-The third row is not a convenience. A pane whose working directory is unknown, or which lies
-outside every worktree of every workspace repo, produces no presence row at all. Hiding it
-would make it unreachable from a tab bar the user cannot tell is filtered — the same class of
-false claim as a spinner that never stops. It follows directly from I1: absence of evidence is
-not evidence of absence.
-
-The consequence is stated plainly rather than hidden: a scope is "the panes of this worktree,
-plus the ones nothing could place". The scope chip's tooltip says so. There is no fourth outcome
-— in particular, being the active pane does not exempt a tab from the filter (§ 3.3).
-
-### 3.3 Selection is navigation
-
-Selecting a worktree is an act of going there, so the terminal region follows the tab bar rather
-than staying pinned to whatever was active before:
-
-| After a selection | Result |
-|-------------------|--------|
-| The scope holds panes | The first in-scope pane becomes active — unless the already-active pane is itself in scope, in which case nothing moves |
-| The scope holds none | The empty-scope region (§ 4.3) is shown |
-
-**The unit is the pane, not the tab.** A split tab is presented because one of its panes is in
-scope, while the pane active *inside* it may belong elsewhere — bringing that tab forward would
-show the wrong leaf. Selection therefore moves the active **pane**, which sets the owning tab's
-active pane before showing the tab.
-
-**Nothing is stopped, closed, or detached.** The previously active pane keeps running and keeps
-its session; `All` brings its tab straight back and it can be made active again. This is § 7 rule
-4 applied to the active pane: scope changes rendering, never process state.
-
-The alternative — pinning the active pane so a selection never moves the user — was rejected. It
-creates a fourth attribution outcome that contradicts § 3.2, and it makes the empty-scope region
-unreachable whenever any out-of-scope pane happens to be active, which is most of the time. A
-selection that leaves the user looking at another worktree's terminal is not a selection.
-
-### 3.4 Scope survives what moves underneath it
-
-- A tree push that does not change attribution changes nothing about the tab bar, and must not
-  cost DOM work — the render-signature discipline of
-  [worktree-panel-ui.md](worktree-panel-ui.md) § 6.1 covers the scope-derived rendering too.
-- A pane whose `cwd` moves to another worktree leaves the scope on the next push. It is not
-  closed, hidden without trace, or duplicated.
-- Validity is **tree membership**, not filesystem availability. The scoped worktree leaving the
-  tree — removed, pruned, or never there — drops scope to `All` and says why; a worktree still
-  registered but reported `missing` KEEPS the scope, because the registration exists and panes may
-  still be attributed to it. This is what the § 8 table says, and an earlier draft of this bullet
-  said the opposite for `missing`; the table and WT-010.1 are correct.
-- A degraded presence source (I8) never re-attributes a pane on its own. Nor could it: attribution
-  is derived from the pane's own `cwd` against the tree's worktree ids, and a failing source
-  weakens what a row says about its *agent* without moving the row between worktrees. There is
-  therefore no "last attribution" to hold and no cache to build.
-
-## 4. The escape hatch
-
-### 4.1 The scope chip
-
-While scope is set, the tab bar carries a chip at its head naming the scoped worktree's branch
-and holding an **All** control. The chip is not decoration and not dismissible-by-accident: it
-is the only thing on screen that says the tab bar is showing a subset, so it is present exactly
-when the filter is, and absent when it is not.
-
-`All` clears scope on this surface. It is always reachable, including when the scope is empty
-(§ 4.3) and when the panel that set the scope is collapsed or hidden.
-
-### 4.2 The attention badge
-
-**A pane the scope hides can go `waiting` invisibly.** The chip's `All` control therefore
-carries a count of hidden panes that need a human — rendered as an attention mark with the
-count, e.g. `All · 2`.
-
-The count is over **this surface's own tabs**, not the window: tabs this scope hides that hold a
-`waiting` pane. The unit is the tab throughout — a hidden split holding two waiting panes is one
-hidden thing and counts once, and a tab is hidden only when *every* one of its panes is attributed
-elsewhere. A pane's `waiting` is taken as true when *either* the presence row for it or the tab's
-own tracked status says so, and an exited pane is never waiting. The union is deliberate — the two sources have
-different coverage today, and a missed `waiting` is precisely the failure this badge exists to
-prevent, while a redundant one costs a glance.
-
-Rules the badge must hold:
-
-- Zero hidden waiting panes renders **no badge at all**, not a `0`. A permanent badge is a
-  badge nobody reads.
-- The badge is not an error treatment. It is the same attention vocabulary a `waiting` row uses
-  ([worktree-panel-ui.md](worktree-panel-ui.md) § 7.2), so a user learns one shape.
-- Clearing scope from the badge lands the user on a tab bar that includes the panes it counted;
-  the count and the result cannot disagree.
-
-### 4.3 A scope with nothing in it
-
-A worktree with no panes is a normal, common selection — it is the state a freshly created
-worktree is in. The terminal region renders the two things worth doing there (open a terminal,
-launch an agent), states that other worktrees' panes are hidden, and offers `All`. It is not an
-error, carries no error styling, and never auto-clears the scope the user chose.
-
-The launch offer follows the panel's own rule and is **omitted**, never rendered inert, when the
-host reports no agent that can start a session. A region showing one offer is a correct region.
-
-While the region stands, the terminal container is **hidden but left mounted**: unmounting would
-discard the terminal's viewport state and make `All` a rebuild, which is § 7 rule 4 violated one
-layer down. Whether the region stands is re-decided on every redraw, not only on a selection — a
-pane can arrive in the scope by routes no selection passes through, the region's own terminal offer
-among them.
-
-## 5. Layout by location
-
-The composition is location-dependent, and deliberately so: the same mechanism gets two
-appropriate feels.
-
-| Location | Layout |
-|----------|--------|
-| Panel, editor | Two columns — the worktree rail beside the terminal region. Both are visible at once, so scope reads as "this rail drives that terminal" |
-| Sidebar (~300 px) | Stacked, as today. Two columns do not fit. The rail was to auto-collapse after a selection, giving a "choose → view" flow; that was withdrawn in `10977d40` — see worktree-panel-ui.md § 2.4 |
-
-Sidebar auto-collapse is gone: a selection sets the scope and touches nothing else, and the rail
-stays exactly as the user left it. Collapsing and expanding it is the header control's job.
-
-Nothing about scope depends on the layout. A surface in the stacked layout scopes exactly the
-way a two-column one does.
-
-## 6. Persisted state
-
-One new per-surface key, alongside those in
-[worktree-panel-ui.md](worktree-panel-ui.md) § 2.1:
-
-```
-worktreeScope?: string   // a WorktreeInfo.id; absent means All
+```ts
+interface TerminalNavigationState {
+  activeOwner: TerminalOwner;
+  activeTabId: string | null;
+  activePaneByTab: Record<string, string>;
+}
 ```
 
-- **Absent means All, and that is the first-run default.** A filter the user never chose is
-  never on when they first open the view. Scope is entered only by an explicit selection.
-- A persisted scope naming a worktree that is not in the tree the surface now holds resolves to
-  `All`. It is not held in the hope the worktree comes back — a filter pinned to something
-  absent is a filter with no visible cause.
-- State written by an older build has no `worktreeScope` and lands on `All`, which is the
-  behaviour that build had.
-- **A host restart resets the scope to `All`; only an in-memory re-resolve keeps it.** Opening the
-  workspace, reloading the window (Cmd+R), launching the app, or coming back through cross-restart
-  lands the surface on `All` rather than the last worktree it was scoped to — reopening on a stale
-  filter reads as the view choosing for the user. These events are **indistinguishable** to the
-  extension: each restarts the host and restores the same workspace-scoped state, so a Cmd+R reload
-  resets exactly like a fresh open. The scope is preserved only across an in-memory view re-resolve
-  in which the surface's own sessions are still live (a webview swap with the host alive), where
-  nothing about the workspace changed. The **host** decides, from whether live sessions were
-  revived, and posts `resetWorktreeScope` on the `init` message; the webview clears the persisted
-  key before any coordinator reads it. This narrows the older "scope survives a reload" intent
-  (D26) to the webview-reload / view-toggle case. See DESIGN.md D50.
+Owner, tab, and pane are committed atomically. A valid active tab belongs to `activeOwner`; its
+active pane is a live leaf of that tab. An owner may intentionally have no tab, represented by a
+null active tab while the owner remains unchanged.
 
-## 7. Truthfulness rules the scope must encode
+Navigation is per surface. Focusing a terminal in one surface does not move another surface's
+owner, tab, pane, or checkpoint. The host routes requests to the surface that owns the target pane;
+it does not broadcast navigation state.
 
-1. **A filter is never invisible.** Scope set ⇒ the chip is rendered. There is no state in which
-   the tab bar shows a subset with nothing saying so.
-2. **A pane that cannot be attributed is never hidden** (§ 3.2).
-3. **A hidden pane that needs a human is counted** (§ 4.2).
-4. **Scope changes rendering, never process state.** Selecting a worktree starts nothing, stops
-   nothing, and closes nothing.
-5. **Scope is not a claim about the worktree.** A worktree with no panes in scope is not idle,
-   not degraded, and not empty of agents — external rows and other surfaces may hold plenty.
+### 2.1 Intent results
 
-## 8. Edge Cases
+| Intent | Result |
+|---|---|
+| Activate worktree row | Select main or the linked owner, retaining a valid owner tab/pane or choosing one deterministically |
+| Click terminal tab | Derive its owner and commit that tab plus its retained live pane |
+| Focus pane or agent row | Derive owner and containing tab from the exact pane |
+| Create terminal | Register owner and topology first, then commit the new tab and pane |
+| Complete split | Attach to the captured source tab; activate only when that source tab remains active |
+| Close pane/tab | Normalize within the same owner; retain owner-empty when no owner tab remains |
+| Restore | Build the catalog first, then apply checkpoint, live hint, legacy migration, or main fallback |
+| Reconcile owners | Reassign terminals whose linked owner left a complete tree to main, then normalize once |
 
-| Condition | Behavior |
-|-----------|----------|
-| Scope set, every tab hidden | § 4.3 empty-scope region; `All` reachable |
-| Scope set, one tab unattributable | That tab is shown (§ 3.2) and is not counted by the badge — it was never hidden |
-| Scoped worktree removed or pruned | Scope drops to `All`, with a reason |
-| Scoped worktree goes `missing` | Scope is kept — the registration exists and panes may still be attributed to it |
-| Presence degraded for the pane source | Attribution is recomputed from the push like any other, and is unchanged by the degradation: it is derived from each pane's own `cwd` against the tree's worktree ids, so a failing source weakens what a row says about its *agent* without moving the row between worktrees (§ 3.4). There is no retained last-known map, and nothing to retain one for |
-| Selecting a scope while an out-of-scope pane is active | The filter applies to it like any other tab; the first in-scope pane becomes active, or the empty-scope region is shown (§ 3.3). The pane keeps running and returns with `All` |
-| Two surfaces, different scopes | Both legal; neither is reconciled |
-| Sidebar, rail collapsed by the user | The chip and `All` live on the tab bar, so the escape survives the collapse |
-| Reduced motion | The rail collapse is instant; the badge does not animate |
+One accepted intent produces one ordered effect batch. A structural no-op produces none. An effect
+that raises another intent queues it until the current batch is complete, and delayed focus/fit
+work is generation-guarded.
 
-## 9. Testing
+## 3. Projection
 
-### Test Cases
+The tab bar, linked frame, compact indicator, worktree mark, waiting badge, and empty region are all
+projections of committed navigation plus terminal facts. None stores a second owner or writes
+navigation while rendering.
 
-- [ ] Selecting a worktree filters this surface's tab bar to its panes and leaves other surfaces alone
-- [ ] A pane presence could not attribute stays visible in every scope
-- [ ] A pane attributed to another worktree is hidden, and the chip is rendered whenever anything is
-- [ ] The `All` control clears scope, and the tab bar then holds every pane it had counted
-- [ ] Hidden + `waiting` produces a badge with the count; zero produces no badge at all
-- [ ] `waiting` reported by presence alone, and by the tab's own status alone, each raise the badge
-- [ ] An empty scope renders its own region with both CTAs and an `All` escape, with no error styling
-- [ ] Removing the scoped worktree drops scope to All with a reason; a `missing` one does not
-- [ ] Selecting a worktree activates its first in-scope pane, leaves an already-in-scope active pane alone, and shows the empty region when the scope holds none
-- [ ] The previously active pane keeps running across a scope change and is reachable again through `All`
-- [ ] Scope survives a reload; an absent persisted scope is All; a persisted id not in the tree is All
-- [ ] A push that changes no attribution performs no tab-bar DOM work
-- [ ] Two surfaces hold different scopes simultaneously, and neither follows the other
-- [ ] Sidebar: a selection leaves the rail exactly as it was — only the header control collapses or expands it
+### 3.1 Tab membership
 
----
+Membership is exact stable-owner equality:
 
-> **Sync rule**: the § 1 diagram must show the same three attribution outcomes as § 3.2.
-> **Registry**: values this doc shares with others belong in [DESIGN.md](../DESIGN.md) § 10 — do not keep a second copy here.
+| Active owner | Presented tabs |
+|---|---|
+| Main | Tabs whose panes have no `worktreeId` |
+| Linked `A` | Tabs whose panes have `worktreeId === A` |
+
+Presence attribution is not an input. Split children inherit one owner, so every normal split tab
+has one owner. Collapsed split topology is read through its surviving live leaf rather than through
+a removed root session.
+
+### 3.2 Linked treatment and worktree marks
+
+A linked active owner renders:
+
+- the linked frame around the terminal surface;
+- a compact indicator naming the linked worktree;
+- exactly one mark on the matching linked worktree row.
+
+Main renders none of those. Activating any repository's main worktree row requests the same global
+main owner and leaves every repository-specific row unmarked. Roving keyboard focus, expansion,
+search, menus, and rail visibility remain independent of the owner mark.
+
+### 3.3 Hidden waiting tabs
+
+While a linked owner is active, its indicator counts hidden tabs containing a non-exited waiting
+pane. Waiting is the union of local terminal status and presence waiting evidence. Presence is only
+decoration here: it can move the count, never membership.
+
+The unit is the tab. A hidden split with two waiting panes counts once. Zero renders no badge.
+Main hides no main-owned tabs behind a linked indicator, so main renders no hidden-waiting mark.
+
+### 3.4 Owner-empty region
+
+An active owner with no terminal presents a normal empty region that:
+
+- names Main or the linked worktree;
+- offers a new terminal in that owner;
+- offers agent launch only when available;
+- says another worktree may be chosen;
+- never shows an out-of-owner pane or changes owner automatically.
+
+The terminal container stays mounted while hidden so xterm viewport and process state survive.
+An arriving terminal removes the empty region through the next projection render.
+
+## 4. Creation, close, and split rules
+
+New Terminal uses the current active owner. Closing the last owner tab retains that owner and asks
+for a replacement in it. The replacement becomes active only after its terminal fact and topology
+exist.
+
+A split request captures request id, source tab, source pane, and direction. The response attaches
+to that captured source, not whichever tab later became active. The host destroys a pending child
+only when it was never attached and the request is rejected, times out, loses its source, fails
+delivery, or loses its surface.
+
+## 5. Restore and reconciliation
+
+Each surface persists a versioned navigation checkpoint. Restore precedence is:
+
+1. structurally valid V1 checkpoint;
+2. validated live host hint during an in-memory bootstrap;
+3. one-shot legacy linked scope during an in-memory bootstrap;
+4. deterministic main fallback.
+
+A cold bootstrap ignores the live hint and legacy field. An explicit checkpoint owner-empty state
+is preserved. Snapshot replay order never manufactures activity.
+
+A null or absent worktree tree proves nothing about linked-owner removal. Only a complete tree
+missing a linked id reassigns affected terminal facts to main. Reconciliation changes owner facts
+and navigation in one controller transaction, after which every projection redraws from the same
+committed result.
+
+## 6. Layout and rail independence
+
+Owner navigation behaves identically in sidebar, panel, and editor layouts. The worktree rail may
+be beside, above, below, open, or collapsed; choosing an owner does not change that layout state.
+Only the rail's own controls change its visibility.
+
+## 7. Verification cases
+
+- Main shows only main-owned tabs and marks no worktree row in a multi-root workspace.
+- Linked owner A shows only A's tabs, frame, indicator, and row mark.
+- Shell `cd` changes presence placement but not terminal owner or tab membership.
+- Tab click, pane focus, creation, split completion, close, restore, and reconciliation each commit
+  owner, tab, and pane together.
+- New Terminal and last-tab replacement retain the active owner.
+- Hidden waiting counts change without moving membership.
+- Owner-empty state offers owner-specific actions and never changes owner automatically.
+- Two surfaces retain independent navigation checkpoints and projections.
+- A missing tree response does not remove a linked owner; a complete tree may reconcile it.

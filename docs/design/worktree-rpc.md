@@ -68,9 +68,11 @@ Two invariants carried over from the vault protocol:
   webview paths are *never* action inputs; that claim was false for this message, and stating
   it absolutely would have hidden the only path-trust boundary in the feature.
 
-> **Not in this protocol**: the worktree a surface has *selected*, and the tab-bar scope that
-> selection drives, are webview-local per-surface state. Nothing about scope is sent to the host,
-> and no handler here reads it — see [worktree-scope.md](worktree-scope.md) § 2.1.
+> **Navigation boundary**: worktree row activation is a webview-local owner intent. It enters the
+> surface navigation controller directly and does not add a worktree action message. After the
+> owner, tab, and pane commit atomically, `terminalNavigationCommitted` echoes the nullable pair
+> `activeTabId` + `activePaneId` to the host for routing only. The host validates the pair together;
+> presence and worktree actions never write it. See [worktree-scope.md](worktree-scope.md) § 2.
 
 ## 2. Messages
 
@@ -80,6 +82,7 @@ Two invariants carried over from the vault protocol:
 |------|---------|---------|
 | `requestWorktreeTree` | `{ force?: boolean }` | Ask for the tree. `force` bypasses the per-repo cache |
 | `worktreeViewVisibility` | `{ visible: boolean }` | Declare whether this surface is showing the Worktree view. Gates every push to it (§ 1) |
+| `terminalNavigationCommitted` | `{ activeTabId: string | null, activePaneId: string | null }` | Commit one validated nullable pair for host routing. Both values are null or both identify a root tab and its live pane; this is terminal navigation, not a worktree mutation |
 | `requestWorktreeSubagents` | `{ rowId, entryId }` | Lazy subagent rows for one expanded agent row |
 | `worktreeFocusPane` | `{ paneId }` | Reveal a window-scope pane. Rejected for external rows |
 | `worktreeOpenFolder` | `{ worktreeId, mode: "newWindow" \| "addToWorkspace" }` | Open the worktree as a folder |
@@ -419,6 +422,8 @@ thing we can show, and hiding them would make the failure unactionable.
 | `requestWorktreeSubagents` for a row with no `entryId` | Ignored. An empty list would say the session delegated nothing, which is not what a row with no session to read means |
 | `requestWorktreeSubagents` naming a session the row no longer has | Ignored — the host matches the request against the published row's own `entryId` |
 | Duplicate `requestWorktreeSubagents` for one `(rowId, entryId)` | Ignored while a read is in flight and after one has landed; the roster is held under that pair, not under `rowId` |
+| Worktree row activates | One local owner transition; no worktree RPC and no independent selected-row write |
+| `terminalNavigationCommitted` carries one null and one id | Rejected; host routing keeps its previous coherent pair |
 
 ## 7. Testing
 
@@ -439,6 +444,8 @@ thing we can show, and hiding them would make the failure unactionable.
 - [ ] `branchName` of `-x` → rejected in validation
 - [ ] `path` inside a linked worktree of the same repo → rejected; a path under the default root inside the main worktree → accepted
 - [ ] `worktreeFocusPane` for an external row's identity → rejected
+- [ ] Worktree row activation → one local owner transition and no worktree action message
+- [ ] `terminalNavigationCommitted` accepts a valid tab/pane pair or the all-null empty pair and rejects partial pairs
 - [ ] Git exits non-zero → stderr reaches the webview, bounded
 - [ ] `openAfter: "agent"` without the launch fields → rejected; launch fields with any other mode → rejected
 - [ ] Create succeeds and the launch fails → result reports the worktree as created and the agent as not started; the worktree still exists afterwards
