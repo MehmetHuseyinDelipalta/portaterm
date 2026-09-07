@@ -788,6 +788,26 @@ export class SessionManager {
     this.snapshots.recordResize(session, cols, rows);
   }
 
+  commitNavigation(viewId: string, activeTabId: string | null, activePaneId: string | null): boolean {
+    if ((activeTabId === null) !== (activePaneId === null)) {
+      return false;
+    }
+    const viewSessionIds = this.viewSessions.get(viewId) ?? [];
+    if (activeTabId !== null && activePaneId !== null) {
+      const pane = this.sessions.get(activePaneId);
+      if (!pane || !viewSessionIds.includes(activePaneId) || pane.rootTabId !== activeTabId) {
+        return false;
+      }
+    }
+    for (const sessionId of viewSessionIds) {
+      const session = this.sessions.get(sessionId);
+      if (session && !session.isSplitPane) {
+        session.isActive = activeTabId !== null && session.id === activeTabId;
+      }
+    }
+    return true;
+  }
+
   /** Switch active session within a view. Silent no-op for unknown viewId or sessionId. */
   switchActiveSession(viewId: string, sessionId: string): void {
     const viewSessionIds = this.viewSessions.get(viewId);
@@ -810,9 +830,7 @@ export class SessionManager {
    * Returns empty array for unknown viewIds. Emits `isSplitPane: false`
    * explicitly to match the InitMessage wire contract (see W10).
    */
-  getTabsForView(
-    viewId: string,
-  ): Array<{
+  getTabsForView(viewId: string): Array<{
     id: string;
     name: string;
     customName: string | null;
@@ -857,9 +875,7 @@ export class SessionManager {
    * `WebviewStateStore.tabLayouts` on reload / cross-restart. See
    * restore-terminal-sessions design.md D12.
    */
-  getAllSessionsForView(
-    viewId: string,
-  ): Array<{
+  getAllSessionsForView(viewId: string): Array<{
     id: string;
     name: string;
     customName: string | null;

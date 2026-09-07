@@ -372,8 +372,6 @@ let worktreeController: WorktreeController | null = null;
 // Constructed on init beside the controller that feeds it, and owning the join
 // itself. See: webview/tabBarScopeWiring.ts and design.md D8.
 let tabBarScope: TabBarScopeWiring | null = null;
-let lastLegacyEchoTabId: string | null = null;
-
 const navigationController = new TerminalNavigationController(
   { activeOwner: MAIN_TERMINAL_OWNER, activeTabId: null, activePaneByTab: {} },
   {
@@ -403,13 +401,7 @@ const navigationController = new TerminalNavigationController(
         store.persistNavigationCheckpoint(checkpoint);
       },
       emitHostEcho: (activeTabId, activePaneId) => {
-        if (activeTabId !== lastLegacyEchoTabId) {
-          lastLegacyEchoTabId = activeTabId;
-          if (activeTabId) {
-            vscode.postMessage({ type: "switchTab", tabId: activeTabId });
-          }
-        }
-        vscode.postMessage({ type: "focus", activeSessionId: activePaneId ?? undefined });
+        vscode.postMessage({ type: "terminalNavigationCommitted", activeTabId, activePaneId });
       },
       scheduleDelayed: (run) => requestAnimationFrame(run),
       runDelayedFocusAndFit: (state) => {
@@ -1520,25 +1512,15 @@ function bootstrap(): void {
     true,
   );
 
-  // Notify Extension Host when user clicks/focuses the terminal.
-  // Sends the resolved active pane session ID so "Insert Path" + the
-  // title-bar "Export…" flash target the pane the user is actually on.
-  //
-  // We derive `activeSessionId` from `event.target.closest('.split-leaf')`
-  // (DOM ground truth) rather than `store.tabActivePaneIds` to dodge a
-  // synchronous race: xterm.js calls `textarea.focus()` inside its own
-  // mousedown handler before the leafContainer mousedown handler runs, so
-  // focusin fires while `tabActivePaneIds` still points at the previously
-  // active pane. When we detect a leaf-driven focus, we also sync the
-  // store + visual class so subsequent reads agree.
+  // A split leaf focus is a navigation intent. The separate focus message only
+  // updates provider recency; routing comes from the controller's committed echo.
   document.addEventListener("focusin", (event) => {
     const target = event.target instanceof Element ? event.target.closest<HTMLElement>(".split-leaf") : null;
     const leafSessionId = target?.dataset.sessionId;
     if (leafSessionId) {
       navigationController.dispatch((catalog, state) => focusNavigationPane(catalog, state, leafSessionId));
-      return;
     }
-    vscode.postMessage({ type: "focus", activeSessionId: getActivePaneId() ?? undefined });
+    vscode.postMessage({ type: "focus" });
   });
   window.addEventListener("message", (event: MessageEvent) => {
     const msg = event.data;

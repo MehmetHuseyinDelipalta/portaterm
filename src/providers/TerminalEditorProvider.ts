@@ -108,13 +108,30 @@ export class TerminalEditorProvider {
    * root tab, never a split pane (see add-tab-rename design.md D5).
    */
   getActiveTabId(): string | undefined {
-    return this.sessionManager.getTabsForView(this._viewId).find((t) => t.isActive)?.id;
+    if (this._activeNavigation === null) {
+      return undefined;
+    }
+    if (this._activeNavigation && this.sessionManager.getSession(this._activeNavigation.paneId)) {
+      return this._activeNavigation.tabId;
+    }
+    return this.sessionManager.getTabsForView(this._viewId).find((tab) => tab.isActive)?.id;
+  }
+
+  getActiveSessionId(): string | undefined {
+    if (this._activeNavigation === null) {
+      return undefined;
+    }
+    if (this._activeNavigation && this.sessionManager.getSession(this._activeNavigation.paneId)) {
+      return this._activeNavigation.paneId;
+    }
+    return this.sessionManager.getTabsForView(this._viewId).find((tab) => tab.isActive)?.id;
   }
 
   /** The unique view ID for this editor panel's sessions. */
   private readonly _viewId: string;
   /** Whether the webview has sent the 'ready' message. Gates outbound messages. */
   private _ready = false;
+  private _activeNavigation: { tabId: string; paneId: string } | null | undefined;
   /** The WebviewPanel managed by this instance. */
   private readonly _panel: vscode.WebviewPanel;
   /**
@@ -475,7 +492,8 @@ export class TerminalEditorProvider {
       post: (msg) => {
         if (msg.type === "worktreeTreeResponse") {
           const linked = new Set(
-            msg.tree?.repos.flatMap((repo) => repo.worktrees.filter((wt) => wt.kind === "linked").map((wt) => wt.id)) ?? [],
+            msg.tree?.repos.flatMap((repo) => repo.worktrees.filter((wt) => wt.kind === "linked").map((wt) => wt.id)) ??
+              [],
           );
           this.sessionManager.reconcileWorktreeOwners(this._viewId, linked);
         }
@@ -710,10 +728,23 @@ export class TerminalEditorProvider {
         }
 
         case "switchTab":
-          if (typeof message.tabId === "string") {
-            this.sessionManager.switchActiveSession(this._viewId, message.tabId);
+          break;
+
+        case "terminalNavigationCommitted": {
+          const validPair =
+            (typeof message.activeTabId === "string" && typeof message.activePaneId === "string") ||
+            (message.activeTabId === null && message.activePaneId === null);
+          if (
+            validPair &&
+            this.sessionManager.commitNavigation(this._viewId, message.activeTabId, message.activePaneId)
+          ) {
+            this._activeNavigation =
+              message.activeTabId === null || message.activePaneId === null
+                ? null
+                : { tabId: message.activeTabId, paneId: message.activePaneId };
           }
           break;
+        }
 
         case "closeTab":
           if (typeof message.tabId === "string") {

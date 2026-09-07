@@ -1770,3 +1770,48 @@ describe("SessionManager.requestScrollbackDump", () => {
     expect(errB.constructor.name).toBe("ScrollbackDumpAbortedError");
   });
 });
+
+describe("SessionManager: commitNavigation", () => {
+  it("commits and clears one validated root and pane pair", () => {
+    const sm = new SessionManager();
+    const webview = createMockWebview();
+    const root = sm.createSession("sidebar", webview);
+    const other = sm.createSession("sidebar", webview);
+    const pane = sm.createSession("sidebar", webview, { isSplitPane: true, rootTabId: root });
+
+    expect(sm.commitNavigation("sidebar", root, pane)).toBe(true);
+    expect(sm.getSession(root)?.isActive).toBe(true);
+    expect(sm.getSession(other)?.isActive).toBe(false);
+
+    expect(sm.commitNavigation("sidebar", null, null)).toBe(true);
+    expect(sm.getSession(root)?.isActive).toBe(false);
+    expect(sm.getSession(other)?.isActive).toBe(false);
+    sm.dispose();
+  });
+
+  it("accepts a retained split root without requiring a root session", () => {
+    const sm = new SessionManager();
+    const pane = sm.createSession("sidebar", createMockWebview(), {
+      isSplitPane: true,
+      rootTabId: "retained-root",
+    });
+
+    expect(sm.commitNavigation("sidebar", "retained-root", pane)).toBe(true);
+    expect(sm.getSession(pane)?.isActive).toBe(false);
+    sm.dispose();
+  });
+
+  it("rejects partial, wrong-root, and wrong-view pairs without changing activity", () => {
+    const sm = new SessionManager();
+    const webview = createMockWebview();
+    const sidebar = sm.createSession("sidebar", webview);
+    const pane = sm.createSession("sidebar", webview, { isSplitPane: true, rootTabId: sidebar });
+    const panel = sm.createSession("panel", webview);
+
+    expect(sm.commitNavigation("sidebar", sidebar, null)).toBe(false);
+    expect(sm.commitNavigation("sidebar", "wrong-root", pane)).toBe(false);
+    expect(sm.commitNavigation("panel", sidebar, pane)).toBe(false);
+    expect(sm.getSession(panel)?.isActive).toBe(true);
+    sm.dispose();
+  });
+});

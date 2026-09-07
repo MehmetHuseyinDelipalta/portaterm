@@ -34,16 +34,16 @@
     2. Route tab click, terminal-created, Vault-created, DOM focus, close, and last-tab replacement in `src/webview/main.ts` through controller transactions.
     3. Remove navigation writes from `src/webview/worktree/activatePane.ts`, update `src/webview/worktree/activatePane.test.ts`, and adapt `src/webview/terminal/TerminalFactory.ts` to register facts before one intent.
 
-- [ ] 1_4 Replace independent host activity writers with one nullable echo
+- [x] 1_4 Replace independent host activity writers with one nullable echo — verified: pnpm exec vitest run src/session/SessionManager.test.ts src/providers/TerminalViewProvider.test.ts src/providers/TerminalEditorProvider.test.ts src/extension.worktreeAssembly.test.ts && pnpm exec vitest run src/webview/navigation/TerminalNavigationController.test.ts src/webview/navigation/TerminalNavigationComposition.test.ts exit 0
   - **Deps**: 1_3
   - **Refs**: specs/terminal-owner-navigation/spec.md#{navigation-changes-owner-tab-and-pane-as-one-action,navigation-is-isolated-per-surface}; specs/worktree-panel/spec.md#a-focused-pane-is-revealed-where-it-actually-lives; design.md D1, design.md D5, design.md D7
   - **Acceptance**:
     - Outcome: One committed nullable tab and pane pair drives all host-side active-session routing.
     - Verify: command pnpm exec vitest run src/session/SessionManager.test.ts src/providers/TerminalViewProvider.test.ts src/providers/TerminalEditorProvider.test.ts src/extension.worktreeAssembly.test.ts
   - **Plan**:
-    1. Add `terminalNavigationCommitted` to `src/types/messages.ts` and route it through `src/webview/messaging/MessageRouter.ts` and `src/webview/main.ts`.
+    1. Add `terminalNavigationCommitted` to `src/types/messages.ts` and emit it from `src/webview/main.ts`; `MessageRouter.ts` remains extension-to-webview only.
     2. Add validated nullable navigation echo handling to `src/session/SessionManager.ts`, `src/providers/TerminalViewProvider.ts`, and `src/providers/TerminalEditorProvider.ts`; retire independent tab-switch and focus cache writes.
-    3. Extend provider, session, router, and `src/extension.worktreeAssembly.test.ts` coverage for clearing, retained split roots, wrong-view rejection, and target-surface-only routing.
+    3. Extend `src/session/SessionManager.test.ts`, `src/providers/TerminalViewProvider.test.ts`, `src/providers/TerminalEditorProvider.test.ts`, and `src/extension.worktreeAssembly.test.ts` coverage for clearing, retained split roots, wrong-view rejection, and target-surface-only routing.
 
 ## 2. Make asynchronous lifecycle transitions coherent
 

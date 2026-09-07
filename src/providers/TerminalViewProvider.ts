@@ -91,8 +91,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   /** Callback fired when this provider receives user interaction (message from webview). */
   private _onDidReceiveInteraction: (() => void) | undefined;
 
-  /** Last active pane session ID reported by the webview (for split-pane aware routing). */
-  private _lastActivePaneSessionId: string | undefined;
+  private _activeNavigation: { tabId: string; paneId: string } | null | undefined;
 
   /**
    * Monotonic token for vault-list refreshes. Bumped per `requestVaultSessions`;
@@ -1075,10 +1074,23 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           break;
 
         case "switchTab":
-          if (typeof message.tabId === "string") {
-            this.sessionManager.switchActiveSession(this.getViewId(), message.tabId);
+          break;
+
+        case "terminalNavigationCommitted": {
+          const validPair =
+            (typeof message.activeTabId === "string" && typeof message.activePaneId === "string") ||
+            (message.activeTabId === null && message.activePaneId === null);
+          if (
+            validPair &&
+            this.sessionManager.commitNavigation(this.getViewId(), message.activeTabId, message.activePaneId)
+          ) {
+            this._activeNavigation =
+              message.activeTabId === null || message.activePaneId === null
+                ? null
+                : { tabId: message.activeTabId, paneId: message.activePaneId };
           }
           break;
+        }
 
         case "closeTab":
           if (typeof message.tabId === "string") {
@@ -1172,13 +1184,6 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         }
 
         case "focus":
-          // Track the active pane session ID for split-pane-aware command routing
-          if (typeof message.activeSessionId === "string") {
-            this._lastActivePaneSessionId = message.activeSessionId;
-          }
-          // Mark this provider as most-recently focused so the rename command
-          // can resolve "current tab" without per-view context keys.
-          // See add-tab-rename design.md D5.
           this.markFocused();
           break;
 
@@ -1537,18 +1542,17 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   /**
    * Get the active session ID for this view.
    *
-   * Prefers the last-known active pane session ID (reported by webview focus events)
-   * for correct split-pane routing. Falls back to the active tab ID from SessionManager.
-   * Returns undefined if no sessions exist or no session is active.
+   * Uses the webview's last validated navigation echo for split-pane routing,
+   * then falls back to SessionManager until the first echo arrives.
    */
   getActiveSessionId(): string | undefined {
-    // Prefer pane-level session ID for split-pane accuracy
-    if (this._lastActivePaneSessionId && this.sessionManager.getSession(this._lastActivePaneSessionId)) {
-      return this._lastActivePaneSessionId;
+    if (this._activeNavigation === null) {
+      return undefined;
     }
-    const tabs = this.sessionManager.getTabsForView(this.getViewId());
-    const activeTab = tabs.find((t) => t.isActive);
-    return activeTab?.id;
+    if (this._activeNavigation && this.sessionManager.getSession(this._activeNavigation.paneId)) {
+      return this._activeNavigation.paneId;
+    }
+    return this.sessionManager.getTabsForView(this.getViewId()).find((tab) => tab.isActive)?.id;
   }
 
   /**
@@ -1560,7 +1564,13 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
    * Returns undefined when this view has no sessions or no active tab.
    */
   getActiveTabId(): string | undefined {
-    return this.sessionManager.getTabsForView(this.getViewId()).find((t) => t.isActive)?.id;
+    if (this._activeNavigation === null) {
+      return undefined;
+    }
+    if (this._activeNavigation && this.sessionManager.getSession(this._activeNavigation.paneId)) {
+      return this._activeNavigation.tabId;
+    }
+    return this.sessionManager.getTabsForView(this.getViewId()).find((tab) => tab.isActive)?.id;
   }
 
   /**

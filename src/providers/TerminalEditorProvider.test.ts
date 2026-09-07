@@ -376,3 +376,40 @@ describe("TerminalEditorProvider — the workbench rollout flag", () => {
     sm.dispose();
   });
 });
+
+describe("TerminalEditorProvider: committed navigation", () => {
+  it("updates and clears the target editor surface routing pair", async () => {
+    const ctx = createMockContext();
+    const sm = new SessionManager();
+    const vscode = await import("vscode");
+    const createSpy = vi.spyOn(vscode.window, "createWebviewPanel");
+    TerminalEditorProvider.createPanel(ctx, sm);
+    const panel = createSpy.mock.results[0].value;
+    const postMessageSpy = vi.spyOn(panel.webview, "postMessage");
+    for (const handler of panel.__messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const init = postMessageSpy.mock.calls
+      .map(([message]: [unknown]) => message)
+      .find((message: unknown) => (message as { type?: string }).type === "init") as {
+      tabs: Array<{ id: string }>;
+    };
+    const rootId = init.tabs[0].id;
+    const provider = TerminalEditorProvider.findByViewId(sm.getSession(rootId)!.viewId);
+    expect(provider).toBeDefined();
+    const pane = sm.createSession(provider!.getViewId(), panel.webview, { isSplitPane: true, rootTabId: rootId });
+
+    for (const handler of panel.__messageHandlers) {
+      handler({ type: "terminalNavigationCommitted", activeTabId: rootId, activePaneId: pane });
+    }
+    expect(provider!.getActiveTabId()).toBe(rootId);
+    expect(provider!.getActiveSessionId()).toBe(pane);
+
+    for (const handler of panel.__messageHandlers) {
+      handler({ type: "terminalNavigationCommitted", activeTabId: null, activePaneId: null });
+    }
+    expect(provider!.getActiveTabId()).toBeUndefined();
+    expect(provider!.getActiveSessionId()).toBeUndefined();
+    sm.dispose();
+  });
+});

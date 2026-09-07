@@ -1371,3 +1371,72 @@ describe("TerminalViewProvider: vaultCopyResumeCommand", () => {
     sm.dispose();
   });
 });
+
+describe("TerminalViewProvider: committed navigation", () => {
+  it("routes a retained split pane and clears tab and pane together", () => {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const root = sm.getTabsForView(provider.getViewId())[0].id;
+    const pane = sm.createSession(provider.getViewId(), webviewView.webview, {
+      isSplitPane: true,
+      rootTabId: "retained-root",
+    });
+
+    for (const handler of messageHandlers) {
+      handler({ type: "terminalNavigationCommitted", activeTabId: "retained-root", activePaneId: pane });
+    }
+    expect(provider.getActiveTabId()).toBe("retained-root");
+    expect(provider.getActiveSessionId()).toBe(pane);
+
+    for (const handler of messageHandlers) {
+      handler({ type: "terminalNavigationCommitted", activeTabId: null, activePaneId: null });
+    }
+    expect(provider.getActiveTabId()).toBeUndefined();
+    expect(provider.getActiveSessionId()).toBeUndefined();
+    expect(sm.getSession(root)?.isActive).toBe(false);
+    sm.dispose();
+  });
+
+  it("does not let a different surface replace its routing cache", () => {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const sidebarRoot = sm.getTabsForView(provider.getViewId())[0].id;
+    const panelRoot = sm.createSession("anywhereTerminal.panel", webviewView.webview);
+
+    for (const handler of messageHandlers) {
+      handler({ type: "terminalNavigationCommitted", activeTabId: panelRoot, activePaneId: panelRoot });
+    }
+    expect(provider.getActiveTabId()).toBe(sidebarRoot);
+    expect(provider.getActiveSessionId()).toBe(sidebarRoot);
+    sm.dispose();
+  });
+
+  it("keeps focus messages as surface recency only", () => {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const root = sm.getTabsForView(provider.getViewId())[0].id;
+    const pane = sm.createSession(provider.getViewId(), webviewView.webview, { isSplitPane: true, rootTabId: root });
+
+    for (const handler of messageHandlers) {
+      handler({ type: "focus", activeSessionId: pane });
+    }
+    expect(provider.getActiveSessionId()).toBe(root);
+    expect(TerminalViewProvider.getLastFocusedProvider()).toBe(provider);
+    sm.dispose();
+  });
+});

@@ -180,11 +180,18 @@ export interface AckMessage {
   tabId: string;
 }
 
-/** Terminal view received focus (click/keyboard). Reports active pane session ID for split-pane routing. */
+/** Surface-focus signal used only for provider recency. */
 export interface FocusMessage {
   type: "focus";
-  /** Active pane session ID (resolved from split layout, not tab ID) */
+  /** @deprecated Navigation routing comes from `terminalNavigationCommitted`. */
   activeSessionId?: string;
+}
+
+/** One atomically committed per-surface tab and pane routing result. */
+export interface TerminalNavigationCommittedMessage {
+  type: "terminalNavigationCommitted";
+  activeTabId: string | null;
+  activePaneId: string | null;
 }
 
 /** Request the extension host to open an external link (e.g. Cmd+Click on a URL in the terminal). */
@@ -1785,6 +1792,7 @@ export type WebViewToExtensionMessage =
   | RequestSplitSessionMessage
   | RequestCloseSplitPaneMessage
   | FocusMessage
+  | TerminalNavigationCommittedMessage
   | OpenLinkMessage
   | OpenFileMessage
   | RequestFilePreviewMessage
