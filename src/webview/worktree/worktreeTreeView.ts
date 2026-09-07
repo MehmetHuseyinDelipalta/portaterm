@@ -513,7 +513,15 @@ export function renderAgentsHeader(count: number, attachedCount: number, onColla
   header.dataset.tip = "Collapse agents";
 
   const label = document.createElement("span");
-  label.textContent = `${agentCountLabel(count)} · ${attachedCount} in AT`;
+  label.className = "wt-agents-label";
+  label.append(document.createTextNode(`${agentCountLabel(count)} · `));
+  const attached = document.createElement("span");
+  attached.className = "wt-at-summary";
+  const attachedIcon = document.createElement("span");
+  setIcon(attachedIcon, ICON_TERMINAL);
+  attachedIcon.setAttribute("aria-hidden", "true");
+  attached.append(attachedIcon, document.createTextNode(`${attachedCount} open`));
+  label.appendChild(attached);
   header.dataset.tip = `${attachedCount} open in AnyWhere Terminal · Collapse agents`;
 
   const chev = document.createElement("span");
@@ -691,7 +699,7 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
     badge.type = "button";
     badge.className = "wt-at-badge";
     badge.tabIndex = -1;
-    badge.textContent = "AT";
+    setIcon(badge, ICON_TERMINAL);
     if (opts.atAttachment === "active") {
       badge.classList.add("is-active");
     }

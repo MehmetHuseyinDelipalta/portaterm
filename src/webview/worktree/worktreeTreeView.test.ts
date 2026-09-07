@@ -104,7 +104,9 @@ describe("AnyWhere Terminal attachment indicators", () => {
   it("shows the group count separately from agent activity", () => {
     const header = renderAgentsHeader(3, 2, () => undefined);
     expect(header.textContent).toContain("3 agents");
-    expect(header.textContent).toContain("2 in AT");
+    expect(header.textContent).toContain("2 open");
+    expect(header.textContent).not.toContain("in AT");
+    expect(header.querySelector(".wt-at-summary svg")).not.toBeNull();
     expect(header.dataset.tip).toContain("2 open in AnyWhere Terminal");
   });
 
@@ -121,7 +123,8 @@ describe("AnyWhere Terminal attachment indicators", () => {
     );
     const badge = el.querySelector<HTMLButtonElement>(".wt-at-badge");
 
-    expect(badge?.textContent).toBe("AT");
+    expect(badge?.textContent).toBe("");
+    expect(badge?.querySelector("svg")).not.toBeNull();
     expect(badge?.classList.contains("is-active")).toBe(active);
     expect(badge?.getAttribute("aria-label")).toContain(label);
     badge?.click();

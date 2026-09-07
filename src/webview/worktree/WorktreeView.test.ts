@@ -2660,7 +2660,7 @@ describe("AnyWhere Terminal session projection", () => {
     );
     presencePillFor(view, PANEL_WT)?.click();
 
-    expect(view.element.querySelector(".wt-agents")?.textContent).toContain("2 in AT");
+    expect(view.element.querySelector(".wt-agents")?.textContent).toContain("2 open");
     expect(view.element.querySelector(".wt-arow[data-row-id='a'] .wt-at-badge.is-active")).not.toBeNull();
     expect(view.element.querySelector(".wt-arow[data-row-id='external'] .wt-at-badge")).toBeNull();
 
