@@ -28,7 +28,7 @@
     3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/launchAdmission.ts` and split `src/providers/worktreeHost/launchAdmission.ts` again if it fires.
 
-- [ ] 2_3 Extract where a create would land
+- [x] 2_3 Extract where a create would land — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_2
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/destinationResolve.ts` is under 500 lines, and `src/providers/WorktreeHost.ts` never grows
