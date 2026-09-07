@@ -25,14 +25,16 @@ import type {
   WorktreeTreeResponseMessage,
 } from "../../types/messages";
 import type { VaultView } from "../vault/VaultPanel";
-import { type AgentActions, createAgentActions } from "./controller/agentActions";
+import type { AgentActions } from "./controller/agentActions";
+import { createCollaborators } from "./controller/composeCollaborators";
 import { buildViewDeps } from "./controller/composeViewDeps";
 import type { WorktreeControllerDeps } from "./controller/controllerTypes";
-import { type CreateFlow, createCreateFlow } from "./controller/createFlow";
+import type { CreateFlow } from "./controller/createFlow";
 import { createDialogChannels } from "./controller/dialogChannels";
-import { createMutationResults, type MutationResults } from "./controller/mutationResults";
-import { createTreeReconcile, type TreeReconcile } from "./controller/treeReconcile";
-import { createVisibility, type Visibility } from "./controller/visibility";
+import { worktreeMenuActions } from "./controller/menuActions";
+import type { MutationResults } from "./controller/mutationResults";
+import type { TreeReconcile } from "./controller/treeReconcile";
+import type { Visibility } from "./controller/visibility";
 import type { WorktreeMenuActions } from "./WorktreeContextMenu";
 import { WorktreeView } from "./WorktreeView";
 import type {
@@ -60,125 +62,9 @@ export function resolveInitialView(persisted: VaultView | undefined, hasRepo: bo
   return persisted ?? (hasRepo ? "worktree" : "sessions");
 }
 
-/**
- * The menu's callbacks, each posting the request its label names and nothing
- * else. Ids only: the host re-resolves them against its own tree and presence,
- * so a path the view carried could never become the path an action ran on (D2).
- *
- * Every launch capability is conditional on the host having reported something
- * to launch: `undefined` makes the item absent, which is the truthful rendering
- * of "no agent here can start a session".
- */
-export function worktreeMenuActions(
-  post: (msg: WebViewToExtensionMessage) => void,
-  /**
-   * Which repository a worktree belongs to, and how many of its registrations
-   * git already flagged prunable. Only the view holds the tree that answers
-   * this. Without it the prune item is ABSENT rather than posting a repo id the
-   * webview guessed — a prune against the wrong repository is not recoverable
-   * by re-confirming.
-   */
-  repoFor?: (info: WorktreeInfo) => { repoId: string; prunableCount: number } | undefined,
-  /**
-   * Open the create form for the repo `info` belongs to. Absent → no item: the
-   * form cannot open on a destination the host has not resolved yet.
-   */
-  onCreate?: (info: WorktreeInfo) => void,
-  /**
-   * Open prune's confirmation for a repo. Absent → no prune item: the count is
-   * the whole content of that confirmation, so an unconfirmed prune is not a
-   * cheaper version of this action, it is a different one.
-   */
-  confirmPrune?: (repoId: string) => void,
-  /**
-   * Open the launch dialog for a worktree. Absent → no item, which is how the
-   * panel says "no agent on this host can start a fresh session" rather than
-   * offering a picker with nothing in it.
-   */
-  onLaunch?: (info: WorktreeInfo) => void,
-  /**
-   * Resume an agent row's session in ITS worktree. Absent for the same reason,
-   * and additionally per-row: a row with no session is never offered it.
-   */
-  onResumeHere?: (row: WorktreeAgentRow) => void,
-  /**
-   * Mint the token this request will be answered under (D11). Absent → a bare
-   * token that no controller is ordering answers against, which is the right
-   * shape for a menu built with no controller behind it.
-   */
-  beginAssess?: (worktreeId: string) => string,
-): WorktreeMenuActions {
-  return {
-    ...(onCreate === undefined ? {} : { createWorktree: onCreate }),
-    ...(onLaunch === undefined ? {} : { launchAgentHere: onLaunch }),
-    ...(onResumeHere === undefined ? {} : { resumeHere: onResumeHere }),
-    openFolderInNewWindow: (info) => post({ type: "worktreeOpenFolder", worktreeId: info.id, mode: "newWindow" }),
-    addFolderToWorkspace: (info) => post({ type: "worktreeOpenFolder", worktreeId: info.id, mode: "addToWorkspace" }),
-    openTerminalHere: (info) => post({ type: "worktreeOpenTerminal", worktreeId: info.id }),
-    revealWorktree: (info) => post({ type: "worktreeRevealInOS", worktreeId: info.id }),
-    copyWorktreePath: (info) => post({ type: "worktreeCopyPath", worktreeId: info.id }),
-    toggleLock: (info) =>
-      post(
-        info.locked ? { type: "worktreeUnlock", worktreeId: info.id } : { type: "worktreeLock", worktreeId: info.id },
-      ),
-    // Unforced, deliberately: the host answers with the blocker set rather than
-    // acting, and the confirmation the user then sees is bound to that set's
-    // fingerprint. The webview never decides a removal is safe.
-    // ASKS what the removal would cost; it removes nothing. The unforced
-    // `worktreeRemove` this used to post deleted a clean worktree outright,
-    // because the host reports only from the path that already attempted the
-    // deletion — the whole of round-3 B1 (design.md D6).
-    removeWorktree: (info) =>
-      post({
-        type: "worktreeRemoveAssess",
-        worktreeId: info.id,
-        token: beginAssess === undefined ? "" : beginAssess(info.id),
-      }),
-    // Repo-scoped: a prune drops stale REGISTRATIONS, which belong to the
-    // repository rather than to the worktree the menu was opened on. The count
-    // is the one the confirmation named, and the host abandons the prune if it
-    // has moved since (design.md D13).
-    ...(repoFor === undefined || confirmPrune === undefined
-      ? {}
-      : {
-          pruneRepo: (info: WorktreeInfo) => {
-            const repo = repoFor(info);
-            if (repo === undefined || repo.prunableCount <= 0) {
-              return;
-            }
-            // Confirmed, never posted straight from the click: D13 exists so the
-            // user sees the NUMBER before a repository mutation starts.
-            confirmPrune(repo.repoId);
-          },
-        }),
-
-    focusPane: (row) => {
-      if (row.paneId !== undefined) {
-        post({ type: "worktreeFocusPane", rowId: row.rowId, paneId: row.paneId });
-      }
-    },
-    openPreview: (row) => {
-      if (row.entryId !== undefined) {
-        post({ type: "worktreeOpenPreview", rowId: row.rowId, entryId: row.entryId });
-      }
-    },
-    copyResumeCommand: (row) => {
-      if (row.entryId !== undefined) {
-        post({ type: "worktreeCopyResumeCommand", rowId: row.rowId, entryId: row.entryId });
-      }
-    },
-    revealAgentCwd: (row) => {
-      if (row.entryId !== undefined) {
-        post({ type: "worktreeRevealAgentCwd", rowId: row.rowId, entryId: row.entryId });
-      }
-    },
-    copyAgentPath: (row) => {
-      if (row.entryId !== undefined) {
-        post({ type: "worktreeCopyAgentPath", rowId: row.rowId, entryId: row.entryId });
-      }
-    },
-  };
-}
+// The menu builder lives in `controller/menuActions.ts` (task 3_15). Re-exported
+// here so `main.ts` and three suites keep their import path (D4).
+export { worktreeMenuActions } from "./controller/menuActions";
 
 export class WorktreeController {
   /** The tree element — goes into `VaultPanel`'s `worktreeBody`. */
@@ -230,12 +116,6 @@ export class WorktreeController {
   /** What a finished mutation says, and the assess asked before one runs (3_4). */
   private readonly mutationResults: MutationResults;
 
-  /**
-   * Display paths of rows that have LEFT the tree, so a result arriving after
-   * the rebuild that removed its row can still say what it was about.
-   *
-   * This exists because of the order production actually produces: the
-
   /** The repository holding `info`, from the tree this controller last rendered. */
   private repoFor(info: WorktreeInfo): { repoId: string; prunableCount: number } | undefined {
     return this.treeReconcile.repoFor(info);
@@ -247,106 +127,29 @@ export class WorktreeController {
 
   private constructor(deps: WorktreeControllerDeps) {
     this.deps = deps;
-    // No folder means no tree is ever coming, so the skeleton would be a promise
-    // the workspace cannot keep.
-    this.treeReconcile = createTreeReconcile(
-      {
-        postMessage: (msg) => deps.postMessage(msg),
-        setData: (data) => {
-          this.view.setData(data);
-        },
-        bodyShown: () => this.visibility.bodyShown(),
-        emitAttribution: () => {
-          this.agentActions.emitAttribution();
-        },
-        createDefaults: () => this.createDefaults,
-        provisionOffers: () => this.provisionOffers,
-        repoRefs: () => this.repoRefs,
-        dialogChannels: () => this.dialogChannels,
-        createFlow: () => this.createFlow,
-        actionResults: () => this.actionResults,
-        setActionResults: (next) => {
-          this.actionResults = next;
-        },
-        rescope: (result, present) => this.mutationResults.rescope(result, present),
-        onCreateAvailability: (available) => deps.onCreateAvailability?.(available),
-        noFolder: () => deps.init.workspaceRoot === null,
-      },
-      deps.init.workspaceRoot !== null,
-    );
-    this.createFlow = createCreateFlow({
-      postMessage: (msg) => deps.postMessage(msg),
-      tree: () => this.treeReconcile.tree(),
-      repoFor: (info) => this.repoFor(info),
-      createDefaults: () => this.createDefaults,
-      provisionOffers: () => this.provisionOffers,
-      repoRefs: () => this.repoRefs,
-      dialogChannels: () => this.dialogChannels,
-      launchAgents: () => this.agentActions.launchAgents(),
-      launchOfferId: () => this.agentActions.launchOfferId(),
+    const collaborators = createCollaborators({
+      options: deps,
+      view: () => this.view,
+      menuActions: () => this.menuActions,
+      createDefaults: this.createDefaults,
+      provisionOffers: this.provisionOffers,
+      repoRefs: this.repoRefs,
+      dialogChannels: this.dialogChannels,
       actionResults: () => this.actionResults,
       setActionResults: (next) => {
         this.actionResults = next;
       },
-      openCreateDialog: (initialRepoId) => {
-        this.view.openCreateDialog(initialRepoId);
-      },
-      push: () => {
-        this.push();
-      },
-    });
-    this.mutationResults = createMutationResults({
-      postMessage: (msg) => deps.postMessage(msg),
-      actionResults: () => this.actionResults,
-      setActionResults: (next) => {
-        this.actionResults = next;
-      },
-      tree: () => this.treeReconcile.tree(),
-      departed: () => this.treeReconcile.departed(),
-      infoOf: (worktreeId) => this.infoOf(worktreeId),
-      repoFor: (info) => this.repoFor(info),
-      openPruneDialog: (seed, onConfirm) => {
-        this.view.openPruneDialog(seed, onConfirm);
-      },
-      openRemoveReport: (info, report) => {
-        this.view.openRemoveReport(info, report);
-      },
-      push: () => {
-        this.push();
-      },
-    });
-    this.agentActions = createAgentActions({
-      postMessage: (msg) => deps.postMessage(msg),
-      onAttribution: (report) => deps.onAttribution?.(report),
-      presence: () => this.treeReconcile.presence(),
       infoOf: (worktreeId) => this.infoOf(worktreeId),
       generationOf: (worktreeId) => this.generationOf(worktreeId),
-      openLaunchDialog: (title, agents) => {
-        this.view.openLaunchDialog(title, agents);
-      },
-      menuActions: () => this.menuActions,
       push: () => {
         this.push();
       },
     });
-    this.visibility = createVisibility({
-      postMessage: (msg) => deps.postMessage(msg),
-      presenceNeeded: () => deps.presenceNeeded?.(),
-      clearPendingCreate: () => {
-        this.createFlow.clearPendingCreate();
-      },
-      refreshing: () => this.treeReconcile.refreshing(),
-      abandonRefresh: () => {
-        this.treeReconcile.abandonRefresh();
-      },
-      push: () => {
-        this.push();
-      },
-      awaitingLaunchTargets: () => this.agentActions.awaitingLaunchTargets(),
-      noteAwaitingLaunchTargets: () => {
-        this.agentActions.noteAwaitingLaunchTargets();
-      },
-    });
+    this.treeReconcile = collaborators.treeReconcile;
+    this.createFlow = collaborators.createFlow;
+    this.mutationResults = collaborators.mutationResults;
+    this.agentActions = collaborators.agentActions;
+    this.visibility = collaborators.visibility;
     this.menuActions = worktreeMenuActions(
       (msg) => deps.postMessage(msg),
       (info) => this.repoFor(info),

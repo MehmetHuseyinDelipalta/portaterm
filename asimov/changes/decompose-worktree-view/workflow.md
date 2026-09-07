@@ -45,4 +45,5 @@ Admission: in-contract — behaviour-preserving decomposition; no new invariant 
 - `3_5` was too narrow: the create's four answer caches at `:302-337` come with it, and its two outside writers (visibility at `:805-815`, reconciliation at `:1732-1748`) are now named in the task so the build is told rather than discovering them.
 - De-serialized on the plan attack's reading: the three targets are three independent files, so `3_1..3_6` (controller), `3_7..3_11, 3_13` (view) and `3_12` (notices) are three chains, not one.
 - OBL-1's witness range corrected to `:2250-2272` — the first draft cited only the empty-listing half and missed the dispose half at `:2269-2272`.
-
+- 3_15: `WorktreeController.ts` 416. Under `controller/`: controllerTypes 63, dialogChannels 110, menuActions 131, visibility 135, composeCollaborators 168, composeCreateDialogDeps 215, composeViewDeps 221, createFlow 245, treeReconcile 316, agentActions 378, mutationResults 405, createAnswers 414.
+- 3_15: an orphaned doc-comment head left by the 3_6 cut (the `departed` field's) had swallowed `repoFor`'s own doc comment; removed with the wiring cut.

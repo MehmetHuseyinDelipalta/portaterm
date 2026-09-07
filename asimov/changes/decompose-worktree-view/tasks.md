@@ -209,3 +209,16 @@
     3. The seam is one narrow interface of accessors, never the controller instance: what the literal reads is `deps.postMessage`, the six collaborators, and the pinned fields.
     4. Record `wc -l` for `src/webview/worktree/WorktreeController.ts` and every file under `src/webview/worktree/controller/` in workflow.md Notes. Any file at 500 or above is split before ticking.
     5. Re-run design.md OBL-5's controller command and OBL-4's BOTH diff forms, `&&`-joined.
+
+- [x] 3_15 Cut the menu builder and the collaborator wiring out of the facade — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts exit 0
+  - **Deps**: 3_14
+  - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5
+  - **Boundary**: `src/webview/worktree/WorktreeController.ts` and every file under `src/webview/worktree/controller/` is under 500 lines. `worktreeMenuActions` and `resolveInitialView` keep their current import path — three suites and `main.ts` import them from `WorktreeController` (D4, D5).
+  - **Acceptance**:
+    - Outcome: the cut lands and the 510-case net is unchanged.
+    - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts
+  - **Plan**:
+    1. After `3_14` the class is 613 lines: `worktreeMenuActions` is 110 of them at module scope, and the constructor's six `createX({...})` calls are most of the rest.
+    2. Move `worktreeMenuActions` to `src/webview/worktree/controller/menuActions.ts` and re-export it from `src/webview/worktree/WorktreeController.ts`, so no importer changes (D4).
+    3. Move the six collaborator constructions to `src/webview/worktree/controller/composeCollaborators.ts`, returning them as one record the constructor destructures.
+    4. Record `wc -l` for `src/webview/worktree/WorktreeController.ts` and every file under `src/webview/worktree/controller/` in workflow.md Notes.
