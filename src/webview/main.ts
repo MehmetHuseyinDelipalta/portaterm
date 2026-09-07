@@ -182,6 +182,8 @@ const resizeCoordinator = new ResizeCoordinator(
   () => ({ activeTabId: store.activeTabId, terminals: store.terminals, tabLayouts: store.tabLayouts }),
 );
 
+const splitTabsNeedingRender = new Set<string>();
+
 const splitRenderer = new SplitTreeRenderer({
   store,
   resizeCoordinator,

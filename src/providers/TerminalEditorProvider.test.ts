@@ -390,7 +390,7 @@ describe("TerminalEditorProvider: committed navigation", () => {
       handler({ type: "ready" });
     }
     const init = postMessageSpy.mock.calls
-      .map(([message]: [unknown]) => message)
+      .map(([message]) => message)
       .find((message: unknown) => (message as { type?: string }).type === "init") as {
       tabs: Array<{ id: string }>;
     };

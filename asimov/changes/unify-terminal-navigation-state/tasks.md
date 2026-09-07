@@ -93,10 +93,19 @@
     2. Update controller composition files under `src/webview/worktree/controller/` so terminal focus and creation change the projection without changing roving keyboard focus, expansion, rail visibility, search, or menus.
     3. Add multi-root main, linked programmatic focus, row activation, and no-focus-jump cases to worktree tests.
 
+- [x] 3_3 Restore navigation integration type safety — verified: pnpm run check-types exit 0
+  - **Deps**: 3_2
+  - **Refs**: design.md D4, design.md D5
+  - **Acceptance**:
+    - Outcome: Correlated split rendering and editor host-echo tests compile under the repository type gate.
+    - Verify: command pnpm run check-types
+  - **Plan**:
+    1. Restore the split-render queue declaration in `src/webview/main.ts` and correct the committed-message test callback typing in `src/providers/TerminalEditorProvider.test.ts`.
+
 ## 4. Reconcile contracts and enforcement
 
 - [ ] 4_1 Rewrite worktree-facing navigation documentation
-  - **Deps**: 3_2
+  - **Deps**: 3_3
   - **Refs**: specs/terminal-owner-navigation/spec.md#{navigation-changes-owner-tab-and-pane-as-one-action,navigation-is-isolated-per-surface,presence-reports-activity-but-never-terminal-ownership}; specs/worktree-panel/spec.md#a-history-is-requested-once-per-session-and-again-if-that-session-returns; design.md D7, design.md D8
   - **Acceptance**:
     - Outcome: Worktree documentation contains only current stable-owner navigation and no inspector contract.
