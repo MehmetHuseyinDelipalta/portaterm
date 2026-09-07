@@ -42,6 +42,7 @@ export interface ViewDepsSeam {
   now?(): number;
   onSelectWorktree?: (worktreeId: string | null) => void;
   activeOwner?: () => TerminalOwner;
+  activePaneId?: () => string | null;
   /** Held rather than passed: the two launch items appear only once one can act. */
   menuActions: WorktreeMenuActions;
   createFlow: CreateFlow;

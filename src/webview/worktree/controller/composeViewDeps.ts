@@ -217,6 +217,7 @@ export function buildViewDeps(seam: ViewDepsSeam): WorktreeViewDeps {
     // what marks it, and a second copy here is a second thing to keep right.
     onSelectWorktree: (worktreeId) => seam.onSelectWorktree?.(worktreeId),
     activeOwner: seam.activeOwner,
+    activePaneId: seam.activePaneId,
     now: seam.now,
   };
 }

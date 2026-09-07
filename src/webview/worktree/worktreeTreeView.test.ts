@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { ICON_TERMINAL } from "../vault/icons";
 import { agentRow } from "./worktreeFixtures";
-import { type AgentRowOptions, renderAgentRow, renderSubagentSection } from "./worktreeTreeView";
+import { type AgentRowOptions, renderAgentRow, renderAgentsHeader, renderSubagentSection } from "./worktreeTreeView";
 import type { WorktreeAgentRow } from "./worktreeViewTypes";
 
 const NOW = 1_700_000_000_000;
@@ -97,6 +97,40 @@ describe("[1_2] an agent row outside a tree", () => {
     expect(
       renderWith({ entryId: "claude:s1", delegations: roster }, { expanded: true }).querySelector(".wt-count"),
     ).toBeNull();
+  });
+});
+
+describe("AnyWhere Terminal attachment indicators", () => {
+  it("shows the group count separately from agent activity", () => {
+    const header = renderAgentsHeader(3, 2, () => undefined);
+    expect(header.textContent).toContain("3 agents");
+    expect(header.textContent).toContain("2 in AT");
+    expect(header.dataset.tip).toContain("2 open in AnyWhere Terminal");
+  });
+
+  it.each([
+    ["background" as const, false, "Open in AnyWhere Terminal"],
+    ["active" as const, true, "Focused in AnyWhere Terminal"],
+  ])("renders a focusable %s AT badge without activating the row", (atAttachment, active, label) => {
+    let rowActivations = 0;
+    let atFocuses = 0;
+    const el = renderAgentRow(
+      agentRow({ rowId: "row-at", paneId: "pane-at", scope: "window" }),
+      { activity: "idle", now: NOW, atAttachment },
+      { onActivate: () => rowActivations++, onFocusInAt: () => atFocuses++ },
+    );
+    const badge = el.querySelector<HTMLButtonElement>(".wt-at-badge");
+
+    expect(badge?.textContent).toBe("AT");
+    expect(badge?.classList.contains("is-active")).toBe(active);
+    expect(badge?.getAttribute("aria-label")).toContain(label);
+    badge?.click();
+    expect(atFocuses).toBe(1);
+    expect(rowActivations).toBe(0);
+  });
+
+  it("shows no AT badge for an external session", () => {
+    expect(renderWith({ scope: "external", paneId: undefined }, {}).querySelector(".wt-at-badge")).toBeNull();
   });
 });
 

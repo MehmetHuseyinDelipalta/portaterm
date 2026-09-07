@@ -1311,6 +1311,10 @@ function handleInit(msg: InitMessage): void {
       // as the panel closing on a click the user made inside it.
       onSelectWorktree: (worktreeId) => tabBarScope?.onSelectWorktree(worktreeId),
       activeOwner: () => navigationController.getState().activeOwner,
+      activePaneId: () => {
+        const state = navigationController.getState();
+        return state.activeTabId === null ? null : (state.activePaneByTab[state.activeTabId] ?? null);
+      },
       onAttribution: (map) => tabBarScope?.onAttribution(map),
     });
     vaultPanel = new VaultPanel({

@@ -21,7 +21,7 @@ const NAV_ROWS = ".wt-repo, .wt-idle, .wt-row, .wt-arow, .wt-srow";
  */
 export function setRowTabStop(row: HTMLElement, isStop: boolean): void {
   row.tabIndex = isStop ? 0 : -1;
-  for (const action of row.querySelectorAll<HTMLElement>(".wt-rowaction")) {
+  for (const action of row.querySelectorAll<HTMLElement>(".wt-rowaction, .wt-at-badge")) {
     action.tabIndex = isStop ? 0 : -1;
   }
 }

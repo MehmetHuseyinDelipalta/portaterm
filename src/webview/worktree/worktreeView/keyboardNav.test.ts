@@ -6,7 +6,7 @@
 // The pragma is per file. The view's own suite has one; that does not carry here.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createKeyboardNav, type KeyboardNav } from "./keyboardNav";
+import { createKeyboardNav, type KeyboardNav, setRowTabStop } from "./keyboardNav";
 
 let host: HTMLElement;
 let nav: KeyboardNav;
@@ -49,6 +49,19 @@ describe("roving tabindex", () => {
     const rows = paint("w1", "w2", "w3");
     nav.syncRovingTabindex();
     expect(rows.map((r) => r.tabIndex)).toEqual([0, -1, -1]);
+  });
+
+  it("lets the active row's AT focus badge join the tab order", () => {
+    const row = paint("w1")[0]!;
+    const badge = document.createElement("button");
+    badge.className = "wt-at-badge";
+    badge.tabIndex = -1;
+    row.append(badge);
+
+    setRowTabStop(row, true);
+    expect(badge.tabIndex).toBe(0);
+    setRowTabStop(row, false);
+    expect(badge.tabIndex).toBe(-1);
   });
 
   it("moves the stop to a row focused by pointer, which never goes through focusRow", () => {

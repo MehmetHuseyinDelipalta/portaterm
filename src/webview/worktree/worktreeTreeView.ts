@@ -73,6 +73,8 @@ export interface AgentRowCallbacks {
   onContextMenu?: (row: WorktreeAgentRow, ev: MouseEvent, el: HTMLElement) => void;
   /** Toggle this row's subagent disclosure — the SECOND, independent level (§ 3.5). */
   onToggleSubagents?: (row: WorktreeAgentRow) => void;
+  /** Focus the exact pane attached to this AT surface, independent of row preview mode. */
+  onFocusInAt?: (row: WorktreeAgentRow) => void;
 }
 
 /**
@@ -503,7 +505,7 @@ export function renderPresencePill(groups: readonly PresenceGroup[], onExpand: (
  * The expanded presence header — a real row, not a label: it is the collapse
  * control and it carries the count the pill would otherwise have to keep showing.
  */
-export function renderAgentsHeader(count: number, onCollapse: () => void): HTMLElement {
+export function renderAgentsHeader(count: number, attachedCount: number, onCollapse: () => void): HTMLElement {
   const header = document.createElement("div");
   header.className = "wt-agents";
   header.tabIndex = -1;
@@ -511,7 +513,8 @@ export function renderAgentsHeader(count: number, onCollapse: () => void): HTMLE
   header.dataset.tip = "Collapse agents";
 
   const label = document.createElement("span");
-  label.textContent = agentCountLabel(count);
+  label.textContent = `${agentCountLabel(count)} · ${attachedCount} in AT`;
+  header.dataset.tip = `${attachedCount} open in AnyWhere Terminal · Collapse agents`;
 
   const chev = document.createElement("span");
   chev.className = "wt-chev";
@@ -533,6 +536,8 @@ export interface AgentRowOptions {
   /** Subagent disclosure state — independent of the worktree's own collapse (§ 3.5). */
   expanded?: boolean;
   selected?: boolean;
+  /** Whether this row is attached in this window, and active on this AT surface. */
+  atAttachment?: "active" | "background";
   /**
    * Required, for the same reason as `activity` above: an optional clock that
    * falls back to `Date.now()` lets this row's elapsed figure describe a different
@@ -679,7 +684,35 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
   }
   el.appendChild(count);
 
-  // 7 — age, right-aligned against a fixed edge that never truncates.
+  // 7 — AT attachment. This is location, not agent activity: it stays stable
+  // while the state glyph changes and always focuses the exact attached pane.
+  if (opts.atAttachment !== undefined) {
+    const badge = document.createElement("button");
+    badge.type = "button";
+    badge.className = "wt-at-badge";
+    badge.tabIndex = -1;
+    badge.textContent = "AT";
+    if (opts.atAttachment === "active") {
+      badge.classList.add("is-active");
+    }
+    const label =
+      opts.atAttachment === "active" ? "Focused in AnyWhere Terminal" : "Open in AnyWhere Terminal — focus terminal";
+    badge.setAttribute("aria-label", label);
+    badge.dataset.tip = label;
+    badge.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      cb.onFocusInAt?.(row);
+    });
+    badge.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.stopPropagation();
+      }
+    });
+    badge.addEventListener("dblclick", (ev) => ev.stopPropagation());
+    el.appendChild(badge);
+  }
+
+  // 8 — age, right-aligned against a fixed edge that never truncates.
   const age = document.createElement("span");
   age.className = "wt-age";
   age.textContent = compactAge(ageTimestamp(row), opts.now);

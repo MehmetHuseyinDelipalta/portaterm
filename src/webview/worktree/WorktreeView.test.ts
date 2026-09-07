@@ -2615,6 +2615,64 @@ describe("row activation", () => {
 
 // ── § 7.3 + design.md D5: selection, and the treatment that marks it ──────
 
+describe("AnyWhere Terminal session projection", () => {
+  function withAtRows(rows: WorktreeAgentRow[]): { tree: WorktreeTree; presence: WorktreePresence } {
+    return {
+      tree: singleRepoTree(),
+      presence: { scannedAt: NOW, degradedSources: [], rowsByWorktreeId: { [PANEL_WT]: rows } },
+    };
+  }
+
+  it("counts attached sessions and moves the active AT badge without changing row activation settings", () => {
+    let activePaneId: string | null = "pane-a";
+    const activations: Array<[string, WorktreeRowActivation]> = [];
+    const { view } = mount({
+      activePaneId: () => activePaneId,
+      rowActivation: () => "preview",
+      onActivateAgent: (row, activation) => activations.push([row.rowId, activation]),
+    });
+    view.setData(
+      withAtRows([
+        agentRow({
+          rowId: "a",
+          paneId: "pane-a",
+          scope: "window",
+          entryId: "claude:a",
+          agent: "claude",
+          activity: "running",
+        }),
+        agentRow({
+          rowId: "b",
+          paneId: "pane-b",
+          scope: "window",
+          entryId: "claude:b",
+          agent: "claude",
+          activity: "running",
+        }),
+        agentRow({
+          rowId: "external",
+          scope: "external",
+          entryId: "claude:c",
+          agent: "claude",
+          activity: "running",
+        }),
+      ]),
+    );
+    presencePillFor(view, PANEL_WT)?.click();
+
+    expect(view.element.querySelector(".wt-agents")?.textContent).toContain("2 in AT");
+    expect(view.element.querySelector(".wt-arow[data-row-id='a'] .wt-at-badge.is-active")).not.toBeNull();
+    expect(view.element.querySelector(".wt-arow[data-row-id='external'] .wt-at-badge")).toBeNull();
+
+    activePaneId = "pane-b";
+    view.projectActiveOwner();
+    const background = view.element.querySelector<HTMLButtonElement>(".wt-arow[data-row-id='a'] .wt-at-badge");
+    expect(view.element.querySelector(".wt-arow[data-row-id='b'] .wt-at-badge.is-active")).not.toBeNull();
+    background?.click();
+    expect(activations).toEqual([["a", "focus"]]);
+  });
+});
+
 describe("active terminal owner projection", () => {
   function projected(initial = MAIN_TERMINAL_OWNER, over: Partial<WorktreeViewDeps> = {}) {
     let owner: TerminalOwner = initial;

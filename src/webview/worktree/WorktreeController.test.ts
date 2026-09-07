@@ -49,6 +49,7 @@ function mount(
     rowActivation?: WorktreeRowActivation;
     onSelectWorktree?: (worktreeId: string | null) => void;
     activeOwner?: () => TerminalOwner;
+    activePaneId?: () => string | null;
     onAttribution?: (report: PaneReport) => void;
     showPreview?: (entryId: string) => boolean;
     activatePane?: (paneId: string) => boolean;
@@ -71,6 +72,7 @@ function mount(
     },
     onSelectWorktree: over.onSelectWorktree,
     activeOwner: over.activeOwner,
+    activePaneId: over.activePaneId,
     onAttribution: over.onAttribution,
     showPreview: over.showPreview,
     activatePane: over.activatePane,

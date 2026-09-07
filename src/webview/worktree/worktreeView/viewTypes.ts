@@ -58,6 +58,8 @@ export interface WorktreeViewDeps {
   onSelectWorktree?: (worktreeId: string | null) => void;
   /** Total terminal owner projected into row treatment; absent means main. */
   activeOwner?: () => TerminalOwner;
+  /** Exact active pane in this AT surface; absent/null means no focused AT session. */
+  activePaneId?: () => string | null;
   /** Activating an agent row — focus its pane, or open its preview (§ 6). */
   onActivateAgent?: (row: WorktreeAgentRow, activation: WorktreeRowActivation) => void;
   /** Activating a subagent row targets the PARENT's pane; it has none of its own. */

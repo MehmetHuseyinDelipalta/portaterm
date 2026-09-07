@@ -380,14 +380,14 @@
 }
 
 /* ── Agent row (§ 3.3) ──────────────────────────────────────────────────── */
-/* First line: gutter | state | icon | title | scope | +N | age — every cell pinned
+/* First line: gutter | state | icon | title | scope | +N | AT | age — every cell pinned
    to row 1. The gutter always occupies space, so state dots align down a mixed list.
    The preview is the SECOND line, and the row's second track is implicit: declaring
    `grid-template-rows: auto auto` would reserve the row gap on every preview-less
    row, which is the vertical space this layout exists to stop spending. */
 .wt-arow {
   display: grid;
-  grid-template-columns: 13px 9px 14px minmax(0, 1fr) auto auto 32px;
+  grid-template-columns: 13px 9px 14px minmax(0, 1fr) auto auto auto 32px;
   column-gap: 5px;
   /* Split from the column gap deliberately: the two lines want 1px between them,
      far tighter than the 5px that separates cells across a line, and a single
@@ -487,6 +487,39 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* Session location, separate from the activity glyph. Filled means this is
+   the pane currently presented by the AT surface; outline means another tab or
+   split already holds it. The dimensions never change between those states. */
+.wt-at-badge {
+  appearance: none;
+  min-width: 22px;
+  height: 16px;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 24%, transparent);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-font-family);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.wt-at-badge:hover {
+  color: var(--vscode-foreground);
+  border-color: var(--vscode-focusBorder);
+}
+.wt-at-badge.is-active {
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+  border-color: transparent;
+}
+.wt-at-badge:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
 /* Runs outside this window: labelled, and no focus is ever offered. */
 .wt-scope {
   display: inline-flex;

@@ -110,7 +110,7 @@ export class WorktreeView {
 
   constructor(deps: WorktreeViewDeps) {
     this.deps = deps;
-    this.ownerProjectionKey = this.ownerKey(this.activeOwner());
+    this.ownerProjectionKey = this.terminalProjectionKey();
     // A restored set already carries the user's own decisions — including the
     // expansions it records by omission — so nothing in the first tree is reseeded.
     // Presence of the array is the signal; its length says nothing.
@@ -250,14 +250,22 @@ export class WorktreeView {
     return owner.kind === "main" ? "main" : `linked:${owner.id}`;
   }
 
+  private activePaneId(): string | null {
+    return this.deps.activePaneId?.() ?? null;
+  }
+
+  private terminalProjectionKey(): string {
+    return [this.ownerKey(this.activeOwner()), this.activePaneId() ?? ""].join(String.fromCharCode(2));
+  }
+
   private activeLinkedOwnerId(): string | null {
     const owner = this.activeOwner();
     return owner.kind === "linked" ? owner.id : null;
   }
 
-  /** Repaint only when the committed owner projection moved. */
+  /** Repaint only when committed owner or active-pane projection moved. */
   projectActiveOwner(): void {
-    const next = this.ownerKey(this.activeOwner());
+    const next = this.terminalProjectionKey();
     if (next === this.ownerProjectionKey) {
       return;
     }

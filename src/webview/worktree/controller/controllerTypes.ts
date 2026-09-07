@@ -36,6 +36,8 @@ export interface WorktreeControllerDeps {
   onSelectWorktree?: (worktreeId: string | null) => void;
   /** Current committed terminal owner, read only for row projection. */
   activeOwner?: () => TerminalOwner;
+  /** Exact active pane in this AT surface; null while the owner has no active tab. */
+  activePaneId?: () => string | null;
   /**
    * Which worktree each of this window's panes is running in. Emitted on every
    * push whose attribution moved, and never otherwise.

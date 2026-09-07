@@ -79,6 +79,7 @@ function worktreeMemoKey(
   inTail: boolean,
   expanded: boolean,
   selected: boolean,
+  activePaneId: string | null,
 ): string {
   const degraded = deps.degradedSources();
   const parts: string[] = [
@@ -102,6 +103,7 @@ function worktreeMemoKey(
       // does not already hold.
       compactAge(ageTimestamp(row), now),
       confidenceHint(row, activity, now) ?? "",
+      row.scope === "window" && row.paneId !== undefined && row.paneId === activePaneId ? "active-at" : "",
     );
   }
   return parts.join("\u0005");
@@ -111,6 +113,7 @@ function renderWorktree(deps: WorktreeRowDeps, info: WorktreeInfo, now: number, 
   const rows = deps.rowsFor(info.id);
   const expanded = rows.length > 0 && deps.isExpanded(info);
   const selected = info.kind === "linked" && deps.activeLinkedOwnerId() === info.id;
+  const activePaneId = deps.view.activePaneId?.() ?? null;
   // Asked BEFORE the memo check: the roster request is owed by the render, not
   // by the repaint, and `RosterRequests` already dedupes it.
   if (expanded) {
@@ -121,7 +124,7 @@ function renderWorktree(deps: WorktreeRowDeps, info: WorktreeInfo, now: number, 
     }
   }
   deps.rowMemoSeen.add(info.id);
-  const memoKey = worktreeMemoKey(deps, info, rows, now, inTail, expanded, selected);
+  const memoKey = worktreeMemoKey(deps, info, rows, now, inTail, expanded, selected, activePaneId);
   const hit = deps.rowMemo.get(info.id);
   if (hit !== undefined && hit.key === memoKey) {
     for (const node of hit.nodes) {
@@ -130,7 +133,7 @@ function renderWorktree(deps: WorktreeRowDeps, info: WorktreeInfo, now: number, 
     return;
   }
   const produced: Node[] = [];
-  buildWorktree(deps, info, rows, now, inTail, expanded, selected, produced);
+  buildWorktree(deps, info, rows, now, inTail, expanded, selected, activePaneId, produced);
   deps.rowMemo.set(info.id, { key: memoKey, nodes: produced });
   for (const node of produced) {
     deps.element().appendChild(node);
@@ -148,6 +151,7 @@ function buildAgentChildren(
   rows: readonly WorktreeAgentRow[],
   now: number,
   expanded: boolean,
+  activePaneId: string | null,
 ): void {
   if (rows.length === 0) {
     return;
@@ -161,7 +165,8 @@ function buildAgentChildren(
     return;
   }
 
-  container.appendChild(renderAgentsHeader(rows.length, () => deps.toggleCollapsed(info.id)));
+  const attachedCount = rows.filter((row) => row.scope === "window" && row.paneId !== undefined).length;
+  container.appendChild(renderAgentsHeader(rows.length, attachedCount, () => deps.toggleCollapsed(info.id)));
   for (const row of rows) {
     const rowExpanded = deps.fold().isRowExpanded(row.rowId);
     if (rowExpanded) {
@@ -176,10 +181,17 @@ function buildAgentChildren(
         {
           activity: presentedActivity(row, deps.degradedSources(), now),
           expanded: rowExpanded,
+          atAttachment:
+            row.scope === "window" && row.paneId !== undefined
+              ? row.paneId === activePaneId
+                ? "active"
+                : "background"
+              : undefined,
           now,
         },
         {
           onActivate: (r) => deps.view.onActivateAgent?.(r, deps.activationFor(r)),
+          onFocusInAt: (r) => deps.view.onActivateAgent?.(r, "focus"),
           onContextMenu: deps.menu() ? (r, ev, el) => deps.menu()?.openForAgent(r, ev, el) : undefined,
           onToggleSubagents: (r) => deps.toggleRow(r.rowId),
         },
@@ -222,6 +234,7 @@ function buildWorktree(
   inTail: boolean,
   expanded: boolean,
   selected: boolean,
+  activePaneId: string | null,
   produced: Node[],
 ): void {
   const container = createNodeSink(produced, expanded, selected);
@@ -264,7 +277,7 @@ function buildWorktree(
     ),
   );
 
-  buildAgentChildren(deps, container, info, rows, now, expanded);
+  buildAgentChildren(deps, container, info, rows, now, expanded, activePaneId);
 }
 
 export function createWorktreeRow(deps: WorktreeRowDeps): WorktreeRowRenderer {

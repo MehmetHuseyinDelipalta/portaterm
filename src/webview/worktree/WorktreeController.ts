@@ -172,6 +172,7 @@ export class WorktreeController {
         ...(deps.now === undefined ? {} : { now: deps.now }),
         ...(deps.onSelectWorktree === undefined ? {} : { onSelectWorktree: deps.onSelectWorktree }),
         ...(deps.activeOwner === undefined ? {} : { activeOwner: deps.activeOwner }),
+        ...(deps.activePaneId === undefined ? {} : { activePaneId: deps.activePaneId }),
         menuActions: this.menuActions,
         createFlow: this.createFlow,
         dialogChannels: this.dialogChannels,
@@ -374,7 +375,7 @@ export class WorktreeController {
     this.rowActivation = activation;
   }
 
-  /** Refresh linked-owner row treatment from the committed navigation state. */
+  /** Refresh owner marks and AT pane badges from committed navigation. */
   projectActiveOwner(): void {
     this.view.projectActiveOwner();
   }
