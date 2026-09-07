@@ -1,7 +1,7 @@
 ## 1. `WorktreeHost.ts` — one module per question the host answers
 
 
-- [ ] 2_1 Move the host's own contract out of the module that implements it
+- [x] 2_1 Move the host's own contract out of the module that implements it — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: none
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/hostOptions.ts` is under 500 lines, and `src/providers/WorktreeHost.ts` never grows
@@ -12,8 +12,8 @@
     1. Enumerate free names in both directions (D1a): compile the block in isolation and read the `TS2304` list for direction A, then `grep -n` every identifier it declares across `src/providers/WorktreeHost.ts` for direction B.
     2. Create `src/providers/worktreeHost/hostOptions.ts` with the `WorktreeHostOptions` and the `WorktreeHost` interface, moving them out of `src/providers/WorktreeHost.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
     3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
-    4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/hostOptions.ts` and split `src/providers/worktreeHost/hostOptions.ts` again if it fires.
-    5. Re-export both from `src/providers/WorktreeHost.ts` so no importer changes (D4).
+    4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/hostOptions.ts` and split `src/providers/worktreeHost/hostOptions.ts` again if it fires — it fired `type-blob`, so the mutation service's own three (`WorktreeMutationBindings`, `WorktreeMutationReport`, `ResolvedMutationTarget`) go to `src/providers/worktreeHost/mutationBindings.ts`, which is the consumer seam the report was pointing at.
+    5. Re-export all of it from `src/providers/WorktreeHost.ts` so no importer changes (D4).
 
 - [ ] 2_2 Extract what counts as an admissible agent launch
   - **Deps**: 2_1
