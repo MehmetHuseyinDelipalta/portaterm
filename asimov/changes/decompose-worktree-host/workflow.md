@@ -12,8 +12,8 @@
 
 ## Implement
 
-- [ ] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [x] All tasks done (`tasks.md`)
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
@@ -26,6 +26,8 @@
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
 
 ## Notes
+- Witnesses: OBL-1 pass [exit 0]; OBL-2 pass [exit 0]; OBL-3 pass [exit 0]; OBL-4 pass [exit 0]; OBL-5 pass [exit 1 — the grep printed nothing, which is the pass]; OBL-6 pass [exit 0]; OBL-7 pass [exit 0].
+- Deviation (task 2_21): the re-point alone was not enough. `oneOwner.test.ts`'s `callablesOf` indexed a name LAST-WINS, so `openingRegistry`'s one-line `forgetDepartedRepos(departed)` delegate on the returned object shadowed the module-scope routine of the same name and the assertion ran over an empty body. It now keeps the OUTERMOST spelling — which is the owner in every factory-per-module file this change created.
 - Auto-decision (task 2_10): `asm refactor shape` still reports `giant-literal` on `scanReconcile.ts` at 25% against a 25% bar. `arm`, `cancelCap`, `anyShowing`, `anyDrawingRows`, `enrichmentOwed`, `reconcileRowDrawing` and `reconcileWatches` were hoisted to module scope; the residue is exactly `capHandle`, `scanHandle` and the four members that read or write them, and is not split further.
 - OBL-1 (task 2_10) mutation-checked: emptying `scanReconcile`'s `dispose` fails 2 of 519. Disposition stays `supported`.
 - Knowledge candidate: the scan handle's cancellation on dispose is witnessed; the CAP handle's is not | Surprise: neutering only the `capHandle` branch of `dispose` leaves 519 of 519 green, so half of OBL-1's claim rests on no test | Evidence: src/providers/worktreeHost/scanReconcile.ts#dispose | Consumer: plan | Action: a presence-cap-armed-then-disposed case, in whichever change next touches the timers.
