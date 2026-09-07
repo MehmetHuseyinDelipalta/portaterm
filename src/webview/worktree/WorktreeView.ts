@@ -13,10 +13,8 @@
 
 import { attachTooltipDelegate } from "../ui/Tooltip";
 import { WorktreeContextMenu } from "./WorktreeContextMenu";
-import { openWorktreeCreateDialog } from "./WorktreeCreateDialog";
-import { openWorktreeLaunchDialog } from "./WorktreeLaunchDialog";
-import { openWorktreePruneDialog, type PruneDialogDeps } from "./WorktreePruneDialog";
-import { openWorktreeRemoveDialog, type WorktreeRemoveDialogDeps } from "./WorktreeRemoveDialog";
+import type { PruneDialogDeps } from "./WorktreePruneDialog";
+import type { WorktreeRemoveDialogDeps } from "./WorktreeRemoveDialog";
 import { activationFor as sharedActivationFor } from "./worktreeActivation";
 import {
   agentCountLabel,
@@ -50,12 +48,12 @@ import { type ActionNotices, createActionNotices, resultKey } from "./worktreeVi
 import { type CeilingClock, createCeilingClock } from "./worktreeView/ceilingClock";
 import { createFoldState, type FoldRepoInput, type FoldState } from "./worktreeView/foldState";
 import { createKeyboardNav, type KeyboardNav } from "./worktreeView/keyboardNav";
+import { createViewDialogs, type ViewDialogs } from "./worktreeView/viewDialogs";
 import type {
   PresenceDegradation,
   WorktreeAgentRow,
   WorktreeInfo,
   WorktreeLaunchAgent,
-  WorktreePresence,
   WorktreeRemoveReport,
   WorktreeRepo,
   WorktreeRowActivation,
@@ -98,6 +96,8 @@ export class WorktreeView {
   private readonly fold: FoldState;
   /** When a drawn row next outlives its evidence, and the timer for it (3_8). */
   private readonly ceilingClock: CeilingClock;
+  /** Every modal the view opens, and the one handle that keeps them single (3_9). */
+  private readonly dialogs: ViewDialogs;
 
   private data: WorktreeViewData = { tree: null, presence: null, loading: true };
   /**
@@ -118,7 +118,6 @@ export class WorktreeView {
   /** A persisted set was restored, so the first tree carries no defaults to seed. */
   /** Repos the user asked to see past the render cap. */
   private readonly uncapped = new Set<string>();
-  private closeDialog: (() => void) | null = null;
   private readonly disposeTooltips: () => void;
   /** Roving tabindex target — the row keyboard navigation last landed on. */
   /** Roving tabindex and tree traversal (task 1_2). */
@@ -172,6 +171,12 @@ export class WorktreeView {
       applyAt: (now) => {
         this.applyAt(now);
       },
+    });
+    this.dialogs = createViewDialogs({
+      view: deps,
+      now: () => this.ceilingClock.now(),
+      rowsFor: (worktreeId) => this.rowsFor(worktreeId),
+      degradedSources: () => this.degradedSources(),
     });
     this.nav = createKeyboardNav({
       element: () => this.element,
@@ -410,134 +415,24 @@ export class WorktreeView {
     this.repaint();
   }
 
-  /**
-   * Retire whatever the panel was waiting on, then clear the floor for a new
-   * dialog. Both halves belong together: `closeDialog` is global, so opening
-   * any dialog is also what makes a still-outstanding assess obsolete (D11).
-   */
-  private beginDialog(): void {
-    this.deps.onDialogOpened?.();
-    this.closeDialog?.();
-  }
-
-  /** Open the create form over the panel. No-op without `createDialogDeps`. */
   openCreateDialog(initialRepoId?: string): void {
-    const seed = this.deps.createDialogDeps?.();
-    if (!seed || seed.repos.length === 0) {
-      return;
-    }
-    this.beginDialog();
-    // Captured HERE, while this form is the one being opened. Everything below
-    // closes over it, so no exit has to ask what the current opening is at the
-    // moment it runs (B3).
-    const opening = this.deps.createOpening?.();
-    let retired = false;
-    const retire = (): void => {
-      if (retired || opening === undefined) {
-        return;
-      }
-      retired = true;
-      this.deps.onCreateClosed?.(opening);
-    };
-    const dispose = openWorktreeCreateDialog(this.deps.host, {
-      ...seed,
-      initialRepoId: initialRepoId ?? seed.initialRepoId,
-      onSubmit: (draft) => {
-        this.closeDialog = null;
-        // The submission first, the retirement after it. The create cites the
-        // provisioning offer by id and retirement evicts it, so retiring first
-        // would strip the request of the model it was built from.
-        this.deps.onCreateSubmit?.(draft);
-        retire();
-      },
-      onCancel: () => {
-        this.closeDialog = null;
-        retire();
-      },
-    });
-    // The dialog returns its raw disposer, and only its own `cancel` calls
-    // `onCancel` — so a form superseded by `this.closeDialog?.()` at the top of
-    // any other dialog's opener was torn down without ever retiring, leaving
-    // its opening live on the owner for good. `retired` makes the two paths
-    // idempotent rather than mutually exclusive: cancel disposes as well, and
-    // one exit must not retire twice.
-    this.closeDialog = () => {
-      retire();
-      dispose();
-    };
+    this.dialogs.openCreateDialog(initialRepoId);
   }
 
-  /**
-   * Open the launch dialog over the panel. No-op without agents to offer — the
-   * menu item is absent in that case too; this is the same rule at the second
-   * door.
-   */
   openLaunchDialog(worktreeLabel: string, agents: readonly WorktreeLaunchAgent[]): void {
-    if (agents.length === 0) {
-      return;
-    }
-    this.beginDialog();
-    // Tracked like every other modal here: an untracked one stays mounted under
-    // the next dialog, holding a focus trap and a document listener nothing
-    // will ever release.
-    this.closeDialog = openWorktreeLaunchDialog(this.deps.host, {
-      worktreeLabel,
-      agents,
-      onConfirm: (request) => {
-        this.closeDialog = null;
-        this.deps.onLaunchSubmit?.(request);
-      },
-      onCancel: () => {
-        this.closeDialog = null;
-      },
-    });
+    this.dialogs.openLaunchDialog(worktreeLabel, agents);
   }
 
-  /** Open the prune confirmation. The count is the host's; the panel never guesses it. */
   openPruneDialog(args: Omit<PruneDialogDeps, "onConfirm" | "onCancel">, onConfirm: (count: number) => void): void {
-    this.beginDialog();
-    openWorktreePruneDialog(this.deps.host, {
-      ...args,
-      onConfirm: (count) => {
-        this.closeDialog = null;
-        onConfirm(count);
-      },
-      onCancel: () => {
-        this.closeDialog = null;
-      },
-    });
+    this.dialogs.openPruneDialog(args, onConfirm);
   }
 
-  /** Open the remove confirmation — or its refusal, when nothing can authorize it. */
   openRemoveDialog(args: Omit<WorktreeRemoveDialogDeps, "onConfirm" | "onCancel" | "now">): void {
-    this.beginDialog();
-    this.closeDialog = openWorktreeRemoveDialog(this.deps.host, {
-      ...args,
-      now: this.ceilingClock.now(),
-      onConfirm: (fingerprint, deleteBranch) => {
-        this.closeDialog = null;
-        this.deps.onForceRemove?.(args.info, fingerprint, deleteBranch);
-      },
-      onCancel: () => {
-        this.closeDialog = null;
-      },
-    });
+    this.dialogs.openRemoveDialog(args);
   }
 
-  /**
-   * Open the report for one worktree, filled from this view's own presence.
-   *
-   * The controller holds the same presence and could look both up, but the two
-   * lookups that turn it into dialog arguments belong beside the dialog: a
-   * second copy is a second thing to miss when a row's rendering changes.
-   */
   openRemoveReport(info: WorktreeInfo, report: WorktreeRemoveReport): void {
-    this.openRemoveDialog({
-      info,
-      report,
-      agentRows: this.rowsFor(info.id),
-      degradedSources: this.degradedSources(),
-    });
+    this.dialogs.openRemoveReport(info, report);
   }
 
   dispose(): void {
@@ -546,8 +441,7 @@ export class WorktreeView {
     this.rowMemoSeen.clear();
     this.ceilingClock.dispose();
     this.notices.dispose();
-    this.closeDialog?.();
-    this.closeDialog = null;
+    this.dialogs.dispose();
     this.menu?.close();
     this.disposeTooltips();
   }
