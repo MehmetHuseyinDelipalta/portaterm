@@ -28,6 +28,7 @@ import type {
 import type { VaultView } from "../vault/VaultPanel";
 import { type AgentActions, createAgentActions } from "./controller/agentActions";
 import type { WorktreeControllerDeps } from "./controller/controllerTypes";
+import { type CreateFlow, createCreateFlow } from "./controller/createFlow";
 import { createDialogChannels } from "./controller/dialogChannels";
 import { createMutationResults, type MutationResults } from "./controller/mutationResults";
 import { createVisibility, type Visibility } from "./controller/visibility";
@@ -42,21 +43,9 @@ import type {
   WorktreeOpenAfter,
   WorktreePresence,
   WorktreeProvisionOffer,
-  WorktreePullRequestOffer,
   WorktreeRowActivation,
   WorktreeTree,
 } from "./worktreeViewTypes";
-
-/**
- * The wire answer as the form holds it (W2).
- *
- * One conversion, used by both the live route and the snapshot the form is
- * opened from. Two copies of it were what let the two disagree about what
- * `available: false` carries.
- */
-function pullRequestOffer(msg: WorktreePullRequestsMessage): WorktreePullRequestOffer {
-  return msg.available ? { available: true, list: msg.pullRequests, truncated: msg.truncated } : { available: false };
-}
 
 // The controller's contract lives in `controller/controllerTypes.ts` (task
 // 3_1 of `decompose-worktree-view`). Re-exported here so no importer moves —
@@ -250,8 +239,6 @@ export class WorktreeController {
    * would either re-mint it on every character or drop it on the second answer.
    */
   private readonly provisionOffers = new Map<string, WorktreeProvisionOfferMessage>();
-  /** The source snapshot move offer, held separately from per-keystroke defaults. */
-  private readonly migrationOffers = new Map<string, WorktreeMigrationOfferMessage>();
   /**
    * The repository's local branches, per repo.
    *
@@ -261,43 +248,8 @@ export class WorktreeController {
    * second answer.
    */
   private readonly repoRefs = new Map<string, WorktreeRefsMessage>();
-  /**
-   * The forge's answer per repository, held on the same terms as `repoRefs`.
-   *
-   * Its own map rather than a field on that one: the two answers arrive
-   * independently and either can be absent while the other is present, which is
-   * the property the separate message exists to give the form.
-   */
-  private readonly repoPullRequests = new Map<string, WorktreePullRequestsMessage>();
-  /**
-   * The host's answer to the last settled selection, per repository.
-   *
-   * Kept beside `repoRefs` and cleared on the same terms: a resolution seeded
-   * from the previous form describes a repository state that may have moved.
-   */
-  private readonly createResolutions = new Map<string, WorktreeCreateResolutionMessage>();
-  /**
-   * Minted per probe, so two asks for one query inside one opening can be told
-   * apart. `token` separates openings; nothing else separates these (D1).
-   */
-  private probeSeq = 0;
-  /**
-   * Which opening of the create dialog the refs conversation belongs to.
-   *
-   * Bumped per open, echoed by the host, and compared on the way back — the
-   * only thing that tells a reopening's answer from its predecessor's, since
-   * `repoId` is the same on both (round-2 W2).
-   */
-  private refsToken = 0;
-  /** The row source for the live create opening, absent for repository and toolbar doors. */
-  private createSource: { repoId: string; worktreeId: string; generation?: number } | null = null;
-  /**
-   * The create waiting on the host, and the repositories it has yet to hear
-   * from. A set rather than one id because an unscoped create asks every
-   * repository: the form builds its picker once, from the seed it opened with,
-   * so opening on the first reply would offer one repository as the workspace.
-   */
-  private pendingCreate: { asked: string[]; outstanding: Set<string>; initialRepoId?: string } | null = null;
+  /** Opening a create, and the answers one form waits on (3_5). */
+  private readonly createFlow: CreateFlow;
   /**
    * Every answer channel the open create form binds.
    *
@@ -316,8 +268,6 @@ export class WorktreeController {
   /** What a finished mutation says, and the assess asked before one runs (3_4). */
   private readonly mutationResults: MutationResults;
 
-  /** The offer the open create form was rendered against. Same rule. */
-  private frozenCreateOffer: { offerId?: string } | null = null;
   /**
    * Display paths of rows that have LEFT the tree, so a result arriving after
    * the rebuild that removed its row can still say what it was about.
@@ -352,6 +302,27 @@ export class WorktreeController {
 
   private constructor(deps: WorktreeControllerDeps) {
     this.deps = deps;
+    this.createFlow = createCreateFlow({
+      postMessage: (msg) => deps.postMessage(msg),
+      tree: () => this.tree,
+      repoFor: (info) => this.repoFor(info),
+      createDefaults: () => this.createDefaults,
+      provisionOffers: () => this.provisionOffers,
+      repoRefs: () => this.repoRefs,
+      dialogChannels: () => this.dialogChannels,
+      launchAgents: () => this.agentActions.launchAgents(),
+      launchOfferId: () => this.agentActions.launchOfferId(),
+      actionResults: () => this.actionResults,
+      setActionResults: (next) => {
+        this.actionResults = next;
+      },
+      openCreateDialog: (initialRepoId) => {
+        this.view.openCreateDialog(initialRepoId);
+      },
+      push: () => {
+        this.push();
+      },
+    });
     this.mutationResults = createMutationResults({
       postMessage: (msg) => deps.postMessage(msg),
       actionResults: () => this.actionResults,
@@ -390,7 +361,7 @@ export class WorktreeController {
       postMessage: (msg) => deps.postMessage(msg),
       presenceNeeded: () => deps.presenceNeeded?.(),
       clearPendingCreate: () => {
-        this.pendingCreate = null;
+        this.createFlow.clearPendingCreate();
       },
       refreshing: () => this.refreshing,
       abandonRefresh: () => {
@@ -435,7 +406,7 @@ export class WorktreeController {
       // spec says a create names the destination it will actually use, and only
       // the host knows the configured root and which candidates are free.
       createDialogDeps: () => {
-        const opening = this.refsToken;
+        const opening = this.createFlow.refsToken();
         return {
           // Snapshotted where the form is COMPOSED, not read where a callback
           // fires. `openCreate` advances the opening before the successor dialog
@@ -447,11 +418,11 @@ export class WorktreeController {
           // The destination depends on the branch, so every settled branch edit
           // re-asks and the answer replaces the seed in place (round-3 B12).
           onSelectionChange: (selection) => {
-            const source = this.createSource;
+            const source = this.createFlow.createSource();
             deps.postMessage({
               type: "requestWorktreeCreateDefaults",
               repoId: selection.repoId,
-              opening: this.refsToken,
+              opening: this.createFlow.refsToken(),
               branch: selection.branch,
               ...(source?.repoId === selection.repoId
                 ? {
@@ -469,12 +440,11 @@ export class WorktreeController {
             // destination the form holds but never posts is a field the host's
             // answer cannot be about, and `baseValid` would then only ever exist
             // in tests that inject it (round-3 B4).
-            this.probeSeq += 1;
             deps.postMessage({
               type: "worktreeCreateProbe",
               repoId: selection.repoId,
-              token: this.refsToken,
-              seq: this.probeSeq,
+              token: this.createFlow.refsToken(),
+              seq: this.createFlow.nextProbeSeq(),
               query: selection.branch,
               ...(selection.base === undefined ? {} : { base: selection.base }),
               ...(selection.candidatePath === undefined ? {} : { candidatePath: selection.candidatePath }),
@@ -500,7 +470,7 @@ export class WorktreeController {
               // The opening this form was composed in, the same one every other
               // request from it rides. A switch naming a retired opening is not
               // honoured, which is what stops a dismissed form redrawing.
-              opening: this.refsToken,
+              opening: this.createFlow.refsToken(),
               switch: request.switch,
               provider: request.provider as WorktreeProvisionOffer["model"]["providers"][number]["id"],
             });
@@ -543,7 +513,7 @@ export class WorktreeController {
               // The opening this form was composed in, like every other request
               // from it. A save naming a retired opening is not honoured, which
               // is what stops a dismissed form writing.
-              opening: this.refsToken,
+              opening: this.createFlow.refsToken(),
               switch: request.switch,
               offerId: request.offerId,
               kept: request.kept,
@@ -562,7 +532,13 @@ export class WorktreeController {
           // the probe is answered per settled edit, so a token riding it would be
           // one nobody asked for (design.md D6).
           onAuthorizeDebris: ({ repoId, ask, path }) => {
-            deps.postMessage({ type: "worktreeAuthorizeDebris", repoId, token: this.refsToken, ask, path });
+            deps.postMessage({
+              type: "worktreeAuthorizeDebris",
+              repoId,
+              token: this.createFlow.refsToken(),
+              ask,
+              path,
+            });
           },
           bindDebrisAuthorization: (apply) => {
             this.dialogChannels.debrisAuthorization.bind(apply);
@@ -633,7 +609,7 @@ export class WorktreeController {
         this.mutationResults.retireAssess();
       },
       /** The opening the form being opened right now will ride (D1). */
-      createOpening: () => this.refsToken,
+      createOpening: () => this.createFlow.refsToken(),
       // Every door of the create form, and the only signal the host has that
       // the conversation ended. The opening comes from the view, which captured
       // it when the form opened — reading `refsToken` here instead named
@@ -658,9 +634,7 @@ export class WorktreeController {
         // replaced when the answer arrives — so advancing on its teardown would
         // retire the successor and drop the live form's replies. The same guard
         // the host applies to a close naming an opening it no longer holds.
-        if (opening === this.refsToken) {
-          this.refsToken += 1;
-        }
+        this.createFlow.retireOpening(opening);
       },
       // Create's shipped entry path. The dialog has existed since WT-002.1 and
       // nothing ever submitted it anywhere (round-1 B1); this is where the
@@ -700,7 +674,7 @@ export class WorktreeController {
           // The opening this form was composed in. Posted BEFORE the retirement
           // that `onCreateClosed` sends, on the same ordered channel, so the one
           // legitimate submit still passes the host's equality check.
-          opening: this.refsToken,
+          opening: this.createFlow.refsToken(),
           path: draft.path,
           mode,
           // The disposition the FORM settled on, carried on the draft for the
@@ -721,7 +695,9 @@ export class WorktreeController {
                   agent: draft.agentId,
                   ...(draft.permissionChoiceId === undefined ? {} : { permissionChoiceId: draft.permissionChoiceId }),
                   ...(draft.prompt === undefined ? {} : { prompt: draft.prompt }),
-                  ...(this.frozenCreateOffer?.offerId === undefined ? {} : { offerId: this.frozenCreateOffer.offerId }),
+                  ...(this.createFlow.frozenCreateOffer()?.offerId === undefined
+                    ? {}
+                    : { offerId: this.createFlow.frozenCreateOffer()?.offerId }),
                 }
               : { kind: draft.openAfter as Exclude<WorktreeOpenAfter, "agent"> },
         });
@@ -789,18 +765,9 @@ export class WorktreeController {
   setQuery(query: string): void {
     this.view.setQuery(query);
   }
-
-  /**
-   * Ask the host where a create would go, then open the form on its answer.
-   * Nothing opens until the answer arrives: a form seeded with a guess would
-   * name a destination the create could refuse.
-   */
+  /** The header door, and the row door that resolves a repository first. */
   private openCreateFor(info: WorktreeInfo): void {
-    const repo = this.repoFor(info);
-    if (repo === undefined) {
-      return;
-    }
-    this.openCreateForRepo(repo.repoId, info.id);
+    this.createFlow.openCreateFor(info);
   }
 
   /**
@@ -809,76 +776,12 @@ export class WorktreeController {
    * names none must offer them all rather than pick one for the user.
    */
   openCreateForRepo(repoId?: string, sourceWorktreeId?: string): void {
-    // EVERY door asks every repository. The picker is built from the answers the
-    // seed holds, so a door that asked about one would offer one — and the doors
-    // are required to differ only in which repository the form opens ON.
-    const repos = this.tree?.repos ?? [];
-    const targets = repos.map((repo) => repo.repoId);
-    if (targets.length === 0 || (repoId !== undefined && !targets.includes(repoId))) {
-      return;
-    }
-    const sourceRepo = repoId === undefined ? undefined : repos.find((repo) => repo.repoId === repoId);
-    const source =
-      sourceWorktreeId === undefined
-        ? null
-        : sourceRepo?.worktrees.some((row) => row.id === sourceWorktreeId)
-          ? {
-              repoId: sourceRepo.repoId,
-              worktreeId: sourceWorktreeId,
-              ...(sourceRepo.generation === undefined ? {} : { generation: sourceRepo.generation }),
-            }
-          : undefined;
-    if (source === undefined) {
-      return;
-    }
-    this.createSource = source;
-    // A new form starts with no provisioning. Seeding it from the previous
-    // form's offer meant a fresh read that FAILED left the old model on screen,
-    // still resolvable, attributed to a form that had closed
-    // (.reviews/round-2.md B6). Absent renders as "not told yet", which is the
-    // honest state until the host answers.
-    this.provisionOffers.clear();
-    for (const migrationRepoId of this.migrationOffers.keys()) {
-      this.dialogChannels.migration.push(migrationRepoId, undefined);
-    }
-    this.migrationOffers.clear();
-    // Cleared on the same terms as the offer: a list seeded from the previous
-    // form describes a repository state that may have moved, and the honest
-    // opening state is "not told yet".
-    this.repoRefs.clear();
-    this.repoPullRequests.clear();
-    this.createResolutions.clear();
-    this.probeSeq = 0;
-    this.refsToken += 1;
-    this.pendingCreate = {
-      // Kept so a create that cannot open can name what it was waiting on: the
-      // outstanding set is empty by the time that is known.
-      asked: [...targets],
-      outstanding: new Set(targets),
-      ...(repoId === undefined ? {} : { initialRepoId: repoId }),
-    };
-    for (const target of targets) {
-      this.deps.postMessage({
-        type: "requestWorktreeCreateDefaults",
-        repoId: target,
-        opening: this.refsToken,
-        ...(source?.repoId === target
-          ? {
-              sourceWorktreeId: source.worktreeId,
-              ...(source.generation === undefined ? {} : { sourceGeneration: source.generation }),
-            }
-          : {}),
-      });
-      // Not awaited by `pendingCreate`: the form opens on the destination alone
-      // and gains the list when it lands, so a repository whose enumeration is
-      // slow or fails never holds the dialog shut.
-      this.deps.postMessage({ type: "requestWorktreeRefs", repoId: target, token: this.refsToken });
-    }
+    this.createFlow.openCreateForRepo(repoId, sourceWorktreeId);
   }
 
   /** The toolbar door, which names no repository. */
   openCreate(): void {
-    this.openCreateForRepo();
+    this.createFlow.openCreate();
   }
 
   /** Open prune's confirmation, and post only what the user confirmed there. */
@@ -912,182 +815,43 @@ export class WorktreeController {
   }
 
   /** Every repo the host has answered for, as the form's seed. */
+  /** Every repo the host has answered for, as the form's seed. */
   private createRepos(): WorktreeCreateDefaults[] {
-    const repos: WorktreeCreateDefaults[] = [];
-    for (const repo of this.tree?.repos ?? []) {
-      const answer = this.createDefaults.get(repo.repoId);
-      if (answer === undefined) {
-        continue;
-      }
-      const offer = this.provisionOffers.get(repo.repoId);
-      const migration = this.migrationOffers.get(repo.repoId);
-      const refs = this.repoRefs.get(repo.repoId);
-      const prs = this.repoPullRequests.get(repo.repoId);
-      repos.push({
-        repoId: repo.repoId,
-        repoLabel: repo.label,
-        mainPath: repo.mainPath,
-        pathParent: answer.root,
-        pathPrefix: answer.prefix,
-        // ALWAYS the host's path: it is the destination the create will take,
-        // and the form is required to name that one rather than its own guess.
-        // `collidedWith` is narrower — it marks the candidate that was occupied,
-        // so the hint can say why the destination is not the obvious name.
-        resolvedPath: answer.path,
-        ...(answer.branch === undefined ? {} : { answersBranch: answer.branch }),
-        ...(answer.collidedWith === undefined ? {} : { collidedWith: answer.collidedWith }),
-        // WT-005.3 owns launches; an option that resolves to nothing is worse
-        // than no option at all.
-        agents: this.agentActions.launchAgents(),
-        // Absent until the offer arrives, which the form renders as "not told
-        // yet" rather than as "nothing to bring over".
-        ...(offer === undefined ? {} : { provisioning: { offerId: offer.offerId, model: offer.model } }),
-        ...(migration === undefined ? {} : { migration: { offerId: migration.offerId, count: migration.count } }),
-        // Same terms as the offer: absent renders as "not told yet", never as
-        // "this repository has no branches".
-        ...(refs === undefined ? {} : { refs: { list: refs.refs, truncated: refs.truncated } }),
-        // Absent stays absent: "not asked yet" is not the unavailable row, and
-        // the form is what decides how each of those reads.
-        ...(prs === undefined ? {} : { pullRequests: pullRequestOffer(prs) }),
-      });
-    }
-    return repos;
+    return this.createFlow.createRepos();
   }
 
   handleMigrationOffer(msg: WorktreeMigrationOfferMessage): void {
-    const source = this.createSource;
-    if (
-      msg.opening !== this.refsToken ||
-      source === null ||
-      source.repoId !== msg.repoId ||
-      source.worktreeId !== msg.sourceWorktreeId ||
-      msg.offerId.length === 0 ||
-      !Number.isSafeInteger(msg.count) ||
-      msg.count <= 0
-    ) {
-      return;
-    }
-    this.migrationOffers.set(msg.repoId, msg);
-    this.dialogChannels.migration.push(msg.repoId, { offerId: msg.offerId, count: msg.count });
+    this.createFlow.handleMigrationOffer(msg);
   }
 
-  /**
-   * The host's provisioning offer for one repo.
-   *
-   * Stored and pushed into an open form. Superseding is the HOST's decision —
-   * it issues one offer per form and evicts the previous id when it does — so
-   * this simply takes the latest, and never keeps two.
-   */
+  /** The host's provisioning offer for one repo, stored and pushed into the form. */
   handleProvisionOffer(msg: WorktreeProvisionOfferMessage): void {
-    // The rule `handleRefs` already applies, at the site that had none. Without
-    // it this cached whatever arrived, so a predecessor's read landing after a
-    // reopening published its model into a form that never asked for it
-    // (design.md D2).
-    if (msg.opening !== this.refsToken) {
-      return;
-    }
-    this.provisionOffers.set(msg.repoId, msg);
-    // Only the repository that changed, and only the offer. Rebuilding every
-    // repository's record to update one was O(repos²) across a workspace's
-    // replies (round-1 S1), and sending it down the destination's channel is
-    // what B4 was.
-    this.dialogChannels.provisioning.push(msg.repoId, { offerId: msg.offerId, model: msg.model });
+    this.createFlow.handleProvisionOffer(msg);
   }
 
-  /**
-   * The host's branch list for one repo.
-   *
-   * Stored and pushed into an open form. An answer that outlived its OPENING is
-   * dropped on the token, which `repoId` alone cannot do: a reopening on the
-   * same repository is asking the same question twice (round-2 W2).
-   */
+  /** The host's branch list for one repo, stored and pushed into the form. */
   handleRefs(msg: WorktreeRefsMessage): void {
-    if (msg.token !== this.refsToken) {
-      // An answer to a PREVIOUS opening. Dropped rather than applied: the form
-      // it was asked for is gone, and its successor's list would otherwise be
-      // overwritten with a predecessor's — permanently, if the successor's own
-      // read fails (round-2 W2).
-      return;
-    }
-    this.repoRefs.set(msg.repoId, msg);
-    this.dialogChannels.refs.push(msg.repoId, { list: msg.refs, truncated: msg.truncated });
+    this.createFlow.handleRefs(msg);
   }
 
-  /**
-   * The host's pull-request answer for one repo.
-   *
-   * Dropped on the same token as `handleRefs`, and for the same reason: both
-   * are answers to one opening's `requestWorktreeRefs`, so an answer that
-   * outlived its opening would otherwise seed a successor form with rows read
-   * for a form the user has already closed.
-   */
+  /** The host's pull-request answer for one repo, on the same token as the refs. */
   handlePullRequests(msg: WorktreePullRequestsMessage): void {
-    if (msg.token !== this.refsToken) {
-      return;
-    }
-    this.repoPullRequests.set(msg.repoId, msg);
-    this.dialogChannels.pullRequests.push(msg.repoId, pullRequestOffer(msg));
+    this.createFlow.handlePullRequests(msg);
   }
 
-  /**
-   * What the host says a create against the settled selection would do.
-   *
-   * Dropped on the token for the same reason `handleRefs` drops on it: a dialog
-   * reopened on the same repository has the same `repoId` and may have the same
-   * `query` on the wire twice, so neither can separate two openings. `query`
-   * echoes for staleness WITHIN one opening, which the form applies.
-   */
+  /** What the host says a create against the settled selection would do. */
   handleCreateResolution(msg: WorktreeCreateResolutionMessage): void {
-    if (msg.token !== this.refsToken) {
-      return;
-    }
-    // `token` separates two OPENINGS and `query` separates two edits, but an
-    // A → B → A edit sequence puts two answers on the wire identical in both.
-    //
-    // Against the latest QUESTION, not the latest answer. `appliedSeq` alone
-    // let an answer for base A land after base B had been asked — newer than
-    // anything applied, older than the question on screen — and clear the gate
-    // with A's verdict on B, which the form cannot detect because the branch is
-    // identical (round-4 B9).
-    if (msg.seq !== this.probeSeq) {
-      return;
-    }
-    this.createResolutions.set(msg.repoId, msg);
-    this.dialogChannels.resolution.push(msg);
+    this.createFlow.handleCreateResolution(msg);
   }
 
-  /**
-   * The host's answer to the form's request to clear a directory.
-   *
-   * Dropped on the token like every other create-dialog answer: an answer to a
-   * PREVIOUS opening authorizes nothing in this one. Not stored — an
-   * authorization is spent by the create that redeems it, so keeping a copy
-   * here would outlive the form that asked for it.
-   */
+  /** The host's answer to the form's request to clear a directory. */
   handleDebrisAuthorized(msg: WorktreeDebrisAuthorizedMessage): void {
-    if (msg.token !== this.refsToken) {
-      return;
-    }
-    this.dialogChannels.debrisAuthorization.push(msg);
+    this.createFlow.handleDebrisAuthorized(msg);
   }
 
-  /**
-   * The folder the user picked in the host's dialog.
-   *
-   * Dropped on the token like every other create-dialog answer: a folder picked
-   * for a PREVIOUS opening states nothing in this one. This is the only place
-   * that decides whether an answer belongs to the live form — the dialog
-   * applies whatever reaches it.
-   */
+  /** The folder the user picked in the host's dialog. */
   handleDestinationPicked(msg: WorktreeDestinationPickedMessage): void {
-    // Both, and they are different questions: the token says the answer is not
-    // for a retired opening, and the binding says the form on screen is the one
-    // that asked. A successor's token passes the first on its own, which is how
-    // a form that never opened the picker was told a folder (round-1 F002).
-    if (msg.token !== this.refsToken) {
-      return;
-    }
-    this.dialogChannels.destinationPicked.pushWhenOpening(msg.token, msg);
+    this.createFlow.handleDestinationPicked(msg);
   }
 
   /**
@@ -1098,77 +862,12 @@ export class WorktreeController {
    * carries the classification the form was showing (round-3 B3).
    */
   resolutionFor(repoId: string): WorktreeCreateResolutionMessage | undefined {
-    return this.createResolutions.get(repoId);
+    return this.createFlow.resolutionFor(repoId);
   }
 
   /** The host's create destination for one repo, and the form it was asked for. */
   handleCreateDefaults(msg: WorktreeCreateDefaultsMessage): void {
-    // Before the branch-versus-branch-less distinction below, because that one
-    // tells a superseded ask's leftovers from a current answer WITHIN one
-    // opening. It cannot tell two openings apart at all: both ask branch-less
-    // first, so a predecessor's opening answer is shaped exactly like the live
-    // one's (design.md D2).
-    if (msg.opening !== this.refsToken) {
-      return;
-    }
-    this.createDefaults.set(msg.repoId, msg);
-    const pending = this.pendingCreate;
-    if (pending === null || !pending.outstanding.has(msg.repoId)) {
-      // The two conversations are told apart by what they carry, not by what is
-      // outstanding: an OPEN form always asks with a branch and an opening ask
-      // never does, and the host echoes the branch it was given. A superseded
-      // ask's leftovers are therefore branch-less, and the form's own staleness
-      // guard compares branches — so it could not have caught them, and one
-      // cleared the wait for a branch the user had already typed (round-1 B1).
-      if (msg.branch !== undefined) {
-        const seed = this.createRepos().find((r) => r.repoId === msg.repoId);
-        if (seed !== undefined) {
-          this.dialogChannels.defaults.push(seed);
-        }
-      }
-      return;
-    }
-    pending.outstanding.delete(msg.repoId);
-    if (pending.outstanding.size > 0) {
-      return;
-    }
-    this.openPendingCreate(pending);
-  }
-
-  /**
-   * Open the form the completed ask was for. Both completion paths end here —
-   * the last answer, and a reconcile that dropped the last repository still
-   * outstanding.
-   */
-  /** A repo's label if the tree still holds it, else the id it was asked under. */
-  private labelForRepo(repoId: string): string {
-    return this.tree?.repos.find((r) => r.repoId === repoId)?.label ?? repoId;
-  }
-
-  private openPendingCreate(pending: { asked: string[]; outstanding: Set<string>; initialRepoId?: string }): void {
-    this.pendingCreate = null;
-    // Frozen only for a form that actually opens: `openCreateDialog` returns on
-    // an empty seed, and a standing offer for a form that never opened is a
-    // claim about a dialog that is not there (round-1 S2).
-    if (this.createRepos().length === 0) {
-      // And SAID, not merely skipped (round-2 W10). Nothing was attempted
-      // because what the create would have acted in could no longer be read —
-      // the repositories it asked about are not the ones the tree now holds.
-      // Silence here is a "+" that does nothing when pressed.
-      this.actionResults = [
-        ...this.actionResults.filter((r) => r.action !== "create" || r.outcome !== "unavailable"),
-        {
-          action: "create",
-          outcome: "unavailable",
-          unreadable: pending.asked.map((repoId) => this.labelForRepo(repoId)),
-        },
-      ];
-      this.push();
-      return;
-    }
-    const launchOfferId = this.agentActions.launchOfferId();
-    this.frozenCreateOffer = { ...(launchOfferId === undefined ? {} : { offerId: launchOfferId }) };
-    this.view.openCreateDialog(pending.initialRepoId);
+    this.createFlow.handleCreateDefaults(msg);
   }
 
   /**
@@ -1282,21 +981,21 @@ export class WorktreeController {
         this.provisionOffers.delete(repoId);
       }
     }
-    for (const repoId of this.migrationOffers.keys()) {
+    for (const repoId of this.createFlow.migrationOffers().keys()) {
       if (!repos.has(repoId)) {
-        this.migrationOffers.delete(repoId);
+        this.createFlow.migrationOffers().delete(repoId);
         this.dialogChannels.migration.push(repoId, undefined);
       }
     }
-    const source = this.createSource;
+    const source = this.createFlow.createSource();
     if (
       source !== null &&
       !next.repos
         .find((repo) => repo.repoId === source.repoId)
         ?.worktrees.some((row) => row.id === source.worktreeId && !row.bare && !row.missing && !row.prunable)
     ) {
-      this.createSource = null;
-      this.migrationOffers.delete(source.repoId);
+      this.createFlow.clearCreateSource();
+      this.createFlow.migrationOffers().delete(source.repoId);
       this.dialogChannels.migration.push(source.repoId, undefined);
     }
     for (const repoId of this.repoRefs.keys()) {
@@ -1309,7 +1008,7 @@ export class WorktreeController {
     // the host has no way to send: it answers only while the repo is in its
     // cache, and there is no error reply. Unreconciled, one departure jams the
     // create for every repository it asked (round-1 W1).
-    const pending = this.pendingCreate;
+    const pending = this.createFlow.pendingCreate();
     if (pending !== null) {
       for (const repoId of pending.outstanding) {
         if (!repos.has(repoId)) {
@@ -1320,7 +1019,7 @@ export class WorktreeController {
         delete pending.initialRepoId;
       }
       if (pending.outstanding.size === 0) {
-        this.openPendingCreate(pending);
+        this.createFlow.openPendingCreate(pending);
       }
     }
 

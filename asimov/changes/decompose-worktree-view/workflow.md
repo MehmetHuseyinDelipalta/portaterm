@@ -26,6 +26,9 @@
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
 
 ## Notes
+- Deviation (task 3_5): `createFlow.ts` came to 585 lines with the openers and the answers together, over the Boundary before a single trim. Split in the same task: `createAnswers.ts` takes the deps, the state, the nine handlers, `createRepos` and `openPendingCreate`; `createFlow.ts` keeps the three doors and the factory. One direction only — `createFlow` imports `createAnswers`, never the reverse — so `handleCreateDefaults` can call `openPendingCreate` without a cycle.
+- Deviation (task 3_5): design.md D1 says "the four answer caches at :302-337" and that block holds SIX. D5 pins three of them (`createDefaults`, `provisionOffers`, `repoRefs`) as controller fields, so the three that moved are `migrationOffers`, `repoPullRequests` and `createResolutions`. The pins bind; the count in the prose did not.
+- Auto-decision (task 3_5): `asm refactor shape` reports `giant-literal` on `createFlow.ts` at 30% — the factory's own returned object, 23 one-line delegations and nothing else. A composition root's wiring has nothing to extract into; not split further.
 
 <!-- Blueprint source, lane, and the SHA the plan is written against below. Optional: one-line orphan decisions only — scope boundaries, deviations, rejected alternatives with no home elsewhere. -->
 

@@ -54,7 +54,7 @@
     3. Trim the imports the cut leaves unused in `src/webview/worktree/WorktreeController.ts`.
     4. Run `bun run asm refactor shape src/webview/worktree/WorktreeController.ts src/webview/worktree/controller/mutationResults.ts` and split `src/webview/worktree/controller/mutationResults.ts` again if it fires.
 
-- [ ] 3_5 Extract opening a create and the answers one form waits on
+- [x] 3_5 Extract opening a create and the answers one form waits on — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts exit 0
   - **Deps**: 3_4
   - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5, design.md § Obligation ledger
   - **Boundary**: `src/webview/worktree/controller/createFlow.ts` is under 500 lines, and `src/webview/worktree/WorktreeController.ts` never grows
@@ -63,7 +63,7 @@
     - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts
   - **Plan**:
     1. Enumerate free names in both directions (D1a): compile the block in isolation and read the `TS2304` list for direction A — for a class member, every `this.` reference it makes — then `grep -n` every member it declares across `src/webview/worktree/WorktreeController.ts` for direction B.
-    2. Create `src/webview/worktree/controller/createFlow.ts` with the the create flow (`probeSeq`, `refsToken`, `pendingCreate`, the four answer caches at `:302-337`, `openCreateFor`, `openCreateForRepo`, `openCreate`, `createRepos`, `labelForRepo`, `openPendingCreate`, and the nine host-answer handlers), moving them out of `src/webview/worktree/WorktreeController.ts`; a `this.x` read becomes an accessor call and its negation sites are checked by hand (D4).
+    2. Create `src/webview/worktree/controller/createFlow.ts` — and, when the two halves exceed the Boundary, `src/webview/worktree/controller/createAnswers.ts` for the answers and the shared state — with the the create flow (`probeSeq`, `refsToken`, `pendingCreate`, the four answer caches at `:302-337`, `openCreateFor`, `openCreateForRepo`, `openCreate`, `createRepos`, `labelForRepo`, `openPendingCreate`, and the nine host-answer handlers), moving them out of `src/webview/worktree/WorktreeController.ts`; a `this.x` read becomes an accessor call and its negation sites are checked by hand (D4).
     3. Trim the imports the cut leaves unused in `src/webview/worktree/WorktreeController.ts`.
     4. Run `bun run asm refactor shape src/webview/worktree/WorktreeController.ts src/webview/worktree/controller/createFlow.ts` and split `src/webview/worktree/controller/createFlow.ts` again if it fires.
     5. `pendingCreate` is MOVED, not copied — two records is OBL-3's defeater. Its two outside writers stay outside and reach it through the collaborator's accessors: visibility clears it at `src/webview/worktree/WorktreeController.ts:805-815`, tree reconciliation mutates it and calls `openPendingCreate` at `:1732-1748`.
