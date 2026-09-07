@@ -367,3 +367,43 @@ describe("truncateSnapshotBuffer", () => {
     expect(out.startsWith("line-")).toBe(true);
   });
 });
+
+describe("SessionManager snapshot replay navigation", () => {
+  it("does not manufacture an active root from snapshot replay order", () => {
+    const fx = makeFactories();
+    const sm = new SessionManager(undefined, {
+      restoreEnabled: true,
+      headlessFactory: fx.headless,
+      serializeAddonFactory: fx.serializeAddon,
+    });
+    const restore = (sessionId: string) => ({
+      metadata: {
+        sessionId,
+        viewLocation: "sidebar" as const,
+        terminalNumber: sessionId === "first" ? 1 : 2,
+        customName: null,
+        shell: "/bin/zsh",
+        shellArgs: [],
+        cwd: "/tmp",
+        currentCwd: null,
+        cols: 80,
+        rows: 24,
+        bufferFile: `snapshots/${sessionId}.snapshot.ans`,
+        bufferBytes: 1,
+        isSplitPane: false,
+        rootTabId: sessionId,
+        snapshotAt: 1,
+        shellExited: false,
+        exitCode: null,
+      },
+      buffer: "x",
+    });
+
+    const first = sm.createSession("anywhereTerminal.sidebar", mockWebview(), { restoreFrom: restore("first") });
+    const second = sm.createSession("anywhereTerminal.sidebar", mockWebview(), { restoreFrom: restore("second") });
+
+    expect(sm.getSession(first)?.isActive).toBe(false);
+    expect(sm.getSession(second)?.isActive).toBe(false);
+    sm.dispose();
+  });
+});

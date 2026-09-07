@@ -92,10 +92,12 @@ describe("TerminalViewProvider.onReady restore branch", () => {
     const calls = postMessage.mock.calls.map((c) => c[0] as unknown) as Array<{
       type?: string;
       tabId?: string;
+      navigationBootstrap?: "live" | "cold";
+      navigationHint?: { activeTabId: string | null; activePaneId: string | null };
     }>;
     const init = calls.find((m) => m?.type === "init");
     const restore = calls.find((m) => m?.type === "restoreFromSnapshot");
-    expect(init).toBeDefined();
+    expect(init).toMatchObject({ navigationBootstrap: "cold" });
     expect(restore).toBeDefined();
     expect(restore!.tabId).toBe("S1");
     // init must arrive BEFORE restoreFromSnapshot — the whole point of [W4].
@@ -114,6 +116,11 @@ describe("TerminalViewProvider.onReady restore branch", () => {
     // Pre-create one session so existingTabs.length > 0.
     sm.createSession(provider.getViewId(), webviewView.webview);
 
+    const root = sm.getTabsForView(provider.getViewId())[0].id;
+    for (const h of messageHandlers) {
+      h({ type: "terminalNavigationCommitted", activeTabId: root, activePaneId: root });
+    }
+
     // Stage snapshot but it should NOT be consumed.
     sm.__stagePendingSnapshot(pendingSnap("X", "sidebar"));
     for (const h of messageHandlers) {
@@ -123,8 +130,15 @@ describe("TerminalViewProvider.onReady restore branch", () => {
     const calls = postMessage.mock.calls.map((c) => c[0] as unknown) as Array<{
       type?: string;
       tabId?: string;
+      navigationBootstrap?: "live" | "cold";
+      navigationHint?: { activeTabId: string | null; activePaneId: string | null };
     }>;
+    const init = calls.find((message) => message.type === "init");
     const restore = calls.find((m) => m?.type === "restoreFromSnapshot");
+    expect(init).toMatchObject({
+      navigationBootstrap: "live",
+      navigationHint: { activeTabId: root, activePaneId: root },
+    });
     expect(restore).toBeUndefined();
     // Snapshot still staged
     expect(sm.hasSnapshotsForLocation("sidebar")).toBe(true);

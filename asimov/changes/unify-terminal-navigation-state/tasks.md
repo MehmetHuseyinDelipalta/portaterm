@@ -58,16 +58,16 @@
     2. Add source-tab correlation and attachment acknowledgment in `src/webview/main.ts` and `src/webview/split/SplitTreeRenderer.ts`; update `src/webview/navigation/TerminalNavigationController.ts` and `src/webview/navigation/TerminalNavigationController.test.ts` so catalog mutations receive one effect batch even when selection is unchanged.
     3. Add `src/webview/split/SplitTreeRenderer.test.ts`, update `src/webview/messaging/MessageRouter.test.ts`, and add provider cases for tab switching, owner reconciliation, failed delivery, missing source, attached-child retention, and no unreachable session.
 
-- [ ] 2_2 Restore and reconcile navigation with explicit precedence
+- [x] 2_2 Restore and reconcile navigation with explicit precedence — verified: pnpm exec vitest run src/webview/navigation/TerminalNavigationRestore.integration.test.ts src/providers/TerminalViewProvider.restore.test.ts src/session/SessionManager.snapshot.test.ts && pnpm exec vitest run src/webview/state/WebviewStateStore.navigation.test.ts src/providers/TerminalViewProvider.test.ts src/providers/TerminalEditorProvider.test.ts src/webview/navigation/TerminalNavigationController.test.ts exit 0
   - **Deps**: 2_1
   - **Refs**: specs/terminal-owner-navigation/spec.md#{restore-uses-one-versioned-navigation-checkpoint,restore-validates-saved-navigation-against-terminal-facts,snapshot-replay-order-never-chooses-restored-navigation,a-disappeared-linked-owner-falls-back-atomically}; specs/tab-bar-component/spec.md#{a-scope-that-loses-its-worktree-is-dropped-and-said,a-surface-s-scope-survives-a-reload-and-never-outlives-its-worktree,a-host-restart-resets-the-scope-an-in-memory-re-resolve-preserves-it}; design.md D4, design.md D6
   - **Acceptance**:
     - Outcome: Warm reload, cold restore, legacy migration, and owner disappearance each commit one valid navigation state.
     - Verify: command pnpm exec vitest run src/webview/navigation/TerminalNavigationRestore.integration.test.ts src/providers/TerminalViewProvider.restore.test.ts src/session/SessionManager.snapshot.test.ts
   - **Plan**:
-    1. Add `src/webview/navigation/TerminalNavigationRestore.ts` and `src/webview/navigation/TerminalNavigationRestore.integration.test.ts` for catalog-first warm, cold, exited, stale-root, owner-empty, and absent-tree restore sequences.
-    2. Replace `resetWorktreeScope` with `navigationBootstrap` in `src/types/messages.ts`, `src/providers/TerminalViewProvider.ts`, `src/providers/TerminalEditorProvider.ts`, and `src/webview/main.ts`.
-    3. Apply checkpoint-first precedence and one-shot legacy scope consumption in `src/webview/state/WebviewStateStore.ts`; route complete owner reconciliation through one controller transaction.
+    1. Add `src/webview/navigation/TerminalNavigationRestore.ts` and `src/webview/navigation/TerminalNavigationRestore.integration.test.ts` for catalog-first warm, cold, exited, stale-root, owner-empty, and absent-tree restore sequences; update `src/session/SessionManager.ts`, `src/providers/TerminalViewProvider.restore.test.ts`, and `src/session/SessionManager.snapshot.test.ts` so replay order cannot manufacture selection.
+    2. Replace `resetWorktreeScope` with `navigationBootstrap` in `src/types/messages.ts`, `src/providers/TerminalViewProvider.ts`, `src/providers/TerminalViewProvider.test.ts`, `src/providers/TerminalEditorProvider.ts`, `src/providers/TerminalEditorProvider.test.ts`, and `src/webview/main.ts`.
+    3. Apply checkpoint-first precedence and one-shot legacy scope consumption in `src/webview/state/WebviewStateStore.ts` and `src/webview/state/WebviewStateStore.navigation.test.ts`; route complete owner reconciliation through one controller transaction.
 
 ## 3. Render committed navigation without mirror state
 

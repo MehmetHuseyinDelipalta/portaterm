@@ -518,7 +518,7 @@ export class SessionManager {
       customName: hydratedCustomName,
       // Restored exited sessions surface read-only — keep them inactive so the
       // active-tab indicator doesn't move to a dead shell.
-      isActive: !isSplitPane && !restoringExited,
+      isActive: !isSplitPane && !restoringExited && restoreFrom === undefined,
       number,
       outputBuffer,
       scrollbackCache: [],
@@ -554,7 +554,7 @@ export class SessionManager {
     };
 
     // Deactivate other sessions in the same view (only for root tab sessions)
-    if (!isSplitPane) {
+    if (!isSplitPane && restoreFrom === undefined) {
       const viewSessionIds = this.viewSessions.get(viewId);
       if (viewSessionIds) {
         for (const sid of viewSessionIds) {

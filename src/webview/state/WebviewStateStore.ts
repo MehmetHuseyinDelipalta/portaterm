@@ -234,6 +234,14 @@ export class WebviewStateStore {
     return typeof scope === "string" ? scope : undefined;
   }
 
+  consumeLegacyWorktreeScope(): string | undefined {
+    const scope = this.getLegacyWorktreeScope();
+    if (scope !== undefined) {
+      this.updateState({ worktreeScope: undefined });
+    }
+    return scope;
+  }
+
   /**
    * Persist layout state to vscode.setState().
    * Serializes tabLayouts and tabActivePaneIds into the VS Code state store.

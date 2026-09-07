@@ -2033,21 +2033,11 @@ export interface InitMessage {
    * on screen claiming otherwise (.reviews/round-3.md S1).
    */
   vaultActionsAvailable: boolean;
-  /**
-   * Clear this surface's persisted `worktreeScope` on receipt, landing the tab
-   * bar on `All`, so the surface does not reopen on the last worktree the user
-   * scoped to (DESIGN.md D50).
-   *
-   * TRUE whenever the host (re)started and revived no live sessions for this
-   * surface — a workspace open, a window reload, an app launch, or a
-   * cross-restart. These are INDISTINGUISHABLE to the extension: each restarts
-   * the host and restores the same persisted state, so a full Cmd+R reload
-   * resets exactly like a fresh open. FALSE only on an in-memory re-resolve
-   * whose sessions are still live (a webview swap with the host alive), where
-   * nothing about the workspace changed and the chosen scope stands. Absent
-   * reads as `false` — the conservative default is to preserve.
-   */
-  resetWorktreeScope?: boolean;
+  navigationBootstrap?: "live" | "cold";
+  navigationHint?: {
+    activeTabId: string | null;
+    activePaneId: string | null;
+  };
 }
 
 /**

@@ -996,7 +996,16 @@ export class TerminalEditorProvider {
           worktreeRowActivation: readWorktreeRowActivation(),
           vaultActionsAvailable: false,
           // Phase A in-memory re-resolve: live sessions survived, so the chosen scope stands.
-          resetWorktreeScope: false,
+          navigationBootstrap: "live",
+          navigationHint:
+            this._activeNavigation === undefined
+              ? undefined
+              : this._activeNavigation === null
+                ? { activeTabId: null, activePaneId: null }
+                : {
+                    activeTabId: this._activeNavigation.tabId,
+                    activePaneId: this._activeNavigation.paneId,
+                  },
         });
         this.postRowActivation();
         if (initDelivered) {
@@ -1044,7 +1053,7 @@ export class TerminalEditorProvider {
           worktreeRowActivation: readWorktreeRowActivation(),
           vaultActionsAvailable: false,
           // Phase B cross-restart: a fresh open, so the surface lands on All.
-          resetWorktreeScope: true,
+          navigationBootstrap: "cold",
         });
         this.postRowActivation();
         if (initDelivered) {
@@ -1101,7 +1110,7 @@ export class TerminalEditorProvider {
           worktreeRowActivation: readWorktreeRowActivation(),
           vaultActionsAvailable: false,
           // Cold open: no scope to preserve; All is the first-run state anyway.
-          resetWorktreeScope: true,
+          navigationBootstrap: "cold",
         });
         // Same ordering as the reloaded and restored branches — see W2 in
         // TerminalViewProvider.

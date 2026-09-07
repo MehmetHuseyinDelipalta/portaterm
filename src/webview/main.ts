@@ -45,6 +45,7 @@ import {
   worktreeIdForTerminalOwner,
 } from "./navigation/TerminalNavigationComposition";
 import { TerminalNavigationController } from "./navigation/TerminalNavigationController";
+import { reconcileTerminalNavigationOwners, restoreTerminalNavigation } from "./navigation/TerminalNavigationRestore";
 import {
   focusNavigationPane,
   MAIN_TERMINAL_OWNER,
@@ -58,7 +59,6 @@ import { SplitTreeRenderer } from "./split/SplitTreeRenderer";
 import { resolveTabDisplayPane } from "./split/tabDisplay";
 import { WebviewStateStore } from "./state/WebviewStateStore";
 import { buildTabBarData, handleTabKeyboardShortcut, renderTabBar } from "./TabBarUtils";
-import { resetScopeOnFreshOpen } from "./tabBarScope";
 import { type TabBarScopeWiring, wireTabBarScope } from "./tabBarScopeWiring";
 import { hideRenameOverlay, repositionRenameOverlay, showRenameOverlay } from "./tabRenameOverlay";
 import { hasCurrentCursorApproval, hasStrictCursorTitle } from "./terminal/CursorApprovalDetector";
@@ -922,16 +922,26 @@ const routeMessage = createMessageRouter({
     // (it stays on the native paste path); nothing to restore.
   },
   onWorktreeTreeResponse(msg) {
-    const linked = new Set(
-      msg.tree?.repos.flatMap((repo) => repo.worktrees.filter((wt) => wt.kind === "linked").map((wt) => wt.id)) ?? [],
-    );
-    for (const terminal of store.terminals.values()) {
-      if (terminal.worktreeId !== undefined && !linked.has(terminal.worktreeId)) {
-        terminal.worktreeId = undefined;
-      }
+    if (msg.tree) {
+      const linked = new Set(
+        msg.tree.repos.flatMap((repo) =>
+          repo.worktrees.filter((worktree) => worktree.kind === "linked").map((worktree) => worktree.id),
+        ),
+      );
+      navigationController.transaction(
+        () => {
+          let changed = false;
+          for (const terminal of store.terminals.values()) {
+            if (terminal.worktreeId !== undefined && !linked.has(terminal.worktreeId)) {
+              terminal.worktreeId = undefined;
+              changed = true;
+            }
+          }
+          return changed;
+        },
+        (catalog, state) => reconcileTerminalNavigationOwners(catalog, state, linked),
+      );
     }
-    // The seam owns the order the coordinator and the panel see this in, and the
-    // redraw that may follow. See: webview/tabBarScopeWiring.ts.
     if (tabBarScope) {
       tabBarScope.applyTree(msg.tree, () => worktreeController?.handleTreeResponse(msg));
       return;
@@ -1060,10 +1070,8 @@ const routeMessage = createMessageRouter({
 function handleInit(msg: InitMessage): void {
   store.currentConfig = { ...msg.config };
   vaultWorkspaceRoot = msg.workspaceRoot ?? null; // folder-filter fallback scope
-  // Done BEFORE any scope coordinator is wired below, so a fresh open reads
-  // `All` rather than the last worktree scoped to; a reload leaves the flag
-  // false and the persisted scope stands (DESIGN.md D50).
-  resetScopeOnFreshOpen(store, msg.resetWorktreeScope);
+  const savedCheckpoint = store.getNavigationCheckpoint();
+  const legacyWorktreeScope = store.getLegacyWorktreeScope();
   const validTabIds = new Set(msg.tabs.map((t) => t.id));
 
   const restoredLayouts = store.restore();
@@ -1097,16 +1105,6 @@ function handleInit(msg: InitMessage): void {
     if (layout.type === "branch") {
       splitRenderer.renderTabSplitTree(tabId);
       splitRootIds.push(tabId);
-    }
-  }
-  // Reveal the active root tab's split container (no-op when the active tab
-  // has no branch layout — the per-terminal `display: block` from createTerminal
-  // already shows the single-pane case).
-  const activeRootTab = msg.tabs.find((t) => t.isActive && !t.isSplitPane);
-  if (activeRootTab) {
-    const activeLayout = store.tabLayouts.get(activeRootTab.id);
-    if (activeLayout && activeLayout.type === "branch") {
-      splitRenderer.showTabContainer(activeRootTab.id);
     }
   }
   // Refit every leaf in each restored split layout. Split-pane children were
@@ -1272,22 +1270,20 @@ function handleInit(msg: InitMessage): void {
     requestVaultContextCwd();
   }
 
-  const initialPaneId = activeRootTab
-    ? (store.tabActivePaneIds.get(activeRootTab.id) ??
-      resolveTabDisplayPane(activeRootTab.id, {
-        tabLayouts: store.tabLayouts,
-        hasTerminal: (sessionId) => store.terminals.has(sessionId),
-      }))
-    : null;
-  const result = navigationController.dispatch((catalog, state) =>
-    initialPaneId
-      ? focusNavigationPane(catalog, state, initialPaneId)
-      : normalizeTerminalNavigationState(catalog, state),
-  );
-  if (result === "noop") {
-    store.persist();
-    updateTabBar();
+  const restoredNavigation = restoreTerminalNavigation({
+    catalog: navigationCatalogFromStore(store),
+    checkpoint: savedCheckpoint,
+    hostHint: msg.navigationHint,
+    legacyWorktreeScope,
+    bootstrap: msg.navigationBootstrap ?? "cold",
+  });
+  if (restoredNavigation.clearLegacyScope) {
+    store.consumeLegacyWorktreeScope();
   }
+  navigationController.transaction(
+    () => true,
+    () => restoredNavigation.state,
+  );
   showDragDropTip();
 }
 

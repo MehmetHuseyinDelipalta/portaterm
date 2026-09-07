@@ -77,3 +77,22 @@ describe("WebviewStateStore navigation checkpoint", () => {
     expect(store.getLegacyWorktreeScope()).toBeUndefined();
   });
 });
+
+describe("WebviewStateStore legacy navigation migration", () => {
+  it("consumes legacy scope once without deleting the V1 checkpoint", () => {
+    const api = apiWith({
+      worktreeScope: "/repo/wt-a",
+      terminalNavigation: {
+        version: 1,
+        activeOwner: MAIN_TERMINAL_OWNER,
+        activeTabId: null,
+        activePaneByTab: {},
+      },
+    });
+    const store = new WebviewStateStore(api);
+
+    expect(store.consumeLegacyWorktreeScope()).toBe("/repo/wt-a");
+    expect(store.consumeLegacyWorktreeScope()).toBeUndefined();
+    expect(store.getNavigationCheckpoint()).toMatchObject({ version: 1, activeOwner: MAIN_TERMINAL_OWNER });
+  });
+});
