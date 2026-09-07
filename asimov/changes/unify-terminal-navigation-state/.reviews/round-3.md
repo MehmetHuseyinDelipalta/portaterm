@@ -44,6 +44,9 @@
 - Status: accepted
 - Triage: Arbiter sustained. Round 3 closes F001 and the provisional-child protocol portion of F002, but the failed-effect invariant moved to the rollback commit. The boundary inventory has expanded in consecutive verification rounds, so patch-level remediation has not closed the controller recovery state machine. The change parks with F002 accepted; return the recovery lifecycle to planning before another user-granted round.
 
+- Status: risk-accepted
+- Triage: User explicitly accepted on 2026-09-07. Rationale: persistent synchronous navigation-effect failure is low-likelihood, normal and recovery flows are fully verified, split/host ownership already converges, and reload is an available workaround. Owner: terminal navigation controller. Expiry: 2026-10-07. Reactivate immediately on any navigation-freeze report, persistent `setState`/render/host-echo failure, or change to the navigation effect pipeline.
+
 ### F003
 - Status: audit-backlog
 

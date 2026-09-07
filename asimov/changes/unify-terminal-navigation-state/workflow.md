@@ -15,8 +15,8 @@
 - [x] All tasks done (`tasks.md`)
 - [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [x] Review done _(user-initiated; `[-]` + reason if skipped)_
-- [ ] Gate: implementation approved
-- [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
+- [x] Gate: implementation approved
+- [-] Blueprint sync complete _(Blueprint: none)_
 
 ## Archive
 
@@ -41,3 +41,4 @@ Witnesses: I18 pass [exit 0]; I19 pass [exit 0]; I20 pass [exit 0]; I21 pass [ex
 Review handback: round-1 F001 replaced unilateral attachment-timeout destruction with the user-approved delivery-aware timeout; no new capability or external behavior.
 Review handback: round-2 closes the remaining delivery and persistent-effect boundaries within the approved delivery-aware safety direction.
 Review blocked: round-3 F002 sustained — failed rollback effects remain ahead of later navigation and abandonment drops queued intents. Unblock: replan the controller recovery lifecycle; any round 4 requires an explicit user grant.
+Risk accepted: F002 — persistent rollback-effect failure may block navigation until reload | Owner: terminal navigation controller | Expiry: 2026-10-07 | Reactivate: navigation freeze report, persistent effect failure, or effect-pipeline change.
