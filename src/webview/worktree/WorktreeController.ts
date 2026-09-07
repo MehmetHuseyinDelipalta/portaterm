@@ -29,6 +29,7 @@ import type { VaultView } from "../vault/VaultPanel";
 import { type AgentActions, createAgentActions } from "./controller/agentActions";
 import type { WorktreeControllerDeps } from "./controller/controllerTypes";
 import { createDialogChannels } from "./controller/dialogChannels";
+import { createMutationResults, type MutationResults } from "./controller/mutationResults";
 import { createVisibility, type Visibility } from "./controller/visibility";
 import type { WorktreeMenuActions } from "./WorktreeContextMenu";
 import { WorktreeView } from "./WorktreeView";
@@ -198,11 +199,6 @@ export function worktreeMenuActions(
 const MAX_ORPHAN_NOTICES = 4;
 const MAX_DEPARTED = 64;
 
-/** Stable identity across attached, pending-arrival, and departed notice scopes. */
-function actionResultIdentity(result: WorktreeActionResult): string | undefined {
-  return result.worktreeId ?? result.canonicalId ?? result.orphanedLabel;
-}
-
 /** Drop the oldest entries until `map` fits. Insertion order is age. */
 function trim(map: Map<string, string>, limit: number): void {
   for (const key of map.keys()) {
@@ -317,15 +313,8 @@ export class WorktreeController {
   /** Held rather than passed: the two launch items appear only once one can act. */
   private readonly menuActions: WorktreeMenuActions;
 
-  /**
-   * The assess this surface is still waiting on, if any. At most one: a second
-   * request for the same worktree is dropped rather than queued, because each
-   * one holds the host's per-repo mutation queue across two forced rebuilds and
-   * the reads between them (D10).
-   */
-  private liveAssess: { token: string; worktreeId: string } | null = null;
-
-  private assessSeq = 0;
+  /** What a finished mutation says, and the assess asked before one runs (3_4). */
+  private readonly mutationResults: MutationResults;
 
   /** The offer the open create form was rendered against. Same rule. */
   private frozenCreateOffer: { offerId?: string } | null = null;
@@ -363,6 +352,26 @@ export class WorktreeController {
 
   private constructor(deps: WorktreeControllerDeps) {
     this.deps = deps;
+    this.mutationResults = createMutationResults({
+      postMessage: (msg) => deps.postMessage(msg),
+      actionResults: () => this.actionResults,
+      setActionResults: (next) => {
+        this.actionResults = next;
+      },
+      tree: () => this.tree,
+      departed: () => this.departed,
+      infoOf: (worktreeId) => this.infoOf(worktreeId),
+      repoFor: (info) => this.repoFor(info),
+      openPruneDialog: (seed, onConfirm) => {
+        this.view.openPruneDialog(seed, onConfirm);
+      },
+      openRemoveReport: (info, report) => {
+        this.view.openRemoveReport(info, report);
+      },
+      push: () => {
+        this.push();
+      },
+    });
     this.agentActions = createAgentActions({
       postMessage: (msg) => deps.postMessage(msg),
       onAttribution: (report) => deps.onAttribution?.(report),
@@ -402,7 +411,7 @@ export class WorktreeController {
       (repoId) => this.confirmPrune(repoId),
       undefined,
       undefined,
-      (worktreeId) => this.beginAssess(worktreeId),
+      (worktreeId) => this.mutationResults.beginAssess(worktreeId),
     );
     // Always wired, unlike `resumeHere`: the capture is what makes the menu's
     // own view of the tree authoritative, and it must happen even on an open
@@ -603,7 +612,7 @@ export class WorktreeController {
       // where nothing about the worktree's risk is known at all.
       onRetryAction: (result) => {
         if (result.worktreeId !== undefined) {
-          this.askRemoval(result.worktreeId);
+          this.mutationResults.askRemoval(result.worktreeId);
         }
       },
       onRetrySetup: (result) => {
@@ -621,7 +630,7 @@ export class WorktreeController {
       // blocked-notice opener is why this cannot be a controller-local guard
       // (D11).
       onDialogOpened: () => {
-        this.liveAssess = null;
+        this.mutationResults.retireAssess();
       },
       /** The opening the form being opened right now will ride (D1). */
       createOpening: () => this.refsToken,
@@ -872,26 +881,9 @@ export class WorktreeController {
     this.openCreateForRepo();
   }
 
-  /**
-   * Open prune's confirmation, and post only what the user confirmed there.
-   *
-   * The count is re-read from the tree at the moment the dialog opens, and the
-   * host re-counts authoritatively inside its queue: this number's job is to be
-   * the one the user SAW, so a prune that would drop a different number is
-   * abandoned rather than silently widened (D13).
-   */
+  /** Open prune's confirmation, and post only what the user confirmed there. */
   private confirmPrune(repoId: string): void {
-    const repo = this.tree?.repos.find((r) => r.repoId === repoId);
-    if (repo === undefined) {
-      return;
-    }
-    const count = repo.worktrees.filter((w) => w.prunable).length;
-    if (count <= 0) {
-      return;
-    }
-    this.view.openPruneDialog({ repoLabel: repo.label, count }, (confirmed) => {
-      this.deps.postMessage({ type: "worktreePrune", repoId, confirmedCount: confirmed });
-    });
+    this.mutationResults.confirmPrune(repoId);
   }
 
   /**
@@ -1185,144 +1177,17 @@ export class WorktreeController {
    * older result no longer describes the tree.
    */
   handleMutationResult(msg: WorktreeMutationResultMessage): void {
-    this.showActionResult(toActionResult(msg));
+    this.mutationResults.handleMutationResult(msg);
   }
 
-  /**
-   * What provisioning did, folded onto the create notice that is already there.
-   *
-   * The host posts this immediately after the create's own result on one
-   * ordered channel, so the notice exists by the time this lands. Merged rather
-   * than raised separately: `showActionResult` keys notices by action, worktree
-   * and repo, so a second one would REPLACE the create's rather than sit beside
-   * it. If the create notice is somehow gone, this reports on its own rather
-   * than being dropped — a user who is told nothing cannot tell "nothing was
-   * brought over" from "nobody looked".
-   */
+  /** What provisioning did, folded onto the create notice that is already there. */
   handleProvisionResult(msg: WorktreeProvisionResultMessage): void {
-    // Matched on the id the create ARRIVED under. `rescope` drops a `worktreeId`
-    // the tree does not carry yet and keeps it as the orphaned label, and a
-    // worktree made a moment ago is precisely that until the next rebuild lands
-    // — so the id-only key missed on every real create, which is what made the
-    // service supplying an id (round-2 F017) only half the fix.
-    const exact = this.actionResults.find(
-      (result) => result.action === "create" && actionResultIdentity(result) === msg.worktreeId,
-    );
-    const departedLabel = this.departed.get(msg.worktreeId);
-    const departed =
-      exact === undefined && msg.steps === undefined && departedLabel !== undefined
-        ? this.actionResults.find(
-            (result) =>
-              result.action === "create" &&
-              result.worktreeId === undefined &&
-              result.canonicalId === undefined &&
-              result.orphanedLabel === departedLabel,
-          )
-        : undefined;
-    const existing = exact ?? departed;
-    const fallback: WorktreeActionResult =
-      msg.steps === undefined
-        ? { action: "create", orphanedLabel: departedLabel ?? msg.worktreeId, outcome: "ok" }
-        : { action: "create", worktreeId: msg.worktreeId, outcome: "ok" };
-    this.showActionResult({
-      ...(existing ?? fallback),
-      ...(msg.steps === undefined ? {} : { provisioned: msg.steps }),
-      ...(msg.ports === undefined ? {} : { ports: msg.ports }),
-      ...(msg.portWarnings === undefined ? {} : { portWarnings: msg.portWarnings }),
-      ...(msg.contests === undefined ? {} : { provisionContests: msg.contests }),
-      setup: msg.setup,
-      setupOutputId: msg.setupOutputId,
-      setupRetryId: msg.setupRetryId,
-      manifestWarning: msg.manifestWarning,
-    });
+    this.mutationResults.handleProvisionResult(msg);
   }
 
-  /**
-   * Mint the token this request will be answered under, replacing whatever was
-   * live (design.md D4).
-   *
-   * It REFUSES NOTHING. A same-worktree repeat used to be dropped here, as the
-   * bound on host work; the panel could never be that bound — it sees one
-   * surface and one worktree id, so alternating rows walked past it (round-6
-   * B5) — and refusing the repeat is what made a dropped reply permanent,
-   * because the re-ask that would recover the row was the thing suppressed
-   * (round-6 W6). Admission is the host's, per repository.
-   *
-   * The token orders answers and authorizes nothing: a reply carrying a stale
-   * one is discarded rather than trusted for any part of itself (D11), and
-   * `liveAssess` is one field, so at most one is ever live.
-   */
-  private beginAssess(worktreeId: string): string {
-    this.assessSeq += 1;
-    const token = `assess-${this.assessSeq}`;
-    this.liveAssess = { token, worktreeId };
-    return token;
-  }
-
-  /** Ask what a removal would cost, under a token this surface can recognise. */
-  private askRemoval(worktreeId: string): void {
-    this.deps.postMessage({ type: "worktreeRemoveAssess", worktreeId, token: this.beginAssess(worktreeId) });
-  }
-
-  /** One notice per scope and verb, wherever the outcome came from. */
-  private showActionResult(raw: WorktreeActionResult): void {
-    const result = this.rescope(raw);
-    // Keyed on the CANONICAL identity, not on the field that happens to hold it.
-    // `rescope` moves a `worktreeId` the tree has not seen yet into
-    // `orphanedLabel`, and a worktree made a moment ago is exactly that — so two
-    // creates in one repository both keyed as `undefined` and the second ate the
-    // first (.reviews/round-4.md F017).
-    this.actionResults = [
-      ...this.actionResults.filter(
-        (candidate) =>
-          !(
-            candidate.action === result.action &&
-            actionResultIdentity(candidate) === actionResultIdentity(result) &&
-            candidate.repoId === result.repoId
-          ),
-      ),
-      result,
-    ];
-    this.push();
-  }
-
-  /**
-   * What the removal WOULD cost, answered before anything is deleted (D6).
-   *
-   * The two arms are different questions and the discriminant is what keeps them
-   * apart. `checksFor` marks the whole catalogue `unproven` for an assessment it
-   * could not make, refusal-class checks included, so rendering that as a report
-   * would show a worktree the host merely could not READ as a hard refusal with
-   * no control at all (D8). It goes to the retry surface instead, which is where
-   * the host's own `unavailable` already goes.
-   */
+  /** What the removal WOULD cost, answered before anything is deleted (D6). */
   handleRemoveAssessment(msg: WorktreeRemoveAssessmentMessage): void {
-    // Whatever its worktreeId. An id-only guard cannot order two requests for
-    // the SAME worktree, and reply 1 landing after request 2 would still open
-    // (D11).
-    if (this.liveAssess === null || this.liveAssess.token !== msg.token) {
-      return;
-    }
-    this.liveAssess = null;
-    const info = this.infoOf(msg.worktreeId);
-    if (msg.result.kind === "unavailable") {
-      const repoId = info === undefined ? undefined : this.repoFor(info)?.repoId;
-      this.showActionResult({
-        action: "remove",
-        worktreeId: msg.worktreeId,
-        ...(repoId === undefined ? {} : { repoId }),
-        outcome: "unavailable",
-        unreadable: msg.result.unreadable,
-      });
-      return;
-    }
-    if (info === undefined) {
-      // The row left the tree while the host was reading it. Opening a report
-      // about a worktree the panel no longer shows would ask the user to
-      // authorize a deletion they cannot see the target of.
-      return;
-    }
-    this.view.openRemoveReport(info, { ...msg.result.assessment, fingerprint: msg.result.fingerprint });
+    this.mutationResults.handleRemoveAssessment(msg);
   }
 
   /** A reply and an unsolicited push are the same message, handled the same way. */
@@ -1372,8 +1237,7 @@ export class WorktreeController {
    * happened — rather than a second channel the user has to learn (design.md D7).
    */
   reportScopeCleared(worktreeId: string, label: string): void {
-    this.stageScopeCleared(worktreeId, label);
-    this.push();
+    this.mutationResults.reportScopeCleared(worktreeId, label);
   }
 
   /**
@@ -1383,10 +1247,7 @@ export class WorktreeController {
    * rebuilt twice for one event (round-2 V5).
    */
   stageScopeCleared(worktreeId: string, label: string): void {
-    this.actionResults = [
-      ...this.actionResults.filter((r) => !(r.action === "scope" && r.worktreeId === worktreeId)),
-      { action: "scope", worktreeId, outcome: "ok", orphanedLabel: label },
-    ];
+    this.mutationResults.stageScopeCleared(worktreeId, label);
   }
 
   dispose(): void {
@@ -1482,7 +1343,7 @@ export class WorktreeController {
         // The repository itself left the workspace. Nothing is left to report to.
         return [];
       }
-      return [this.rescope(r, worktrees)];
+      return [this.mutationResults.rescope(r, worktrees)];
     });
     // W6: orphan notices answer to no row, so nothing else would ever bound them.
     const orphans = this.actionResults.filter((r) => r.orphanedLabel !== undefined);
@@ -1490,48 +1351,6 @@ export class WorktreeController {
       const dropped = new Set(orphans.slice(0, orphans.length - MAX_ORPHAN_NOTICES));
       this.actionResults = this.actionResults.filter((r) => !dropped.has(r));
     }
-  }
-
-  /**
-   * A result whose row is not in the tree is re-scoped to its repository.
-   *
-   * Applied at BOTH doors — an arriving result and an arriving tree — because
-   * which one comes second is not the controller's choice.
-   */
-  private rescope(result: WorktreeActionResult, present?: ReadonlySet<string>): WorktreeActionResult {
-    const worktreeId = result.worktreeId ?? result.canonicalId;
-    if (worktreeId === undefined) {
-      return result;
-    }
-    if (present === undefined && this.tree === null) {
-      // No tree is not an empty tree. Re-scoping here would orphan every notice
-      // that arrives before the first rebuild lands.
-      return result;
-    }
-    const rows = present ?? new Set((this.tree?.repos ?? []).flatMap((r) => r.worktrees.map((w) => w.id)));
-    if (rows.has(worktreeId)) {
-      // Both directions, because a create's notice arrives BEFORE the row it is
-      // about: every real create is re-scoped first and reattached here, and a
-      // one-way move left it at the repository anchor forever, still counted
-      // against the orphan bound that can evict it (round-5 F017).
-      const { canonicalId: _identity, orphanedLabel: _shown, ...named } = result;
-      return { ...named, worktreeId };
-    }
-    const label = result.orphanedLabel ?? this.departed.get(worktreeId);
-    const pendingCanonical = result.worktreeId === undefined ? result.canonicalId : undefined;
-    const { canonicalId: _identity, worktreeId: _gone, ...rest } = result;
-    return {
-      ...rest,
-      // A pending create keeps its identity through any number of tree pushes
-      // that still lack its row. An attached notice has `worktreeId`, so when
-      // that row actually departs reconciliation strips identity instead.
-      ...(pendingCanonical !== undefined
-        ? { canonicalId: pendingCanonical }
-        : result.action === "create" && present === undefined
-          ? { canonicalId: worktreeId }
-          : {}),
-      orphanedLabel: label ?? worktreeId,
-    };
   }
 
   private push(): void {
@@ -1543,51 +1362,5 @@ export class WorktreeController {
       actionResults: this.actionResults,
       noFolder: this.deps.init.workspaceRoot === null,
     });
-  }
-}
-
-/**
- * The host's outcome as the panel renders it.
- *
- * `blocked` is not a failure: the host declined to act and handed back the
- * blocker set it assessed, so the notice reopens the confirmation bound to that
- * exact set rather than reporting a dead end. A `null` fingerprint means the
- * set is a refusal — nothing can authorize it, and the dialog says so.
- */
-function toActionResult(msg: WorktreeMutationResultMessage): WorktreeActionResult {
-  // A worktree-scoped result hangs on its row, a repo-scoped one on the repo —
-  // `resultsFor` reads the repo branch only when no worktreeId is present. The
-  // repo id rides along regardless, because the indeterminate notice's Prune
-  // needs a repository to act on.
-  const scope = {
-    repoId: msg.repoId,
-    ...(msg.worktreeId === undefined ? {} : { worktreeId: msg.worktreeId }),
-  };
-  switch (msg.result.kind) {
-    case "ok":
-      return {
-        action: msg.verb,
-        ...scope,
-        outcome: "ok",
-        ...(msg.result.openFailed === undefined ? {} : { openFailed: msg.result.openFailed }),
-        ...(msg.result.migrationIndeterminate === undefined
-          ? {}
-          : { migrationIndeterminate: msg.result.migrationIndeterminate }),
-        ...(msg.result.branchDelete === undefined ? {} : { branchDelete: msg.result.branchDelete }),
-      };
-    case "indeterminate":
-      return { action: msg.verb, ...scope, outcome: "indeterminate", observed: msg.result.observed };
-    case "unavailable":
-      return { action: msg.verb, ...scope, outcome: "unavailable", unreadable: msg.result.unreadable };
-    case "blocked":
-      return {
-        action: "remove",
-        repoId: msg.repoId,
-        worktreeId: msg.result.worktreeId,
-        outcome: "error",
-        needsConfirm: { ...msg.result.assessment, fingerprint: msg.result.fingerprint },
-      };
-    default:
-      return { action: msg.verb, ...scope, outcome: "error", error: msg.result.message };
   }
 }
