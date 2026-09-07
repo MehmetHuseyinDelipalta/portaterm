@@ -9,7 +9,6 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type {
-  DebrisAuthorization,
   ExtensionToWebViewMessage,
   ProvisionEntry,
   ProvisionModel,
@@ -38,6 +37,7 @@ import {
   namedOpening,
 } from "../messageGuards";
 import type { OpeningLifecycle } from "../openingLifecycle";
+import { answerDebrisAuthorization } from "./create/debris";
 import { answerCreateProbe, isWellFormedProbe, matchesPublished } from "./create/probes";
 
 /** One arm, once the dispatcher has proved `actions` is there. */
@@ -249,61 +249,6 @@ export function createCreateActions(deps: CreateDeps) {
     }
     opening.chosenRoot = resolved;
     release(chosen);
-  }
-
-  /**
-   * Issue an authorization to clear `path`, or say why there is none.
-   *
-   * ONE read of the directory answers both questions — what the offer will state
-   * and what the token is digested over. Reading twice would let the user be
-   * shown one set and the fingerprint bind another (design.md D6).
-   */
-  async function answerDebrisAuthorization(
-    surface: WorktreeSurface,
-    msg: Extract<WorktreeActionMessage, { type: "worktreeAuthorizeDebris" }>,
-  ): Promise<void> {
-    const answer = (
-      rest:
-        | { granted: true; authorization: DebrisAuthorization; entries: readonly string[] }
-        | { granted: false; because: "notDebris" | "unreadable" },
-    ): void => {
-      surface.post({
-        type: "worktreeDebrisAuthorized",
-        repoId: msg.repoId,
-        token: msg.token,
-        // Echoed, never re-derived: it is what tells this answer from one the
-        // form has already withdrawn (round-2 W2).
-        ask: msg.ask,
-        path: msg.path,
-        ...rest,
-      });
-    };
-    const issue = options.issueDebrisAuthorization;
-    if (issue === undefined) {
-      answer({ granted: false, because: "unreadable" });
-      return;
-    }
-    const issued = await issue(msg.path);
-    // The opening AND the candidate, re-asked after the read. A newer answer can
-    // have published a different destination while this one was reading, and a
-    // token bound to the superseded one is not an answer to any question now on
-    // screen (round-1 B1).
-    if (
-      disposed() ||
-      !hasSurface(surface) ||
-      openingFor(surface, msg.repoId, msg.token)?.debrisCandidate !== msg.path
-    ) {
-      return;
-    }
-    answer(
-      issued.ok
-        ? {
-            granted: true,
-            authorization: { path: msg.path, fingerprint: issued.fingerprint },
-            entries: issued.entries,
-          }
-        : { granted: false, because: issued.because },
-    );
   }
 
   const worktreeCreate: Arm<"worktreeCreate"> = (surface, msg, actions) => {
@@ -611,7 +556,7 @@ export function createCreateActions(deps: CreateDeps) {
     if (opening === undefined || opening.debrisCandidate !== msg.path) {
       return;
     }
-    void answerDebrisAuthorization(surface, msg);
+    void answerDebrisAuthorization(deps, surface, msg);
     return;
   };
 

@@ -182,7 +182,7 @@
     3. Trim the destructures and imports the cut leaves unused in `src/providers/worktreeHost/actions/create.ts`.
     4. Run `bun run asm refactor shape src/providers/worktreeHost/actions/create.ts src/providers/worktreeHost/actions/create/probes.ts` and split `src/providers/worktreeHost/actions/create/probes.ts` again if it fires.
 
-- [ ] 2_14 Extract authorizing a removal at the destination
+- [x] 2_14 Extract authorizing a removal at the destination — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_13
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/actions/create/debris.ts` is under 500 lines, and `src/providers/worktreeHost/actions/create.ts` never grows
