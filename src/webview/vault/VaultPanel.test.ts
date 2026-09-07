@@ -88,7 +88,7 @@ describe("VaultPanel collapse", () => {
     const panel = new VaultPanel({ host, postMessage: () => {} });
     expect(panel.isCollapsed()).toBe(true);
     expect(host.classList.contains("vault-collapsed")).toBe(true);
-    expect(host.querySelector(".vault-header")?.getAttribute("aria-expanded")).toBe("false");
+    expect(host.querySelector(".vault-header__collapse-btn")?.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("honours getInitialCollapsed=false (expanded)", () => {
@@ -96,7 +96,7 @@ describe("VaultPanel collapse", () => {
     const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
     expect(panel.isCollapsed()).toBe(false);
     expect(host.classList.contains("vault-collapsed")).toBe(false);
-    expect(host.querySelector(".vault-header")?.getAttribute("aria-expanded")).toBe("true");
+    expect(host.querySelector(".vault-header__collapse-btn")?.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("does NOT persist the initial seed (persist:false)", () => {
@@ -131,48 +131,21 @@ describe("VaultPanel collapse", () => {
     expect(persisted).toEqual([false]);
   });
 
-  it("clicking the header toggles collapse", () => {
+  it("only the chevron button toggles collapse", () => {
     const host = createHost();
     const panel = new VaultPanel({ host, postMessage: () => {} });
     const header = host.querySelector<HTMLElement>(".vault-header");
+    const collapse = host.querySelector<HTMLButtonElement>(".vault-header__collapse-btn");
     expect(panel.isCollapsed()).toBe(true);
+
     header?.click();
+    expect(panel.isCollapsed()).toBe(true);
+
+    collapse?.click();
     expect(panel.isCollapsed()).toBe(false);
-    header?.click();
+    expect(collapse?.getAttribute("aria-label")).toBe("Collapse worktrees and sessions");
+    collapse?.click();
     expect(panel.isCollapsed()).toBe(true);
-  });
-
-  it("render updates the session-count badge", () => {
-    const host = createHost();
-    const panel = new VaultPanel({ host, postMessage: () => {} });
-    const count = host.querySelector(".vault-header__count");
-    expect(count?.textContent).toBe("");
-
-    panel.render(result([entry({ id: "claude:a" }), entry({ id: "codex:b", agent: "codex" })]));
-    expect(count?.textContent).toBe("2");
-
-    panel.render(result([]));
-    expect(count?.textContent).toBe("");
-  });
-
-  it("count badge reflects the filtered (visible) count, not the total", () => {
-    const host = createHost();
-    const panel = new VaultPanel({ host, postMessage: () => {} });
-    const count = host.querySelector(".vault-header__count");
-
-    panel.render(
-      result([
-        entry({ id: "a", cwd: "/work/repo" }),
-        entry({ id: "b", cwd: "/work/repo/src" }),
-        entry({ id: "c", cwd: "/other/proj" }),
-      ]),
-    );
-    expect(count?.textContent).toBe("3");
-
-    panel.setContextCwd("/work/repo");
-    panel.setFolderOnly(true);
-    // 2 of 3 sit within /work/repo → the badge tracks what the list shows.
-    expect(count?.textContent).toBe("2");
   });
 
   it("runs the collapse animation (applying the change) on user toggles but not on the seed", () => {
@@ -425,12 +398,12 @@ describe("VaultPanel header search toggle", () => {
   const searchBar = (host: HTMLElement) => host.querySelector<HTMLElement>(".vault-header__search");
   const searchBtn = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".vault-header__search-btn");
 
-  it("hides the inline search by default and there is no standalone search strip", () => {
+  it("hides the search row by default while keeping body navigation visible", () => {
     const host = createHost();
-    new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
-    // The old always-visible strip is gone; the input lives in a hidden header bar.
-    expect(host.querySelector(".vault-search")).toBeNull();
+    const body = document.createElement("div");
+    new VaultPanel({ host, postMessage: () => {}, worktreeBody: body, getInitialCollapsed: () => false });
     expect(searchBar(host)?.style.display).toBe("none");
+    expect(host.querySelectorAll(".vault-header .vault-view-toggle button")).toHaveLength(2);
     expect(searchBtn(host)).not.toBeNull();
   });
 
@@ -442,6 +415,7 @@ describe("VaultPanel header search toggle", () => {
     expect(panel.isCollapsed()).toBe(false); // auto-expanded by entering search
     expect(searchBar(host)?.style.display).toBe("flex");
     expect(host.querySelector(".vault-header")?.classList.contains("is-searching")).toBe(true);
+    expect(host.querySelector(".vault-header__main")?.getAttribute("style") ?? "").not.toContain("display: none");
     expect(document.activeElement).toBe(host.querySelector(".vault-search-input"));
     expect(searchBtn(host)?.getAttribute("aria-label")).toBe("Close search");
   });
@@ -3648,61 +3622,14 @@ describe("VaultPanel 'This folder only' filter", () => {
   });
 });
 
-describe("VaultPanel refresh button", () => {
-  function refreshCount(posted: Array<{ type: string }>): number {
-    return posted.filter((m) => m.type === "requestVaultSessions").length;
-  }
-
-  it("posts a refresh on click WITHOUT toggling collapse, spins, and the fresh response clears it", () => {
-    const host = createHost();
-    const posted: Array<{ type: string }> = [];
-    const panel = new VaultPanel({
-      host,
-      postMessage: (m) => posted.push(m as { type: string }),
-      getInitialCollapsed: () => false,
-    });
-    const btn = host.querySelector<HTMLButtonElement>(".vault-header__refresh-btn");
-    expect(btn).not.toBeNull();
-
-    const before = refreshCount(posted);
-    btn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    // Exactly one refresh request, and the click did NOT collapse the section.
-    expect(refreshCount(posted) - before).toBe(1);
-    expect(panel.isCollapsed()).toBe(false);
-    expect(btn?.classList.contains("is-refreshing")).toBe(true);
-
-    // The authoritative (non-cache) response completes the refresh → spin stops.
-    panel.render(result([entry()]), false);
-    expect(btn?.classList.contains("is-refreshing")).toBe(false);
-  });
-
-  it("keeps spinning on the instant cache echo, stops only on the fresh response", () => {
-    const host = createHost();
-    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
-    const btn = host.querySelector<HTMLButtonElement>(".vault-header__refresh-btn");
-    btn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(btn?.classList.contains("is-refreshing")).toBe(true);
-
-    panel.render(result([entry()]), true); // cached echo must NOT stop the spinner
-    expect(btn?.classList.contains("is-refreshing")).toBe(true);
-
-    panel.render(result([entry()]), false); // fresh response stops it (also clears the timer)
-    expect(btn?.classList.contains("is-refreshing")).toBe(false);
-  });
-});
-
 describe("VaultPanel header tooltips", () => {
-  it("attaches custom tooltips to search + refresh: strips native title, sets aria-describedby", () => {
+  it("attaches the custom tooltip to search and has no manual refresh control", () => {
     const host = createHost();
     new VaultPanel({ host, postMessage: () => {} });
     const searchBtn = host.querySelector<HTMLButtonElement>(".vault-header__search-btn");
-    const refreshBtn = host.querySelector<HTMLButtonElement>(".vault-header__refresh-btn");
-    // Native `title` is unreliable in VSCode webviews → stripped in favor of the
-    // shared custom-tooltip widget, referenced via aria-describedby (WCAG).
     expect(searchBtn?.hasAttribute("title")).toBe(false);
-    expect(refreshBtn?.hasAttribute("title")).toBe(false);
     expect(searchBtn?.getAttribute("aria-describedby")).toBe("webview-tooltip-widget");
-    expect(refreshBtn?.getAttribute("aria-describedby")).toBe("webview-tooltip-widget");
+    expect(host.querySelector(".vault-header__refresh-btn")).toBeNull();
   });
 
   it("preview header icon buttons use the custom tooltip (no slow native title)", () => {
@@ -4074,46 +4001,6 @@ describe("worktree segment", () => {
     expect(create?.hidden).toBe(true);
   });
 
-  it("never fires the sessions refresh protocol from the worktree view", () => {
-    // The refresh button posts requestVaultSessions. In the worktree view that
-    // is a real host operation against data the user cannot see, so with no
-    // worktree refresh supplied the control is hidden rather than misfiring.
-    const posted: { type: string }[] = [];
-    const host = createHost();
-    const panel = new VaultPanel({ host, postMessage: (m) => posted.push(m), worktreeBody: worktreeBody() });
-    const btn = host.querySelector<HTMLButtonElement>(".vault-header__refresh-btn");
-    posted.length = 0;
-
-    panel.setView("worktree");
-    expect(btn?.hidden).toBe(true);
-    btn?.click();
-    expect(posted.filter((m) => m.type === "requestVaultSessions")).toHaveLength(0);
-
-    panel.setView("sessions");
-    expect(btn?.hidden).toBe(false);
-    expect(btn?.getAttribute("aria-label")).toBe("Refresh sessions");
-  });
-
-  it("routes refresh to the worktree owner when one is supplied", () => {
-    const posted: { type: string }[] = [];
-    const refreshed: number[] = [];
-    const host = createHost();
-    const panel = new VaultPanel({
-      host,
-      postMessage: (m) => posted.push(m),
-      worktreeBody: worktreeBody(),
-      onWorktreeRefresh: () => refreshed.push(1),
-    });
-    panel.setView("worktree");
-    const btn = host.querySelector<HTMLButtonElement>(".vault-header__refresh-btn");
-    expect(btn?.hidden).toBe(false);
-    expect(btn?.getAttribute("aria-label")).toBe("Refresh worktrees");
-    posted.length = 0;
-    btn?.click();
-    expect(refreshed).toHaveLength(1);
-    expect(posted.filter((m) => m.type === "requestVaultSessions")).toHaveLength(0);
-  });
-
   it("is absent until a worktree body is supplied", () => {
     const host = createHost();
     new VaultPanel({ host, postMessage: () => {} });
@@ -4163,7 +4050,7 @@ describe("worktree segment", () => {
       onCreateWorktree: () => created.push(1),
     });
     panel.setCreateWorktreeAvailable(true);
-    const createBtn = host.querySelector<HTMLButtonElement>('.vault-toolbar button[aria-label="Create worktree"]');
+    const createBtn = host.querySelector<HTMLButtonElement>('.vault-header button[aria-label="Create worktree"]');
     expect(createBtn?.hidden).toBe(true);
     panel.setView("worktree");
     expect(createBtn?.hidden).toBe(false);
@@ -4260,9 +4147,11 @@ describe("the two-level view control", () => {
   const modeBtn = (host: HTMLElement, mode: string) =>
     host.querySelector<HTMLButtonElement>(`.vault-segmented button[data-mode="${mode}"]`);
 
-  it("[1_1] names both bodies on a control of their own", () => {
+  it("[1_1] keeps both bodies visible in the header", () => {
     const { host } = panelWith();
-    expect(host.querySelectorAll(".vault-view-toggle button")).toHaveLength(2);
+    expect(host.querySelectorAll(".vault-header .vault-view-toggle button")).toHaveLength(2);
+    expect(host.querySelector(".vault-title")).toBeNull();
+    expect(host.querySelector(".vault-header__count")).toBeNull();
     // Every value labelled at every width: the control has to answer "which body
     // am I in" without a hover.
     for (const view of ["worktree", "sessions"]) {
@@ -4271,15 +4160,13 @@ describe("the two-level view control", () => {
     expect(host.querySelectorAll(".vault-view-toggle button[data-mode]")).toHaveLength(0);
   });
 
-  it("[1_1] keeps grouping out of the toolbar and inside the sessions body", () => {
+  it("[1_1] combines session grouping and folder scope in one body row", () => {
     const { host } = panelWith();
     const bar = host.querySelector<HTMLElement>(".vault-groupbar");
-    expect(bar).not.toBeNull();
     expect(bar?.parentElement?.className).toBe("vault-body");
-    // The contract is that grouping is not in the toolbar — stated as the absence
-    // of its values, not of a class the body toggle happens to share for styling.
-    expect(host.querySelectorAll(".vault-toolbar button[data-mode]")).toHaveLength(0);
     expect(host.querySelectorAll(".vault-groupbar .vault-segmented button")).toHaveLength(3);
+    expect(bar?.querySelector(".vault-folder-toggle")).not.toBeNull();
+    expect(host.querySelector(".vault-toolbar")).toBeNull();
   });
 
   it("[1_1] withdraws the grouping control in the body that has nothing to group", () => {
@@ -4322,6 +4209,19 @@ describe("the two-level view control", () => {
     expect(panel.getView()).toBe("worktree");
     expect(viewBtn(host, "worktree")?.getAttribute("aria-selected")).toBe("true");
     expect(viewBtn(host, "sessions")?.getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("[1_1] opens the selected body instead of treating its header tab as collapse", () => {
+    const { host, panel } = panelWith();
+    expect(panel.isCollapsed()).toBe(true);
+
+    viewBtn(host, "worktree")?.click();
+    expect(panel.getView()).toBe("worktree");
+    expect(panel.isCollapsed()).toBe(false);
+
+    viewBtn(host, "sessions")?.click();
+    expect(panel.getView()).toBe("sessions");
+    expect(panel.isCollapsed()).toBe(false);
   });
 
   it("[1_1] honours a body and a grouping recorded before the split", () => {
@@ -4417,6 +4317,14 @@ describe("the two-level control's keyboard", () => {
     toggle?.dispatchEvent(passed);
     expect(handled.defaultPrevented).toBe(true);
     expect(passed.defaultPrevented).toBe(false);
+  });
+
+  it("[1_2] does not collapse when Enter is pressed on a header tab", () => {
+    const { host, panel } = panelWith();
+    panel.expand();
+    const sessions = host.querySelector<HTMLElement>('[data-view="sessions"]');
+    sessions?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(panel.isCollapsed()).toBe(false);
   });
 });
 

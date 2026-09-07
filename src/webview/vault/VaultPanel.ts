@@ -31,7 +31,7 @@ import { attachTooltip, attachTooltipDelegate } from "../ui/Tooltip";
 import { ICON_BRANCH, ICON_PLUS } from "../worktree/worktreeIcons";
 import { agentLabel, isWithin } from "./format";
 import { type GroupMode, groupEntries } from "./grouping";
-import { ICON_AGENT, ICON_CLOSE, ICON_FOLDER, ICON_RECENT, ICON_REFRESH, ICON_SEARCH } from "./icons";
+import { ICON_AGENT, ICON_CHEVRON_DOWN, ICON_CLOSE, ICON_FOLDER, ICON_RECENT, ICON_SEARCH } from "./icons";
 import { PreviewController } from "./PreviewController";
 import { VaultContextMenu } from "./VaultContextMenu";
 import {
@@ -109,13 +109,6 @@ export interface VaultPanelDeps {
   onCreateWorktree?: () => void;
   /** The search box filters the worktree tree too — branch, path, agent title. */
   onWorktreeQuery?: (query: string) => void;
-  /**
-   * Rebuild the worktree tree. The refresh button posts `requestVaultSessions`,
-   * which is the SESSIONS protocol — firing it from the Worktree view would run a
-   * real host operation against data the user cannot see. Absent → the button is
-   * hidden there rather than left doing the wrong thing.
-   */
-  onWorktreeRefresh?: () => void;
   /** Initial body (default "sessions"). Read once on construction. */
   /**
    * Whether the Worktree body is being shown — this panel owns both halves of
@@ -162,15 +155,11 @@ export class VaultPanel {
   private readonly postMessage: VaultPanelPostMessage;
 
   private readonly headerEl: HTMLElement;
+  private readonly collapseBtnEl: HTMLButtonElement;
   private readonly headerMainEl: HTMLElement;
-  private readonly countEl: HTMLElement;
   private readonly searchInput: HTMLInputElement;
   private readonly searchBarEl: HTMLElement;
   private readonly searchBtnEl: HTMLButtonElement;
-  private readonly refreshBtnEl: HTMLButtonElement;
-  /** Safety timer that clears the refresh spinner if no fresh response arrives
-   *  (e.g. the host hit an error and only logged it). */
-  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly folderToggleEl: HTMLLabelElement;
   private readonly folderCheckboxEl: HTMLInputElement;
   /** Built by `composeControls`, which the constructor calls — hence not readonly. */
@@ -179,7 +168,6 @@ export class VaultPanel {
   private viewToggleEl!: HTMLElement;
   /** Level 2's home: a strip inside the sessions body. */
   private groupBarEl!: HTMLElement;
-  private readonly toolbarEl: HTMLElement;
   private readonly statusEl: HTMLElement;
   private readonly bodyEl: HTMLElement;
   private readonly listEl: HTMLElement;
@@ -221,7 +209,6 @@ export class VaultPanel {
   private createAvailable = false;
   private readonly createWorktreeBtn: HTMLButtonElement | null;
   private readonly onWorktreeQuery?: (query: string) => void;
-  private readonly onWorktreeRefresh?: () => void;
   private readonly persistView?: (view: VaultView) => void;
   private readonly onWorktreeVisibility?: (visible: boolean) => void;
   /** Collapsed group keys (`<mode>:<key>`) — Agent and Folder groups both
@@ -288,53 +275,36 @@ export class VaultPanel {
     this.host.classList.add("vault-panel");
     this.host.replaceChildren();
 
-    // Header doubles as the collapse toggle (chevron + title + session count).
-    // In search mode the title row is swapped for an inline input — the search
-    // button toggles it (file-tree header parity); the input is hidden until then.
+    // The header is navigation, not a giant collapse target. Only the dedicated
+    // chevron button changes the section state; every control owns its hover.
     const header = document.createElement("div");
     header.className = "vault-header";
-    header.setAttribute("role", "button");
-    header.setAttribute("tabindex", "0");
-    header.setAttribute("aria-label", "Toggle AI Vault");
-    header.setAttribute("aria-expanded", "false");
 
     const mainRow = document.createElement("div");
     mainRow.className = "vault-header__main";
 
+    const collapseBtn = document.createElement("button");
+    collapseBtn.type = "button";
+    collapseBtn.className = "vault-header__collapse-btn";
+    collapseBtn.setAttribute("aria-label", "Expand worktrees and sessions");
+    collapseBtn.setAttribute("aria-expanded", "false");
     const chevron = document.createElement("span");
     chevron.className = "vault-header__chevron";
-    chevron.textContent = "›";
+    chevron.innerHTML = ICON_CHEVRON_DOWN;
     chevron.setAttribute("aria-hidden", "true");
+    collapseBtn.appendChild(chevron);
+    collapseBtn.addEventListener("click", () => this.toggleCollapsed());
 
-    const title = document.createElement("span");
-    title.className = "vault-title";
-    title.textContent = "AI Vault";
-
-    this.countEl = document.createElement("span");
-    this.countEl.className = "vault-header__count";
-
-    mainRow.append(chevron, title, this.countEl);
+    mainRow.appendChild(collapseBtn);
+    this.collapseBtnEl = collapseBtn;
     this.headerMainEl = mainRow;
-
-    const toggle = () => this.toggleCollapsed();
-    header.addEventListener("click", toggle);
-    header.addEventListener("keydown", (ev) => {
-      if (this.searchActive) {
-        return; // search input owns the keyboard while open
-      }
-      if (ev.key === "Enter" || ev.key === " ") {
-        ev.preventDefault();
-        toggle();
-      }
-    });
     this.headerEl = header;
 
-    // Inline search bar — lives in the header, hidden until the button is
-    // clicked. Clicks/keys inside must not bubble to the collapse toggle.
+    // Search stays out of the persistent header so switching Worktrees/Sessions
+    // remains available while a query is open.
     const searchBar = document.createElement("div");
     searchBar.className = "vault-header__search";
     searchBar.style.display = "none";
-    searchBar.addEventListener("click", (ev) => ev.stopPropagation());
     const searchIcon = document.createElement("span");
     searchIcon.className = "vault-search-icon";
     searchIcon.innerHTML = ICON_SEARCH;
@@ -370,27 +340,7 @@ export class VaultPanel {
     });
     this.searchBtnEl = searchBtn;
 
-    // Manual refresh — re-reads the agents' stores now. Covers the case the
-    // auto-refresh-on-reveal (main.ts onViewShow) misses: the vault is open AND
-    // visible while an agent writes in a terminal in the same view (no viewShow,
-    // no cwd change). stopPropagation so the click doesn't toggle the collapse.
-    const refreshBtn = document.createElement("button");
-    refreshBtn.type = "button";
-    refreshBtn.className = "vault-header__refresh-btn";
-    refreshBtn.innerHTML = ICON_REFRESH;
-    refreshBtn.setAttribute("aria-label", "Refresh sessions");
-    refreshBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      if (this.view === "worktree") {
-        this.onWorktreeRefresh?.();
-        return;
-      }
-      this.setRefreshing(true);
-      this.requestRefresh();
-    });
-    this.refreshBtnEl = refreshBtn;
-
-    header.append(mainRow, searchBar, refreshBtn, searchBtn);
+    header.append(mainRow, searchBtn);
 
     // Reliable hover/focus tooltips — native `title` doesn't render dependably in
     // VSCode webviews (see fileTree/Tooltip). `getText` for search so the hint
@@ -400,21 +350,19 @@ export class VaultPanel {
     // releases them for tests / hot-reload / a future rebuild.
     this.disposers.push(
       attachTooltip(searchBtn, {
-        getText: () => (this.searchActive ? "Close search" : "Search sessions by title, folder, or agent"),
+        getText: () =>
+          this.searchActive
+            ? "Close search"
+            : this.view === "worktree"
+              ? "Search worktrees by branch, path, or agent"
+              : "Search sessions by title, folder, or agent",
       }),
-      attachTooltip(refreshBtn, { text: "Refresh — re-read sessions from disk now" }),
     );
 
-    // Toolbar: the body toggle on the left + "This folder only" on the right.
-    // The controls themselves are built by `composeControls`.
-    this.toolbarEl = document.createElement("div");
-    this.toolbarEl.className = "vault-toolbar";
-    const toolbar = this.toolbarEl;
     this.worktreeBodyEl = deps.worktreeBody ?? null;
     this.onWorktreeVisibility = deps.onWorktreeVisibility;
 
-    // Create lives next to the segmented control and only while the Worktree view
-    // is up — a "+" in the sessions toolbar would have nothing to create.
+    // Create lives in the persistent header and only appears for Worktrees.
     if (this.worktreeBodyEl && deps.onCreateWorktree) {
       this.createWorktreeBtn = document.createElement("button");
       this.createWorktreeBtn.type = "button";
@@ -422,8 +370,11 @@ export class VaultPanel {
       this.createWorktreeBtn.innerHTML = ICON_PLUS;
       this.createWorktreeBtn.title = "Create worktree";
       this.createWorktreeBtn.setAttribute("aria-label", "Create worktree");
-      this.createWorktreeBtn.addEventListener("click", () => deps.onCreateWorktree?.());
-      toolbar.appendChild(this.createWorktreeBtn);
+      this.createWorktreeBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        deps.onCreateWorktree?.();
+      });
+      header.insertBefore(this.createWorktreeBtn, searchBtn);
     } else {
       this.createWorktreeBtn = null;
     }
@@ -439,7 +390,6 @@ export class VaultPanel {
     folderText.textContent = "This folder only";
     this.folderToggleEl.append(this.folderCheckboxEl, folderText);
     this.folderCheckboxEl.addEventListener("change", () => this.setFolderOnly(this.folderCheckboxEl.checked));
-    toolbar.appendChild(this.folderToggleEl);
 
     this.statusEl = document.createElement("div");
     this.statusEl.className = "vault-status";
@@ -460,14 +410,13 @@ export class VaultPanel {
       this.bodyEl.appendChild(this.worktreeBodyEl);
     }
 
-    this.host.append(header, toolbar, this.statusEl, this.bodyEl, this.preview.element);
+    this.host.append(header, searchBar, this.statusEl, this.bodyEl, this.preview.element);
 
     // Seed collapsed state (default collapsed) — reconciles the HTML's
     // `vault-collapsed` default with any persisted preference.
     this.setCollapsed(deps.getInitialCollapsed?.() ?? true, { persist: false });
     this.setFolderOnly(deps.getInitialFolderOnly?.() ?? false, { persist: false });
     this.onWorktreeQuery = deps.onWorktreeQuery;
-    this.onWorktreeRefresh = deps.onWorktreeRefresh;
     this.persistView = deps.persistView;
     this.view = this.worktreeBodyEl ? (deps.getInitialView?.() ?? "sessions") : "sessions";
     this.composeControls();
@@ -512,9 +461,8 @@ export class VaultPanel {
       const btn = segment(this.segmentedEl, label, icon, hint, () => this.setGroupMode(mode));
       btn.dataset.mode = mode;
     }
-    // Level 1 — which body. Level 2 lives in the body it groups, so the two are
-    // never in one row: five tab-shaped controls where four already did not fit
-    // would make the squeeze worse rather than remove it.
+    // Level 1 stays in the header so both bodies are always visible and the
+    // panel no longer needs an umbrella title row above the actual navigation.
     this.viewToggleEl = document.createElement("div");
     // Both classes: `vault-segmented` IS the segment styling, and re-declaring
     // it under a second selector only adds a descending-specificity rule beside
@@ -527,17 +475,21 @@ export class VaultPanel {
       ["worktree", "Worktrees", ICON_BRANCH, "Show the workspace's worktrees"],
       ["sessions", "Sessions", ICON_RECENT, "Show agent sessions"],
     ] as const) {
-      const btn = segment(this.viewToggleEl, label, icon, hint, () => this.setView(view));
+      const btn = segment(this.viewToggleEl, label, icon, hint, () => {
+        this.setView(view);
+        this.expand();
+      });
       btn.dataset.view = view;
+      btn.addEventListener("click", (ev) => ev.stopPropagation());
     }
     // A toggle whose worktree half leads nowhere would be a control offering a
     // body that does not exist, so it is built only once one is supplied.
     if (this.worktreeBodyEl) {
-      this.toolbarEl.insertBefore(this.viewToggleEl, this.toolbarEl.firstChild);
+      this.headerMainEl.appendChild(this.viewToggleEl);
     }
     this.groupBarEl = document.createElement("div");
     this.groupBarEl.className = "vault-groupbar";
-    this.groupBarEl.appendChild(this.segmentedEl);
+    this.groupBarEl.append(this.segmentedEl, this.folderToggleEl);
     this.bodyEl.insertBefore(this.groupBarEl, this.bodyEl.firstChild);
     this.wireTablist(this.viewToggleEl);
     this.wireTablist(this.segmentedEl);
@@ -598,9 +550,11 @@ export class VaultPanel {
       // An action the view cannot perform is absent, never present and disabled.
       this.createWorktreeBtn.hidden = !worktree || !this.createAvailable;
     }
-    this.refreshBtnEl.hidden = worktree && !this.onWorktreeRefresh;
-    this.refreshBtnEl.setAttribute("aria-label", worktree ? "Refresh worktrees" : "Refresh sessions");
     this.searchInput.placeholder = worktree ? "Search worktrees…" : "Search sessions…";
+    this.searchInput.setAttribute("aria-label", worktree ? "Search worktrees" : "Search sessions");
+    if (!this.searchActive) {
+      this.searchBtnEl.setAttribute("aria-label", worktree ? "Search worktrees" : "Search sessions");
+    }
     this.syncWorktreeVisibility();
   }
 
@@ -706,7 +660,11 @@ export class VaultPanel {
     } else {
       applyVisual();
     }
-    this.headerEl.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    this.collapseBtnEl.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    this.collapseBtnEl.setAttribute(
+      "aria-label",
+      collapsed ? "Expand worktrees and sessions" : "Collapse worktrees and sessions",
+    );
     if (opts.persist !== false) {
       this.persistCollapsed?.(collapsed);
     }
@@ -724,7 +682,7 @@ export class VaultPanel {
     }
   }
 
-  /** Toggle collapsed state (header click / file-tree toolbar button). */
+  /** Toggle collapsed state (chevron / file-tree toolbar button). */
   toggleCollapsed(): void {
     this.setCollapsed(!this.collapsed);
   }
@@ -746,8 +704,7 @@ export class VaultPanel {
   }
 
   /**
-   * Open the inline header search: expand the panel if collapsed, swap the
-   * title row for the input, and focus it. Mirrors the file-tree header search.
+   * Open search below the persistent header and focus it.
    */
   private enterSearch(): void {
     if (this.searchActive) {
@@ -758,7 +715,6 @@ export class VaultPanel {
     }
     this.searchActive = true;
     this.headerEl.classList.add("is-searching");
-    this.headerMainEl.style.display = "none";
     this.searchBarEl.style.display = "flex";
     this.searchBtnEl.innerHTML = ICON_CLOSE;
     this.searchBtnEl.setAttribute("aria-label", "Close search");
@@ -766,7 +722,7 @@ export class VaultPanel {
     this.searchInput.focus();
   }
 
-  /** Close the inline search: restore the title row and clear any active query. */
+  /** Close search and clear any active query. */
   private exitSearch(opts: { focusButton?: boolean } = {}): void {
     if (!this.searchActive) {
       return;
@@ -774,9 +730,8 @@ export class VaultPanel {
     this.searchActive = false;
     this.headerEl.classList.remove("is-searching");
     this.searchBarEl.style.display = "none";
-    this.headerMainEl.style.display = "";
     this.searchBtnEl.innerHTML = ICON_SEARCH;
-    this.searchBtnEl.setAttribute("aria-label", "Search sessions");
+    this.searchBtnEl.setAttribute("aria-label", this.view === "worktree" ? "Search worktrees" : "Search sessions");
     this.searchInput.value = "";
     if (this.query) {
       this.query = "";
@@ -834,40 +789,13 @@ export class VaultPanel {
   }
 
   /**
-   * Toggle the manual-refresh spinner. Spinning is purely a click affordance for
-   * the header refresh button (other refresh triggers — expand, viewShow, cwd
-   * change — don't spin). A safety timer clears it if no fresh response ever
-   * arrives (the host hit an error and only logged it, leaving the cache shown).
-   */
-  private setRefreshing(on: boolean): void {
-    if (this.refreshTimer !== null) {
-      clearTimeout(this.refreshTimer);
-      this.refreshTimer = null;
-    }
-    this.refreshBtnEl.classList.toggle("is-refreshing", on);
-    this.refreshBtnEl.setAttribute("aria-busy", on ? "true" : "false");
-    if (on) {
-      this.refreshTimer = setTimeout(() => {
-        this.refreshTimer = null;
-        this.refreshBtnEl.classList.remove("is-refreshing");
-        this.refreshBtnEl.setAttribute("aria-busy", "false");
-      }, 4000);
-    }
-  }
-
-  /**
    * Render the aggregated result; preserves the current search query. `this.entries`
    * is ALWAYS updated (so client-side search/filter never operate on stale data),
    * but the DOM re-render is skipped when the entries are equivalent to what is
    * already painted (cache-vault-load D6) — the common case for the cache→fresh
    * refresh — so an open preview, scroll position, and selection are undisturbed.
    */
-  render(result: VaultListResult, fromCache = false): void {
-    // The authoritative (non-cache) response completes a manual refresh — stop the
-    // spinner here, BEFORE the no-op guard, so it clears even when nothing changed.
-    if (!fromCache) {
-      this.setRefreshing(false);
-    }
+  render(result: VaultListResult): void {
     this.entries = result.entries;
     this.openPendingPreview();
     // Keep the open preview's entry reference live even when the DOM re-render is
@@ -977,10 +905,6 @@ export class VaultPanel {
       this.syncFolderToggleTitle();
     }
     const visible = this.entries.filter((e) => this.matchesFolder(e) && this.matchesQuery(e));
-    // The badge reflects what the list actually shows (folder + search scoped),
-    // not the unfiltered total — otherwise it over-reports under an active
-    // filter. See .reviews/round-2.md [W2].
-    this.countEl.textContent = visible.length > 0 ? String(visible.length) : "";
     this.renderStatus(visible.length);
 
     // Preserve the scroll position across the rebuild so an auto-refresh push (or
@@ -1172,15 +1096,9 @@ export class VaultPanel {
     this.preview.handleMessageRecordResponse(msg);
   }
 
-  /** Release every owned resource: the refresh safety-timer, the context menu and
-   *  preview controller (each detaches its own document listeners), and the header
-   *  tooltips. Not wired to a teardown today (the panel lives for the webview's
-   *  lifetime) — present so tests / hot-reload / a future rebuild don't leak. */
+  /** Release every owned resource: the context menu, preview controller, and
+   * header tooltip. */
   dispose(): void {
-    if (this.refreshTimer !== null) {
-      clearTimeout(this.refreshTimer);
-      this.refreshTimer = null;
-    }
     this.contextMenu.close();
     this.preview.dispose();
     for (const dispose of this.disposers) {

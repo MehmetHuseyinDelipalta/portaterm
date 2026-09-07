@@ -44,78 +44,86 @@
   flex: 0 0 24px;
 }
 
-/* ── Header (collapse toggle: chevron + title + count) ─────────────────── */
+/* ── Header (collapse toggle + persistent body navigation) ────────────── */
 .vault-header {
   display: flex;
   align-items: center;
   gap: 4px;
   height: 24px;
   flex: 0 0 24px;
-  padding: 0 8px;
-  cursor: pointer;
+  padding: 0 6px;
   user-select: none;
 }
-.vault-header:hover {
-  background: var(--vscode-list-hoverBackground);
+.vault-header__collapse-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  opacity: 0.72;
+  cursor: pointer;
 }
-.vault-header:focus-visible {
+.vault-header__collapse-btn:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+.vault-header__collapse-btn:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
 }
 .vault-header__chevron {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--vscode-icon-foreground, var(--vscode-foreground));
-  opacity: 0.8;
-  font-size: 16px;
-  line-height: 1;
-  font-weight: 600;
+  transform: rotate(-90deg);
   transition: transform 120ms ease-out;
 }
-.vault-header[aria-expanded="true"] .vault-header__chevron {
-  transform: rotate(90deg);
+.vault-header__chevron svg {
+  width: 14px;
+  height: 14px;
 }
-.vault-title {
-  font-weight: 600;
-  text-transform: uppercase;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  opacity: 0.8;
-  flex: 1 1 auto;
-}
-.vault-header__count {
-  flex: 0 0 auto;
-  font-size: 11px;
-  opacity: 0.6;
-  margin-left: 4px;
+.vault-header__collapse-btn[aria-expanded="true"] .vault-header__chevron {
+  transform: rotate(0deg);
 }
 .vault-header__main {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   flex: 1 1 auto;
   min-width: 0;
 }
-/* Search mode: the title row is hidden and the input takes the header width. */
-.vault-header.is-searching {
-  height: auto;
-  flex: 0 0 auto;
-  padding: 5px 8px;
-  cursor: default;
+.vault-view-toggle {
+  min-width: 0;
 }
-.vault-header.is-searching:hover {
-  background: none;
+.vault-view-toggle button {
+  height: 20px;
+  padding: 0 6px;
+  line-height: 1;
 }
+.vault-segmented-icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .vault-header__search {
   position: relative;
   display: flex;
   align-items: center;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
+  padding: 4px 8px;
 }
 /* Search toggle button — sits at the header's right edge, always visible. */
 .vault-header__search-btn {
@@ -142,41 +150,7 @@
   outline-offset: -1px;
 }
 
-/* Manual refresh button — mirrors the search button; sits just left of it. */
-.vault-header__refresh-btn {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: 3px;
-  background: none;
-  color: var(--vscode-icon-foreground, var(--vscode-foreground));
-  opacity: 0.7;
-  cursor: pointer;
-}
-.vault-header__refresh-btn:hover {
-  opacity: 1;
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
-}
-.vault-header__refresh-btn:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: -1px;
-}
-/* Spin the icon while a manual refresh is in flight. */
-.vault-header__refresh-btn.is-refreshing svg {
-  animation: vault-refresh-spin 0.8s linear infinite;
-}
-@keyframes vault-refresh-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ── Search (inline in the header, shown only while searching) ───────────── */
+/* ── Search row (shown only while searching) ────────────────────────────── */
 .vault-search-icon {
   position: absolute;
   left: 7px;
@@ -205,16 +179,6 @@
   outline-offset: -1px;
 }
 
-/* ── Toolbar: grouping segmented control + "This folder only" filter ────── */
-.vault-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex: 0 0 auto;
-  padding: 4px 12px 8px;
-  min-width: 0;
-}
 .vault-segmented {
   display: inline-flex;
   gap: 2px;
@@ -223,8 +187,12 @@
    below it and gone entirely in the body that has nothing to group. */
 .vault-groupbar {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   flex: 0 0 auto;
-  padding: 2px 8px 4px;
+  min-width: 0;
+  padding: 4px 8px 6px;
 }
 .vault-groupbar[hidden] {
   display: none;
@@ -2151,7 +2119,7 @@ body:has(#tab-bar.visible) .vault-preview--max {
 }
 
 /* Collapsed — hide the whole body; only the header strip shows. */
-.vault-panel.vault-collapsed .vault-toolbar,
+.vault-panel.vault-collapsed .vault-header__search,
 .vault-panel.vault-collapsed .vault-status,
 .vault-panel.vault-collapsed .vault-body,
 .vault-panel.vault-collapsed .vault-list,
