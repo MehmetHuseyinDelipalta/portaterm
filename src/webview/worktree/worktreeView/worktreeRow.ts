@@ -197,26 +197,19 @@ function buildAgentChildren(
 }
 
 function createNodeSink(produced: Node[], grouped: boolean, selected: boolean): NodeSink {
-  // Grouping and selection are two jobs that shared one class. `.wt-card` used
-  // to mean "expanded", and it is the loudest treatment in the tree — so once
-  // selection exists it reads as a selection nobody made (design.md D5). The
-  // card marks selection alone; `.wt-group` does the grouping.
+  // Every worktree keeps one stable block around its row and disclosure. Selection
+  // changes paint only; creating this wrapper on click used to contract both rows.
+  // `.wt-group` adds expanded-agent grouping, while `.wt-card` marks selection.
   //
   // Nodes are collected, not attached — `renderWorktree` owns the attach so a
   // memo hit can re-attach the very same nodes.
-  const groupEl = grouped ? document.createElement("div") : undefined;
-  if (groupEl) {
-    groupEl.className = selected ? "wt-group wt-card" : "wt-group";
-    groupEl.setAttribute("role", "none");
-    produced.push(groupEl);
-  }
+  const blockEl = document.createElement("div");
+  blockEl.className = ["wt-block", grouped ? "wt-group" : "", selected ? "wt-card" : ""].filter(Boolean).join(" ");
+  blockEl.setAttribute("role", "none");
+  produced.push(blockEl);
   return {
     appendChild(node) {
-      if (groupEl) {
-        groupEl.appendChild(node);
-      } else {
-        produced.push(node);
-      }
+      blockEl.appendChild(node);
     },
   };
 }
@@ -231,7 +224,7 @@ function buildWorktree(
   selected: boolean,
   produced: Node[],
 ): void {
-  const container = createNodeSink(produced, expanded || selected, selected);
+  const container = createNodeSink(produced, expanded, selected);
 
   container.appendChild(
     renderWorktreeRow(

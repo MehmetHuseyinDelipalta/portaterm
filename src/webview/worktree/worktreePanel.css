@@ -178,13 +178,13 @@
 }
 
 /* ── Worktree group and selection card (§ 7.3, design.md D5) ────────────── */
-/* Grouping only: keeps a branch row visually attached to its agent rows, so
-   ownership stays legible when several worktrees are expanded at once. It carries
-   no selection weight — the card does that, and one treatment answers one
-   question. */
-/* An expanded but unselected worktree while the workbench is on. Still a
-   container — D5 keeps the grouping "as a quieter container", and spacing alone
-   loses the edge that made it one — just without the card's border and fill. */
+/* Stable DOM owner for the branch row and its collapsed/expanded disclosure.
+   It has no sizing styles: selecting a worktree must change paint, not geometry. */
+.wt-block {
+  position: relative;
+  border-radius: 5px;
+}
+/* Expanded-agent grouping stays quiet and separate from selection. */
 .wt-group {
   margin: 3px 4px;
   padding: 1px 0 3px;
@@ -194,18 +194,12 @@
 .wt-group > .wt-row {
   margin: 0 1px;
 }
-/* The loudest treatment in the tree, and therefore the selection mark. While the
-   workbench is off nothing is selectable and it rides on expansion instead, which
-   is what it meant before selection existed. */
+/* Outline and fill do not participate in box sizing, so selection cannot shrink
+   the row, its presence pill, or the surrounding worktree list. */
 .wt-card {
-  margin: 3px 4px;
-  padding: 1px 0 3px;
-  border: 1px solid var(--vscode-widget-border);
-  border-radius: 5px;
+  outline: 1px solid var(--vscode-widget-border);
+  outline-offset: -1px;
   background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
-}
-.wt-card > .wt-row {
-  margin: 0 1px;
 }
 
 /* ── State vocabulary (§ 7.2): one shape per state, colour only reinforces ── */

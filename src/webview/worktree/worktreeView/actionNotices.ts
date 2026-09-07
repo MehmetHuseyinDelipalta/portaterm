@@ -148,16 +148,9 @@ export function createActionNotices(deps: ActionNoticesDeps): ActionNotices {
     }
   }
 
-  /** The last node belonging to a row: its group when it has one, else its pill. */
+  /** The stable block containing the row and any disclosure below it. */
   function groupEndFor(row: HTMLElement): HTMLElement {
-    // `.wt-group`, not `.wt-card`: the card is a selection mark now and an
-    // expanded-but-unselected worktree carries only the group.
-    const card = row.closest<HTMLElement>(".wt-group");
-    if (card) {
-      return card;
-    }
-    const next = row.nextElementSibling;
-    return next instanceof HTMLElement && next.classList.contains("wt-presence") ? next : row;
+    return row.closest<HTMLElement>(".wt-block") ?? row;
   }
 
   /** Where a result with no drawn row goes: with its repository when we can place

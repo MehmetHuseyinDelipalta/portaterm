@@ -2675,6 +2675,28 @@ describe("worktree selection", () => {
     expect(view.element.querySelectorAll(".wt-card")).toHaveLength(0);
   });
 
+  it("keeps one wrapper around a collapsed worktree row and its presence before selection", () => {
+    const { view } = selectable();
+    view.setData(populated());
+
+    const row = rowFor(view, "feat/worktree-panel");
+    const block = row?.parentElement;
+    expect(block?.classList.contains("wt-block")).toBe(true);
+    expect(block?.querySelector(":scope > .wt-presence")).not.toBeNull();
+
+    row?.click();
+    const selectedRow = rowFor(view, "feat/worktree-panel");
+    expect(selectedRow?.parentElement?.classList.contains("wt-block")).toBe(true);
+    expect(selectedRow?.parentElement?.classList.contains("wt-card")).toBe(true);
+    expect(selectedRow?.parentElement?.querySelector(":scope > .wt-presence")).not.toBeNull();
+
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const css = fs.readFileSync(path.join(here, "worktreePanel.css"), "utf8");
+    const cardRule = /\.wt-card\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(cardRule).toMatch(/outline:\s*1px solid/);
+    expect(cardRule).not.toMatch(/^\s*(?:margin|padding|border):/m);
+  });
+
   it("moves the mark rather than adding one", () => {
     const { view, selected } = selectable();
     view.setData(populated());
