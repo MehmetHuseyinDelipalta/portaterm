@@ -742,6 +742,21 @@ describe("a worktree action acts on the worktree the id names", () => {
     dispose();
   });
 
+  it("maps a cwd inside a current linked worktree and otherwise returns main", async () => {
+    const { host, dispose } = await builtHost();
+
+    await expect(host.terminalOwnerForCwd?.(`${FEAT_PATH}/packages/app`)).resolves.toBe(FEAT_PATH);
+    await expect(host.terminalOwnerForCwd?.(`${MAIN_PATH}/packages/app`)).resolves.toBeUndefined();
+    dispose();
+  });
+
+  it("does not assign a resumed terminal to a linked worktree whose directory disappeared", async () => {
+    const { host, dispose } = await builtHost([windowRow()], true);
+
+    await expect(host.terminalOwnerForCwd?.(`${FEAT_PATH}/packages/app`)).resolves.toBeUndefined();
+    dispose();
+  });
+
   it("opens a main-worktree terminal in the main owner bucket", async () => {
     const { host, view, dispose } = await builtHost();
     host.handleMessage(view, { type: "worktreeOpenTerminal", worktreeId: MAIN_PATH });

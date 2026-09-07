@@ -88,13 +88,18 @@ const okResolve = () =>
     isAgentLaunch: true,
   }));
 
-function mount(vault: FakeVault, resolve: ReturnType<typeof okResolve> | ReturnType<typeof vi.fn> = okResolve()) {
+function mount(
+  vault: FakeVault,
+  resolve: ReturnType<typeof okResolve> | ReturnType<typeof vi.fn> = okResolve(),
+  terminalOwnerForCwd = vi.fn(async (_cwd: string) => undefined as string | undefined),
+) {
   const sm = new SessionManager();
   // Only the two members this file exercises: the start capability is answered
   // by the host now, because the host is what admits launches against it.
   const publishLaunchTargets = vi.fn(async () => {});
   const worktreeHost = {
     initPayload: () => ({ worktreeHasRepo: false }),
+    terminalOwnerForCwd,
     attach: () => ({ setDisplayed: () => {}, dispose: () => {} }),
     handleMessage: () => {},
     publishLaunchTargets,
@@ -144,6 +149,8 @@ function mount(vault: FakeVault, resolve: ReturnType<typeof okResolve> | ReturnT
     resolve,
     publishLaunchTargets,
     postMessageSpy,
+    terminalOwnerForCwd,
+    sessionManager: sm,
     dispose: () => sm.dispose(),
   };
 }
@@ -156,6 +163,35 @@ function errors(spy: ReturnType<typeof vi.fn>): string[] {
     .filter((m) => m.type === "error")
     .map((m) => m.message ?? "");
 }
+
+describe("vaultResume owner mapping", () => {
+  it("assigns a resumed session to the linked worktree containing its stored cwd", async () => {
+    const owner = vi.fn(async () => "/repo-wt/feat");
+    const h = mount(makeVault(), okResolve(), owner);
+
+    h.send({ type: "vaultResume", entryId: "claude:s1" });
+    await tick();
+
+    expect(owner).toHaveBeenCalledWith("/work/proj");
+    const created = h.sessionManager.getAllSessionsForView("anywhereTerminal.sidebar").at(-1);
+    expect(created?.worktreeId).toBe("/repo-wt/feat");
+    expect(h.postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "tabCreated", worktreeId: "/repo-wt/feat" }),
+    );
+    h.dispose();
+  });
+
+  it("falls back to main when no linked worktree contains the stored cwd", async () => {
+    const h = mount(makeVault());
+
+    h.send({ type: "vaultResume", entryId: "claude:s1" });
+    await tick();
+
+    const created = h.sessionManager.getAllSessionsForView("anywhereTerminal.sidebar").at(-1);
+    expect(created?.worktreeId).toBeUndefined();
+    h.dispose();
+  });
+});
 
 describe("vaultContinueSession", () => {
   // D10: the reader authors the instruction in the confirm dialog, so the host

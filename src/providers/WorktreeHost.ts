@@ -6,6 +6,7 @@
 // it; attaching costs no git command and no watcher, so a second panel showing
 // the same tree is free.
 
+import { isPathInside } from "../utils/pathBoundary";
 import { hasGitRepo } from "../worktree/hasGitRepo";
 import type { DelegationRoster } from "../worktree/presenceTypes";
 import { createRebuildGate } from "../worktree/rebuildGate";
@@ -365,6 +366,32 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     // Folders are read here, not captured: a window that gained one since the
     // last init answers for the folder set the surface is booting against.
     initPayload: () => ({ worktreeHasRepo: hasGitRepo(options.workspaceFolders(), options.exists) }),
+    terminalOwnerForCwd: async (cwd) => {
+      let normalized: string | null;
+      try {
+        await gate.request(WHOLE_TREE_SCOPE, { force: true });
+        normalized = await options.deps.normalize(cwd);
+      } catch {
+        return undefined;
+      }
+      if (normalized === null) {
+        return undefined;
+      }
+      let owner: string | undefined;
+      for (const repo of cache.read().repos) {
+        for (const worktree of repo.worktrees) {
+          if (
+            worktree.kind === "linked" &&
+            worktree.missing !== true &&
+            isPathInside(normalized, worktree.id) &&
+            (owner === undefined || worktree.id.length > owner.length)
+          ) {
+            owner = worktree.id;
+          }
+        }
+      }
+      return owner;
+    },
     attach: delivery.attach,
     handleMessage: delivery.handleMessage,
     publishLaunchTargets,

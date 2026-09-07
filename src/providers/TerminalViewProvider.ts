@@ -203,7 +203,8 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       post: (msg) => {
         if (msg.type === "worktreeTreeResponse") {
           const linked = new Set(
-            msg.tree?.repos.flatMap((repo) => repo.worktrees.filter((wt) => wt.kind === "linked").map((wt) => wt.id)) ?? [],
+            msg.tree?.repos.flatMap((repo) => repo.worktrees.filter((wt) => wt.kind === "linked").map((wt) => wt.id)) ??
+              [],
           );
           this.sessionManager.reconcileWorktreeOwners(this.getViewId(), linked);
         }
@@ -433,7 +434,11 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     if (!this.vaultLauncher) {
       return;
     }
-    this.openSessionTab(await this.vaultLauncher.resolve(entryId, mode, prompt, target), webview);
+    const options = await this.vaultLauncher.resolve(entryId, mode, prompt, target);
+    this.openSessionTab(
+      { ...options, worktreeId: await this.worktreeHost?.terminalOwnerForCwd?.(options.cwd) },
+      webview,
+    );
   }
 
   /**

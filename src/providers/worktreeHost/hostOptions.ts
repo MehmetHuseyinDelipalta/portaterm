@@ -266,6 +266,8 @@ export interface WorktreeAttachment extends vscode.Disposable {
 export interface WorktreeHost extends vscode.Disposable {
   /** Fields this host contributes to a surface's `init` message. */
   initPayload(): WorktreeInitPayload;
+  /** Linked owner containing this cwd, or main when no current linked worktree contains it. */
+  terminalOwnerForCwd?(cwd: string): Promise<string | undefined>;
   /** The narrow read surface a mutation service is built on (round-1 B1). */
   mutationBindings(): WorktreeMutationBindings;
   /**
