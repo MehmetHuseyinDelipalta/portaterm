@@ -14,6 +14,8 @@ export interface ActivatePaneDeps {
   tabLayouts: ReadonlyMap<string, SplitNode>;
   /** Whether the tab can be brought on screen at all — see `resolveTabDisplayPane`. */
   canDisplayTab(tabId: string): boolean;
+  /** Select the stable main/linked owner before bringing its tab forward. */
+  selectPaneOwner(paneId: string): void;
   /** Record which pane is active within a tab. */
   setActivePane(tabId: string, paneId: string): void;
   persist(): void;
@@ -44,6 +46,7 @@ export function activatePane(paneId: string, deps: ActivatePaneDeps): boolean {
     if (!deps.canDisplayTab(tabId)) {
       return false;
     }
+    deps.selectPaneOwner(paneId);
     deps.setActivePane(tabId, paneId);
     deps.persist();
     deps.showTab(tabId);

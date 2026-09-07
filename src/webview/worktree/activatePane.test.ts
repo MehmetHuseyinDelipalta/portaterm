@@ -20,6 +20,7 @@ function harness(
     deps: {
       tabLayouts: new Map(layouts),
       canDisplayTab: (id) => live.has(id),
+      selectPaneOwner: (paneId) => log.push(`owner:${paneId}`),
       setActivePane: (tabId, paneId) => log.push(`active:${tabId}=${paneId}`),
       persist: () => log.push("persist"),
       showTab: (tabId) => log.push(`show:${tabId}`),
@@ -37,7 +38,7 @@ describe("activatePane", () => {
     // surviving leaf; that leaf must still come forward before the tab is shown.
     const { deps, log } = harness([["t1", SPLIT]], ["t1"]);
     expect(activatePane("t1-b", deps)).toBe(true);
-    expect(log).toEqual(["active:t1=t1-b", "persist", "show:t1", "visual:t1", "focus:t1-b"]);
+    expect(log).toEqual(["owner:t1-b", "active:t1=t1-b", "persist", "show:t1", "visual:t1", "focus:t1-b"]);
   });
 
   it("activates a tab that is its own single pane", () => {

@@ -508,6 +508,12 @@ function activatePaneById(paneId: string): boolean {
         tabLayouts: store.tabLayouts,
         hasTerminal: (sessionId) => store.terminals.has(sessionId),
       }) !== null,
+    selectPaneOwner: (id) => {
+      const terminal = store.terminals.get(id);
+      if (terminal) {
+        worktreeController?.selectTerminalOwner(terminal.worktreeId);
+      }
+    },
     setActivePane: (tabId, id) => store.tabActivePaneIds.set(tabId, id),
     persist: () => store.persist(),
     showTab: (tabId) => switchTab(tabId),
