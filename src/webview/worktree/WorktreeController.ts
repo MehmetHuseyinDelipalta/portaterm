@@ -23,13 +23,13 @@ import type {
   WorktreePullRequestsMessage,
   WorktreeRefsMessage,
   WorktreeRemoveAssessmentMessage,
-  WorktreeSubscriptionLevel,
   WorktreeTreeResponseMessage,
 } from "../../types/messages";
 import { attributionKey, type PaneReport, waitingKey } from "../paneAttribution";
 import type { VaultView } from "../vault/VaultPanel";
 import type { WorktreeControllerDeps } from "./controller/controllerTypes";
 import { createDialogChannels } from "./controller/dialogChannels";
+import { createVisibility, type Visibility } from "./controller/visibility";
 import type { WorktreeMenuActions } from "./WorktreeContextMenu";
 import { WorktreeView } from "./WorktreeView";
 import type {
@@ -238,18 +238,8 @@ export class WorktreeController {
 
   private readonly deps: WorktreeControllerDeps;
   private readonly view: WorktreeView;
-  /**
-   * The level last posted, or null while unsubscribed. The effective state, not
-   * a request — `applySubscription` derives it.
-   */
-  private subscribed: WorktreeSubscriptionLevel | null = null;
-  /**
-   * What the PANEL asked for: is the rail showing this body? Everything that
-   * acts on the body keys on this falling to false, never on the subscription
-   * ending — a scope can hold the subscription open long after the panel left
-   * (design.md D4).
-   */
-  private bodyShown = false;
+  /** Whether the panel is showing this body, and what that subscribes to (3_2). */
+  private readonly visibility: Visibility;
   private tree: WorktreeTree | null = null;
   private presence: WorktreePresence | null = null;
   private loading: boolean;
@@ -404,6 +394,24 @@ export class WorktreeController {
 
   private constructor(deps: WorktreeControllerDeps) {
     this.deps = deps;
+    this.visibility = createVisibility({
+      postMessage: (msg) => deps.postMessage(msg),
+      presenceNeeded: () => deps.presenceNeeded?.(),
+      clearPendingCreate: () => {
+        this.pendingCreate = null;
+      },
+      refreshing: () => this.refreshing,
+      abandonRefresh: () => {
+        this.refreshing = false;
+      },
+      push: () => {
+        this.push();
+      },
+      awaitingLaunchTargets: () => this.awaitingLaunchTargets,
+      noteAwaitingLaunchTargets: () => {
+        this.awaitingLaunchTargets = true;
+      },
+    });
     this.menuActions = worktreeMenuActions(
       (msg) => deps.postMessage(msg),
       (info) => this.repoFor(info),
@@ -761,19 +769,7 @@ export class WorktreeController {
    * so this is what starts and stops the flow — nothing polls.
    */
   setVisible(visible: boolean): void {
-    if (visible !== this.bodyShown) {
-      this.bodyShown = visible;
-      if (!visible) {
-        // A create resolved after the panel left this body would mount a form
-        // over a body it does not act in (round-1 W6). Keyed on the PANEL's
-        // request, not on the subscription: a scope keeps the subscription open,
-        // and this cleanup has nothing to do with presence. Putting it behind the
-        // effective value is exactly the regression the earlier attempt shipped
-        // (collapse-the-rail-after-a-sidebar-selection/.reviews/round-1.md B2).
-        this.pendingCreate = null;
-      }
-    }
-    this.applySubscription();
+    this.visibility.setVisible(visible);
   }
 
   /**
@@ -782,62 +778,14 @@ export class WorktreeController {
    * own state has not moved.
    */
   revalidateVisibility(): void {
-    this.applySubscription();
-  }
-
-  private applySubscription(): void {
-    // Two questions, two answers. The rail decides whether rows are drawn; a
-    // scope decides whether anything is drawn from presence at all. Its chip,
-    // escape control and hidden-waiting count all survive a collapsed rail
-    // (worktree-panel-ui.md § 7.1), and going quiet under one freezes the
-    // presence half of that count, which `tab-bar-component` § "The count reads
-    // every source that can say a pane is waiting" forbids.
-    const level: WorktreeSubscriptionLevel | null = this.bodyShown
-      ? "rows"
-      : this.deps.presenceNeeded?.() === true
-        ? "presence"
-        : null;
-    if (level === this.subscribed) {
-      return;
-    }
-    const wasSubscribed = this.subscribed !== null;
-    this.subscribed = level;
-    const visible = level !== null;
-    this.deps.postMessage({ type: "worktreeViewVisibility", visible, ...(level ? { level } : {}) });
-    if (visible) {
-      // A level change on a standing subscription re-requests nothing. Promotion
-      // does need the bare envelope redone, but asking for a tree only
-      // rebroadcasts what is published — the host owns whether the published
-      // envelope was enriched, and it re-projects on promotion itself
-      // (round-2 W1).
-      if (wasSubscribed) {
-        return;
-      }
-      this.deps.postMessage({ type: "requestWorktreeTree" });
-      // Asked on the way in rather than once at mount: which agents resolve is a
-      // property of the machine, and one installed since the last look should
-      // appear without reloading the window. One at a time, though — the reply
-      // says which capability it answers and not which ASK, so two in flight can
-      // land in either order and the older one would win.
-      if (!this.awaitingLaunchTargets) {
-        this.awaitingLaunchTargets = true;
-        this.deps.postMessage({ type: "requestVaultLaunchTargets", capability: "start" });
-      }
-      return;
-    }
-    // A force in flight across this transition is never answered — the host skips
-    // pushes to a surface that stopped showing the view.
-    if (this.refreshing) {
-      this.refreshing = false;
-      this.push();
-    }
+    this.visibility.revalidateVisibility();
   }
 
   /** Toolbar refresh: rebuild the listings rather than re-serve the cache. */
   requestRefresh(): void {
     // `bodyShown`, not the subscription: the toolbar this serves is in the body,
     // so a scope holding presence open is not a reason to accept one (D4).
-    if (!this.bodyShown || this.refreshing) {
+    if (!this.visibility.bodyShown() || this.refreshing) {
       return;
     }
     this.refreshing = true;

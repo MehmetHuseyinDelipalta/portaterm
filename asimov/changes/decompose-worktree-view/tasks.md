@@ -15,7 +15,7 @@
     4. Run `bun run asm refactor shape src/webview/worktree/WorktreeController.ts src/webview/worktree/controller/controllerTypes.ts` and split `src/webview/worktree/controller/controllerTypes.ts` again if it fires.
     5. Re-export the moved types from `src/webview/worktree/WorktreeController.ts` so no importer changes (D4).
 
-- [ ] 3_2 Extract whether the panel is shown
+- [x] 3_2 Extract whether the panel is shown — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts exit 0
   - **Deps**: 3_1
   - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5
   - **Boundary**: `src/webview/worktree/controller/visibility.ts` is under 500 lines, and `src/webview/worktree/WorktreeController.ts` never grows
