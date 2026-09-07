@@ -95,7 +95,7 @@
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/openingRegistry.ts` and split `src/providers/worktreeHost/openingRegistry.ts` again if it fires.
     5. Confirm `dispose`'s `forgetSurfaceOpenings(surfaceKey(surface))` loop at `src/providers/WorktreeHost.ts:2711-2713` still reaches the moved function rather than a facade-local stub (OBL-2).
 
-- [ ] 2_8 Extract the provisioning offer a repository is shown
+- [x] 2_8 Extract the provisioning offer a repository is shown — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_7
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/provisionOffers.ts` is under 500 lines, and `src/providers/WorktreeHost.ts` never grows

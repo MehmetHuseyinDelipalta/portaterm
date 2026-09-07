@@ -8,22 +8,16 @@
 
 import type {
   ExtensionToWebViewMessage,
-  ProvisionEntry,
-  ProvisionModel,
   WebViewToExtensionMessage,
   WorktreeActionMessage,
   WorktreeSubscriptionLevel,
 } from "../types/messages";
-import { SETUP_STEP_ADDED_SOURCE } from "../types/messages";
 import { hasGitRepo } from "../worktree/hasGitRepo";
 import type { IgnoredMaterial } from "../worktree/ignoredMaterial";
 import type { MigrationOfferEvidence, MigrationRepositoryBinding } from "../worktree/migrateChanges";
 import type { DelegationRoster, WorktreePresence } from "../worktree/presenceTypes";
 import { createProvisionOfferStore } from "../worktree/provisioning/offerStore";
-import { conflictsWithProvisionDestination, MAX_MODEL_ROWS, rowsOf } from "../worktree/provisioning/providerKit";
-import type { HeldProvisionSource } from "../worktree/provisioning/provisionMaterial";
 import { createRebuildGate } from "../worktree/rebuildGate";
-import type { WorktreeRepo } from "../worktree/types";
 import { createWorktreeCache } from "../worktree/WorktreeCache";
 import {
   buildWorktreeTreeDetailed,
@@ -39,11 +33,17 @@ import { createShellActions } from "./worktreeHost/actions/shell";
 import { createAssessLanes } from "./worktreeHost/assessLanes";
 import { createDestinationResolve } from "./worktreeHost/destinationResolve";
 import { createHostLookups, observationOf } from "./worktreeHost/hostLookups";
-import type { PickedCopyFile, WorktreeSurface } from "./worktreeHost/hostTypes";
+import type { WorktreeSurface } from "./worktreeHost/hostTypes";
 import { createLaunchAdmission } from "./worktreeHost/launchAdmission";
 import { createOpeningLifecycle } from "./worktreeHost/openingLifecycle";
 import { createOpeningRegistry } from "./worktreeHost/openingRegistry";
 import { createPresenceProjection, rosterKey } from "./worktreeHost/presenceProjection";
+import {
+  ADDED_COPY_SOURCE,
+  createProvisionOffers,
+  MAX_ADDED_COPY_FILES,
+  MAX_ADDED_STEPS,
+} from "./worktreeHost/provisionOffers";
 
 // Re-exported so no existing importer moved when these types did (task 2_0).
 export type {
@@ -139,10 +139,6 @@ interface SurfaceState {
 export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   const now = options.now ?? Date.now;
   const cache = createWorktreeCache();
-  const currentMigrationRegistration = (repoId: string): MigrationRepositoryBinding["registration"] | undefined => {
-    const generation = cache.readRepo(repoId)?.generation;
-    return generation === undefined ? undefined : cache.registrationFor(repoId, generation);
-  };
   const surfaces = new Map<WorktreeSurface, SurfaceState>();
   const watches = new Map<string, WorktreeWatch>();
   const projector = options.projector;
@@ -172,26 +168,24 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * unreachable — which is the same answer as an expired id.
    */
   const offers = createProvisionOfferStore();
-  const previewProvisioning = async (repo: WorktreeRepo, model: ProvisionModel): Promise<ProvisionModel> => {
-    const preview = options.previewProvisioningPorts;
-    if (preview === undefined) {
-      return model;
-    }
-    try {
-      return {
-        ...model,
-        ports: await preview(
-          model.ports,
-          repo.worktrees.map((worktree) => worktree.displayPath),
-        ),
-      };
-    } catch {
-      return {
-        ...model,
-        ports: model.ports.map(({ port: _preview, ...item }) => item),
-      };
-    }
-  };
+
+  /**
+   * What a create form is offered for one repository: the provider's model with
+   * this form's own additions composed in, and the withholding statement when
+   * they do not all fit (task 2_8).
+   */
+  const {
+    addedSteps,
+    addedCopyFiles,
+    currentMigrationRegistration,
+    bumpMigrationSequence,
+    previewProvisioning,
+    withoutAdded,
+    privateIdsFor,
+    withAdded,
+    roomForOneMoreSetup,
+    issueWithAdded,
+  } = createProvisionOffers({ cache, offers, options });
   /**
    * Provider reads in flight, marked BEFORE the await.
    *
@@ -217,7 +211,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
       evidence: MigrationOfferEvidence;
     }
   >();
-  let migrationSequence = 0;
   /**
    * The OPENING each surface's create form is currently on, as the PANEL named
    * it.
@@ -293,145 +286,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * other — a repository that had none and now has one took a source.
    */
   const provisionBaseline = new Map<string, string>();
-  /**
-   * Setup steps the user typed into THIS form, per opening, in the order added.
-   *
-   * Scripts only — no ids. Every offer the form is issued is built through
-   * `withAdded`, which appends one marker row per script and lets the store mint
-   * the ids, so an added step is spent exactly the way a provider-declared one
-   * is: by offer id plus item id, against the model the host holds (design.md
-   * D3). Same slot as `provisionBaseline`, swept with it by `retireOpening`, so
-   * a step dies with the form that typed it.
-   */
-  const addedSteps = new Map<string, readonly string[]>();
-  const MAX_ADDED_STEPS = 32;
-  const addedCopyFiles = new Map<string, readonly PickedCopyFile[]>();
-  const MAX_ADDED_COPY_FILES = 32;
-  const ADDED_COPY_SOURCE = "Added for this create";
-  /**
-   * The model as the provider read gave it: marker rows and the host's own
-   * withholding problem stripped.
-   *
-   * The ask handler builds from `offers.current`, which already carries the
-   * previous answer's rows, and appending onto that duplicated the record on
-   * every ask (plan attack F1) — and would have stacked the withholding problem
-   * on every cancel (round 2 plan attack 6). Setup rows retain their existing
-   * host marker; picked rows are removed only by the current offer's private
-   * sidecar ids, never by presentation fields.
-   */
-  const withoutAdded = (model: ProvisionModel, heldIds: ReadonlySet<string> = new Set()): ProvisionModel => ({
-    ...model,
-    entries: model.entries.filter((entry) => !heldIds.has(entry.id)),
-    setup: model.setup.filter((step) => step.source !== SETUP_STEP_ADDED_SOURCE),
-    problems: model.problems.filter((problem) => problem.file !== SETUP_STEP_ADDED_SOURCE),
-  });
-
-  const privateIdsFor = (offerKey: { surface: string; repoId: string }, model: ProvisionModel): ReadonlySet<string> => {
-    const current = offers.current(offerKey);
-    if (current?.model !== model) {
-      return new Set();
-    }
-    return new Set(offers.redeem(offerKey, current.offerId)?.heldFiles.keys());
-  };
-
-  const withAdded = (
-    offerKey: { surface: string; repoId: string },
-    slot: string,
-    model: ProvisionModel,
-    copyRecord: readonly PickedCopyFile[] = addedCopyFiles.get(slot) ?? [],
-    setupRecord: readonly string[] = addedSteps.get(slot) ?? [],
-  ): { readonly model: ProvisionModel; readonly heldFiles: ReadonlyMap<ProvisionEntry, HeldProvisionSource> } => {
-    const base = withoutAdded(model, privateIdsFor(offerKey, model));
-    const occupied: ProvisionEntry[] = [...base.entries, ...base.excluded];
-    const heldFiles = new Map<ProvisionEntry, HeldProvisionSource>();
-    const candidateCopies: Array<{ entry: ProvisionEntry; source: PickedCopyFile }> = [];
-    const usedIds = new Set([...base.entries, ...base.excluded, ...base.setup, ...base.ports].map((row) => row.id));
-    for (const [index, source] of copyRecord.entries()) {
-      let id = `added-copy-${index}`;
-      while (usedIds.has(id)) {
-        id = `_${id}`;
-      }
-      usedIds.add(id);
-      const entry: ProvisionEntry = {
-        id,
-        path: source.path,
-        mode: "copy",
-        source: ADDED_COPY_SOURCE,
-        suggestion: "May contain secrets.",
-        addedForCreate: true,
-      };
-      if (conflictsWithProvisionDestination(occupied, entry)) {
-        break;
-      }
-      candidateCopies.push({ entry, source });
-      occupied.push(entry);
-    }
-
-    const room = MAX_MODEL_ROWS - rowsOf(base);
-    const conflictWithheld = copyRecord.length - candidateCopies.length;
-    const totalAdded = candidateCopies.length + setupRecord.length;
-    const needsStatement = conflictWithheld > 0 || totalAdded > room;
-    const usable = needsStatement ? Math.max(0, room - 1) : room;
-    const shownCopies = Math.min(candidateCopies.length, usable);
-    const shownSetup = Math.min(setupRecord.length, Math.max(0, usable - shownCopies));
-    for (const { entry, source } of candidateCopies.slice(0, shownCopies)) {
-      heldFiles.set(entry, { canonicalPath: source.canonicalPath, file: source.file });
-    }
-    const withheldCopies = copyRecord.length - shownCopies;
-    const withheldSetup = setupRecord.length - shownSetup;
-    const withheld: string[] = [];
-    if (withheldCopies > 0) {
-      withheld.push(`${withheldCopies} added file${withheldCopies === 1 ? "" : "s"}`);
-    }
-    if (withheldSetup > 0) {
-      withheld.push(`${withheldSetup} added setup step${withheldSetup === 1 ? "" : "s"}`);
-    }
-    const statement = withheld.join(" and ");
-    return {
-      model: {
-        ...base,
-        entries: [...base.entries, ...candidateCopies.slice(0, shownCopies).map(({ entry }) => entry)],
-        setup: [
-          ...base.setup,
-          ...setupRecord.slice(0, shownSetup).map((script, index) => ({
-            id: `added-${index}`,
-            kind: "shell" as const,
-            script,
-            source: SETUP_STEP_ADDED_SOURCE,
-          })),
-        ],
-        problems:
-          statement.length === 0 || room <= 0
-            ? base.problems
-            : [
-                ...base.problems,
-                {
-                  file: SETUP_STEP_ADDED_SOURCE,
-                  reason: "malformed" as const,
-                  detail: `${statement} not offered: this source leaves no room or has a conflicting destination.`,
-                },
-              ],
-      },
-      heldFiles,
-    };
-  };
-
-  const roomForOneMoreSetup = (
-    offerKey: { surface: string; repoId: string },
-    slot: string,
-    model: ProvisionModel,
-    record: readonly string[],
-  ): boolean => {
-    const next = [...record, ""];
-    const composed = withAdded(offerKey, slot, model, addedCopyFiles.get(slot) ?? [], next);
-    return composed.model.setup.filter((step) => step.source === SETUP_STEP_ADDED_SOURCE).length === next.length;
-  };
-
-  const issueWithAdded = (offerKey: { surface: string; repoId: string }, slot: string, model: ProvisionModel) => {
-    const composed = withAdded(offerKey, slot, model);
-    return offers.issue(offerKey, composed.model, composed.heldFiles);
-  };
-
   /**
    * Which surface asked, which opening of which repository the question
    * belonged to, and everything dropped when one of those goes away (task 2_7).
@@ -675,7 +529,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     currentMigrationRegistration,
     deliver,
     disposed: () => disposed,
-    bumpMigrationSequence: () => ++migrationSequence,
+    bumpMigrationSequence,
     issueWithAdded,
     openingFor,
     openingKey,
