@@ -12,8 +12,8 @@
 
 ## Implement
 
-- [x] All tasks done (`tasks.md`)
-- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [ ] All tasks done (`tasks.md`)
+- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
@@ -32,9 +32,10 @@
 Blueprint: none
 Lane: full (standard) — terminal navigation crosses host/webview state and has repeated ordering failures | flags: cross-boundary
 Admission: in-contract — stable terminal ownership and owner-scoped navigation
-Planned at: 748de452
+Planned at: 2d86c713
 Gate 1: independent adjudication selected webview navigation authority with host-canonical durable facts and routing; oracle findings were verified against code and VS Code source.
 Real-dependency: task 2_1 — SessionManager snapshot ownership enters webview restore; Verify runs snapshot and navigation restore suites.
 Main projection: global main marks no repository-specific worktree row; linked owners mark exactly one linked row.
 Plan attack: Opus and Astra findings triaged; accepted restore, split, witness, migration, and stale-contract defects; rejected host-impossibility and startup-main-mark claims.
 Witnesses: I18 pass [exit 0]; I19 pass [exit 0]; I20 pass [exit 0]; I21 pass [exit 0]; I22 pass [exit 0].
+Review handback: round-1 F001 replaced unilateral attachment-timeout destruction with the user-approved delivery-aware timeout; no new capability or external behavior.

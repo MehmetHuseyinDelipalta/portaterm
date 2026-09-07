@@ -134,3 +134,19 @@
   - **Plan**:
     1. Update `docs/design/xterm-integration.md`, `docs/design/session-manager.md`, `docs/design/message-protocol.md`, and `docs/DESIGN.md`; supersede D50 and document checkpoint and host echo boundaries.
     2. Update `src/test/invariants/registry.ts`, `src/session/SessionManager.test.ts`, `src/session/SessionManager.snapshot.test.ts`, `src/providers/TerminalViewProvider.test.ts`, `src/webview/navigation/TerminalNavigationState.property.test.ts`, `src/webview/navigation/TerminalNavigationRestore.integration.test.ts`, and `src/test/invariants/terminalNavigationDocs.test.ts`, `src/webview/TabBar.test.ts` so stable ownership, atomic navigation, split reachability, restore precedence, and presence non-authority replace obsolete attribution behavior.
+
+
+## 5. Close review findings
+
+- [ ] 5_1 Close round-1 split completion blockers
+  - **Deps**: 4_2
+  - **Refs**: design.md D3, design.md D7; design.md OBL-3, design.md OBL-7
+  - **Acceptance**:
+    - Outcome: A delivered split child survives delayed acknowledgment, and attachment success is emitted only after a replayable committed effect batch completes.
+    - Verify: command pnpm exec vitest run src/providers/TerminalViewProvider.test.ts src/webview/navigation/TerminalNavigationController.test.ts src/webview/navigation/TerminalNavigationComposition.test.ts src/webview/navigation/TerminalNavigationState.test.ts src/webview/messaging/MessageRouter.test.ts
+  - **Plan**:
+    1. Distinguish undelivered from delivered-pending children in `src/providers/TerminalViewProvider.ts`; make `src/providers/TerminalViewProvider.test.ts` prove the host delivery deadline cannot destroy a delivered child and that failed delivery, explicit rejection, source loss, and disposal still clean up.
+    2. Make the webview request deadline send a correlated rejection in `src/webview/main.ts` and update the split result union in `src/types/messages.ts` plus `src/webview/messaging/MessageRouter.test.ts`.
+    3. Preserve and replay failed post-commit effects and queued intents in `src/webview/navigation/TerminalNavigationController.ts`; cover recovery in `src/webview/navigation/TerminalNavigationController.test.ts` and `src/webview/navigation/TerminalNavigationComposition.test.ts`, and gate attachment acknowledgment in `src/webview/main.ts` on successful reconciliation.
+    4. Reuse `tabOwningPane` in `src/webview/navigation/TerminalNavigationState.ts` and encode `terminalNavigationCommitted` as a coherent nullable-pair union in `src/types/messages.ts`.
+    5. Reconcile delivery-aware timeout and effect-recovery wording in `docs/design/worktree-scope.md`, `docs/design/xterm-integration.md`, `docs/design/message-protocol.md`, and `src/test/invariants/terminalNavigationDocs.test.ts`.
