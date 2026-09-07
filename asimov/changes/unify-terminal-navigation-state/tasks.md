@@ -13,7 +13,7 @@
     2. Add `src/webview/navigation/TerminalNavigationState.test.ts` and `src/webview/navigation/TerminalNavigationState.property.test.ts`; assert invariants with independent predicates rather than the production validator.
     3. Extend `src/webview/state/WebviewState.ts` and `src/webview/state/WebviewStateStore.ts`, and add `src/webview/state/WebviewStateStore.navigation.test.ts` for versioned checkpoint persistence, validation, explicit owner-empty state, and legacy field access.
 
-- [ ] 1_2 Add a queued commit-before-effects controller
+- [x] 1_2 Add a queued commit-before-effects controller — verified: pnpm exec vitest run src/webview/navigation/TerminalNavigationController.test.ts && pnpm exec vitest run src/webview/navigation/TerminalNavigationState.test.ts src/webview/navigation/TerminalNavigationState.property.test.ts exit 0
   - **Deps**: 1_1
   - **Refs**: specs/terminal-owner-navigation/spec.md#{navigation-changes-owner-tab-and-pane-as-one-action,navigation-is-isolated-per-surface}; design.md D3, design.md D4
   - **Acceptance**:
