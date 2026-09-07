@@ -48,8 +48,8 @@
   - **Refs**: design.md D4, design.md § Obligation ledger
   - **Boundary**: No executable statement or ordering changes; restore only the moved destructive-path rationale and the unreachable throw text accepted from round 1.
   - **Acceptance**:
-    - Outcome: F001 and F002 are closed, while the 218-case net and every destructive ordering remain unchanged.
+    - Outcome: F001 and F002 close; 218 cases and destructive ordering remain unchanged.
     - Verify: command pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/worktree/mutationService/ src/extension.worktreeMutations.test.ts
   - **Plan**:
-    1. Restore the base's phase-1, adopt/reattach, changed-path, current-emptiness, branch-name, unreadable-debris and `sourceOf` rationale beside the same guards in `src/worktree/mutationService/createRun.ts`.
+    1. Restore the base's phase-1, adoption, reattachment, changed-path, current-emptiness, branch-name, unreadable-debris and `sourceOf` rationale beside the same guards in `src/worktree/mutationService/createRun.ts`.
     2. Restore `sourceOf`'s exact unreachable throw message.

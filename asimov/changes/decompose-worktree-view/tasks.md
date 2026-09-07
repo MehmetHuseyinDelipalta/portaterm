@@ -233,4 +233,4 @@
   - **Plan**:
     1. Delete `ViewDepsSeam.view` and its pre-initialization wiring from `src/webview/worktree/controller/composeCreateDialogDeps.ts` and `src/webview/worktree/WorktreeController.ts` (F001).
     2. Correct the `rowMemoSeen` ownership statements in `src/webview/worktree/worktreeView/treeRender.ts` and `src/webview/worktree/worktreeView/worktreeRow.ts` (F003).
-    3. Delete the duplicate `createRepos` comment and the unused `IDLE_FOLD_THRESHOLD` re-export/comment from `src/webview/worktree/WorktreeController.ts` and `src/webview/worktree/WorktreeView.ts` (F004/F008).
+    3. Delete the duplicate `createRepos` comment and the unused `IDLE_FOLD_THRESHOLD` compatibility export and comment from `src/webview/worktree/WorktreeController.ts` and `src/webview/worktree/WorktreeView.ts` (findings F004 and F008).
