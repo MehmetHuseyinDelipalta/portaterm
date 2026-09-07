@@ -1,6 +1,6 @@
 ## 1. `worktreeMutationService.ts` — the types, then the two halves of the create
 
-- [ ] 4_1 Move what the service is asked for and answers with
+- [x] 4_1 Move what the service is asked for and answers with — verified: pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/worktree/mutationService/ src/extension.worktreeMutations.test.ts exit 0
   - **Deps**: none
   - **Refs**: design.md D1, design.md D1a, design.md D4
   - **Boundary**: `src/worktree/mutationService/serviceTypes.ts` is under 500 lines
