@@ -195,7 +195,7 @@
     3. Trim the destructures and imports the cut leaves unused in `src/providers/worktreeHost/actions/create.ts`.
     4. Run `bun run asm refactor shape src/providers/worktreeHost/actions/create.ts src/providers/worktreeHost/actions/create/debris.ts` and split `src/providers/worktreeHost/actions/create/debris.ts` again if it fires.
 
-- [ ] 2_15 Extract the folder picker
+- [x] 2_15 Extract the folder picker — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_14
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/actions/create/destinationPick.ts` is under 500 lines, and `src/providers/worktreeHost/actions/create.ts` never grows
