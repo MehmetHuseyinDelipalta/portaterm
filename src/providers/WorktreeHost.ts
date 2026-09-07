@@ -6,11 +6,6 @@
 // it; attaching costs no git command and no watcher, so a second panel showing
 // the same tree is free.
 
-import type {
-  ExtensionToWebViewMessage,
-  WebViewToExtensionMessage,
-  WorktreeSubscriptionLevel,
-} from "../types/messages";
 import { hasGitRepo } from "../worktree/hasGitRepo";
 import type { IgnoredMaterial } from "../worktree/ignoredMaterial";
 import type { MigrationOfferEvidence, MigrationRepositoryBinding } from "../worktree/migrateChanges";
@@ -18,11 +13,7 @@ import type { DelegationRoster } from "../worktree/presenceTypes";
 import { createProvisionOfferStore } from "../worktree/provisioning/offerStore";
 import { createRebuildGate } from "../worktree/rebuildGate";
 import { createWorktreeCache } from "../worktree/WorktreeCache";
-import {
-  buildWorktreeTreeDetailed,
-  listRegisteredRepoWorktrees,
-  type WorktreeTreeDeps,
-} from "../worktree/WorktreeDiscovery";
+import type { WorktreeTreeDeps } from "../worktree/WorktreeDiscovery";
 import { evaluateRemoval } from "../worktree/worktreeBlockers";
 import type { WorktreeWatch } from "../worktree/worktreeWatchTargets";
 import { createActionRouting } from "./worktreeHost/actionRouting";
@@ -59,6 +50,7 @@ export type {
 } from "./worktreeHost/hostTypes";
 
 import { isKnownSetupOutput } from "./worktreeHost/messageGuards";
+import { createSurfaceDelivery, type SurfaceState, WHOLE_TREE_SCOPE } from "./worktreeHost/surfaceDelivery";
 
 const LOG_PREFIX = "[worktree-host]";
 
@@ -66,9 +58,9 @@ const LOG_PREFIX = "[worktree-host]";
 export { EXTERNAL_SCAN_INTERVAL_MS, PRESENCE_MAX_LATENCY_MS } from "./worktreeHost/scanReconcile";
 
 /** The gate scope that rebuilds every repository; any other scope is a repoId. */
-export const WHOLE_TREE_SCOPE = "*";
+export { WHOLE_TREE_SCOPE } from "./worktreeHost/surfaceDelivery";
 
-import type { WorktreeAttachment, WorktreeHost, WorktreeHostOptions } from "./worktreeHost/hostOptions";
+import type { WorktreeHost, WorktreeHostOptions } from "./worktreeHost/hostOptions";
 
 /**
  * The host's own contract — what it is constructed with, what it hands back,
@@ -86,40 +78,12 @@ export type {
   WorktreeMutationReport,
 } from "./worktreeHost/mutationBindings";
 
-interface SurfaceState {
-  /**
-   * False until the surface says otherwise. All three surfaces retain their DOM
-   * while hidden, so a default of true would post into panels that have never
-   * shown the view — the cost this gate exists to avoid.
-   */
-  visible: boolean;
-  /**
-   * The window is displaying this surface. Independent of `visible`, and false
-   * for the same reason: `retainContextWhenHidden` means a surface that stopped
-   * being displayed still holds — and still means — its last declaration.
-   */
-  displayed: boolean;
-  /** Last computed `visible && displayed`, so the transition is edge-triggered. */
-  showing: boolean;
-  /**
-   * What this surface draws from presence while subscribed. Only `"rows"` needs
-   * per-row title and preview enrichment; a `"presence"` subscriber is drawing a
-   * scope's chip, escape control and count, none of which read either.
-   *
-   * Meaningless while `visible` is false, and deliberately not reset there: a
-   * surface that stops and restarts keeps its last declaration until it sends a
-   * new one, exactly as `visible` and `displayed` already do.
-   */
-  level: WorktreeSubscriptionLevel;
-}
-
 export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   const now = options.now ?? Date.now;
   const cache = createWorktreeCache();
   const surfaces = new Map<WorktreeSurface, SurfaceState>();
   const watches = new Map<string, WorktreeWatch>();
   const projector = options.projector;
-  let built = false;
   let disposed = false;
 
   /**
@@ -337,7 +301,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     gate: () => gate,
     surfaceStates: () => surfaces.values(),
     disposed: () => disposed,
-    built: () => built,
+    built: () => delivery.built(),
     projectionRun: () => loop.projectionRun(),
     requestProjection: (request) => loop.requestProjection(request),
     paneEvidence: () => paneEvidence,
@@ -369,7 +333,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     presence: () => presence(),
     withDelegations: (source) => withDelegations(source),
     broadcast: () => {
-      broadcast();
+      delivery.broadcast();
     },
     anyDrawingRows: () => anyDrawingRows(),
     enrichmentOwed: () => enrichmentOwed(),
@@ -384,7 +348,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
       console.warn(`${LOG_PREFIX} ${message}`, err);
     },
   });
-  const { worktreeIds, requestProjection, ensureProjection, commitAndBroadcast } = loop;
+  const { commitAndBroadcast } = loop;
 
   /**
    * The ordering key the listing sorts by. Read through the projector on every
@@ -502,7 +466,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     offers,
     cache,
     options,
-    deliver,
+    deliver: (surface, message) => delivery.deliver(surface, message),
     disposed: () => disposed,
     hasSurface: (surface) => surfaces.has(surface),
     surfaceKey,
@@ -528,7 +492,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     actionPath,
     admissibleLaunch,
     currentMigrationRegistration,
-    deliver,
+    deliver: (surface, message) => delivery.deliver(surface, message),
     disposed: () => disposed,
     bumpMigrationSequence,
     issueWithAdded,
@@ -544,145 +508,42 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   });
 
   /**
-   * Is there anything honest to send?
-   *
-   * `built` turns true when the first rebuild writes the cache, which is before
-   * its projection can have committed. Delivering in that window paired the
-   * live tree with a synthetic empty presence — every agent row missing, then
-   * appearing a moment later (.reviews/round-3.md B1). A host with no projector
-   * has no second half to wait for, so it is deliverable from its first build.
+   * What reaches an attached surface and when (task 2_12). Owns `built`, the
+   * rebuild that writes it, and the one delivery gate every push goes through.
    */
-  function deliverable(): boolean {
-    return loop.published() !== undefined || !projector;
-  }
-
-  function currentMessage(): ExtensionToWebViewMessage {
-    // Never the live cache: an uncommitted tree has no presence to pair with.
-    const envelope = loop.published() ?? { tree: cache.read(), presence: presence() };
-    return { type: "worktreeTreeResponse", tree: envelope.tree, presence: envelope.presence };
-  }
-
-  /**
-   * Deliver to one surface, or skip it. The gate lives here alone so a broadcast
-   * and a single-surface delivery cannot come to different answers about who may
-   * receive a push.
-   */
-  function postTo(surface: WorktreeSurface, state: SurfaceState, message: ExtensionToWebViewMessage): boolean {
-    if (!state.visible || !state.displayed || !surface.isReady()) {
-      return false;
-    }
-    return deliver(surface, message);
-  }
-
-  /**
-   * Post to one surface, containing a throw rather than abandoning the caller
-   * mid-way.
-   *
-   * The delivery gate is deliberately NOT here: a broadcast skips a surface that
-   * cannot receive a push, but an answer to a form the user has open is not a
-   * push, and applying the gate to it would drop the reply the form is waiting
-   * for. `postTo` adds the gate for the broadcast case (design.md D19).
-   *
-   * A dropped offer is not stranded: the offer store has already re-minted the
-   * id, so the form's next save names an id the host no longer knows and is
-   * answered with a fresh offer.
-   */
-  function deliver(surface: WorktreeSurface, message: ExtensionToWebViewMessage): boolean {
-    try {
-      surface.post(message);
-      return true;
-    } catch (err) {
-      console.warn(`${LOG_PREFIX} surface post threw — continuing`, err);
-      return false;
-    }
-  }
-
-  function broadcast(): void {
-    if (disposed || !deliverable()) {
-      return;
-    }
-    const message = currentMessage();
-    for (const [surface, state] of surfaces) {
-      postTo(surface, state, message);
-    }
-  }
-
-  /**
-   * Serve a surface that has just begun showing the view. Edge-triggered on both
-   * facts together, so a repeated report from either one is a no-op, and served
-   * from the cache: the watches ran while the surface was away, so a rebuild
-   * would re-read git for what is already held — and would push it to everyone.
-   *
-   * `serveOnRise` is false for the webview's own declaration, which arrives with
-   * a tree request behind it — serving that edge as well would post twice. The
-   * window displaying a surface again is the edge with no requester, which is
-   * the gap this exists to close.
-   */
-  function reconcileShowing(surface: WorktreeSurface, state: SurfaceState, serveOnRise: boolean): void {
-    const showing = state.visible && state.displayed;
-    if (showing === state.showing) {
-      return;
-    }
-    if (!showing) {
-      state.showing = false;
-      return;
-    }
-    if (disposed || !serveOnRise) {
-      state.showing = true;
-      return;
-    }
-    if (!built) {
-      // Nothing to serve yet; the build's own broadcast reaches this surface.
-      state.showing = true;
-      void gate.request(WHOLE_TREE_SCOPE, {});
-      return;
-    }
-    if (!deliverable()) {
-      // Built, but the first projection has not committed. The commit
-      // broadcasts to every showing surface, and this one now is.
-      state.showing = true;
-      return;
-    }
-    // Recorded only once it actually reached the surface. A post that was
-    // skipped as not-ready, or that threw, must not consume the edge — the next
-    // report would find nothing to do and the surface would stay stale.
-    state.showing = postTo(surface, state, currentMessage());
-  }
-
-  /**
-   * One rebuild, then one push. Broadcasting from inside the gate's run — not
-   * from each caller after awaiting — is what makes two concurrent requests
-   * produce a single push rather than one each.
-   */
-  async function rebuild(scope: string): Promise<void> {
-    if (disposed) {
-      return;
-    }
-    if (scope === WHOLE_TREE_SCOPE) {
-      const before = new Set(cache.read().repos.map((repo) => repo.repoId));
-      cache.applyBuild(await buildWorktreeTreeDetailed(options.workspaceFolders(), discoveryDeps));
-      built = true;
+  const delivery = createSurfaceDelivery({
+    options,
+    projector,
+    cache,
+    surfaces,
+    discoveryDeps,
+    published: () => loop.published(),
+    presence: () => presence(),
+    disposed: () => disposed,
+    gate: () => gate,
+    bumpTreeVersion: () => {
       treeVersion += 1;
-      reconcileWatches();
-      const live = new Set(cache.read().repos.map((repo) => repo.repoId));
-      forgetDepartedRepos(new Set([...before].filter((repoId) => !live.has(repoId))));
-    } else {
-      const root = cache.rootFor(scope);
-      if (root) {
-        cache.applyRepo(scope, await listRegisteredRepoWorktrees(root, discoveryDeps), discoveryDeps.rank);
-        treeVersion += 1;
-      }
-    }
-    // Every authoritative rebuild is an observation of what still exists, and
-    // D15 turns a confirmation off on exactly that observation. Doing it only
-    // in the removal path left a token alive for a worktree deleted any other
-    // way — by another window, or by hand (round-3 B5).
-    options.actions?.reconcileFingerprints?.(worktreeIds());
-    // The coordinator commits the envelope and publishes it — once.
-    await requestProjection();
-  }
+    },
+    reconcileWatches,
+    forgetDepartedRepos,
+    worktreeIds: () => loop.worktreeIds(),
+    requestProjection: () => loop.requestProjection(),
+    ensureProjection: () => {
+      loop.ensureProjection();
+    },
+    surfaceKey,
+    forgetSurfaceOpenings,
+    forgetSurfaceAssessments,
+    reconcileScan,
+    reconcileRowDrawing,
+    handleAction,
+    requestDelegations,
+    logWarn: (message, err) => {
+      console.warn(`${LOG_PREFIX} ${message}`, err);
+    },
+  });
 
-  const gate = createRebuildGate(rebuild, options.clock);
+  const gate = createRebuildGate(delivery.rebuild, options.clock);
 
   const paneSub = options.onPaneChange?.(onPaneChange);
 
@@ -692,127 +553,12 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     void gate.request(WHOLE_TREE_SCOPE, { force: true });
   });
 
-  function attach(surface: WorktreeSurface): WorktreeAttachment {
-    surfaces.set(surface, { visible: false, displayed: false, showing: false, level: "rows" });
-    return {
-      dispose: () => {
-        surfaces.delete(surface);
-        // The models this surface was shown go with it, and so does the
-        // opening that was shown them. Nothing else evicts either, so without
-        // this the store grows with every window ever opened, a stale id stays
-        // resolvable (.reviews/round-1.md B6), and the opening record outlives
-        // the window that held it (round-1 W1).
-        // A detached surface's openings can never be answered, and their
-        // enumerations would otherwise be retained for the life of the host.
-        // One routine for all three lifecycles now, so a channel added to
-        // retirement cannot reach close and miss detach.
-        forgetSurfaceOpenings(surfaceKey(surface));
-        // The assessments it was still owed go with it too. Kept beside rather
-        // than inside `forgetSurfaceOpenings`: that routine is the create
-        // form's three lifecycles, and a create form closing must not retire a
-        // removal assessment the user is waiting on.
-        //
-        // PROMPTNESS, not correctness, and deliberately not dressed as more:
-        // `pending` is non-empty only while a job is outstanding, and
-        // `takeNextAssess` already drops the entry of a departed surface, so
-        // removing this line changes no assertion in the suite. What it buys is
-        // releasing the surface reference now rather than holding it across an
-        // assessment that can run for the length of a git status timeout.
-        forgetSurfaceAssessments(surfaceKey(surface));
-        // Detaching is a falling edge too: the last showing surface going away
-        // this way would otherwise leave the scan armed for the window's life,
-        // and the last ROW-DRAWING surface would leave a turn order standing
-        // over identities nothing is drawing (design.md D10).
-        reconcileScan();
-        reconcileRowDrawing();
-      },
-      setDisplayed: (displayed: boolean) => {
-        const state = surfaces.get(surface);
-        if (state) {
-          state.displayed = displayed;
-          reconcileShowing(surface, state, true);
-          reconcileScan();
-          reconcileRowDrawing();
-        }
-      },
-    };
-  }
-
-  function handleMessage(surface: WorktreeSurface, msg: WebViewToExtensionMessage): void {
-    const state = surfaces.get(surface);
-    if (disposed || !state) {
-      return;
-    }
-    switch (msg.type) {
-      case "worktreeViewVisibility": {
-        state.visible = msg.visible;
-        // Absent means `"rows"`: the field is additive and a sender that predates
-        // it is declaring what it always declared.
-        state.level = msg.level ?? "rows";
-        reconcileShowing(surface, state, false);
-        reconcileScan();
-        reconcileRowDrawing();
-        return;
-      }
-      case "requestWorktreeSubagents":
-        requestDelegations(msg.rowId, msg.entryId);
-        return;
-      case "worktreeOpenFolder":
-      case "worktreeRevealInOS":
-      case "worktreeCopyPath":
-      case "worktreeOpenTerminal":
-      case "worktreeFocusPane":
-      case "worktreeOpenPreview":
-      case "worktreeCopyResumeCommand":
-      case "worktreeRevealAgentCwd":
-      case "worktreeCopyAgentPath":
-      case "worktreeLaunchAgent":
-      case "worktreeResumeHere":
-      case "worktreeCreate":
-      case "worktreeRemove":
-      case "worktreeRemoveAssess":
-      case "worktreeLock":
-      case "worktreeUnlock":
-      case "worktreePrune":
-      case "requestWorktreeCreateDefaults":
-      case "worktreeCreateClosed":
-      case "worktreeProvisionSwitch":
-      case "worktreeProvisionSave":
-      case "worktreeCopyFileAsk":
-      case "worktreeSetupStepAsk":
-      case "worktreeSetupRetry":
-      case "worktreeSetupViewOutput":
-      case "requestWorktreeRefs":
-      case "worktreeCreateProbe":
-      case "worktreePickDestination":
-      case "worktreeAuthorizeDebris":
-        handleAction(surface, msg);
-        return;
-      case "requestWorktreeTree":
-        // Nothing to serve before the first build, whatever the caller asked for.
-        if (msg.force === true || !built) {
-          void gate.request(WHOLE_TREE_SCOPE, { force: msg.force === true });
-          return;
-        }
-        if (!deliverable()) {
-          // Built but never committed — wait for the missing half rather than
-          // answering with a tree whose presence does not exist yet.
-          ensureProjection();
-          return;
-        }
-        broadcast();
-        return;
-      default:
-        return;
-    }
-  }
-
   return {
     // Folders are read here, not captured: a window that gained one since the
     // last init answers for the folder set the surface is booting against.
     initPayload: () => ({ worktreeHasRepo: hasGitRepo(options.workspaceFolders(), options.exists) }),
-    attach,
-    handleMessage,
+    attach: delivery.attach,
+    handleMessage: delivery.handleMessage,
     publishLaunchTargets,
     openingsHeld: () => openings.size,
 

@@ -149,7 +149,7 @@
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/projectionLoop.ts` and split `src/providers/worktreeHost/projectionLoop.ts` again if it fires.
     5. The dirty flag and the run move TOGETHER; a flag left behind makes the single-flight loop re-enter. Keep the `disposed` guard around the await (OBL-6) — a read resolving after dispose must write nothing.
 
-- [ ] 2_12 Extract what reaches a surface and when
+- [x] 2_12 Extract what reaches a surface and when — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_11
   - **Refs**: None
   - **Boundary**: `src/providers/WorktreeHost.ts` and every file under `src/providers/worktreeHost/` is under 500 lines
