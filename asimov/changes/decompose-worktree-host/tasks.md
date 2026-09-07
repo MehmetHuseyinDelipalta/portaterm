@@ -274,7 +274,7 @@ the create-form cluster's own wiring.
     3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
     4. Run `bun run asm refactor shape` on both and answer what fires.
 
-- [ ] 2_20 Extract the create-form cluster's wiring
+- [x] 2_20 Extract the create-form cluster's wiring — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_19
   - **Refs**: None
   - **Boundary**: `src/providers/WorktreeHost.ts` is under 500 lines, and every file under `src/providers/worktreeHost/` is under 500 lines
