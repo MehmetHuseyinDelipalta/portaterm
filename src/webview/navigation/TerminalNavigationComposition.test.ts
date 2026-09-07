@@ -4,7 +4,9 @@ import {
   applyTerminalNavigationProjection,
   navigationCatalogFromStore,
   rejectExpiredSplitRequest,
+  rollbackFailedNavigationTransaction,
   runRecoverableNavigationTransaction,
+  scheduleBoundedNavigationRecovery,
   worktreeIdForTerminalOwner,
 } from "./TerminalNavigationComposition";
 import { TerminalNavigationController, type TerminalNavigationEffects } from "./TerminalNavigationController";
@@ -175,7 +177,7 @@ describe("terminal navigation composition", () => {
     expect(effects).toEqual(["render", "persist", "render", "persist", "echo"]);
   });
 
-  it("does not acknowledge attachment while committed effects remain failed", () => {
+  it("rejects and removes an attached split when effect recovery remains failed", () => {
     const store = storeFixture();
     store.terminals.set("source", {});
     store.tabLayouts.set("source", createLeaf("source"));
@@ -192,19 +194,46 @@ describe("terminal navigation composition", () => {
     );
     let attached = false;
 
-    const effectsComplete = runRecoverableNavigationTransaction(
-      controller,
+    expect(
+      runRecoverableNavigationTransaction(
+        controller,
+        () => {
+          store.terminals.set("child", {});
+          store.tabLayouts.set("source", createLeaf("child"));
+          attached = true;
+          return true;
+        },
+        (catalog, state) => focusNavigationPane(catalog, state, "child"),
+      ),
+    ).toBe(false);
+    const results: string[] = [];
+    const scheduled: Array<() => void> = [];
+
+    scheduleBoundedNavigationRecovery(
+      (run) => scheduled.push(run),
+      () => store.terminals.has("child"),
+      () => controller.reconcileEffects(),
       () => {
-        store.terminals.set("child", {});
-        store.tabLayouts.set("source", createLeaf("child"));
-        attached = true;
-        return true;
+        rollbackFailedNavigationTransaction(
+          controller,
+          () => {
+            store.terminals.delete("child");
+            store.tabLayouts.set("source", createLeaf("source"));
+            return true;
+          },
+          (catalog, state) => focusNavigationPane(catalog, state, "source"),
+        );
+        results.push("rejected");
       },
-      (catalog, state) => focusNavigationPane(catalog, state, "child"),
     );
 
     expect(attached).toBe(true);
-    expect(effectsComplete).toBe(false);
+    expect(store.terminals.has("child")).toBe(true);
+    expect(scheduled).toHaveLength(1);
+    scheduled[0]();
+    expect(store.terminals.has("child")).toBe(false);
+    expect(controller.getState().activePaneByTab.source).toBe("source");
+    expect(results).toEqual(["rejected"]);
   });
 
   it("retains the active linked owner when its last tab requests replacement", () => {

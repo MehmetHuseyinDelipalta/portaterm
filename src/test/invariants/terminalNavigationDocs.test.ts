@@ -77,13 +77,14 @@ describe("terminal navigation documentation", () => {
 
   it("documents delivery-aware split timeout and recoverable attachment effects", () => {
     const scope = read("docs/design/worktree-scope.md");
-    expect(scope).toMatch(/delivery deadline.*only while.*not been delivered/is);
-    expect(scope).toMatch(/request deadline sends rejection/is);
-    expect(scope).toMatch(/acknowledged only after replayable.*effects complete/is);
+    expect(scope).toMatch(/never destroys a child while.*post is in flight/is);
+    expect(scope).toMatch(/request deadline rejects/is);
+    expect(scope).toMatch(/persistent effect failure.*scheduled retry.*detaches/is);
 
     const xterm = read("docs/design/xterm-integration.md");
-    expect(xterm).toMatch(/delivery cancels unilateral destruction/is);
+    expect(xterm).toMatch(/retains the capped pending child while.*in flight/is);
     expect(xterm).toMatch(/effect batch remains replayable.*queued intents intact/is);
+    expect(xterm).toMatch(/persistent failure.*animation-frame retry.*detached and rejected/is);
   });
 
   it("documents committed navigation and legacy message boundaries", () => {

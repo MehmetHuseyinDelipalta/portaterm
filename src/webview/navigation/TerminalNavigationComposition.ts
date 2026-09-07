@@ -40,6 +40,39 @@ export function rejectExpiredSplitRequest<T>(
   return true;
 }
 
+export function scheduleBoundedNavigationRecovery(
+  schedule: (run: () => void) => void,
+  isPending: () => boolean,
+  reconcile: () => boolean,
+  rollback: () => void,
+): void {
+  schedule(() => {
+    if (!isPending()) {
+      return;
+    }
+    let recovered = false;
+    try {
+      recovered = reconcile();
+    } catch {
+      // The rollback path below owns persistent failure convergence.
+    }
+    if (!recovered && isPending()) {
+      rollback();
+    }
+  });
+}
+
+export function rollbackFailedNavigationTransaction(
+  controller: TerminalNavigationController,
+  mutateCatalog: () => unknown,
+  transition: TerminalNavigationTransition,
+): void {
+  if (!controller.abandonFailedEffects()) {
+    return;
+  }
+  runRecoverableNavigationTransaction(controller, mutateCatalog, transition);
+}
+
 export function runRecoverableNavigationTransaction(
   controller: TerminalNavigationController,
   mutateCatalog: () => unknown,

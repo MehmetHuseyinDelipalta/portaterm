@@ -94,6 +94,15 @@ export class TerminalNavigationController {
     return this.enqueue({ mutateCatalog, transition, catalogChanged: true });
   }
 
+  abandonFailedEffects(): boolean {
+    if (this.processing) {
+      return false;
+    }
+    this.pendingEffects = null;
+    this.pending.length = 0;
+    return true;
+  }
+
   reconcileEffects(): boolean {
     if (this.processing || this.pendingEffects === null) {
       return false;

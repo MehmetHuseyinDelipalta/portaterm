@@ -347,11 +347,12 @@ sequenceDiagram
     WV->>EH: splitPaneAttachmentResult { attached | rejected }
 ```
 
-The response never targets the currently active tab. The host delivery deadline applies only until
-`splitPaneCreated` is posted successfully; delivery cancels unilateral destruction. The webview's
-request deadline sends an explicit rejection, while source loss and surface disposal still release
-pending children. A throwing committed effect batch remains replayable with queued intents intact,
-and `attached` is sent only after projection, persistence, and host echo complete.
+The response never targets the currently active tab. The host retains the capped pending child while
+`splitPaneCreated` is in flight; resolved-false delivery rolls it back, and resolved-true delivery
+waits for the webview's explicit result. The webview deadline rejects rather than silently forgetting
+the request. A throwing committed effect batch remains replayable with queued intents intact, and
+`attached` is sent only after projection, persistence, and host echo complete. Persistent failure gets
+one animation-frame retry, then the provisional local child is detached and rejected.
 
 ### 7.6 Active Navigation
 

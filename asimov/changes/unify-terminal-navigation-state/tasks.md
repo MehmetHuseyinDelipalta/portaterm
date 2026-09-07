@@ -161,7 +161,7 @@
     1. Replace the nonexistent OBL-1 witness paths in `asimov/changes/unify-terminal-navigation-state/design.md` with the shipped I18 and I19 witness suites.
 
 
-- [ ] 5_3 Close round-2 split convergence blockers
+- [x] 5_3 Close round-2 split convergence blockers — verified: pnpm exec vitest run src/providers/TerminalViewProvider.test.ts src/webview/navigation/TerminalNavigationController.test.ts src/webview/navigation/TerminalNavigationComposition.test.ts src/webview/split/SplitTreeRenderer.test.ts && pnpm exec vitest run src/test/invariants/terminalNavigationDocs.test.ts exit 0
   - **Deps**: 5_2
   - **Refs**: design.md D3, design.md D7; design.md OBL-3, design.md OBL-7
   - **Acceptance**:

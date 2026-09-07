@@ -149,7 +149,7 @@ line in `src/types/messages.ts`.
 | `closeTab` | W→E | Tab close requested | `:117` | TVP:1120 / TEP:555 |
 | `renameTab` | W→E | Inline rename committed | `:129` | TVP:1132 / TEP:566 |
 | `requestSplitSession` | W→E | Correlated split request `{ requestId, sourceTabId, sourcePaneId, direction }` | `:141` | TVP only |
-| `splitPaneAttachmentResult` | W→E | `attached` requires `{ requestId, newSessionId }`; `rejected` may omit the child id when the webview request deadline expires. Delivery cancels host timeout; attachment follows completed navigation effects | split contracts | TVP only |
+| `splitPaneAttachmentResult` | W→E | `attached` requires `{ requestId, newSessionId }`; `rejected` may omit the child id at webview deadline. In-flight posting retains the capped host child; persistent effect failure detaches locally before rejection | split contracts | TVP only |
 | `requestCloseSplitPane` | W→E | Destroy a split session after webview facts commit | `:157` | TVP / TEP |
 | `tabCreated` | E→W | Tab creation acknowledged | `:729` | MR:138 |
 | `tabRemoved` | E→W | Tab gone | `:759` | MR:141 |

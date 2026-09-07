@@ -1599,6 +1599,47 @@ describe("TerminalViewProvider: split attachment lifecycle", () => {
     sm.dispose();
   });
 
+  it("rejects a split response delivered after the host delivery deadline", async () => {
+    vi.useFakeTimers();
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers, postMessageSpy } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const root = sm.getTabsForView(provider.getViewId())[0].id;
+    let resolveDelivery!: (delivered: boolean) => void;
+    postMessageSpy.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        resolveDelivery = resolve;
+      }),
+    );
+
+    for (const handler of messageHandlers) {
+      handler({
+        type: "requestSplitSession",
+        requestId: "late-delivery",
+        sourceTabId: root,
+        sourcePaneId: root,
+        direction: "vertical",
+      });
+    }
+    const child = sm.getAllSessionsForView(provider.getViewId()).find((session) => session.isSplitPane)!.id;
+
+    await vi.advanceTimersByTimeAsync(5001);
+    expect(sm.getSession(child)).toBeDefined();
+    resolveDelivery(true);
+    await vi.advanceTimersByTimeAsync(0);
+    for (const handler of messageHandlers) {
+      handler({ type: "splitPaneAttachmentResult", requestId: "late-delivery", status: "rejected" });
+    }
+    await vi.waitFor(() => expect(sm.getSession(child)).toBeUndefined());
+
+    vi.useRealTimers();
+    sm.dispose();
+  });
+
   it("rolls back a child when response delivery fails", async () => {
     vi.useFakeTimers();
     const sm = new SessionManager();
@@ -1627,11 +1668,11 @@ describe("TerminalViewProvider: split attachment lifecycle", () => {
     sm.dispose();
   });
 
-  it("[I21] rolls back an unacknowledged child at the attachment deadline", async () => {
+  it("[I21] keeps an unresolved delivery tracked until surface disposal", async () => {
     vi.useFakeTimers();
     const sm = new SessionManager();
     const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
-    const { webviewView, messageHandlers, postMessageSpy } = createMockWebviewView();
+    const { webviewView, messageHandlers, postMessageSpy, disposeHandlers } = createMockWebviewView();
     provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
     for (const handler of messageHandlers) {
       handler({ type: "ready" });
@@ -1650,6 +1691,10 @@ describe("TerminalViewProvider: split attachment lifecycle", () => {
     const child = sm.getAllSessionsForView(provider.getViewId()).find((session) => session.isSplitPane)!.id;
 
     await vi.advanceTimersByTimeAsync(5001);
+    expect(sm.getSession(child)).toBeDefined();
+    for (const dispose of disposeHandlers) {
+      dispose();
+    }
     await vi.waitFor(() => expect(sm.getSession(child)).toBeUndefined());
     vi.useRealTimers();
     sm.dispose();

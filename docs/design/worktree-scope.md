@@ -128,12 +128,12 @@ for a replacement in it. The replacement becomes active only after its terminal 
 exist.
 
 A split request captures request id, source tab, source pane, and direction. The response attaches
-to that captured source, not whichever tab later became active. The host delivery deadline destroys
-a child only while `splitPaneCreated` has not been delivered. Successful delivery cancels that
-destructive timer; the capped pending child then waits for explicit attachment or rejection. The
-webview request deadline sends rejection instead of silently forgetting the request. Source loss and
-surface disposal still release pending children. Attachment is acknowledged only after replayable
-navigation effects complete.
+to that captured source, not whichever tab later became active. The host never destroys a child while
+its `splitPaneCreated` post is in flight: resolved-false delivery rolls back, while resolved-true
+delivery waits for explicit attachment or rejection. The webview request deadline rejects instead of
+silently forgetting the request, and surface disposal releases unresolved pending children. Attachment
+is acknowledged only after replayable navigation effects complete. Persistent effect failure gets one
+scheduled retry, then detaches the provisional child and sends correlated rejection.
 
 ## 5. Restore and reconciliation
 

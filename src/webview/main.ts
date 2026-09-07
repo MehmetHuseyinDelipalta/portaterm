@@ -43,7 +43,9 @@ import {
   applyTerminalNavigationProjection,
   navigationCatalogFromStore,
   rejectExpiredSplitRequest,
+  rollbackFailedNavigationTransaction,
   runRecoverableNavigationTransaction,
+  scheduleBoundedNavigationRecovery,
   worktreeIdForTerminalOwner,
 } from "./navigation/TerminalNavigationComposition";
 import { TerminalNavigationController } from "./navigation/TerminalNavigationController";
@@ -407,9 +409,9 @@ const navigationController = new TerminalNavigationController(
       },
       displayActive: (state) => {
         const tabs = [...splitTabsNeedingRender];
-        splitTabsNeedingRender.clear();
         for (const tabId of tabs) {
           splitRenderer.renderTabSplitTree(tabId);
+          splitTabsNeedingRender.delete(tabId);
         }
         displayNavigationState(state);
       },
@@ -452,6 +454,53 @@ const navigationController = new TerminalNavigationController(
 );
 
 // ─── Orchestration ──────────────────────────────────────────────────
+
+function scheduleFailedSplitAttachmentRollback(message: {
+  requestId: string;
+  sourceTabId: string;
+  newSessionId: string;
+}): void {
+  scheduleBoundedNavigationRecovery(
+    (run) => requestAnimationFrame(run),
+    () => pendingSplitAttachmentAcks.has(message.requestId),
+    () => navigationController.reconcileEffects(),
+    () => {
+      if (!pendingSplitAttachmentAcks.delete(message.requestId)) {
+        return;
+      }
+      const outcome: { result: ReturnType<typeof splitRenderer.closeSplitPaneById> } = { result: null };
+      rollbackFailedNavigationTransaction(
+        navigationController,
+        () => {
+          outcome.result = splitRenderer.closeSplitPaneById(message.newSessionId);
+          const result = outcome.result;
+          if (result?.kind !== "closed") {
+            return false;
+          }
+          activityTracker.delete(result.closedPaneId);
+          paneEvidenceReporter.forget(result.closedPaneId);
+          factory.disposeHoverController(result.closedPaneId);
+          splitTabsNeedingRender.add(result.tabId);
+          return true;
+        },
+        (catalog, state) =>
+          outcome.result?.kind === "closed" && state.activeTabId === outcome.result.tabId
+            ? focusNavigationPane(catalog, state, outcome.result.survivingPaneId)
+            : normalizeTerminalNavigationState(catalog, state, {
+                preserveExplicitEmpty: state.activeTabId === null,
+              }),
+      );
+      if (outcome.result?.kind === "closed") {
+        vscode.postMessage({
+          type: "splitPaneAttachmentResult",
+          requestId: message.requestId,
+          newSessionId: message.newSessionId,
+          status: "rejected",
+        });
+      }
+    },
+  );
+}
 
 function requestNewTerminal(
   worktreeId = worktreeIdForTerminalOwner(navigationController.getState().activeOwner),
@@ -776,7 +825,7 @@ const routeMessage = createMessageRouter({
     clearTimeout(pending.timer);
     pendingSplitRequests.delete(msg.requestId);
     let attached = false;
-    runRecoverableNavigationTransaction(
+    const effectsComplete = runRecoverableNavigationTransaction(
       navigationController,
       () => {
         attached = splitRenderer.handleSplitPaneCreated(msg, factory);
@@ -800,6 +849,8 @@ const routeMessage = createMessageRouter({
         newSessionId: msg.newSessionId,
         status: "rejected",
       });
+    } else if (!effectsComplete) {
+      scheduleFailedSplitAttachmentRollback(msg);
     }
   },
   onCloseSplitPaneById(msg) {
