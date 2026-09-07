@@ -225,14 +225,7 @@ setting says, because no pane of that row exists in this window to focus.
 
 ### Requirement: A focused pane is revealed where it actually lives
 
-WHEN a pane is focused from the panel, the surface that HOLDS that pane SHALL be revealed and
-the pane SHALL become the active one within it. The surface that raised the action SHALL NOT be
-revealed in its place when it is not the one holding the pane.
-
-#### Scenario: The pane lives in a surface other than the one asking
-
-- **WHEN** the panel is open in two surfaces and a row is focused whose pane belongs to the other one
-- **THEN** the surface holding the pane is revealed and that pane becomes active
+When a pane is focused from the panel, the surface holding that pane SHALL be revealed and SHALL atomically activate the pane's stable owner, containing tab, and exact pane. The asking surface SHALL NOT be revealed when another surface holds the pane.
 
 ### Requirement: The panel's mutating actions perform what they offer
 
@@ -791,42 +784,6 @@ A repository whose worktree listing failed SHALL NOT by itself cause any row und
 - **WHEN** a repository reports that its worktree listing failed, and no presence source is reported as failed
 - **THEN** every row under it keeps the activity it was given, and none is presented as `unknown`
 
-### Requirement: A worktree can be selected, and selection is an explicit act
-
-The panel SHALL let the user select one worktree, and SHALL treat selection as a deliberate act:
-no worktree SHALL be selected on the user's behalf at first render, on a reload, or on any push
-that changes the tree. At most one worktree SHALL be selected at a time, and selecting another
-SHALL replace the first rather than adding to it.
-
-Selection SHALL be reachable by keyboard as well as by pointer.
-
-#### Scenario: Nothing is selected until the user selects it
-
-- **WHEN** the panel renders a tree for the first time, or re-renders after a push
-- **THEN** no worktree is marked as selected
-
-#### Scenario: Selecting replaces rather than accumulates
-
-- **WHEN** the user selects one worktree and then another
-- **THEN** only the second is marked as selected
-
-### Requirement: The selected worktree is the only one marked as selected
-
-The treatment that marks the selected worktree SHALL be carried by that worktree and by no other,
-and SHALL NOT be carried by a worktree that is merely expanded, merely open as a workspace folder,
-or merely holding the strongest activity in the tree. Where no worktree is selected, no worktree
-SHALL carry it.
-
-#### Scenario: Expansion is not selection
-
-- **WHEN** several worktrees are expanded and one of them — or none of them — is selected
-- **THEN** the selection treatment is carried by the selected worktree alone, and by nothing at all when none is selected
-
-#### Scenario: Selection does not displace the open-folder mark
-
-- **WHEN** the selected worktree is not one the workspace holds open as a folder
-- **THEN** the open-folder mark stays on the worktrees that earn it, and the selection treatment stays on the selected one
-
 ### Requirement: An agent row gives its last activity a line of its own
 
 An agent row SHALL render at most two lines: identity, marks and age on the first, its
@@ -919,193 +876,20 @@ that only rows consume. Presence a subscriber can see SHALL be identical either 
 
 ### Requirement: A selection leaves the rail as the user left it
 
-Selecting a worktree SHALL NOT change whether the rail is open, in any layout. The rail's
-open/collapsed state SHALL be moved only by the controls the user operates — the header toggle,
-the toolbar button and the commands that open it.
-
-#### Scenario: Choosing a worktree in the stacked layout
-
-- **WHEN** the user selects a worktree while the panel is in the stacked layout
-- **THEN** the selection takes effect and the rail stays open
-
-#### Scenario: The two-column layout keeps the rail
-
-- **WHEN** the user selects a worktree while the rail and the terminal are shown side by side
-- **THEN** the rail stays open
+Changing the active terminal owner SHALL NOT change whether the worktree rail is open in any layout. Only the rail's own controls and commands SHALL change its open or collapsed state.
 
 ### Requirement: Scope does not depend on the layout
 
-The tab-bar scope a selection drives SHALL be identical in every layout: the same panes are
-hidden, the same escape control is offered, and the same count is carried on it, whether the rail
-is shown beside the terminal, stacked above it, or collapsed to its header strip.
-
-#### Scenario: The rail is collapsed while a scope is set
-
-- **WHEN** the rail is collapsed and a scope is set
-- **THEN** the scope is still named on screen and the control that clears it is still reachable
-
-### Requirement: Selecting a worktree opens an inspector under the tree
-
-Selecting a worktree SHALL open an inspector region **below** the tree rather than in place of it.
-Selecting a different worktree SHALL replace that region's contents rather than adding a second
-region.
-
-#### Scenario: A second selection replaces the first
-
-- **WHEN** the user selects one worktree and then another
-- **THEN** exactly one inspector region is present, and it describes the second worktree
-
-### Requirement: The inspector is bounded so the tree stays scannable
-
-The inspector region SHALL be bounded to at most half the panel body and SHALL scroll within that
-bound. The tree above it SHALL remain scrollable at any inspector content height, rather than
-growing to its own content height and being clipped by the panel.
-
-#### Scenario: The tree survives the selection
-
-- **WHEN** the inspector is open on a worktree whose contents exceed the bound
-- **THEN** the tree is still rendered above it and is still scrollable
-
-### Requirement: The inspector states the full path and rows still state none
-
-The inspector SHALL display the selected worktree's filesystem path in full. Opening it SHALL NOT
-cause any list row to display a path.
-
-#### Scenario: The path moves nowhere else
-
-- **WHEN** the inspector is open on a worktree
-- **THEN** its full path is readable in the inspector, and no row in the list displays a path
-
-### Requirement: The inspector names the model that no row names
-
-For each agent it presents, the inspector SHALL display that agent's model identifier when one is
-known, and SHALL display nothing in its place when none is. No list row SHALL display a model
-identifier whether or not the inspector is open.
-
-#### Scenario: An agent whose model is unknown
-
-- **WHEN** the inspector presents an agent for which no model was reported
-- **THEN** no model identifier and no placeholder for one is displayed for that agent
-
-### Requirement: A push that changes nothing changes no pixel of the inspector
-
-While the inspector is open, a push SHALL leave the inspector's rendered nodes in place, and SHALL
-NOT move focus that is inside it, unless it changed the selected worktree itself or an agent the
-inspector presents. A change to another worktree, to repository-level information, or to the
-health of the listing as a whole SHALL NOT rebuild it.
-
-#### Scenario: A poll arrives while the user is in the inspector
-
-- **WHEN** focus is on a control inside the open inspector and a push arrives that changed neither the selected worktree nor its agents
-- **THEN** that same node still exists and still holds focus
-
-### Requirement: The inspector keeps its own claims current without a push
-
-Where a claim the inspector presents changes with the passage of time rather than with a push, the
-inspector SHALL update that claim at the moment it changes, and SHALL agree with the tree's
-rendering of the same claim at every moment.
-
-#### Scenario: A running claim outlives its evidence while the inspector is open
-
-- **WHEN** an agent the inspector presents crosses the confirmation ceiling with no push arriving
-- **THEN** the inspector presents the same qualified state the tree presents for that agent
-
-### Requirement: The inspector offers only actions it can perform on this worktree
-
-An action that cannot be performed on the selected worktree SHALL be absent from the inspector
-rather than present and inert, under the same conditions that withhold it from the context menu.
-An action whose target is the repository rather than the worktree SHALL NOT be offered here.
-
-#### Scenario: A worktree whose directory is gone
-
-- **WHEN** the inspector is open on a worktree marked missing
-- **THEN** the actions that require the directory to exist are absent, and copying its path is still offered
-
-#### Scenario: The main worktree
-
-- **WHEN** the inspector is open on the main worktree
-- **THEN** no removal action is offered
-
-### Requirement: An inspector action performs what its menu equivalent performs
-
-Every action the inspector offers SHALL be resolved by the host from the worktree's identifier
-rather than from a path the view supplied, and SHALL perform the same operation as the equivalent
-context-menu item.
-
-#### Scenario: A removal raised from the inspector
-
-- **WHEN** the user raises the removal action from the inspector
-- **THEN** the same confirmation of what would be destroyed is required as when it is raised from the context menu
-
-### Requirement: The inspector carries the delegation history of each agent it presents
-
-For each agent it presents, the inspector SHALL show that agent's delegation history without
-requiring a further disclosure, and SHALL distinguish a history not yet read, one that could not
-be read, one read as empty, one read as incomplete, and an agent with no session to read a history
-from — never presenting any of them as an agent that delegated nothing.
-
-An agent presented outside this window SHALL NOT be offered focus in the inspector.
-
-#### Scenario: The history has not arrived yet
-
-- **WHEN** the inspector opens on a worktree whose agent's delegations have not been read
-- **THEN** that agent's section says the history is being read, rather than that there is none
-
-#### Scenario: An agent with no session to read
-
-- **WHEN** the inspector presents an agent whose session was never resolved
-- **THEN** that agent's section says the history cannot be read, rather than waiting on a read that was never asked for
+Owner navigation and filtering SHALL be identical in every layout. The same owner, tabs, active pane, linked-owner indicator, and empty state SHALL be presented whether the rail is beside, above, below, or collapsed beside the terminal.
 
 ### Requirement: A history is requested once per session, and again if that session returns
 
-A delegation history SHALL be requested at most once for a given agent row and session across
-every surface that presents it, and SHALL be requestable again after that row has left and
-returned.
+A delegation history SHALL be requested at most once for a given agent row and session across every surface that presents it, and SHALL be requestable again after that row has left and returned.
 
-#### Scenario: The same agent is presented twice at once
+#### Scenario: The same agent is presented in two trees
 
-- **WHEN** an agent is presented in both the tree and the inspector and its history has not been read
+- **WHEN** an agent row is presented on two surfaces and its history has not been read
 - **THEN** exactly one request for that history is made
-
-### Requirement: Dismissing the inspector leaves the selection and the scope alone
-
-The inspector SHALL offer an explicit control that closes it, and SHALL close on the Escape key
-while focus is within the panel body it occupies and no overlay above it is open. Closing it SHALL
-NOT change which worktree is selected and SHALL NOT change the surface's tab-bar scope.
-
-Activating the already-selected worktree again SHALL reopen a closed inspector. Clearing the
-selection SHALL close it.
-
-#### Scenario: Closing keeps the scope
-
-- **WHEN** the user closes the inspector while a scope is held
-- **THEN** the scope is unchanged and the worktree stays selected
-
-#### Scenario: Reopening after a dismissal
-
-- **WHEN** the user closes the inspector and then activates the same worktree row again
-- **THEN** the inspector is open again on that worktree
-
-#### Scenario: An overlay is open above it
-
-- **WHEN** the user presses Escape with a session preview open over the panel
-- **THEN** the preview closes and the inspector stays open
-
-### Requirement: The inspector does not take focus and gives it back
-
-Opening the inspector SHALL leave focus where it was, and every control and row it presents SHALL
-be reachable by keyboard. Where focus is inside the inspector when it closes, focus SHALL return
-to the row that opened it, or to the tree itself where that row is no longer rendered.
-
-#### Scenario: Opening does not move focus
-
-- **WHEN** the user selects a worktree row by keyboard
-- **THEN** focus is still on that row after the inspector opens
-
-#### Scenario: Closing from inside returns focus
-
-- **WHEN** the user activates the inspector's close control
-- **THEN** focus is on the worktree row the inspector was describing
 
 ### Requirement: A setting the panel no longer reads decides nothing
 
@@ -3693,4 +3477,22 @@ what is drawn.
 
 - **WHEN** no row in a worktree holds a proven agent
 - **THEN** the group draws no agent rows
+
+### Requirement: Only an active linked owner marks a worktree row
+
+The panel SHALL mark exactly the linked worktree whose terminal owner is active. Main SHALL mark no worktree row because the global main terminal bucket is not owned by one repository. Focusing, creating, resuming, or restoring a linked-owned terminal SHALL move the mark without moving keyboard focus inside the tree.
+
+#### Scenario: Focus a linked session from main
+
+- **WHEN** main is active and the user focuses a session owned by linked worktree A
+- **THEN** A alone is marked and the chosen terminal pane receives focus
+
+#### Scenario: Activate main in a multi-root workspace
+
+- **WHEN** a workspace has several repositories and any main worktree row activates the global main owner
+- **THEN** no repository-specific main row is marked
+
+### Requirement: Worktree row activation requests one navigation transition
+
+Activating a worktree row SHALL request one owner-navigation transition. It SHALL NOT independently mutate selected-row state, tab filtering, active tab, or active pane.
 

@@ -1,0 +1,32 @@
+{
+  "rounds": [
+    {
+      "round": 1,
+      "mode": "discovery",
+      "blocking": 2,
+      "verdict": "BLOCK",
+      "at": 1788792208510,
+      "elapsedMs": 795600,
+      "specialists": 6
+    },
+    {
+      "round": 2,
+      "mode": "verification",
+      "blocking": 2,
+      "verdict": "BLOCK",
+      "at": 1788795811941,
+      "elapsedMs": 465237,
+      "specialists": 2
+    },
+    {
+      "round": 3,
+      "mode": "verification",
+      "blocking": 1,
+      "verdict": "BLOCK",
+      "at": 1788797242631,
+      "elapsedMs": 409171,
+      "specialists": 2
+    }
+  ],
+  "overrides": []
+}
