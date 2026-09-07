@@ -69,6 +69,7 @@ asimov/changes/.active*.tmp
 asimov/debug/*/lease.json
 asimov/debug/*/lease.json.*.tmp
 asimov/debug/*/lease.lock/
+.claude/commands/asimov-brd-review-start.md
 
 # asimov
 .opencode/plugins/asimov.ts
