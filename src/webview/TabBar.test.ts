@@ -681,7 +681,7 @@ describe("a scope is named wherever it is in force", () => {
       ["b", { name: "b" }],
     ]);
 
-  it("[I19] carries a chip naming the worktree exactly while scoped, and none when not", () => {
+  it("[I19] carries an indicator exactly for a linked owner, and none for main", () => {
     const deps = createMockDeps({ terminals: two(), scope: { worktreeId: "/wt/scope", label: "feat/here" } });
     renderTabBar(deps);
     expect(chip(deps.tabBarEl)?.textContent).toContain("Worktree");

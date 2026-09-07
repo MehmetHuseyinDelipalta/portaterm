@@ -29,7 +29,7 @@ function checkpoint(
 }
 
 describe("restoreTerminalNavigation", () => {
-  it("lets a valid checkpoint outrank live host and legacy hints", () => {
+  it("[I22] lets a valid checkpoint outrank live host and legacy hints", () => {
     const facts = catalog({ main: MAIN_TERMINAL_OWNER, a: linked("/wt/a") });
     const result = restoreTerminalNavigation({
       catalog: facts,

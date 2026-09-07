@@ -89,7 +89,7 @@ function generatedCase(seed: number): {
 }
 
 describe("TerminalNavigationState properties", () => {
-  it("normalization always produces independently live references", () => {
+  it("[I20] normalization always produces independently live references", () => {
     for (let seed = 0; seed < 500; seed++) {
       const { catalog, candidate } = generatedCase(seed);
       const normalized = normalizeTerminalNavigationState(catalog, candidate);

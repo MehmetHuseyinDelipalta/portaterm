@@ -129,9 +129,9 @@ line in `src/types/messages.ts`.
 | `resize` | W→E | New cols/rows | `:94` | TVP:955 / TEP:494 |
 | `ack` | W→E | Flow-control credit, batched per 5000 chars (`:173`) | `:171` | TVP:967 / TEP:506 |
 | `clear` | W→E | Clear scrollback | `:164` | TVP:1138 / TEP:583 |
-| `focus` | W→E | View focused; reports the active pane for split routing | `:180` | TVP:1197 only |
+| `focus` | W→E | Surface-focus recency only; never writes tab/pane routing | `:180` | TVP only |
 | `scrollbackDump` | W→E | Scrollback text, answering `requestScrollbackDump` | `:1349` | TVP:973 / TEP:512 |
-| `init` | E→W | Initial state: tabs (with `isSplitPane` `:692`), `rootGeneration` `:702`, `workspaceRoot` `:704` | `:671` | main.ts |
+| `init` | E→W | Terminal catalog plus `navigationBootstrap` and optional validated live `navigationHint` | `:671` | main.ts |
 | `output` | E→W | Buffered PTY output | `:711` | MR:132 |
 | `exit` | E→W | PTY exited | `:720` | MR:135 |
 | `restore` | E→W | Scrollback replay after webview re-creation | `:766` | MR:147 |
@@ -143,17 +143,19 @@ line in `src/types/messages.ts`.
 
 | Type | Dir | Purpose | Defined | Handled |
 |------|-----|---------|---------|---------|
-| `createTab` | W→E | New tab requested | `:105` | TVP:990 / TEP:529 |
-| `switchTab` | W→E | Active tab changed | `:110` | TVP:1114 / TEP:549 |
+| `createTab` | W→E | New main-owner tab requested | `:105` | TVP / TEP |
+| `terminalNavigationCommitted` | W→E | Nullable `{ activeTabId, activePaneId }` pair; host validates and updates routing atomically | navigation contracts | TVP / TEP |
+| `switchTab` | W→E | Deprecated compatibility message; providers intentionally ignore it | `:110` | no routing writer |
 | `closeTab` | W→E | Tab close requested | `:117` | TVP:1120 / TEP:555 |
 | `renameTab` | W→E | Inline rename committed | `:129` | TVP:1132 / TEP:566 |
-| `requestSplitSession` | W→E | Split a pane | `:141` | TVP:1144 only |
-| `requestCloseSplitPane` | W→E | Close a split pane | `:157` | TVP:1188 / TEP:572 |
+| `requestSplitSession` | W→E | Correlated split request `{ requestId, sourceTabId, sourcePaneId, direction }` | `:141` | TVP only |
+| `splitPaneAttachmentResult` | W→E | Acknowledge `{ requestId, newSessionId, status: "attached" | "rejected" }`; rejection releases pending child ownership | split contracts | TVP only |
+| `requestCloseSplitPane` | W→E | Destroy a split session after webview facts commit | `:157` | TVP / TEP |
 | `tabCreated` | E→W | Tab creation acknowledged | `:729` | MR:138 |
 | `tabRemoved` | E→W | Tab gone | `:759` | MR:141 |
 | `tabRenamed` | E→W | Host-normalized name | `:747` | MR:144 |
 | `splitPane` | E→W | Command-initiated split | `:799` | MR:156 |
-| `splitPaneCreated` | E→W | Reply to `requestSplitSession` (posted TVP:1169) | `:806` | MR:159 |
+| `splitPaneCreated` | E→W | Correlated child reply echoing request/source/direction and naming `newSessionId` | `:806` | MR |
 | `closeSplitPaneById` | E→W | Close a named pane | `:824` | MR:165 |
 | `splitPaneAt` | E→W | Split a named pane | `:830` | MR:168 |
 | `flashPane` | E→W | Flash a leaf so the user sees which pane exports; no-op when unmounted (`:1269-1274`) | `:1275` | MR:222 |
@@ -304,9 +306,11 @@ branches. The ordering in the diagram is load-bearing:
    window a transient failure would otherwise let `restore` reach a webview that has not
    processed `init`, mis-wrapping a deferred-open terminal with a default-config
    instance (`TEP:755-757`).
-4. On re-creation, `updateWebviewForView` runs **before** replay — otherwise the
-   surviving sessions still hold the disposed webview and every post silently no-ops
-   (`TEP:786-789`).
+4. On re-creation, `updateWebviewForView` runs **before** replay — otherwise surviving sessions
+   still hold the disposed webview.
+5. Snapshot replay registers terminal facts only. The webview restores navigation after catalog
+   construction using checkpoint → live hint (live bootstrap only) → one-shot legacy migration →
+   deterministic main fallback.
 
 ### 5.2 `filePreviewResult` status ladder
 
@@ -384,7 +388,7 @@ Verified by grep against the union and both dispatch sites. Recorded, not fixed.
 | # | Gap | Evidence |
 |---|-----|----------|
 | 1 | `requestSplitSession` is editor-blind, but the path is **unreachable**, not a live drop: the webview only sends it in reply to `splitPane` / `splitPaneAt`, and both are posted through view-provider-only helpers. The adjacent real bug is that a right-click split on an editor-hosted session resolves to no provider and falls back to the focused view, so the new pane appears in the **wrong surface** | Handled TVP:1144 only; senders `webview/main.ts:575`, `:610` are `onSplitPane` / `onSplitPaneAt` reactions; posters `extension.ts:403-409` and `:577-583` take a `TerminalViewProvider`; `getProviderBySessionId` scans only sidebar + panel (`extension.ts:553`) |
-| 2 | `focus` is editor-blind **and live** — it is sent from a `focusin` listener on `document`, so every focus in an editor-hosted terminal posts a message nothing handles | Handled TVP:1197 only; sender is a DOM listener at `webview/main.ts:1298-1321`, independent of host messages |
+| 2 | `focus` remains editor-blind, but it carries recency only; editor routing is committed by `terminalNavigationCommitted` | The editor provider handles the committed pair and does not need the view-provider recency signal |
 | 3 | All 15 vault requests are editor-blind except `requestSubagentPreview` | `TEP:420-665` has no `vault*` cases; the sole overlap is TEP:639 |
 | 4 | `OUT_OF_WORKSPACE` is a documented-but-dead error code — no emitter exists, and reads are deliberately not workspace-restricted | Documented `:968`, `:987`; emitters are `STALE_ROOT`/`FS_ERROR` (`fileTreeRpcHandler.ts:148,174`) and `STALE_ROOT`/`INTERNAL`; removal recorded in `src/test/fileTreeRpc.integration.test.ts:151` |
 | 5 | `filePreviewResult.truncated` doc says "200 KB / 500-line cap"; the line cap is 1000 | Doc `:876-877`; `readFileForPreview.ts:29` records the 500 → 1000 bump |

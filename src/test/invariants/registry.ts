@@ -171,13 +171,34 @@ export const INVARIANTS: readonly InvariantRow[] = [
   },
   {
     id: "I19",
-    statement: "No filter is invisible, and none silences an attention state",
-    // Both tasks: WT-010.1 shipped the chip, WT-010.2 the count it carries. The
-    // statement is conjunctive, so each clause has its own tagged test — one tag
-    // would leave the other half asserting itself.
+    statement: "A linked owner is always named, and no hidden waiting tab is silenced",
     owners: ["WT-010.1", "WT-010.2"],
+    stimulus: "Omit the linked-owner indicator, or silence the badge for a hidden tab only one waiting source reports",
+    status: "covered",
+  },
+  {
+    id: "I20",
+    statement:
+      "Committed terminal navigation always names one owner, one valid root tab or none, and one live pane per retained tab",
+    owners: ["WT-010.1"],
     stimulus:
-      "Omit the chip while a scope is set, or silence the badge for a tab only one of the two sources reports waiting",
+      "Normalize or commit a state whose active tab belongs to another owner or whose retained pane is not a live leaf",
+    status: "covered",
+  },
+  {
+    id: "I21",
+    statement: "Every host-created split child is attached and acknowledged or destroyed without becoming unreachable",
+    owners: ["WT-010.1"],
+    stimulus: "Let rejection, failed delivery, source loss, or attachment timeout retain a never-attached split child",
+    status: "covered",
+  },
+  {
+    id: "I22",
+    statement:
+      "Restore applies one validated checkpoint or fallback after terminal facts exist; replay order never chooses navigation",
+    owners: ["WT-010.1"],
+    stimulus:
+      "Let replay order, a stale host hint, or legacy scope override a valid checkpoint or manufacture an active restored tab",
     status: "covered",
   },
 ];

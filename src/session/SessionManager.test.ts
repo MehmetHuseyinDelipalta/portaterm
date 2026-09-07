@@ -155,7 +155,7 @@ describe("SessionManager: createSession", () => {
     sm.dispose();
   });
 
-  it("keeps a stable linked-worktree owner when cwd changes", () => {
+  it("[I18] keeps a stable linked-worktree owner when cwd changes", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
     const id = sm.createSession("anywhereTerminal.sidebar", webview, {

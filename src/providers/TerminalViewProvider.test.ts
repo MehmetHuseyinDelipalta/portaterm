@@ -1562,7 +1562,7 @@ describe("TerminalViewProvider: split attachment lifecycle", () => {
     sm.dispose();
   });
 
-  it("rolls back an unacknowledged child at the attachment deadline", async () => {
+  it("[I21] rolls back an unacknowledged child at the attachment deadline", async () => {
     vi.useFakeTimers();
     const sm = new SessionManager();
     const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");

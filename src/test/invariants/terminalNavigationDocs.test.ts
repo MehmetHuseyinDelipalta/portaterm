@@ -8,6 +8,10 @@ const files = [
   "docs/design/worktree-panel-ui.md",
   "docs/design/worktree-agent-presence.md",
   "docs/design/worktree-rpc.md",
+  "docs/design/xterm-integration.md",
+  "docs/design/session-manager.md",
+  "docs/design/message-protocol.md",
+  "docs/DESIGN.md",
 ] as const;
 
 const read = (file: (typeof files)[number]): string => fs.readFileSync(path.join(root, file), "utf8");
@@ -52,5 +56,37 @@ describe("terminal navigation documentation", () => {
     expect(text).toContain("terminalNavigationCommitted");
     expect(text).toMatch(/activeTabId.*activePaneId.*nullable pair/is);
     expect(text).toMatch(/worktree row activation.*webview-local owner intent/i);
+  });
+
+  it("documents controller-owned xterm navigation and correlated split completion", () => {
+    const text = read("docs/design/xterm-integration.md");
+    expect(text).toContain("TerminalNavigationController.transaction");
+    expect(text).toMatch(/requestId, sourceTabId, sourcePaneId, direction/);
+    expect(text).toContain("splitPaneAttachmentResult");
+    expect(text).toMatch(/snapshot replay order never.*chooses the active tab/is);
+    expect(text).not.toMatch(/store\.activeTabId\s*=|postMessage\(\{type:'switchTab'/);
+  });
+
+  it("documents stable SessionManager ownership and atomic routing", () => {
+    const text = read("docs/design/session-manager.md");
+    expect(text).toMatch(/stable optional.*`worktreeId`/is);
+    expect(text).toContain("commitNavigation(viewId, activeTabId, activePaneId)");
+    expect(text).toMatch(/Partial pairs, unknown panes, wrong views, and mismatched roots are rejected/);
+    expect(text).toMatch(/Snapshot replay order therefore cannot choose navigation/);
+  });
+
+  it("documents committed navigation and legacy message boundaries", () => {
+    const text = read("docs/design/message-protocol.md");
+    expect(text).toMatch(/`focus`.*recency only/);
+    expect(text).toMatch(/`switchTab`.*Deprecated compatibility message/);
+    expect(text).toMatch(/`terminalNavigationCommitted`.*Nullable/);
+    expect(text).toContain("splitPaneAttachmentResult");
+  });
+
+  it("supersedes reset-based restore in the architecture registry", () => {
+    const text = read("docs/DESIGN.md");
+    expect(text).toMatch(/D50.*Superseded by D51/);
+    expect(text).toMatch(/D51.*V1 checkpoint/);
+    expect(text).toContain("I22");
   });
 });

@@ -125,7 +125,7 @@
     2. Update `docs/design/worktree-panel-ui.md`, `docs/design/worktree-agent-presence.md`, and `docs/design/worktree-rpc.md` to remove inspector, `All`, presence-membership, and independent selection claims.
     3. Add `src/test/invariants/terminalNavigationDocs.test.ts` to inspect every changed navigation document for required authority statements and retired terms.
 
-- [ ] 4_2 Reconcile terminal architecture and invariant registry
+- [x] 4_2 Reconcile terminal architecture and invariant registry — verified: pnpm exec vitest run src/test/invariants/coverage.test.ts src/test/invariants/terminalNavigationDocs.test.ts && pnpm exec vitest run src/session/SessionManager.test.ts src/session/SessionManager.snapshot.test.ts src/providers/TerminalViewProvider.test.ts src/webview/navigation/TerminalNavigationState.property.test.ts src/webview/navigation/TerminalNavigationRestore.integration.test.ts src/webview/TabBar.test.ts exit 0
   - **Deps**: 4_1, 3_4
   - **Refs**: specs/terminal-owner-navigation/spec.md#{every-terminal-has-one-stable-owner,restore-uses-one-versioned-navigation-checkpoint,restore-validates-saved-navigation-against-terminal-facts,snapshot-replay-order-never-chooses-restored-navigation,presence-reports-activity-but-never-terminal-ownership}; design.md D1, design.md D3, design.md D5, design.md D6
   - **Acceptance**:
@@ -133,4 +133,4 @@
     - Verify: command pnpm exec vitest run src/test/invariants/coverage.test.ts src/test/invariants/terminalNavigationDocs.test.ts
   - **Plan**:
     1. Update `docs/design/xterm-integration.md`, `docs/design/session-manager.md`, `docs/design/message-protocol.md`, and `docs/DESIGN.md`; supersede D50 and document checkpoint and host echo boundaries.
-    2. Update `src/test/invariants/registry.ts`, `src/session/SessionManager.test.ts`, `src/session/SessionManager.snapshot.test.ts`, `src/providers/TerminalViewProvider.test.ts`, `src/webview/navigation/TerminalNavigationState.property.test.ts`, `src/webview/navigation/TerminalNavigationRestore.integration.test.ts`, and `src/test/invariants/terminalNavigationDocs.test.ts` so stable ownership, atomic navigation, split reachability, restore precedence, and presence non-authority replace obsolete attribution behavior.
+    2. Update `src/test/invariants/registry.ts`, `src/session/SessionManager.test.ts`, `src/session/SessionManager.snapshot.test.ts`, `src/providers/TerminalViewProvider.test.ts`, `src/webview/navigation/TerminalNavigationState.property.test.ts`, `src/webview/navigation/TerminalNavigationRestore.integration.test.ts`, and `src/test/invariants/terminalNavigationDocs.test.ts`, `src/webview/TabBar.test.ts` so stable ownership, atomic navigation, split reachability, restore precedence, and presence non-authority replace obsolete attribution behavior.

@@ -312,68 +312,81 @@ During the drag only inline `flex` values change (no model write, no refit). On 
 
 ### 7.4 Orchestration — `src/webview/split/SplitTreeRenderer.ts`
 
-| Method | Responsibility | Cite |
-|---|---|---|
-| `renderTabSplitTree(tabId)` | find/create `div[data-tab-id]`, run prior handle cleanups, clear + re-render the tree, reparent terminal containers, wire click-to-focus, attach resize handles | `SplitTreeRenderer.ts:61` |
-| `showTabContainer` / `hideTabContainer` | `display: flex` / `none` on the tab container | `SplitTreeRenderer.ts:169,217` |
-| `updateActivePaneVisual(tabId)` | `.active-pane` on the active leaf — **only when the layout is a branch** (no indicator for single-pane tabs) | `SplitTreeRenderer.ts:185-212` |
-| `removeTab(tabId)` | dispose every non-root pane terminal, post `requestCloseSplitPane` per pane, remove the DOM container, drop layout/active-pane/cleanup state; returns the disposed split session ids | `SplitTreeRenderer.ts:233` |
-| `closeSplitPaneById(paneSessionId)` | `removeLeaf` → if the tree empties or was a lone leaf, post `closeTab` instead; otherwise dispose the pane, post `requestCloseSplitPane`, re-render, refit, focus the surviving first leaf | `SplitTreeRenderer.ts:283` |
-| `handleSplitPaneCreated(msg, factory)` | create the pane terminal with `isSplitPane: true`, `replaceNode(sourcePaneId, createBranch(direction, source, new))`, set it active, re-render, refit, focus | `SplitTreeRenderer.ts:349` |
+`SplitTreeRenderer` owns geometry and terminal facts, not navigation effects.
 
-### 7.5 Split Creation Round-Trip
+| Method | Responsibility |
+|---|---|
+| `renderTabSplitTree(tabId)` | Render the current split model, reparent terminal containers, and attach resize/focus intents |
+| `showTabContainer` / `hideTabContainer` | Project active root-tab visibility |
+| `updateActivePaneVisual(tabId)` | Project `.active-pane` on a branch layout |
+| `removeTab(tabId)` | Remove a complete root layout and return its split session ids for lifecycle cleanup |
+| `closeSplitPaneById(paneId)` | Mutate topology and terminal facts only; return the owning tab and surviving pane, or a whole-tab close intent |
+| `handleSplitPaneCreated(msg, factory)` | Validate the captured source and attach the child fact to that source tab; perform no render, persistence, or focus |
+
+The caller runs close and completion mutations inside `TerminalNavigationController.transaction`.
+The controller reads the post-mutation catalog, commits coherent navigation, and only then renders,
+focuses, syncs Vault, persists, and emits host routing.
+
+### 7.5 Correlated Split Creation
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant EXT as Extension Host
-    participant WV as main.ts
+    participant WV as WebView
+    participant EH as Extension Host
+    participant SM as SessionManager
+    participant NC as Navigation Controller
     participant SR as SplitTreeRenderer
-    participant TF as TerminalFactory
 
-    U->>EXT: Cmd+\ (splitVertical) / context menu
-    EXT->>WV: { type: 'splitPane', direction }
-    WV->>WV: resolve activePaneId = tabActivePaneIds.get(activeTabId) ?? activeTabId
-    WV->>EXT: { type: 'requestSplitSession', direction, sourcePaneId, rootTabId }
-    EXT->>EXT: SessionManager creates a new PTY session (isSplitPane: true)
-    EXT->>WV: { type: 'splitPaneCreated', newSessionId, newSessionName, direction, sourcePaneId }
-    WV->>SR: handleSplitPaneCreated(msg, factory)
-    SR->>TF: createTerminal(newSessionId, …, { isSplitPane: true })
-    SR->>SR: replaceNode(layout, sourcePaneId, createBranch(...))
-    SR->>SR: renderTabSplitTree + showTabContainer + persist
-    SR->>SR: rAF → debouncedFitAllLeaves(tabId) → focus new pane
+    WV->>EH: requestSplitSession { requestId, sourceTabId, sourcePaneId, direction }
+    EH->>SM: create pending child with source owner + rootTabId
+    EH-->>WV: splitPaneCreated { same correlation, newSessionId }
+    WV->>NC: transaction
+    NC->>SR: validate source and attach child facts
+    NC->>NC: commit child only if captured source tab is still active
+    NC-->>WV: ordered projection/effect batch
+    WV->>EH: splitPaneAttachmentResult { attached | rejected }
 ```
 
-The `splitPaneAt` variant carries an explicit `sourcePaneId` (right-click on a specific pane): main.ts makes that pane active first, then sends the same `requestSplitSession` (`main.ts:606-617`).
+The response never targets the currently active tab. Rejection, failed delivery, source loss,
+surface disposal, or attachment timeout destroys a never-attached child. An attached acknowledgment
+removes it from pending rollback ownership.
 
-### 7.6 Active-Pane Resolution
+### 7.6 Active Navigation
 
-`activeTabId` is a **root-tab** concept; a split pane is never `activeTabId` (`TerminalFactory.ts:530-533`). The active *pane* is `store.tabActivePaneIds.get(activeTabId) ?? activeTabId` — this expression is repeated at every call site that needs a routing target (`main.ts:236`, `main.ts:1084`, `main.ts:1192`, `main.ts:1238`, `SplitTreeRenderer.ts:197`).
+`activeTabId` is a root-tab id; split pane ids live in `activePaneByTab`. The total state also carries
+`activeOwner`, so owner, root tab, and exact live pane advance together.
 
-Two events can advance it, and they race:
+Leaf pointer focus, document `focusin`, tab clicks, agent-row focus, split completion, and pane close
+all dispatch transitions. They do not write `activeTabId` or `tabActivePaneIds` directly. A focus
+event raised synchronously by an effect is queued until that effect batch finishes; a same-pane
+transition then becomes a structural no-op.
 
-1. The leaf `mousedown` handler (`SplitTreeRenderer.ts:108-131`).
-2. The document-level `focusin` handler, which reads DOM ground truth via `event.target.closest('.split-leaf')` because xterm calls `textarea.focus()` inside its own `mousedown` — so `focusin` can fire while `tabActivePaneIds` still points at the previous pane (`main.ts:1298-1321`).
+### 7.7 Persistence and Restore
 
-Whichever wins performs the state write plus one `syncVaultToActivePane()`; the loser's same-pane early-return makes it a no-op.
+Split topology remains plain JSON in `vscode.setState()`. Navigation persists separately as a
+versioned V1 checkpoint containing active owner, active root tab, and retained pane per tab.
 
-### 7.7 Persistence
-
-`WebviewStateStore.persist()` writes `tabLayouts` and `tabActivePaneIds` into `vscode.setState()` (`state/WebviewStateStore.ts:214-224`). `restore()` validates each entry has a `type` field, and only accepts a persisted active pane if `getAllSessionIds(layout)` still contains it (`state/WebviewStateStore.ts:231-264`).
-
-On `init`, main.ts drops restored layouts for tabs the host did not report, re-renders every branch layout, and schedules `debouncedFitAllLeaves` per split root — without that refit, restored panes keep the 0×0 canvas they were opened with while hidden (`main.ts:856-913`).
+Restore creates terminal instances and validates split layouts first. It then validates the
+checkpoint against live terminal facts and applies exactly one navigation result. An explicit
+owner-empty checkpoint survives; stale panes clamp to live leaves; snapshot replay order never
+chooses the active tab.
 
 ---
 
 ## 8. Tab Switching
 
-Multiple xterm.js instances live simultaneously; only one root tab is visible. Switching toggles CSS `display` — `switchTab()` in `main.ts:385-422`:
+Multiple xterm.js instances remain mounted; only the committed root tab is visible. A tab click
+dispatches `selectNavigationTab`, which derives the tab's owner and retained live pane. After commit,
+one ordered effect batch:
 
-1. `factory.disposeSubagentPopup()` — a keyboard-driven switch would otherwise leave the body-mounted popup over the new tab.
-2. Hide the previous tab: `splitRenderer.hideTabContainer(prev)` **and** `prev.container.style.display = "none"`.
-3. `store.activeTabId = newTabId`; `showTabContainer(newTabId)`; `next.container.style.display = "block"`.
-4. `requestAnimationFrame` → `factory.fitAllAndFocus(newTabId, next)` — fits every leaf in the tab's layout, then focuses the active pane (`TerminalFactory.ts:609-628`).
-5. `updateActivePaneVisual`, `updateTabBar`, `syncVaultToActivePane`, and `postMessage({type:'switchTab', tabId})`.
+1. projects tab/pane maps and owner-filtered UI;
+2. renders and displays the active root topology;
+3. updates the active-pane visual;
+4. focuses the committed pane and syncs Vault;
+5. persists the checkpoint and emits `terminalNavigationCommitted`;
+6. runs generation-guarded delayed fit/focus.
+
+No legacy `switchTab` message or worktree projection writes host routing.
 
 ### Why Not Destroy/Recreate?
 

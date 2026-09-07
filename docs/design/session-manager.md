@@ -73,9 +73,10 @@ Both destroy entry points allow `live` or `exited-preserved` (`:1118`, `:1181`),
 and the transition is recorded *synchronously* before the queue runs, so a
 `dispose()` racing a queued destroy still sees the intent.
 
-`TerminalSession` (`TerminalSession.ts:49`) carries seven groups of field:
-identity, runtime handles, layout, cwd, respawn identity, scrollback, and
-snapshot handles. `rootTabId` is the owning tab's id for a pane and **the
+`TerminalSession` (`TerminalSession.ts:49`) carries identity, runtime handles, layout, cwd,
+respawn identity, scrollback, and snapshot handles. Identity includes a stable optional
+`worktreeId`: absent is the global main owner; present is one linked owner. Cwd changes never mutate
+that field. `rootTabId` is the owning tab's id for a pane and **the
 session's own id for a root tab** (`:522`) — removing every null check from group
 eviction. Two constants live here: `SCROLLBACK_MAX_SIZE` 512 KB (`:61`) and
 `DEFAULT_GRACE_DESTROY_MS` 5000 (`:64`).
@@ -110,14 +111,13 @@ sequenceDiagram
     SM->>SM: wirePty (:580)
 ```
 
-Every field prefers the persisted snapshot over the caller's options — id
-(`:430`), number (`:431`), shell and *its* args (`:436`–`:448`), cwd (`:450`),
-geometry (`:515`), custom name (`:496`). Preserving the **id** is load-bearing:
+Every field prefers the persisted snapshot over the caller's options — id, number, shell and its
+args, cwd, geometry, custom name, and stable `worktreeId`. Preserving the **id** is load-bearing:
 the webview's split layout persists tab ids, so a new id orphans every pane.
 
-Split panes do not deactivate siblings (`:544`), are excluded from the tab strip
-(`:784`) but present in the full session list (`:813`), never carry a custom name
-(`:496`), and inherit the owning tab's `rootTabId` (`:522`).
+Split panes do not deactivate siblings, are excluded from the root tab strip but present in the
+full session list, never carry a custom name, and inherit both the source pane's stable owner and
+the owning tab's `rootTabId`.
 
 ---
 
@@ -243,6 +243,12 @@ drives `panelId` derivation (`:533`) and snapshot view-location classification
 `getTabsForView` (`:766`) feeds the tab strip, `getAllSessionsForView` (`:798`)
 includes panes and feeds any reload or restore, because the webview must recreate
 every xterm its saved layout references.
+
+`commitNavigation(viewId, activeTabId, activePaneId)` is the routing boundary. It accepts either an
+all-null empty pair or a root-tab/live-pane pair from the same view whose pane `rootTabId` matches.
+Partial pairs, unknown panes, wrong views, and mismatched roots are rejected. The validated pair
+updates SessionManager active-root state and provider routing caches together; `focus` is recency
+only.
 
 **Scrollback cache.** Distinct from both the output buffer and the snapshot
 mirror: it lets a **re-created webview in the same host process** be repainted.
@@ -428,6 +434,11 @@ Providers drain what was staged on their `ready` handshake (`:328`, `:332`,
 `:336`), feeding each back as a restore — full sequence in
 [flow-view-lifecycle.md](flow-view-lifecycle.md) §5.
 
+Restored sessions are registered without manufacturing `isActive`. The webview builds its complete
+terminal and split catalog, then applies the versioned navigation checkpoint. Live bootstrap may
+use a validated host hint only when no checkpoint exists; cold bootstrap ignores that hint and the
+one-shot legacy field. Snapshot replay order therefore cannot choose navigation.
+
 ### Shutdown
 
 `deactivate` (`extension.ts:840`) runs three ordered steps, and the order *is*
@@ -474,8 +485,10 @@ Swapping contributors releases every tracked session through the *old* one first
 - **Deleting a snapshot is a privacy action.** `clearScrollback` wipes cache,
   tracked commands, and disk together; a lost async write unlinks the canonical
   file rather than leaving stale bytes behind.
-- **Groups, not entries.** Eviction, restore, and layout all treat a root tab
-  plus its panes as one unit via `rootTabId`.
+- **Groups, not entries.** Eviction, restore, and layout all treat a root tab plus its panes as one
+  unit via `rootTabId`; every pane in a split shares one stable terminal owner.
+- **Routing commits as a pair.** Host consumers never accept tab and pane activity from independent
+  messages.
 - **The registry stays a registry.** Persistence, shell integration, dumps,
   panel tracking, and naming each live in their own file. New responsibilities
   belong in a collaborator, not in `SessionManager`.

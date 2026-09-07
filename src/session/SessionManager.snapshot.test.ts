@@ -196,7 +196,7 @@ describe("SessionManager.generateSnapshotMetadata", () => {
     sm.dispose();
   });
 
-  it("persists the stable linked-worktree owner", () => {
+  it("[I18] persists the stable linked-worktree owner", () => {
     const fx = makeFactories();
     const sm = new SessionManager(undefined, {
       restoreEnabled: true,
