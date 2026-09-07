@@ -18,13 +18,7 @@ import { SETUP_STEP_ADDED_SOURCE } from "../types/messages";
 import { hasGitRepo } from "../worktree/hasGitRepo";
 import type { IgnoredMaterial } from "../worktree/ignoredMaterial";
 import type { MigrationOfferEvidence, MigrationRepositoryBinding } from "../worktree/migrateChanges";
-import type {
-  DelegationRoster,
-  PresenceDegradation,
-  WorktreeAgentRow,
-  WorktreePresence,
-} from "../worktree/presenceTypes";
-import { ACTIVITY_EVIDENCE } from "../worktree/presenceTypes";
+import type { DelegationRoster, WorktreePresence } from "../worktree/presenceTypes";
 import { createProvisionOfferStore } from "../worktree/provisioning/offerStore";
 import { conflictsWithProvisionDestination, MAX_MODEL_ROWS, rowsOf } from "../worktree/provisioning/providerKit";
 import type { HeldProvisionSource } from "../worktree/provisioning/provisionMaterial";
@@ -48,6 +42,7 @@ import { createHostLookups, observationOf } from "./worktreeHost/hostLookups";
 import type { Opening, PickedCopyFile, WorktreeSurface } from "./worktreeHost/hostTypes";
 import { createLaunchAdmission } from "./worktreeHost/launchAdmission";
 import { createOpeningLifecycle } from "./worktreeHost/openingLifecycle";
+import { createPresenceProjection, rosterKey } from "./worktreeHost/presenceProjection";
 
 // Re-exported so no existing importer moved when these types did (task 2_0).
 export type {
@@ -709,104 +704,18 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     ? { ...options.deps, rank: (id: string) => projector.rank(id) }
     : options.deps;
 
-  /** Presence with no projector is the empty envelope this host always sent. */
-  function presence(): WorktreePresence {
-    return projected ?? { rowsByWorktreeId: {}, scannedAt: now(), degradedSources: [] };
-  }
-
-  /** `\0` cannot occur in a row id or an entry id, so the join is unambiguous. */
-  function rosterKey(rowId: string, entryId: string): string {
-    return `${rowId}\u0000${entryId}`;
-  }
-
-  function parentIsLive(row: WorktreeAgentRow, degraded: ReadonlySet<PresenceDegradation["source"]>): boolean {
-    if (row.activity !== "running" && row.activity !== "waiting") {
-      return false;
-    }
-    const evidence = ACTIVITY_EVIDENCE[row.activitySource];
-    // `none` proves nothing, so the parent's own liveness is unevidenced too.
-    return evidence !== undefined && !degraded.has(evidence);
-  }
-
   /**
-   * A child's `running` does not outlive its parent's freshness (design.md D11).
-   *
-   * The transcript's recorded status is what the mapper hands over; whether it
-   * may still be PUBLISHED is decided here, in the same pass that publishes the
-   * parent — which is what makes the two incapable of disagreeing.
+   * What the presence envelope says: the empty answer a host with no projector
+   * gives, the roster attached to each row, and the freshness a child's status
+   * inherits from its parent (task 2_6). Derivation only — `projected` is
+   * written by the projection loop and read from here.
    */
-  function decay(
-    roster: DelegationRoster,
-    parent: WorktreeAgentRow,
-    degraded: ReadonlySet<PresenceDegradation["source"]>,
-  ): DelegationRoster {
-    if (roster.kind !== "ok" || parentIsLive(parent, degraded)) {
-      return roster;
-    }
-    if (!roster.rows.some((child) => child.status === "running")) {
-      return roster;
-    }
-    return {
-      ...roster,
-      rows: roster.rows.map((child) => (child.status === "running" ? { ...child, status: "unknown" as const } : child)),
-    };
-  }
-
-  /**
-   * Attach every roster to the row it was read for, and drop the rest.
-   *
-   * The rows here are the projector's own retained objects — a replay hands
-   * them straight back — so each is COPIED rather than written through, or the
-   * roster would end up inside the projector's replay state (design.md D3).
-   * Eviction runs against the rows actually published, so a closed pane, or a
-   * pane that started a new session, takes its roster with it.
-   */
-  function withDelegations(source: WorktreePresence): WorktreePresence {
-    if (rosters.size === 0) {
-      return source;
-    }
-    const degraded = new Set(source.degradedSources.map((entry) => entry.source));
-    const kept = new Set<string>();
-    const rowsByWorktreeId: Record<string, WorktreeAgentRow[]> = {};
-    for (const [worktreeId, rows] of Object.entries(source.rowsByWorktreeId)) {
-      rowsByWorktreeId[worktreeId] = rows.map((row) => {
-        const key = row.entryId === undefined ? undefined : rosterKey(row.rowId, row.entryId);
-        const roster = key === undefined ? undefined : rosters.get(key);
-        if (key === undefined || roster === undefined) {
-          return row;
-        }
-        // A roster the agent reported for itself is the better evidence and is
-        // already gone if its report went stale. Overwriting it with a cached
-        // transcript read would replace live work with its own history.
-        if (row.delegations?.kind === "ok" && row.delegations.reported) {
-          kept.add(key);
-          return row;
-        }
-        kept.add(key);
-        return { ...row, delegations: decay(roster, row, degraded) };
-      });
-    }
-    for (const key of rosters.keys()) {
-      if (!kept.has(key)) {
-        rosters.delete(key);
-      }
-    }
-    return { ...source, rowsByWorktreeId };
-  }
-
-  /** The row `rowId` names in the envelope this host last published, if any. */
-  function publishedRow(rowId: string): WorktreeAgentRow | undefined {
-    if (!published) {
-      return undefined;
-    }
-    for (const rows of Object.values(published.presence.rowsByWorktreeId)) {
-      const found = rows.find((row) => row.rowId === rowId);
-      if (found) {
-        return found;
-      }
-    }
-    return undefined;
-  }
+  const { presence, withDelegations, publishedRow } = createPresenceProjection({
+    projected: () => projected,
+    now: () => now(),
+    rosters,
+    published: () => published,
+  });
 
   /**
    * Every read over the tree this host currently holds — one worktree, one
