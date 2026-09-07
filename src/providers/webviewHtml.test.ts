@@ -66,8 +66,15 @@ describe("the responsive worktree scope control", () => {
 
   it("frames only a linked-worktree view, never main", () => {
     const css = getTerminalHtml(mockWebview(), vscode.Uri.file("/ext"), "sidebar");
-    expect(css).toContain("body:has(#tab-bar[data-worktree-scope]) .terminal-area::after");
-    expect(css).not.toContain("body:not(:has(#tab-bar[data-worktree-scope])) .terminal-area::after");
+    expect(css).toContain("body:has(#tab-bar[data-worktree-scope]) .terminal-area");
+    expect(css).not.toContain("body:not(:has(#tab-bar[data-worktree-scope])) .terminal-area");
+  });
+
+  it("draws the frame without changing terminal box dimensions", () => {
+    const css = getTerminalHtml(mockWebview(), vscode.Uri.file("/ext"), "sidebar");
+    const frame = ruleFor(css, "body:has(#tab-bar[data-worktree-scope]) .terminal-area");
+    expect(frame).toContain("outline: 1px solid");
+    expect(frame).not.toContain("border:");
   });
 
   it("fills a square borderless corner indicator without a close control", () => {

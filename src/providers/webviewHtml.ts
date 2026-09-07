@@ -218,15 +218,10 @@ export function getTerminalHtml(
       opacity: 1 !important;
       background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1));
     }
-    /* A linked worktree frames the whole terminal surface, tab strip included. */
-    body:has(#tab-bar[data-worktree-scope]) .terminal-area::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: 10;
-      pointer-events: none;
-      border: 1px solid var(--vscode-focusBorder, #007acc);
-      box-sizing: border-box;
+    /* Outline never participates in sizing, so switching owner cannot contract the terminal. */
+    body:has(#tab-bar[data-worktree-scope]) .terminal-area {
+      outline: 1px solid var(--vscode-focusBorder, #007acc);
+      outline-offset: -1px;
     }
     /* The scope control owns the top-right corner. Filled, square, borderless:
        it reads as the terminal's context rather than as one more terminal tab. */
