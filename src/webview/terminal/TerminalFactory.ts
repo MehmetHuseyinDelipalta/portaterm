@@ -542,34 +542,6 @@ export class TerminalFactory {
     // restore-terminal-sessions design.md D12.
     if (!options?.isSplitPane && !this.store.tabLayouts.has(id)) {
       this.store.tabLayouts.set(id, createLeaf(id));
-      this.store.tabActivePaneIds.set(id, id);
-      this.store.persist();
-    }
-
-    // Split panes are never the `activeTabId` (that's a root-tab concept).
-    if (isActive && !options?.isSplitPane) {
-      this.store.activeTabId = id;
-    }
-
-    // Fit after opening (deferred to allow layout to settle).
-    //
-    // Split-pane children are NOT fit here — their container is reparented by
-    // `renderTabSplitTree` AFTER this constructor returns, so a setTimeout(0)
-    // measurement would see the still-detached container (0×0) and send a
-    // stale resize IPC to the extension. `debouncedFitAllLeaves` (scheduled
-    // by handleInit via requestAnimationFrame) owns split-pane sizing instead.
-    // Root tabs still need the immediate fit so single-pane terminals get
-    // measured before first PTY output. See round-2 [S2].
-    if (!options?.isSplitPane) {
-      setTimeout(() => {
-        if (!this.store.terminals.has(id)) {
-          return;
-        }
-        this.fitTerminal(instance);
-        if (isActive) {
-          terminal.focus();
-        }
-      }, 0);
     }
 
     return instance;

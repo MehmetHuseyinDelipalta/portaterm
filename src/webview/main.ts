@@ -39,6 +39,20 @@ import type { HoverPreviewThemeKind } from "./links/HoverPreviewController";
 import { preloadSyntaxHighlighter } from "./links/syntaxRenderer";
 import { createMessageRouter } from "./messaging/MessageRouter";
 import { createScrollbackDumpHandler } from "./messaging/scrollbackDumpHandler";
+import {
+  applyTerminalNavigationProjection,
+  navigationCatalogFromStore,
+  worktreeIdForTerminalOwner,
+} from "./navigation/TerminalNavigationComposition";
+import { TerminalNavigationController } from "./navigation/TerminalNavigationController";
+import {
+  focusNavigationPane,
+  MAIN_TERMINAL_OWNER,
+  normalizeTerminalNavigationState,
+  selectNavigationOwner,
+  selectNavigationTab,
+  type TerminalNavigationState,
+} from "./navigation/TerminalNavigationState";
 import { ResizeCoordinator } from "./resize/ResizeCoordinator";
 import { SplitTreeRenderer } from "./split/SplitTreeRenderer";
 import { resolveTabDisplayPane } from "./split/tabDisplay";
@@ -358,11 +372,65 @@ let worktreeController: WorktreeController | null = null;
 // Constructed on init beside the controller that feeds it, and owning the join
 // itself. See: webview/tabBarScopeWiring.ts and design.md D8.
 let tabBarScope: TabBarScopeWiring | null = null;
+let lastLegacyEchoTabId: string | null = null;
+
+const navigationController = new TerminalNavigationController(
+  { activeOwner: MAIN_TERMINAL_OWNER, activeTabId: null, activePaneByTab: {} },
+  {
+    readCatalog: () => navigationCatalogFromStore(store),
+    effects: {
+      renderProjections: (state) => {
+        applyTerminalNavigationProjection(state, {
+          store,
+          selectOwner: (worktreeId) => worktreeController?.selectTerminalOwner(worktreeId),
+          render: () => updateTabBar(),
+        });
+      },
+      displayActive: (state) => displayNavigationState(state),
+      updateSplitVisual: (state) => {
+        if (state.activeTabId) {
+          splitRenderer.updateActivePaneVisual(state.activeTabId);
+        }
+      },
+      focusActivePane: (paneId) => {
+        if (paneId) {
+          store.terminals.get(paneId)?.terminal.focus();
+        }
+      },
+      syncVault: () => syncVaultToActivePane(),
+      persistCheckpoint: (checkpoint) => {
+        store.persist();
+        store.persistNavigationCheckpoint(checkpoint);
+      },
+      emitHostEcho: (activeTabId, activePaneId) => {
+        if (activeTabId !== lastLegacyEchoTabId) {
+          lastLegacyEchoTabId = activeTabId;
+          if (activeTabId) {
+            vscode.postMessage({ type: "switchTab", tabId: activeTabId });
+          }
+        }
+        vscode.postMessage({ type: "focus", activeSessionId: activePaneId ?? undefined });
+      },
+      scheduleDelayed: (run) => requestAnimationFrame(run),
+      runDelayedFocusAndFit: (state) => {
+        if (!state.activeTabId) {
+          return;
+        }
+        const paneId = state.activePaneByTab[state.activeTabId];
+        const instance = paneId ? store.terminals.get(paneId) : undefined;
+        if (instance) {
+          factory.fitAllAndFocus(state.activeTabId, instance);
+        }
+      },
+    },
+  },
+);
 
 // ─── Orchestration ──────────────────────────────────────────────────
 
-/** Create in the selected worktree; the unscoped surface keeps host defaults. */
-function requestNewTerminal(worktreeId = tabBarScope?.effectiveScope()?.worktreeId): void {
+function requestNewTerminal(
+  worktreeId = worktreeIdForTerminalOwner(navigationController.getState().activeOwner),
+): void {
   vscode.postMessage(worktreeId ? { type: "worktreeOpenTerminal", worktreeId } : { type: "createTab" });
 }
 
@@ -430,54 +498,30 @@ function startInlineRename(tabId: string, tabEl: HTMLElement, tabBarEl: HTMLElem
   store.beginRename(tabId, displayed);
 }
 
-function switchTab(newTabId: string): void {
-  // Not `terminals.get(newTabId)`: a tab is keyed by the pane it was created
-  // from, and closing that particular pane leaves the tab alive with its other
-  // leaves. Gating on the original pane made such a tab unreachable from the tab
-  // bar and from a worktree row alike (round-2 B2).
-  const displayPaneId = resolveTabDisplayPane(newTabId, {
-    tabLayouts: store.tabLayouts,
-    hasTerminal: (sessionId) => store.terminals.has(sessionId),
-  });
-  if (displayPaneId === null) {
+function displayNavigationState(state: TerminalNavigationState): void {
+  factory.disposeSubagentPopup();
+  for (const tabId of store.tabLayouts.keys()) {
+    if (tabId === state.activeTabId) {
+      continue;
+    }
+    splitRenderer.hideTabContainer(tabId);
+    const terminal = store.terminals.get(tabId);
+    if (terminal) {
+      terminal.container.style.display = "none";
+    }
+  }
+  if (state.activeTabId === null) {
     return;
   }
-  const next = store.terminals.get(newTabId);
-
-  // A keyboard-driven tab switch would otherwise leave the body-mounted subagent
-  // popup overlaying the newly active tab (mouse switches dismiss it via the
-  // outside-click listener, but key shortcuts don't). Dismiss it on any switch.
-  factory.disposeSubagentPopup();
-
-  // Hide current tab
-  if (store.activeTabId && store.activeTabId !== newTabId) {
-    splitRenderer.hideTabContainer(store.activeTabId);
-    const current = store.terminals.get(store.activeTabId);
-    if (current) {
-      current.container.style.display = "none";
-    }
+  splitRenderer.showTabContainer(state.activeTabId);
+  const terminal = store.terminals.get(state.activeTabId);
+  if (terminal) {
+    terminal.container.style.display = "block";
   }
+}
 
-  // Show new tab
-  store.activeTabId = newTabId;
-  splitRenderer.showTabContainer(newTabId);
-  if (next) {
-    next.container.style.display = "block";
-  }
-
-  // Fit after display change
-  requestAnimationFrame(() => {
-    const instance = store.terminals.get(displayPaneId);
-    if (!instance) {
-      return;
-    }
-    factory.fitAllAndFocus(newTabId, instance);
-  });
-
-  splitRenderer.updateActivePaneVisual(newTabId);
-  updateTabBar();
-  syncVaultToActivePane();
-  vscode.postMessage({ type: "switchTab", tabId: newTabId });
+function switchTab(newTabId: string): void {
+  navigationController.dispatch((catalog, state) => selectNavigationTab(catalog, state, newTabId));
 }
 
 /** Resolve what the empty-scope region offers here, and hand it to the mount. */
@@ -499,7 +543,7 @@ function showEmptyScope(worktree: { id: string; label: string; worktreeId?: stri
   });
 }
 
-/** Bring a pane forward; the resolution itself lives in worktree/activatePane.ts. */
+/** Bring a pane forward through the surface navigation controller. */
 function activatePaneById(paneId: string): boolean {
   return activatePane(paneId, {
     tabLayouts: store.tabLayouts,
@@ -508,17 +552,9 @@ function activatePaneById(paneId: string): boolean {
         tabLayouts: store.tabLayouts,
         hasTerminal: (sessionId) => store.terminals.has(sessionId),
       }) !== null,
-    selectPaneOwner: (id) => {
-      const terminal = store.terminals.get(id);
-      if (terminal) {
-        worktreeController?.selectTerminalOwner(terminal.worktreeId);
-      }
+    navigatePane: (id) => {
+      navigationController.dispatch((catalog, state) => focusNavigationPane(catalog, state, id));
     },
-    setActivePane: (tabId, id) => store.tabActivePaneIds.set(tabId, id),
-    persist: () => store.persist(),
-    showTab: (tabId) => switchTab(tabId),
-    updateActivePaneVisual: (tabId) => splitRenderer.updateActivePaneVisual(tabId),
-    focusPane: (id) => store.terminals.get(id)?.terminal.focus(),
   });
 }
 
@@ -527,48 +563,34 @@ function removeTerminal(id: string): void {
   if (!instance) {
     return;
   }
+  const closedActiveTab = navigationController.getState().activeTabId === id;
 
-  // The subagent-preview popup is a factory singleton mounted on document.body —
-  // dispose it on every teardown path so it can't outlive the terminal that
-  // spawned it (it is NOT tied to the per-session hover controller; D7).
-  factory.disposeSubagentPopup();
+  navigationController.transaction(
+    () => {
+      factory.disposeSubagentPopup();
+      factory.disposeHoverController(id);
+      instance.terminal.dispose();
+      instance.container.remove();
+      store.terminals.delete(id);
+      cursorHookIdentity.delete(id);
+      activityTracker.delete(id);
+      paneEvidenceReporter.forget(id);
+      flowControl.delete(id);
 
-  // Dispose hover-preview controller BEFORE the terminal goes away so its
-  // DOM listeners detach while the terminal's element still exists.
-  factory.disposeHoverController(id);
+      for (const splitId of splitRenderer.removeTab(id)) {
+        cursorHookIdentity.delete(splitId);
+        activityTracker.delete(splitId);
+        paneEvidenceReporter.forget(splitId);
+        factory.disposeHoverController(splitId);
+      }
+    },
+    (catalog, state) => selectNavigationOwner(catalog, state, state.activeOwner),
+  );
 
-  // Dispose root terminal
-  instance.terminal.dispose();
-  instance.container.remove();
-  store.terminals.delete(id);
-  cursorHookIdentity.delete(id);
-  activityTracker.delete(id);
-  paneEvidenceReporter.forget(id);
-  flowControl.delete(id);
-
-  // Delegate split cleanup to renderer; dispose the hover-preview controller of
-  // every split pane it tears down. The popup now lives on document.body, so
-  // removing the pane container no longer removes its popup — the controller
-  // (and its body-level overlay) must be disposed explicitly.
-  for (const splitId of splitRenderer.removeTab(id)) {
-    cursorHookIdentity.delete(splitId);
-    activityTracker.delete(splitId);
-    paneEvidenceReporter.forget(splitId);
-    factory.disposeHoverController(splitId);
+  const state = navigationController.getState();
+  if (closedActiveTab && state.activeTabId === null) {
+    requestNewTerminal(worktreeIdForTerminalOwner(state.activeOwner));
   }
-  store.persist();
-
-  // Switch to next available tab or request new one
-  if (store.activeTabId === id) {
-    const remaining = Array.from(store.tabLayouts.keys());
-    if (remaining.length > 0) {
-      switchTab(remaining[remaining.length - 1]);
-    } else {
-      store.activeTabId = null;
-      requestNewTerminal();
-    }
-  }
-  updateTabBar();
 }
 
 // ─── Scrollback Dump (export-terminal-session) ───────────────────────
@@ -631,13 +653,16 @@ const routeMessage = createMessageRouter({
     }
   },
   onTabCreated(msg) {
-    const instance = factory.createTerminal(msg.tabId, msg.name, store.currentConfig, false, msg.customName, {
-      worktreeId: msg.worktreeId,
-    });
-    instance.terminal.onTitleChange((title) => clearWaitingOnCursorTitleLoss(msg.tabId, title));
-    instance.terminal.onResize(() => activityTracker.setWaiting(msg.tabId, false));
-    worktreeController?.selectTerminalOwner(msg.worktreeId);
-    switchTab(msg.tabId);
+    navigationController.transaction(
+      () => {
+        const instance = factory.createTerminal(msg.tabId, msg.name, store.currentConfig, false, msg.customName, {
+          worktreeId: msg.worktreeId,
+        });
+        instance.terminal.onTitleChange((title) => clearWaitingOnCursorTitleLoss(msg.tabId, title));
+        instance.terminal.onResize(() => activityTracker.setWaiting(msg.tabId, false));
+      },
+      (catalog, state) => focusNavigationPane(catalog, state, msg.tabId),
+    );
   },
   onTabRemoved(msg) {
     removeTerminal(msg.tabId);
@@ -701,14 +726,17 @@ const routeMessage = createMessageRouter({
     }
   },
   onSplitPaneAt(msg) {
-    if (store.activeTabId && msg.direction && msg.sourcePaneId) {
-      store.tabActivePaneIds.set(store.activeTabId, msg.sourcePaneId);
-      splitRenderer.updateActivePaneVisual(store.activeTabId);
+    if (!msg.direction || !msg.sourcePaneId) {
+      return;
+    }
+    navigationController.dispatch((catalog, state) => focusNavigationPane(catalog, state, msg.sourcePaneId!));
+    const state = navigationController.getState();
+    if (state.activeTabId && state.activePaneByTab[state.activeTabId] === msg.sourcePaneId) {
       vscode.postMessage({
         type: "requestSplitSession",
         direction: msg.direction,
         sourcePaneId: msg.sourcePaneId,
-        rootTabId: store.activeTabId,
+        rootTabId: state.activeTabId,
       });
     }
   },
@@ -1189,8 +1217,22 @@ function handleInit(msg: InitMessage): void {
     requestVaultContextCwd();
   }
 
-  store.persist();
-  updateTabBar();
+  const initialPaneId = activeRootTab
+    ? (store.tabActivePaneIds.get(activeRootTab.id) ??
+      resolveTabDisplayPane(activeRootTab.id, {
+        tabLayouts: store.tabLayouts,
+        hasTerminal: (sessionId) => store.terminals.has(sessionId),
+      }))
+    : null;
+  const result = navigationController.dispatch((catalog, state) =>
+    initialPaneId
+      ? focusNavigationPane(catalog, state, initialPaneId)
+      : normalizeTerminalNavigationState(catalog, state),
+  );
+  if (result === "noop") {
+    store.persist();
+    updateTabBar();
+  }
   showDragDropTip();
 }
 
@@ -1490,28 +1532,13 @@ function bootstrap(): void {
   // active pane. When we detect a leaf-driven focus, we also sync the
   // store + visual class so subsequent reads agree.
   document.addEventListener("focusin", (event) => {
-    const tabId = store.activeTabId;
-    if (!tabId) {
-      vscode.postMessage({ type: "focus", activeSessionId: undefined });
-      return;
-    }
     const target = event.target instanceof Element ? event.target.closest<HTMLElement>(".split-leaf") : null;
     const leafSessionId = target?.dataset.sessionId;
-    if (leafSessionId && store.tabActivePaneIds.get(tabId) !== leafSessionId) {
-      store.tabActivePaneIds.set(tabId, leafSessionId);
-      splitRenderer.updateActivePaneVisual(tabId);
-      store.persist();
-      // This focusin can win the race against the leaf `mousedown` handler
-      // (xterm focuses its textarea inside its own mousedown, firing focusin
-      // before the leaf listener bubbles). When it does, it advances the active
-      // pane here, so the leaf handler's same-pane early-return then suppresses
-      // its `onActivePaneChange` → the vault would never re-scope/refresh on a
-      // plain pane click. Sync here too; whichever handler wins runs exactly one
-      // sync (the loser's guard makes it a no-op). See .reviews/round-2.md [B1].
-      syncVaultToActivePane();
+    if (leafSessionId) {
+      navigationController.dispatch((catalog, state) => focusNavigationPane(catalog, state, leafSessionId));
+      return;
     }
-    const activeSessionId = leafSessionId ?? store.tabActivePaneIds.get(tabId) ?? tabId;
-    vscode.postMessage({ type: "focus", activeSessionId });
+    vscode.postMessage({ type: "focus", activeSessionId: getActivePaneId() ?? undefined });
   });
   window.addEventListener("message", (event: MessageEvent) => {
     const msg = event.data;

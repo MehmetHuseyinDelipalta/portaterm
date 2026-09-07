@@ -23,16 +23,16 @@
     1. Add `src/webview/navigation/TerminalNavigationController.ts` with catalog transactions, queued reentrant intents, effect ordering, persistence, and delayed-effect generation cancellation.
     2. Add `src/webview/navigation/TerminalNavigationController.test.ts` for transition ordering, no-op behavior, queued callbacks, stale delayed focus, and controller isolation.
 
-- [ ] 1_3 Route interactive and creation ingresses through the controller
+- [x] 1_3 Route interactive and creation ingresses through the controller — verified: pnpm exec vitest run src/webview/navigation/TerminalNavigationComposition.test.ts src/webview/worktree/activatePane.test.ts src/webview/TabBar.test.ts src/providers/TerminalViewProvider.vaultContinue.test.ts && pnpm exec vitest run src/webview/navigation/TerminalNavigationController.test.ts src/webview/navigation/TerminalNavigationState.test.ts exit 0
   - **Deps**: 1_2
   - **Refs**: specs/terminal-owner-navigation/spec.md#{navigation-changes-owner-tab-and-pane-as-one-action,terminal-creation-activates-its-assigned-owner}; specs/tab-bar-component/spec.md#{tab-click-handlers,tab-bar-update-integration,scope-changes-what-is-drawn-and-nothing-else}; design.md D3, design.md D4, design.md D8
   - **Acceptance**:
     - Outcome: Tab click, session focus, terminal creation, DOM focus, and last-tab replacement share one transition path.
     - Verify: command pnpm exec vitest run src/webview/navigation/TerminalNavigationComposition.test.ts src/webview/worktree/activatePane.test.ts src/webview/TabBar.test.ts src/providers/TerminalViewProvider.vaultContinue.test.ts
   - **Plan**:
-    1. Add `src/webview/navigation/TerminalNavigationComposition.test.ts` using production adapters to reproduce owner-before-pane recursion, transient old-tab activation, focusin duplication, and last-tab replacement owner loss.
+    1. Add `src/webview/navigation/TerminalNavigationComposition.ts` and `src/webview/navigation/TerminalNavigationComposition.test.ts` using production adapters to reproduce owner-before-pane recursion, transient old-tab activation, focusin duplication, and last-tab replacement owner loss.
     2. Route tab click, terminal-created, Vault-created, DOM focus, close, and last-tab replacement in `src/webview/main.ts` through controller transactions.
-    3. Remove navigation writes from `src/webview/worktree/activatePane.ts` and adapt `src/webview/terminal/TerminalFactory.ts` to register facts before one intent.
+    3. Remove navigation writes from `src/webview/worktree/activatePane.ts`, update `src/webview/worktree/activatePane.test.ts`, and adapt `src/webview/terminal/TerminalFactory.ts` to register facts before one intent.
 
 - [ ] 1_4 Replace independent host activity writers with one nullable echo
   - **Deps**: 1_3
