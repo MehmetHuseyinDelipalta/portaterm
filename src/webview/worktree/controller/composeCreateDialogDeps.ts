@@ -17,7 +17,6 @@
 import type { WebViewToExtensionMessage } from "../../../types/messages";
 import type { WorktreeMenuActions } from "../WorktreeContextMenu";
 import type { WorktreeCreateDialogDeps } from "../WorktreeCreateDialog";
-import type { WorktreeView } from "../WorktreeView";
 import type {
   WorktreeActionResult,
   WorktreeCreateDefaults,
@@ -48,7 +47,6 @@ export interface ViewDepsSeam {
   agentActions: AgentActions;
   mutationResults: MutationResults;
   /** The view this object is being built for. Read only inside callbacks. */
-  view(): WorktreeView;
   actionResults(): WorktreeActionResult[];
   setActionResults(next: WorktreeActionResult[]): void;
   rowActivation(): WorktreeRowActivation;

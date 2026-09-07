@@ -10,8 +10,9 @@
 // retained subtree that differs from what a full repaint would draw — which is
 // invisible until a row shows a stale age (design.md § Obligation ledger).
 //
-// `rowMemo` and `rowMemoSeen` stay FIELDS on `WorktreeView` and arrive by
-// reference; a suite reads both (D5, OBL-1).
+// `rowMemo` stays a FIELD on `WorktreeView`; `rowMemoSeen` lives in the
+// collaborator composition closure. Both arrive by reference; the suite reads
+// `rowMemo` (D5, OBL-1).
 
 import type { WorktreeContextMenu } from "../WorktreeContextMenu";
 import {

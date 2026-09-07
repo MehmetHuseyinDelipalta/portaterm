@@ -10,7 +10,6 @@
 
 import type {
   VaultLaunchTargetsMessage,
-  WebViewToExtensionMessage,
   WorktreeCreateDefaultsMessage,
   WorktreeCreateResolutionMessage,
   WorktreeDebrisAuthorizedMessage,
@@ -39,7 +38,6 @@ import type { WorktreeMenuActions } from "./WorktreeContextMenu";
 import { WorktreeView } from "./WorktreeView";
 import type {
   WorktreeActionResult,
-  WorktreeAgentRow,
   WorktreeCreateDefaults,
   WorktreeInfo,
   WorktreeRowActivation,
@@ -178,7 +176,6 @@ export class WorktreeController {
         dialogChannels: this.dialogChannels,
         agentActions: this.agentActions,
         mutationResults: this.mutationResults,
-        view: () => this.view,
         actionResults: () => this.actionResults,
         setActionResults: (next) => {
           this.actionResults = next;
@@ -278,7 +275,6 @@ export class WorktreeController {
     return this.treeReconcile.generationOf(worktreeId);
   }
 
-  /** Every repo the host has answered for, as the form's seed. */
   /** Every repo the host has answered for, as the form's seed. */
   private createRepos(): WorktreeCreateDefaults[] {
     return this.createFlow.createRepos();

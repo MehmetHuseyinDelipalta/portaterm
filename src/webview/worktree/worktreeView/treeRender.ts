@@ -7,9 +7,10 @@
 // dispatch last — and the memo sweep that has to run on every exit were spread
 // across 350 lines of the class with nothing naming them as one thing.
 //
-// `rowMemo` and `rowMemoSeen` stay FIELDS on `WorktreeView` and arrive here by
-// reference: a suite reads both on the empty-listing and the dispose path (D5,
-// OBL-1). The row builder itself is `worktreeRow.ts` (task 3_13).
+// `rowMemo` stays a FIELD on `WorktreeView`; `rowMemoSeen` lives in the
+// collaborator composition closure. Both arrive here by reference. The suite
+// reads `rowMemo` on the empty-listing and dispose paths (D5, OBL-1). The row
+// builder itself is `worktreeRow.ts` (task 3_13).
 
 import { worktreeSignature } from "../worktreeRenderSignature";
 import {

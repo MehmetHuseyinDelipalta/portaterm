@@ -42,10 +42,6 @@ import type {
  *  visible affordance, never a silent truncation. */
 export const MAX_WORKTREES_PER_REPO = 20;
 
-// The fold threshold lives in `worktreeView/treeRender.ts` (task 3_11), which is
-// what reads it. Re-exported here so no importer moves.
-export { IDLE_FOLD_THRESHOLD } from "./worktreeView/treeRender";
-
 // The view's contract lives in `worktreeView/viewTypes.ts` (task 3_7 of
 // `decompose-worktree-view`). Re-exported here so no importer moves, and
 // imported too, because a re-export is not a local binding.

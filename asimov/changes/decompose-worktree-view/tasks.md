@@ -222,3 +222,15 @@
     2. Move `worktreeMenuActions` to `src/webview/worktree/controller/menuActions.ts` and re-export it from `src/webview/worktree/WorktreeController.ts`, so no importer changes (D4).
     3. Move the six collaborator constructions to `src/webview/worktree/controller/composeCollaborators.ts`, returning them as one record the constructor destructures.
     4. Record `wc -l` for `src/webview/worktree/WorktreeController.ts` and every file under `src/webview/worktree/controller/` in workflow.md Notes.
+
+- [x] 3_16 Close round-1 contract-hygiene findings — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts exit 0
+  - **Deps**: 3_15
+  - **Refs**: design.md D4, design.md D5
+  - **Boundary**: Behaviour and the D5-pinned instance fields stay unchanged; only accepted F001/F003/F004/F008 residue is removed.
+  - **Acceptance**:
+    - Outcome: the dead pre-initialization accessor, stale headers, duplicate comment and dead re-export are gone; the 510-case net is unchanged.
+    - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts
+  - **Plan**:
+    1. Delete `ViewDepsSeam.view` and its pre-initialization wiring from `src/webview/worktree/controller/composeCreateDialogDeps.ts` and `src/webview/worktree/WorktreeController.ts` (F001).
+    2. Correct the `rowMemoSeen` ownership statements in `src/webview/worktree/worktreeView/treeRender.ts` and `src/webview/worktree/worktreeView/worktreeRow.ts` (F003).
+    3. Delete the duplicate `createRepos` comment and the unused `IDLE_FOLD_THRESHOLD` re-export/comment from `src/webview/worktree/WorktreeController.ts` and `src/webview/worktree/WorktreeView.ts` (F004/F008).
