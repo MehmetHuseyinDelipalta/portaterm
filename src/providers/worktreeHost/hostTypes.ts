@@ -313,3 +313,20 @@ export interface Opening {
    */
   pickGeneration: number;
 }
+
+/**
+ * What one repository's migration offer holds, keyed by its own sequence.
+ *
+ * Here rather than in either arm's file: `requestWorktreeCreateDefaults` mints
+ * the offer and the submit reads and spends it, so the type belongs to the
+ * cluster rather than to one side of it (task 2_16).
+ */
+export interface MigrationOffer {
+  surface: string;
+  opening: number;
+  repoId: string;
+  sourceWorktreeId: string;
+  sourcePath: string;
+  binding: MigrationRepositoryBinding;
+  evidence: MigrationOfferEvidence;
+}

@@ -10,35 +10,23 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type {
   ExtensionToWebViewMessage,
-  ProvisionEntry,
   ProvisionModel,
-  ProvisionPort,
-  ProvisionSetupStep,
   ResolvedDisposition,
   WorktreeActionMessage,
 } from "../../../types/messages";
-import type { MigrationOfferEvidence, MigrationRepositoryBinding } from "../../../worktree/migrateChanges";
+import type { MigrationRepositoryBinding } from "../../../worktree/migrateChanges";
 import type { ProvisionOfferStore } from "../../../worktree/provisioning/offerStore";
-import type { HeldProvisionSource } from "../../../worktree/provisioning/provisionMaterial";
-import { claimProvisionMaterials, disposeProvisionMaterials } from "../../../worktree/provisioning/provisionMaterial";
 import type { PullRequestsRead } from "../../../worktree/repoPullRequests";
 import type { WorktreeRepo } from "../../../worktree/types";
 import type { createWorktreeCache } from "../../../worktree/WorktreeCache";
 import type { WorktreeHostOptions } from "../../WorktreeHost";
-import type { Opening, WorktreeActions, WorktreeSurface } from "../hostTypes";
-import {
-  isKnownAfterCreate,
-  isKnownCreateMode,
-  isKnownDisposition,
-  isKnownMigration,
-  isKnownProvision,
-  isKnownSetupRetry,
-  namedOpening,
-} from "../messageGuards";
+import type { MigrationOffer, Opening, WorktreeActions, WorktreeSurface } from "../hostTypes";
+import { namedOpening } from "../messageGuards";
 import type { OpeningLifecycle } from "../openingLifecycle";
 import { answerDebrisAuthorization } from "./create/debris";
 import { handlePickDestination } from "./create/destinationPick";
-import { answerCreateProbe, isWellFormedProbe, matchesPublished } from "./create/probes";
+import { answerCreateProbe, isWellFormedProbe } from "./create/probes";
+import { handleSetupRetry, handleWorktreeCreate } from "./create/submitArm";
 
 /** One arm, once the dispatcher has proved `actions` is there. */
 type Arm<T extends WorktreeActionMessage["type"]> = (
@@ -46,17 +34,6 @@ type Arm<T extends WorktreeActionMessage["type"]> = (
   msg: Extract<WorktreeActionMessage, { type: T }>,
   actions: WorktreeActions,
 ) => void;
-
-/** What one repository's migration offer holds, keyed by its own sequence. */
-interface MigrationOffer {
-  surface: string;
-  opening: number;
-  repoId: string;
-  sourceWorktreeId: string;
-  sourcePath: string;
-  binding: MigrationRepositoryBinding;
-  evidence: MigrationOfferEvidence;
-}
 
 /**
  * What the create arms need from the host.
@@ -115,8 +92,6 @@ export interface CreateDeps {
 
 export function createCreateActions(deps: CreateDeps) {
   const {
-    actionPath,
-    admissibleLaunch,
     bumpMigrationSequence,
     cache,
     currentMigrationRegistration,
@@ -126,16 +101,13 @@ export function createCreateActions(deps: CreateDeps) {
     lifecycle,
     migrationOffers,
     migrationReading,
-    offers,
     openingFor,
     openingKey,
     openings,
     options,
-    perform,
     previewProvisioning,
     provisionBaseline,
     provisionReading,
-    repoIdOf,
     resolveDestination,
     retireOpening,
     surfaceKey,
@@ -143,238 +115,11 @@ export function createCreateActions(deps: CreateDeps) {
   } = deps;
 
   const worktreeCreate: Arm<"worktreeCreate"> = (surface, msg, actions) => {
-    const create = actions.createWorktree;
-    // The last door outside the one-opening contract (round-5 W1): a form
-    // the user closed cannot still be asking for a worktree.
-    //
-    // Equality, not consumption. The panel posts the submit before the
-    // retirement on one ordered channel, so the legitimate one is still
-    // live when it lands; spending the opening here would be a new rule
-    // about how many submits an opening is worth. `namedOpening` is the
-    // same defence in depth as at the refs door, unkillable alone.
-    if (!namedOpening(msg.opening) || !lifecycle.isLive(surfaceKey(surface), msg.opening)) {
-      return;
-    }
-    // Validated at RUNTIME, not merely typed. The unions make a bad request
-    // unrepresentable in our own code, which is what stops us writing one —
-    // but this message arrives from the webview, and a type erases at the
-    // boundary. worktree-rpc.md § 4 asks for the check on every inbound
-    // message, so an unknown discriminant fails closed here rather than
-    // reaching a `switch` that has no arm for it.
-    if (!isKnownCreateMode(msg.mode) || !isKnownAfterCreate(msg.afterCreate) || !isKnownDisposition(msg.disposition)) {
-      return;
-    }
-    // The authorization names the directory it authorizes, and this create
-    // names the directory it will take. A create whose disposition
-    // authorizes a DIFFERENT path is not a create the panel composed.
-    if (msg.disposition.kind === "debris" && msg.disposition.authorization.path !== msg.path) {
-      return;
-    }
-    // A repair runs on the host's own resolution or not at all. Refused OUT
-    // LOUD, like a stale provisioning offer: a Create button that silently
-    // does nothing leaves the user no way to learn that reopening the
-    // dialog is the recovery (round-1 F001).
-    if (
-      (msg.mode.kind === "adopt" || msg.mode.kind === "reattach") &&
-      !matchesPublished(openingFor(surface, msg.repoId, msg.opening)?.publishedRepair, msg.mode, msg.path)
-    ) {
-      surface.post({
-        type: "worktreeMutationResult",
-        verb: "create",
-        repoId: msg.repoId,
-        result: {
-          kind: "error",
-          message:
-            "the directory this create was resolved against has changed — close and reopen the dialog, then create again",
-        },
-      });
-      return;
-    }
-    // The selection names ITEMS; the host holds the model. Resolved here,
-    // from the offer this surface was shown, so nothing the webview spelled
-    // reaches the filesystem — the property offerStore.ts exists for
-    // (worktree-rpc.md § 2.4, design.md D2).
-    //
-    // An id the store no longer holds means NO CREATE: § 2.4 requires a
-    // fresh model and a second submission, and honouring a stale offer
-    // would provision from a model the user is not looking at. The other
-    // half of that rule — resolving and re-presenting the fresh model — is
-    // a named follow-up, so the user's recovery today is to reopen the
-    // dialog.
-    let selectedEntries: readonly ProvisionEntry[] | undefined;
-    let selectedHeldFiles: ReadonlyMap<string, HeldProvisionSource> | undefined;
-    let selectedPorts: readonly ProvisionPort[] | undefined;
-    let migrationOffer: ReturnType<typeof migrationOffers.get>;
-    let selectedSetup: readonly ProvisionSetupStep[] | undefined;
-    let asimovEnvironment: boolean | undefined;
-    if (msg.provision !== undefined) {
-      // Checked at RUNTIME like its three neighbours above. It was the one
-      // field that got only a `!== undefined` before `.offerId` and
-      // `new Set(.itemIds)` were read off it — and the worktree dispatch at
-      // `TerminalViewProvider.ts:1024-1031` returns BEFORE its `try`, so a
-      // malformed message escaped into VS Code's callback instead of
-      // failing closed (round-1 F006).
-      if (!isKnownProvision(msg.provision)) {
-        return;
-      }
-      const offered = offers.redeem({ surface: surfaceKey(surface), repoId: msg.repoId }, msg.provision.offerId);
-      if (offered === undefined) {
-        // Refused OUT LOUD. D3 says a stale offer refuses the create "with
-        // a stated reason, on the existing error arm"; returning bare left
-        // the user with a Create button that did nothing and no way to
-        // learn that reopening the dialog is the recovery (round-1 F001).
-        surface.post({
-          type: "worktreeMutationResult",
-          verb: "create",
-          repoId: msg.repoId,
-          result: {
-            kind: "error",
-            message: "the list of files to bring over is out of date — close and reopen the dialog, then create again",
-          },
-        });
-        return;
-      }
-      const wanted = new Set(msg.provision.itemIds);
-      selectedEntries = offered.model.entries.filter((entry) => wanted.has(entry.id));
-      selectedHeldFiles = offered.heldFiles;
-      selectedPorts = offered.model.ports.filter((port) => wanted.has(port.id));
-      selectedSetup = offered.model.setup.filter((step) => wanted.has(step.id));
-      asimovEnvironment = offered.model.providers.some((provider) => provider.id === "asimov" && provider.active);
-    }
-    if (msg.migrateChanges !== undefined) {
-      if (
-        !isKnownMigration(msg.migrateChanges) ||
-        (msg.mode.kind !== "fresh" && msg.mode.kind !== "fresh-detached" && msg.mode.kind !== "reuse")
-      ) {
-        return;
-      }
-      const offered = migrationOffers.get(msg.migrateChanges.offerId);
-      const source = cache
-        .read()
-        .repos.find((repo) => repo.repoId === msg.repoId)
-        ?.worktrees.find(
-          (row) =>
-            row.id === offered?.sourceWorktreeId &&
-            row.kind === offered?.binding.sourceKind &&
-            !row.bare &&
-            !row.missing &&
-            !row.prunable,
-        );
-      if (
-        offered === undefined ||
-        offered.surface !== surfaceKey(surface) ||
-        offered.opening !== msg.opening ||
-        offered.repoId !== msg.repoId ||
-        !isDeepStrictEqual(currentMigrationRegistration(msg.repoId), offered.binding.registration) ||
-        !lifecycle.isLive(surfaceKey(surface), msg.opening) ||
-        source === undefined ||
-        options.probeMigrationSource === undefined
-      ) {
-        return;
-      }
-      migrationOffers.delete(msg.migrateChanges.offerId);
-      migrationOffer = offered;
-    }
-    if (create && typeof msg.path === "string" && msg.path.length > 0 && msg.repoId.length > 0) {
-      if (msg.afterCreate.kind === "agent" && !admissibleLaunch(surface, msg.afterCreate)) {
-        return;
-      }
-      const selected =
-        selectedEntries === undefined
-          ? undefined
-          : claimProvisionMaterials(selectedEntries, selectedHeldFiles ?? new Map());
-      if (selectedEntries !== undefined && selected === undefined) {
-        surface.post({
-          type: "worktreeMutationResult",
-          verb: "create",
-          repoId: msg.repoId,
-          result: {
-            kind: "error",
-            message: "one of the files selected for this create is no longer available — reopen the dialog",
-          },
-        });
-        return;
-      }
-      const request = {
-        repoId: msg.repoId,
-        path: msg.path,
-        mode: msg.mode,
-        disposition: msg.disposition,
-        afterCreate: msg.afterCreate,
-        ...(selected === undefined ? {} : { provision: selected }),
-        ...(selectedPorts === undefined ? {} : { ports: selectedPorts }),
-        ...(selectedSetup === undefined ? {} : { setup: selectedSetup }),
-        ...(asimovEnvironment === undefined ? {} : { asimovEnvironment }),
-        origin: surface,
-      };
-      const runCreate = async (): Promise<void> => {
-        try {
-          if (migrationOffer === undefined) {
-            await create(request);
-            return;
-          }
-          const current = await options
-            .probeMigrationSource?.(migrationOffer.sourcePath, migrationOffer.binding)
-            .catch(() => undefined);
-          const source = cache
-            .read()
-            .repos.find((repo) => repo.repoId === migrationOffer.repoId)
-            ?.worktrees.find(
-              (row) =>
-                row.id === migrationOffer.sourceWorktreeId &&
-                row.kind === migrationOffer.binding.sourceKind &&
-                !row.bare &&
-                !row.missing &&
-                !row.prunable,
-            );
-          if (
-            source === undefined ||
-            current === undefined ||
-            !isDeepStrictEqual(
-              currentMigrationRegistration(migrationOffer.repoId),
-              migrationOffer.binding.registration,
-            ) ||
-            !isDeepStrictEqual(current, migrationOffer.evidence)
-          ) {
-            surface.post({
-              type: "worktreeMutationResult",
-              verb: "create",
-              repoId: msg.repoId,
-              result: {
-                kind: "error",
-                message: "the source work changed — close and reopen the dialog, then create again",
-              },
-            });
-            return;
-          }
-          await create({
-            ...request,
-            migration: {
-              sourcePath: migrationOffer.sourcePath,
-              source: migrationOffer.evidence.source,
-              snapshot: migrationOffer.evidence.snapshot,
-              binding: migrationOffer.binding,
-            },
-          });
-        } finally {
-          disposeProvisionMaterials(selected ?? []);
-        }
-      };
-      perform(runCreate);
-    }
-    return;
+    handleWorktreeCreate(deps, surface, msg, actions);
   };
 
   const worktreeSetupRetry: Arm<"worktreeSetupRetry"> = (surface, msg, actions) => {
-    if (!isKnownSetupRetry(msg)) {
-      return;
-    }
-    const repoId = repoIdOf(msg.worktreeId);
-    const retry = actions.retrySetup;
-    if (retry !== undefined && repoId !== undefined && actionPath(msg.worktreeId, false) !== undefined) {
-      perform(() => retry({ repoId, worktreeId: msg.worktreeId, origin: surface }, msg.retryId));
-    }
-    return;
+    handleSetupRetry(deps, surface, msg, actions);
   };
 
   const worktreePickDestination: Arm<"worktreePickDestination"> = (surface, msg, _actions) => {

@@ -208,7 +208,7 @@
     3. Trim the destructures and imports the cut leaves unused in `src/providers/worktreeHost/actions/create.ts`.
     4. Run `bun run asm refactor shape src/providers/worktreeHost/actions/create.ts src/providers/worktreeHost/actions/create/destinationPick.ts` and split `src/providers/worktreeHost/actions/create/destinationPick.ts` again if it fires.
 
-- [ ] 2_16 Extract the create itself
+- [x] 2_16 Extract the create itself — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_15
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/actions/create/submitArm.ts` is under 500 lines, and `src/providers/worktreeHost/actions/create.ts` never grows
@@ -217,7 +217,7 @@
     - Verify: command pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts
   - **Plan**:
     1. Enumerate free names in both directions (D1a): compile the block in isolation and read the `TS2304` list for direction A, then `grep -n` every identifier it declares across `src/providers/worktreeHost/actions/create.ts` for direction B.
-    2. Create `src/providers/worktreeHost/actions/create/submitArm.ts` with the create and retry arms (`worktreeCreate`, `worktreeSetupRetry`), moving them out of `src/providers/worktreeHost/actions/create.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
+    2. Create `src/providers/worktreeHost/actions/create/submitArm.ts` with the create and retry arms (`worktreeCreate`, `worktreeSetupRetry`), moving them out of `src/providers/worktreeHost/actions/create.ts`. `MigrationOffer` moves to `src/providers/worktreeHost/hostTypes.ts`: the submit reads and deletes the offer, `requestWorktreeCreateDefaults` mints it, so neither arm's file owns the type; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
     3. Trim the destructures and imports the cut leaves unused in `src/providers/worktreeHost/actions/create.ts`.
     4. Run `bun run asm refactor shape src/providers/worktreeHost/actions/create.ts src/providers/worktreeHost/actions/create/submitArm.ts` and split `src/providers/worktreeHost/actions/create/submitArm.ts` again if it fires.
 
