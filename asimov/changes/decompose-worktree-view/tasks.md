@@ -161,7 +161,7 @@
 ## 3. `actionNotices.ts` — the sentences
 
 
-- [ ] 3_12 Extract the sentences a result is summarised into
+- [x] 3_12 Extract the sentences a result is summarised into — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts exit 0
   - **Deps**: none
   - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5
   - **Boundary**: `src/webview/worktree/worktreeView/actionNotices/summaries.ts` is under 500 lines, and `src/webview/worktree/worktreeView/actionNotices.ts` never grows
