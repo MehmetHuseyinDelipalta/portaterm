@@ -15,7 +15,7 @@
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/hostOptions.ts` and split `src/providers/worktreeHost/hostOptions.ts` again if it fires — it fired `type-blob`, so the mutation service's own three (`WorktreeMutationBindings`, `WorktreeMutationReport`, `ResolvedMutationTarget`) go to `src/providers/worktreeHost/mutationBindings.ts`, which is the consumer seam the report was pointing at.
     5. Re-export all of it from `src/providers/WorktreeHost.ts` so no importer changes (D4).
 
-- [ ] 2_2 Extract what counts as an admissible agent launch
+- [x] 2_2 Extract what counts as an admissible agent launch — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_1
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/launchAdmission.ts` is under 500 lines, and `src/providers/WorktreeHost.ts` never grows

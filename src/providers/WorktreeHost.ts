@@ -13,13 +13,10 @@ import type {
   ResolvedDisposition,
   WebViewToExtensionMessage,
   WorktreeActionMessage,
-  WorktreeAgentLaunchFields,
   WorktreeSubscriptionLevel,
 } from "../types/messages";
 import { SETUP_STEP_ADDED_SOURCE } from "../types/messages";
 import { isResolvedPathInside } from "../utils/resolvedPathBoundary";
-import { MAX_CONTINUATION_INSTRUCTION } from "../vault/continuationLimits";
-import type { VaultLaunchTarget } from "../vault/types";
 import { sanitizeBranchForPath } from "../worktree/branchSlug";
 import { resolveCreateRoot, suggestFreePath } from "../worktree/createPath";
 import { classifyDestination } from "../worktree/debrisClassification";
@@ -51,13 +48,13 @@ import { createProvisionActions } from "./worktreeHost/actions/provision";
 import { createRemovalActions } from "./worktreeHost/actions/removal";
 import { createShellActions } from "./worktreeHost/actions/shell";
 import type {
-  AdmittedLaunch,
   LaunchTargetRecord,
   Opening,
   PickedCopyFile,
   WorktreeActions,
   WorktreeSurface,
 } from "./worktreeHost/hostTypes";
+import { createLaunchAdmission } from "./worktreeHost/launchAdmission";
 import { createOpeningLifecycle } from "./worktreeHost/openingLifecycle";
 
 // Re-exported so no existing importer moved when these types did (task 2_0).
@@ -176,16 +173,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
    * presence (.reviews/round-2.md B1).
    */
   let published: { tree: ReturnType<typeof cache.read>; presence: WorktreePresence } | undefined;
-
-  /**
-   * What each surface was told it could start, keyed by the surface itself so a
-   * detached one takes its answer with it. Admission checks THIS, not a fresh
-   * probe: the offer is what the request has to have come from.
-   */
-  const publishedTargets = new WeakMap<WorktreeSurface, { offerId: string; targets: readonly VaultLaunchTarget[] }>();
-
-  /** Monotonic, so a re-published answer supersedes the one in flight. */
-  let offerSeq = 0;
 
   /**
    * The provisioning models this host has shown, and a stable name per surface
@@ -1125,87 +1112,14 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   }
 
   /**
-   * The published bound on a seed prompt. Absent is fine — a launch without one
-   * is not an error; oversized is not, and it is refused rather than truncated,
-   * because a silently shortened first turn is a different instruction.
+   * What this window will let a surface start, and whether the request in hand
+   * quoted the offer it was chosen from (task 2_2). Holds the offer sequence, so
+   * every id it hands out is minted in one place (OBL-7).
    */
-  function admissiblePrompt(prompt: unknown): prompt is string | undefined {
-    return prompt === undefined || (typeof prompt === "string" && prompt.length <= MAX_CONTINUATION_INSTRUCTION);
-  }
-
-  /**
-   * Everything about a launch that the host itself published, re-checked here.
-   *
-   * The shapes are read as `unknown` rather than trusted from the message type:
-   * the router asserts a name, not a payload, so a field that is null or a
-   * number reaches this function exactly as a well-formed one does.
-   */
-  function admissibleLaunch(surface: WorktreeSurface, fields: unknown): boolean {
-    if (typeof fields !== "object" || fields === null) {
-      return false;
-    }
-    const { agent, permissionChoiceId, prompt, offerId } = fields as Record<string, unknown>;
-    if (typeof agent !== "string" || !admissiblePrompt(prompt)) {
-      return false;
-    }
-    if (permissionChoiceId !== undefined && typeof permissionChoiceId !== "string") {
-      return false;
-    }
-    const offer = publishedTargets.get(surface);
-    // The answer this request was chosen from must be the answer this surface
-    // currently holds. A post that never arrived leaves the panel quoting an id
-    // the host has replaced, and refusing that is the safe direction: the user
-    // sees an action do nothing rather than one act on a list nobody rendered.
-    if (offer === undefined || offerId !== offer.offerId) {
-      return false;
-    }
-    const target = offer.targets.find((t) => t.agent === agent);
-    if (target === undefined) {
-      return false;
-    }
-    // A prompt for an agent that cannot be seeded would be silently dropped by
-    // the builder, which is the one outcome worse than refusing it.
-    if (prompt !== undefined && prompt !== "" && !target.canSeedPrompt) {
-      return false;
-    }
-    return permissionChoiceId === undefined || target.permissionChoices.some((c) => c.id === permissionChoiceId);
-  }
-
-  /**
-   * The target a request named, only if it quoted the registration the host
-   * currently publishes for it.
-   *
-   * Only reached where a worktree already exists — a create names no worktree
-   * yet, and stays outside this guard by design (design.md D10).
-   */
-  function admittedTarget(fields: unknown): AdmittedLaunch | undefined {
-    const { worktreeId, generation } = fields as Record<string, unknown>;
-    if (typeof worktreeId !== "string") {
-      return undefined;
-    }
-    const target = launchTarget(worktreeId);
-    if (target === undefined || generation !== target.generation) {
-      return undefined;
-    }
-    return { worktreeId, ...target };
-  }
-
-  /** Resolve the start-capable targets for `surface`, remember them, and answer. */
-  async function publishLaunchTargets(surface: WorktreeSurface): Promise<void> {
-    const targets = (await options.actions?.launchTargets?.()) ?? [];
-    offerSeq += 1;
-    const offerId = `offer-${offerSeq}`;
-    publishedTargets.set(surface, { offerId, targets });
-    surface.post({ type: "vaultLaunchTargets", capability: "start", targets: [...targets], offerId });
-  }
-
-  /** The launcher's option bag, with absent fields absent rather than undefined. */
-  function launchOpts(fields: WorktreeAgentLaunchFields): { permissionChoiceId?: string; prompt?: string } {
-    return {
-      ...(fields.permissionChoiceId === undefined ? {} : { permissionChoiceId: fields.permissionChoiceId }),
-      ...(fields.prompt === undefined ? {} : { prompt: fields.prompt }),
-    };
-  }
+  const { admissibleLaunch, admittedTarget, publishLaunchTargets, launchOpts } = createLaunchAdmission({
+    actions: () => options.actions,
+    launchTarget: (worktreeId) => launchTarget(worktreeId),
+  });
 
   /** Run one capability, keeping a rejection out of the message loop. */
   function perform(run: () => Promise<void>): void {
