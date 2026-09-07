@@ -378,9 +378,14 @@ export class WorktreeController {
     return this.view.selectedWorktree();
   }
 
-  /** Drop the panel's selection — the tab bar's chip clearing its own scope. */
+  /** Drop the panel's selection. */
   clearSelection(): void {
     this.view.clearSelection();
+  }
+
+  /** Follow a newly created terminal to its stable main-or-linked owner. */
+  selectTerminalOwner(worktreeId?: string): void {
+    this.view.selectTerminalOwner(worktreeId);
   }
 
   /**

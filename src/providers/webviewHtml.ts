@@ -125,6 +125,8 @@ export function getTerminalHtml(
       flex-direction: column;
     }
     #tab-bar {
+      container-type: inline-size;
+      container-name: terminal-tabs;
       flex-shrink: 0;
       display: none;
       height: var(--awt-tab-bar-height);
@@ -216,47 +218,75 @@ export function getTerminalHtml(
       opacity: 1 !important;
       background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1));
     }
-    /* The scope chip: the only thing on the bar saying the list is a subset, so it
-       reads as a statement rather than as another tab (design.md D4). */
+    /* A linked worktree frames the whole terminal surface, tab strip included. */
+    body:has(#tab-bar[data-worktree-scope]) .terminal-area::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      border: 1px solid var(--vscode-focusBorder, #007acc);
+      box-sizing: border-box;
+    }
+    /* The scope control owns the top-right corner. Filled, square, borderless:
+       it reads as the terminal's context rather than as one more terminal tab. */
     .tab-scope {
       display: flex;
       align-items: center;
-      gap: 4px;
       height: 100%;
-      padding: 0 4px 0 8px;
+      padding: 0;
+      margin-left: auto;
       flex-shrink: 0;
       white-space: nowrap;
-      color: var(--vscode-badge-foreground, #fff);
-      /* OPAQUE, and it has to be: a scrolled tab passes underneath the sticky
-         chip below, and a translucent fallback would show it through. */
-      background: var(--vscode-badge-background, #4d4d4d);
-      border-right: 1px solid var(--vscode-tab-border, transparent);
-      /* The bar scrolls; the only visual way out of the filter must not scroll
-         away with it. */
+      color: var(--vscode-button-foreground, #fff);
+      background: var(--vscode-focusBorder, #007acc);
       position: sticky;
-      left: 0;
+      right: 0;
       z-index: 1;
     }
-    .tab-scope-name {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 14ch;
-    }
-    .tab-scope-clear {
+    .tab-scope-chip {
       display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      height: 100%;
+      padding: 0 8px;
+      box-sizing: border-box;
+      color: inherit;
+    }
+    .tab-scope-icon {
+      display: inline-flex;
       align-items: center;
       justify-content: center;
       width: 16px;
       height: 16px;
-      cursor: pointer;
       color: inherit;
-      background: transparent;
-      border: none;
-      border-radius: 3px;
-      font-size: 13px;
-      line-height: 1;
-      padding: 0;
-      flex-shrink: 0;
+      flex: 0 0 auto;
+    }
+    .tab-scope-icon svg {
+      width: 15px;
+      height: 15px;
+    }
+    .tab-scope-kind {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      opacity: 0.78;
+    }
+    .tab-scope-name {
+      max-width: 22ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-weight: 600;
+    }
+    .tab-scope[data-density="kind"] .tab-scope-name,
+    .tab-scope[data-density="icon"] .tab-scope-name,
+    .tab-scope[data-density="icon"] .tab-scope-kind {
+      display: none;
+    }
+    .tab-scope[data-density="icon"] .tab-scope-chip {
+      padding-inline: 7px;
     }
     /* The same attention vocabulary a waiting tab uses (--vscode-editorWarning-
        foreground), so one shape means one thing. Deliberately NOT the error
@@ -277,9 +307,6 @@ export function getTerminalHtml(
       font-variant-numeric: tabular-nums;
       color: var(--vscode-editor-background, #1e1e1e);
       background: var(--vscode-editorWarning-foreground, #cca700);
-    }
-    .tab-scope-clear:hover {
-      background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1));
     }
     .tab-add {
       display: flex;
@@ -758,7 +785,6 @@ export function getTerminalHtml(
   </style>
 </head>
 <body data-terminal-location="${location}">
-  <div id="tab-bar"></div>
   <!-- Webview layout wrapper. The terminal area and the #aux-region are
        siblings; CSS in fileTreePanel.css drives flex direction and child order
        via the file-tree--{top|bottom|left|right} classes set at runtime by
@@ -766,6 +792,7 @@ export function getTerminalHtml(
        each section by collapsing it (.file-tree--root-collapsed / .vault-collapsed). -->
   <div id="webview-layout" class="webview-layout file-tree--bottom">
     <div class="terminal-area">
+      <div id="tab-bar"></div>
       <div id="terminal-container"></div>
     </div>
     <!-- Sidebar region — the sized edge slot. Holds the vault section stacked

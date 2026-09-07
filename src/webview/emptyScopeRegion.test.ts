@@ -26,11 +26,10 @@ describe("renderEmptyScopeRegion", () => {
       label: "feat/worktree-panel",
       onOpenTerminal: vi.fn(),
       onLaunchAgent: vi.fn(),
-      onClear: vi.fn(),
-    });
+          });
 
     expect(region.textContent).toContain("feat/worktree-panel");
-    expect(labels(region)).toEqual(["Open a terminal", "Launch an agent", "Show all tabs"]);
+    expect(labels(region)).toEqual(["Open a terminal", "Launch an agent"]);
   });
 
   it("posts each offer for the scoped worktree", () => {
@@ -41,8 +40,7 @@ describe("renderEmptyScopeRegion", () => {
       label: "feat/x",
       onOpenTerminal,
       onLaunchAgent,
-      onClear: vi.fn(),
-    });
+          });
 
     click(region, "Open a terminal");
     click(region, "Launch an agent");
@@ -53,28 +51,13 @@ describe("renderEmptyScopeRegion", () => {
   it("omits the launch offer entirely when nothing can be launched", () => {
     // Omitted rather than disabled: an inert button claims a capability the host
     // has already answered it does not have.
-    const region = renderEmptyScopeRegion({ id: "/wt/x", label: "feat/x", onOpenTerminal: vi.fn(), onClear: vi.fn() });
+    const region = renderEmptyScopeRegion({ id: "/wt/x", label: "feat/x", onOpenTerminal: vi.fn() });
 
-    expect(labels(region)).toEqual(["Open a terminal", "Show all tabs"]);
-  });
-
-  it("calls back from the clearing control rather than clearing anything itself", () => {
-    const onClear = vi.fn();
-    const region = renderEmptyScopeRegion({ id: "/wt/x", label: "feat/x", onOpenTerminal: vi.fn(), onClear });
-
-    click(region, "Show all tabs");
-    expect(onClear).toHaveBeenCalledTimes(1);
-  });
-
-  it("clears no scope while merely being rendered", () => {
-    const onClear = vi.fn();
-    renderEmptyScopeRegion({ id: "/wt/x", label: "feat/x", onOpenTerminal: vi.fn(), onLaunchAgent: vi.fn(), onClear });
-
-    expect(onClear).not.toHaveBeenCalled();
+    expect(labels(region)).toEqual(["Open a terminal"]);
   });
 
   it("carries no error treatment — an empty worktree is a normal selection", () => {
-    const region = renderEmptyScopeRegion({ id: "/wt/x", label: "feat/x", onOpenTerminal: vi.fn(), onClear: vi.fn() });
+    const region = renderEmptyScopeRegion({ id: "/wt/x", label: "feat/x", onOpenTerminal: vi.fn() });
 
     expect(region.className).toContain("empty-scope");
     expect(region.outerHTML).not.toMatch(/error|danger|warning/i);
@@ -92,7 +75,7 @@ describe("mountEmptyScopeRegion", () => {
     return container;
   }
 
-  const deps = { id: "/wt/x", label: "feat/x", onOpenTerminal: () => {}, onClear: () => {} };
+  const deps = { id: "/wt/x", label: "feat/x", onOpenTerminal: () => {} };
 
   it("hides the container it stands in front of, so the hidden worktree is not still on screen", () => {
     const container = surface();
@@ -159,7 +142,6 @@ describe("mountEmptyScopeRegion", () => {
     expect([...document.querySelectorAll(".empty-scope button")].map((b) => b.textContent)).toEqual([
       "Open a terminal",
       "Launch an agent",
-      "Show all tabs",
     ]);
   });
 
@@ -189,7 +171,6 @@ describe("mountEmptyScopeRegion", () => {
       id,
       label: "main",
       onOpenTerminal: () => opened.push(id),
-      onClear: () => {},
     });
     mountEmptyScopeRegion(container, forWorktree("/repo-a/main"));
     const first = document.querySelector(".empty-scope");

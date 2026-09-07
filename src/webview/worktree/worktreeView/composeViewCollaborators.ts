@@ -56,7 +56,7 @@ export interface ViewCollaboratorSeam {
   isExpanded(info: WorktreeInfo): boolean;
   selectedWorktreeId(): string | null;
   requestSubagents(row: WorktreeAgentRow): void;
-  select(worktreeId: string): boolean;
+  select(info: WorktreeInfo): boolean;
   openRowMenu(info: WorktreeInfo, ev: MouseEvent, row: HTMLElement): void;
   toggleCollapsed(id: string): void;
   toggleRow(rowId: string): void;

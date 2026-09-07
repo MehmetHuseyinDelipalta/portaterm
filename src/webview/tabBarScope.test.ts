@@ -68,16 +68,20 @@ function ask(
   scope: TabBarScopeCoordinator,
   tabLayouts: Map<string, SplitNode>,
   exited: readonly string[] = [],
+  owners: ReadonlyMap<string, string> = new Map(),
 ): boolean {
   const panes = [...tabLayouts.values()].flatMap((layout) => getAllSessionIds(layout));
   const source = {
     tabLayouts,
     tabActivePaneIds: new Map<string, string>(),
     terminals: new Map(
-      panes.map((id) => [id, { name: id, exited: exited.includes(id), activityStatus: "idle" }]),
+      panes.map((id) => [
+        id,
+        { name: id, exited: exited.includes(id), activityStatus: "idle", worktreeId: owners.get(id) },
+      ]),
     ) as never,
   };
-  return scope.shouldRender(tabLayouts, buildTabBarData(source, scope.effectiveScope()).hiddenWaiting);
+  return scope.shouldRender(source, buildTabBarData(source, scope.effectiveScope()).hiddenWaiting);
 }
 
 function coordinator(deps: TabBarScopeDeps): TabBarScopeCoordinator {
@@ -251,16 +255,23 @@ describe("what counts as a reason to redraw", () => {
     return s;
   };
 
+  it("draws when a terminal's stable owner changes", () => {
+    const scope = scoped();
+    const tabs = layouts("tab-1");
+    expect(ask(scope, tabs, [], new Map([["tab-1", HERE]]))).toBe(true);
+    expect(ask(scope, tabs, [], new Map([["tab-1", HERE]]))).toBe(false);
+    expect(ask(scope, tabs, [], new Map([["tab-1", ELSEWHERE]]))).toBe(true);
+  });
+
   it("draws once on the first ask and never again for the same state", () => {
     const scope = scoped();
     expect(ask(scope, layouts("tab-1"))).toBe(false);
     expect(ask(scope, layouts("tab-1"))).toBe(false);
   });
 
-  it("draws once for an attribution that moved a pane, and once for a changed scope", () => {
+  it("ignores attribution movement and draws once for a changed owner scope", () => {
     const scope = scoped();
     scope.setAttribution(report(new Map([["pane-1", ELSEWHERE]])));
-    expect(ask(scope, layouts("tab-1"))).toBe(true);
     expect(ask(scope, layouts("tab-1"))).toBe(false);
 
     scope.select(ELSEWHERE);
@@ -268,7 +279,7 @@ describe("what counts as a reason to redraw", () => {
     expect(ask(scope, layouts("tab-1"))).toBe(false);
   });
 
-  it("ignores the order the attribution arrived in", () => {
+  it("ignores attribution content and order", () => {
     const scope = scoped();
     scope.setAttribution(
       report(
@@ -278,7 +289,7 @@ describe("what counts as a reason to redraw", () => {
         ]),
       ),
     );
-    expect(ask(scope, layouts("tab-1"))).toBe(true);
+    expect(ask(scope, layouts("tab-1"))).toBe(false);
 
     scope.setAttribution(
       report(
@@ -317,16 +328,15 @@ describe("what counts as a reason to redraw", () => {
     expect(ask(scope, layouts("tab-1"))).toBe(false);
   });
 
-  it("does NOT draw when a pane the evidence cannot place starts waiting", () => {
-    // Absent from the map means presented in every scope (I18) — never hidden,
-    // never counted, so never a reason to redraw. Membership is settled FIRST, so
-    // the only thing that moves between the two asks is the waiting set.
+  it("draws when an unowned main pane hidden from a linked owner starts waiting", () => {
+    // Stable ownership, not presence placement, decides visibility. An unowned
+    // pane is main-owned and therefore hidden from this linked scope.
     const scope = scoped();
     const placement = new Map([["pane-1", HERE]]);
     scope.setAttribution(report(placement));
     ask(scope, layouts("tab-1", "tab-9"));
     scope.setAttribution(report(placement, ["tab-9"]));
-    expect(ask(scope, layouts("tab-1", "tab-9"))).toBe(false);
+    expect(ask(scope, layouts("tab-1", "tab-9"))).toBe(true);
   });
 
   it("does NOT draw for any waiting change while the surface is unscoped", () => {
@@ -442,12 +452,10 @@ describe("a push that moved no attribution charges nothing", () => {
       ["pane-1", ELSEWHERE],
       ["pane-2", ELSEWHERE],
     ];
-    expect(push(scope, moved, tree(), tabs)).toBe(true);
     expect(push(scope, moved, tree(), tabs)).toBe(false);
 
     // A pane the evidence stops placing at all.
     const fewer: [string, string][] = [["pane-2", ELSEWHERE]];
-    expect(push(scope, fewer, tree(), tabs)).toBe(true);
     expect(push(scope, fewer, tree(), tabs)).toBe(false);
 
     // The scope itself.

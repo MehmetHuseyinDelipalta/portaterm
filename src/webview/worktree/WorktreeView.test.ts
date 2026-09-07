@@ -1170,7 +1170,7 @@ describe("what activating a worktree row does, and what it does not", () => {
 
     rowFor(view, "main")?.click();
 
-    expect(scoped).toEqual([MAIN_PATH]);
+    expect(scoped).toEqual([null]);
     expect(rowFor(view, "main")?.getAttribute("aria-expanded")).toBe(before);
   });
 
@@ -2686,7 +2686,7 @@ describe("worktree selection", () => {
     expect(view.element.querySelectorAll(".wt-card")).toHaveLength(1);
     expect(cardFor(view, "release/0.4.x")).not.toBeNull();
     expect(cardFor(view, "main")).toBeNull();
-    expect(selected).toEqual([MAIN_PATH, RELEASE_WT]);
+    expect(selected).toEqual([null, RELEASE_WT]);
   });
 
   it("keeps the card off a worktree that is merely expanded", () => {

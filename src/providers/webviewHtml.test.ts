@@ -50,6 +50,42 @@ describe("getTerminalHtml webview.js cache-buster (D11)", () => {
   });
 });
 
+describe("the responsive worktree scope control", () => {
+  function ruleFor(css: string, selector: string): string {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `no rule for ${selector}`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  }
+
+  it("puts the tab strip inside the framed terminal area", () => {
+    const html = getTerminalHtml(mockWebview(), vscode.Uri.file("/ext"), "sidebar");
+    expect(html).toMatch(
+      /<div class="terminal-area">\s*<div id="tab-bar"><\/div>\s*<div id="terminal-container"><\/div>/,
+    );
+  });
+
+  it("frames only a linked-worktree view, never main", () => {
+    const css = getTerminalHtml(mockWebview(), vscode.Uri.file("/ext"), "sidebar");
+    expect(css).toContain("body:has(#tab-bar[data-worktree-scope]) .terminal-area::after");
+    expect(css).not.toContain("body:not(:has(#tab-bar[data-worktree-scope])) .terminal-area::after");
+  });
+
+  it("fills a square borderless corner indicator without a close control", () => {
+    const css = getTerminalHtml(mockWebview(), vscode.Uri.file("/ext"), "sidebar");
+    const scope = ruleFor(css, ".tab-scope");
+    expect(scope).toContain("background: var(--vscode-focusBorder");
+    expect(scope).not.toContain("border-radius");
+    expect(css).not.toContain(".tab-scope-clear");
+  });
+
+  it("lets measured density hide the name before the worktree type", () => {
+    const css = getTerminalHtml(mockWebview(), vscode.Uri.file("/ext"), "sidebar");
+    expect(css).toContain('.tab-scope[data-density="kind"] .tab-scope-name');
+    expect(css).toContain('.tab-scope[data-density="icon"] .tab-scope-kind');
+    expect(css).not.toContain("@container terminal-tabs");
+  });
+});
+
 describe("the scope badge speaks the waiting vocabulary, and does not animate", () => {
   /** The declaration block for one selector, as written in the stylesheet. */
   function ruleFor(css: string, selector: string): string {

@@ -171,6 +171,19 @@ describe("SessionManager: createSession", () => {
     sm.dispose();
   });
 
+  it("falls back to main when a linked owner leaves the current tree", () => {
+    const sm = new SessionManager();
+    const webview = createMockWebview();
+    const linked = sm.createSession("anywhereTerminal.sidebar", webview, { worktreeId: "/repo-wt/gone" });
+    const main = sm.createSession("anywhereTerminal.sidebar", webview);
+
+    sm.reconcileWorktreeOwners("anywhereTerminal.sidebar", new Set(["/repo-wt/other"]));
+
+    expect(sm.getSession(linked)?.worktreeId).toBeUndefined();
+    expect(sm.getSession(main)?.worktreeId).toBeUndefined();
+    sm.dispose();
+  });
+
   it("first session in a view is automatically active", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();

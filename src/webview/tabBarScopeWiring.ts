@@ -25,8 +25,6 @@ export interface TabBarScopePanel {
    * carries both.
    */
   stageScopeCleared(worktreeId: string, label: string): void;
-  /** Stop marking a row as selected, and say so the way a click would. */
-  clearSelection(): void;
 }
 
 export interface TabBarScopeWiringDeps {
@@ -56,8 +54,8 @@ export interface TabBarScopeWiringDeps {
   activePane: () => string | null;
   /** Bring this pane forward. Never called with the pane already active. */
   activatePane: (paneId: string) => void;
-  /** Show the empty-scope region for this worktree, or take it down with `null`. */
-  showEmptyScope: (worktree: { id: string; label: string } | null) => void;
+  /** Show the empty owner region, or take it down with `null`. */
+  showEmptyScope: (owner: { id: string; label: string; worktreeId?: string } | null) => void;
 }
 
 export interface TabBarScopeWiring {
@@ -88,7 +86,7 @@ export interface TabBarScopeWiring {
    * value for both the chip and the bar's second reason to be visible, so a filter
    * without its own escape hatch is not expressible.
    */
-  chip(hiddenWaiting?: number): { label: string; onClear: () => void; hiddenWaiting?: number } | undefined;
+  chip(hiddenWaiting?: number): { worktreeId: string; label: string; hiddenWaiting?: number } | undefined;
 }
 
 export function wireTabBarScope(deps: TabBarScopeWiringDeps): TabBarScopeWiring {
@@ -118,7 +116,10 @@ export function wireTabBarScope(deps: TabBarScopeWiringDeps): TabBarScopeWiring 
     const source = deps.source();
     for (const layout of source.tabLayouts.values()) {
       for (const paneId of getAllSessionIds(layout)) {
-        if (source.terminals.has(paneId) && coordinator.presents(paneId)) {
+        if (
+          source.terminals.has(paneId) &&
+          coordinator.presents(paneId, source.terminals.get(paneId)?.worktreeId)
+        ) {
           return paneId;
         }
       }
@@ -136,15 +137,18 @@ export function wireTabBarScope(deps: TabBarScopeWiringDeps): TabBarScopeWiring 
    * path no selection passes through (round-1 B1/W2). Activation stays gated
    * because a tree push is not a selection and must not take focus.
    */
+  const sourceOwner = (source: TabBarDataSource, paneId: string): string | undefined =>
+    source.terminals.get(paneId)?.worktreeId;
+
   const settleScope = (activateIfNeeded: boolean): void => {
     const worktreeId = coordinator.scopedWorktreeId();
-    if (worktreeId === null) {
-      deps.showEmptyScope(null);
-      return;
-    }
     const first = firstPresentedPane();
     if (first === null) {
-      deps.showEmptyScope({ id: worktreeId, label: coordinator.scopedLabel() ?? worktreeId });
+      deps.showEmptyScope(
+        worktreeId === null
+          ? { id: "main", label: "Main" }
+          : { id: worktreeId, label: coordinator.scopedLabel() ?? worktreeId, worktreeId },
+      );
       return;
     }
     deps.showEmptyScope(null);
@@ -154,7 +158,10 @@ export function wireTabBarScope(deps: TabBarScopeWiringDeps): TabBarScopeWiring 
     const active = deps.activePane();
     // `first` is presented and `active` is not, so they cannot be the same pane —
     // the "never with the pane already active" contract holds without a guard.
-    if (active === null || !coordinator.presents(active)) {
+    if (
+      active === null ||
+      !coordinator.presents(active, sourceOwner(deps.source(), active))
+    ) {
       deps.activatePane(first);
     }
   };
@@ -189,7 +196,7 @@ export function wireTabBarScope(deps: TabBarScopeWiringDeps): TabBarScopeWiring 
     // The count the badge would draw, from the pass that draws it — see D2 and the
     // guard's own note on why deriving it twice suppressed a redraw.
     const { hiddenWaiting } = buildTabBarData(source, coordinator.effectiveScope());
-    if (coordinator.shouldRender(source.tabLayouts, hiddenWaiting)) {
+    if (coordinator.shouldRender(source, hiddenWaiting)) {
       deps.render();
     }
   };
@@ -241,26 +248,15 @@ export function wireTabBarScope(deps: TabBarScopeWiringDeps): TabBarScopeWiring 
     // it from the same pass that drops the tab, and a second derivation is a
     // second definition of "hidden" (design.md D2).
     chip(hiddenWaiting) {
+      const worktreeId = coordinator.scopedWorktreeId();
       const label = coordinator.scopedLabel();
-      if (label === null) {
+      if (worktreeId === null || label === null) {
         return undefined;
       }
       return {
+        worktreeId,
         label,
         ...(hiddenWaiting === undefined || hiddenWaiting === 0 ? {} : { hiddenWaiting }),
-        onClear: () => {
-          // Through the PANEL, so the row stops being marked as well. Its own
-          // callback comes back through `onSelectWorktree`; the direct clear
-          // after it is what covers a surface with no panel mounted, and is
-          // inert once the callback already did it (round-1 B2).
-          deps.panel()?.clearSelection();
-          coordinator.clear();
-          settleScope(false);
-          // Gated, so the signature records the cleared state. Rendering
-          // unconditionally left it unrecorded on a surface with no panel, and
-          // drew the bar twice on one with a panel (round-2 V4).
-          settle();
-        },
       };
     },
   };

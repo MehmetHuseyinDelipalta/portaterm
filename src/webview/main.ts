@@ -361,7 +361,7 @@ let tabBarScope: TabBarScopeWiring | null = null;
 
 // ─── Orchestration ──────────────────────────────────────────────────
 
-/** Create in the selected linked worktree; main uses the generic route. */
+/** Create in the selected worktree; the unscoped surface keeps host defaults. */
 function requestNewTerminal(worktreeId = tabBarScope?.effectiveScope()?.worktreeId): void {
   vscode.postMessage(worktreeId ? { type: "worktreeOpenTerminal", worktreeId } : { type: "createTab" });
 }
@@ -481,7 +481,7 @@ function switchTab(newTabId: string): void {
 }
 
 /** Resolve what the empty-scope region offers here, and hand it to the mount. */
-function showEmptyScope(worktree: { id: string; label: string } | null): void {
+function showEmptyScope(worktree: { id: string; label: string; worktreeId?: string } | null): void {
   const containerEl = document.getElementById("terminal-container");
   if (containerEl === null) {
     return;
@@ -490,13 +490,12 @@ function showEmptyScope(worktree: { id: string; label: string } | null): void {
     mountEmptyScopeRegion(containerEl, null);
     return;
   }
-  const launch = worktreeController?.launchOfferFor(worktree.id);
+  const launch = worktree.worktreeId ? worktreeController?.launchOfferFor(worktree.worktreeId) : undefined;
   mountEmptyScopeRegion(containerEl, {
     id: worktree.id,
     label: worktree.label,
-    onOpenTerminal: () => vscode.postMessage({ type: "worktreeOpenTerminal", worktreeId: worktree.id }),
+    onOpenTerminal: () => requestNewTerminal(worktree.worktreeId),
     ...(launch === undefined ? {} : { onLaunchAgent: launch }),
-    onClear: () => worktreeController?.clearSelection(),
   });
 }
 
@@ -631,6 +630,7 @@ const routeMessage = createMessageRouter({
     });
     instance.terminal.onTitleChange((title) => clearWaitingOnCursorTitleLoss(msg.tabId, title));
     instance.terminal.onResize(() => activityTracker.setWaiting(msg.tabId, false));
+    worktreeController?.selectTerminalOwner(msg.worktreeId);
     switchTab(msg.tabId);
   },
   onTabRemoved(msg) {
@@ -793,7 +793,7 @@ const routeMessage = createMessageRouter({
     handleScrollbackDump(msg);
   },
   onVaultSessionsResponse(msg) {
-    vaultPanel?.render(msg.result, msg.fromCache ?? false);
+    vaultPanel?.render(msg.result);
   },
   onVaultSessionDetailResponse(msg) {
     vaultPanel?.handleSessionDetailResponse(msg);
@@ -833,6 +833,14 @@ const routeMessage = createMessageRouter({
     // (it stays on the native paste path); nothing to restore.
   },
   onWorktreeTreeResponse(msg) {
+    const linked = new Set(
+      msg.tree?.repos.flatMap((repo) => repo.worktrees.filter((wt) => wt.kind === "linked").map((wt) => wt.id)) ?? [],
+    );
+    for (const terminal of store.terminals.values()) {
+      if (terminal.worktreeId !== undefined && !linked.has(terminal.worktreeId)) {
+        terminal.worktreeId = undefined;
+      }
+    }
     // The seam owns the order the coordinator and the panel see this in, and the
     // redraw that may follow. See: webview/tabBarScopeWiring.ts.
     if (tabBarScope) {
@@ -1133,7 +1141,6 @@ function handleInit(msg: InitMessage): void {
       // the primary create affordance had never been rendered.
       onCreateWorktree: () => worktreeController?.openCreate(),
       onWorktreeQuery: (query) => worktreeController?.setQuery(query),
-      onWorktreeRefresh: () => worktreeController?.requestRefresh(),
       onWorktreeVisibility: (visible) => worktreeController?.setVisible(visible),
       getInitialView: () => resolveInitialView(store.getState().vaultView, msg.worktreeHasRepo),
       persistView: (view) => store.updateState({ vaultView: view }),

@@ -51,7 +51,7 @@ export interface WorktreeRowDeps {
   selectedWorktreeId(): string | null;
   requestSubagents(row: WorktreeAgentRow): void;
   repaint(): void;
-  select(worktreeId: string): boolean;
+  select(info: WorktreeInfo): boolean;
   openRowMenu(info: WorktreeInfo, ev: MouseEvent, row: HTMLElement): void;
   toggleCollapsed(id: string): void;
   toggleRow(rowId: string): void;
@@ -255,7 +255,7 @@ function buildWorktree(
         // same gesture is what made one click read as three events at once, and
         // § 6 has always given disclosure to the chevron rather than the row.
         onActivate: () => {
-          if (deps.select(info.id)) {
+          if (deps.select(info)) {
             deps.repaint();
           }
         },

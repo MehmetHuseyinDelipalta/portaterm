@@ -8,9 +8,9 @@
 //
 // See: docs/design/worktree-scope.md, design.md D1 / D7 / D8 / D9.
 
-import { attributionKey, type PaneAttribution, type PaneReport } from "./paneAttribution";
-import { getAllSessionIds, type SplitNode } from "./SplitModel";
-import { inScope, type TabBarScope } from "./TabBarUtils";
+import { type PaneAttribution, type PaneReport } from "./paneAttribution";
+import { getAllSessionIds } from "./SplitModel";
+import { inScope, type TabBarDataSource, type TabBarScope } from "./TabBarUtils";
 import type { WorktreeTree } from "./worktree/worktreeViewTypes";
 
 /** The slice of the surface's persisted state this coordinator owns. */
@@ -55,7 +55,9 @@ function labelsOf(tree: WorktreeTree): ReadonlyMap<string, string> {
   const labels = new Map<string, string>();
   for (const repo of tree.repos) {
     for (const wt of repo.worktrees) {
-      labels.set(wt.id, wt.branch ?? wt.displayPath);
+      if (wt.kind === "linked") {
+        labels.set(wt.id, wt.branch ?? wt.displayPath);
+      }
     }
   }
   return labels;
@@ -176,8 +178,8 @@ export class TabBarScopeCoordinator {
    * bar filters by it and the selection navigates by it, and two copies is how
    * they come to disagree about which panes a scope holds.
    */
-  presents(paneId: string): boolean {
-    return inScope(this.effectiveScope(), paneId);
+  presents(paneId: string, stableOwner?: string): boolean {
+    return inScope(this.effectiveScope(), paneId, stableOwner);
   }
 
   /**
@@ -224,8 +226,8 @@ export class TabBarScopeCoordinator {
    * activity change or a retitled agent move none of them, so none of them is a
    * reason to re-enter `renderTabBar`.
    */
-  shouldRender(tabLayouts: ReadonlyMap<string, SplitNode>, hiddenWaiting: number): boolean {
-    const next = this.signatureOf(tabLayouts, hiddenWaiting);
+  shouldRender(source: TabBarDataSource, hiddenWaiting: number): boolean {
+    const next = this.signatureOf(source, hiddenWaiting);
     if (next === this.signature) {
       return false;
     }
@@ -233,11 +235,16 @@ export class TabBarScopeCoordinator {
     return true;
   }
 
-  private signatureOf(tabLayouts: ReadonlyMap<string, SplitNode>, hiddenWaiting: number): string {
-    // Membership, not identity: a split gaining or losing a leaf changes which
-    // panes a tab is judged by, and the join would otherwise keep the old answer.
-    const membership = [...tabLayouts]
-      .map(([tabId, layout]) => `${tabId}${UNIT}${getAllSessionIds(layout).join(LEAF)}`)
+  private signatureOf(source: TabBarDataSource, hiddenWaiting: number): string {
+    // Membership and stable owner: either one changes which owner view presents
+    // the tab. Presence attribution is deliberately absent from this key.
+    const membership = [...source.tabLayouts]
+      .map(([tabId, layout]) => {
+        const leaves = getAllSessionIds(layout)
+          .map((paneId) => `${paneId}${LEAF}${source.terminals.get(paneId)?.worktreeId ?? ""}`)
+          .join(UNIT);
+        return `${tabId}${RECORD}${leaves}`;
+      })
       .join(RECORD);
     // The LABEL is in here too. It moves only when the tree renames the scoped
     // worktree, so it can never cause a spurious render — and leaving it out left
@@ -245,7 +252,6 @@ export class TabBarScopeCoordinator {
     return [
       this.scopedWorktreeId() ?? "",
       this.scopedLabel() ?? "",
-      attributionKey(this.attribution),
       membership,
       // The count the badge would draw, NOT the raw waiting set: a waiting change
       // on a presented pane, or any at all while unscoped, moves nothing the bar

@@ -200,7 +200,15 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     // flag, so the object must be the same one across attach and every message.
     const worktreeSurface: WorktreeSurface = {
       isReady: () => this._ready,
-      post: (msg) => this.safePostMessage(webviewView.webview, msg),
+      post: (msg) => {
+        if (msg.type === "worktreeTreeResponse") {
+          const linked = new Set(
+            msg.tree?.repos.flatMap((repo) => repo.worktrees.filter((wt) => wt.kind === "linked").map((wt) => wt.id)) ?? [],
+          );
+          this.sessionManager.reconcileWorktreeOwners(this.getViewId(), linked);
+        }
+        this.safePostMessage(webviewView.webview, msg);
+      },
       // A pane can only be created by the provider that owns the view, so this
       // capability lives on the surface rather than among the host's injected
       // ones. The cwd arrives already resolved by the host — it is a worktree's

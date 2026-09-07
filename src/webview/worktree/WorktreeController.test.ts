@@ -215,7 +215,24 @@ describe("the worktree the panel has selected", () => {
 
     row("main")?.click();
     expect(controller.selectedWorktree()).toBe("/Users/dev/Projects/ai-oss/anywhere-terminal");
-    expect(picked).toEqual(["/Users/dev/Projects/ai-oss/anywhere-terminal"]);
+    expect(picked).toEqual([null]);
+
+    row("feat/worktree-panel")?.click();
+    expect(picked).toEqual([null, "/Users/dev/Projects/ai-oss/anywhere-terminal-wt/worktree-panel"]);
+  });
+
+  it("follows a newly created terminal to its linked owner and returns to main", () => {
+    const picked: (string | null)[] = [];
+    const { controller } = mount({ onSelectWorktree: (id) => picked.push(id) });
+    controller.setVisible(true);
+    controller.handleTreeResponse(response());
+
+    controller.selectTerminalOwner("/Users/dev/Projects/ai-oss/anywhere-terminal-wt/worktree-panel");
+    expect(controller.selectedWorktree()).toBe("/Users/dev/Projects/ai-oss/anywhere-terminal-wt/worktree-panel");
+    controller.selectTerminalOwner(undefined);
+
+    expect(controller.selectedWorktree()).toBeNull();
+    expect(picked).toEqual(["/Users/dev/Projects/ai-oss/anywhere-terminal-wt/worktree-panel", null]);
   });
 
   it("relays the drop when the selected worktree leaves the tree", () => {

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBranch, createLeaf } from "./SplitModel";
 import {
   buildTabBarData,
+  chooseScopeDensity,
   handleTabKeyboardShortcut,
   type RenderTabBarDeps,
   renderTabBar,
@@ -590,299 +591,71 @@ describe("buildTabBarData", () => {
   });
 });
 
-// ─── Scoping the bar to one worktree (WT-010.1) ──────────────────────
+// ─── Main and linked-worktree ownership ─────────────────────────────
 
-describe("a scoped tab bar hides only what it can prove belongs elsewhere", () => {
+describe("the tab bar filters by stable terminal owner", () => {
   const HERE = "/wt/here";
   const ELSEWHERE = "/wt/elsewhere";
 
-  const source = (over: Partial<TabBarDataSource>): TabBarDataSource => ({
-    tabLayouts: new Map(),
-    tabActivePaneIds: new Map(),
-    terminals: new Map(),
-    ...over,
-  });
-
-  /** Single-pane tabs, one per id, all idle. */
-  function leaves(...ids: string[]): TabBarDataSource {
-    return source({
-      tabLayouts: new Map(ids.map((id) => [id, createLeaf(id)])),
-      terminals: new Map(ids.map((id) => [id, { name: id, exited: false, activityStatus: "idle" }])) as never,
-    });
-  }
-
-  const scope = (entries: [string, string][]): TabBarScope => ({
-    worktreeId: HERE,
-    attribution: new Map(entries),
-  });
-
-  it("[I18] presents a pane the evidence does not place, in every scope", () => {
-    // Failing OPEN is the whole invariant: absence of attribution is not proof of
-    // absence from this worktree, and a tab hidden on no evidence is a running
-    // terminal the user cannot find and cannot tell is hidden.
-    const store = leaves("here", "elsewhere", "unplaced");
-    const shown = buildTabBarData(
-      store,
-      scope([
-        ["here", HERE],
-        ["elsewhere", ELSEWHERE],
-      ]),
-    ).tabs;
-    expect([...shown.keys()]).toEqual(["here", "unplaced"]);
-  });
-
-  const scopeWaiting = (entries: [string, string][], waiting: string[]): TabBarScope => ({
-    worktreeId: HERE,
-    attribution: new Map(entries),
-    waiting: new Set(waiting),
-  });
-
-  /** Single-pane tabs where the named ids carry the surface's OWN waiting status. */
-  function leavesWaiting(ids: string[], locallyWaiting: string[] = [], exited: string[] = []): TabBarDataSource {
-    return source({
-      tabLayouts: new Map(ids.map((id) => [id, createLeaf(id)])),
-      terminals: new Map(
-        ids.map((id) => [
-          id,
-          {
-            name: id,
-            exited: exited.includes(id),
-            activityStatus: locallyWaiting.includes(id) ? "waiting" : "idle",
-          },
-        ]),
-      ) as never,
-    });
-  }
-
-  it("counts the hidden tabs that hold a waiting pane", () => {
-    const store = leavesWaiting(["here", "gone-1", "gone-2", "gone-3"]);
-    const data = buildTabBarData(
-      store,
-      scopeWaiting(
-        [
-          ["here", HERE],
-          ["gone-1", ELSEWHERE],
-          ["gone-2", ELSEWHERE],
-          ["gone-3", ELSEWHERE],
-        ],
-        ["gone-1", "gone-2"],
-      ),
-    );
-    expect([...data.tabs.keys()]).toEqual(["here"]);
-    expect(data.hiddenWaiting).toBe(2);
-  });
-
-  it("counts nothing when what is hidden is not waiting", () => {
-    const store = leavesWaiting(["here", "gone"]);
-    const data = buildTabBarData(
-      store,
-      scopeWaiting(
-        [
-          ["here", HERE],
-          ["gone", ELSEWHERE],
-        ],
-        [],
-      ),
-    );
-    expect(data.hiddenWaiting).toBe(0);
-  });
-
-  it("[I19] counts a hidden tab that only PRESENCE calls waiting", () => {
-    // The two sources have different coverage, and either one alone must be able
-    // to raise the count — a source that can be silenced by the other's ignorance
-    // is the silence this badge exists to break.
-    const store = leavesWaiting(["here", "gone"], []);
-    const data = buildTabBarData(
-      store,
-      scopeWaiting(
-        [
-          ["here", HERE],
-          ["gone", ELSEWHERE],
-        ],
-        ["gone"],
-      ),
-    );
-    expect(data.hiddenWaiting).toBe(1);
-  });
-
-  it("[I19] counts a hidden tab that only the SURFACE's own status calls waiting", () => {
-    const store = leavesWaiting(["here", "gone"], ["gone"]);
-    const data = buildTabBarData(
-      store,
-      scopeWaiting(
-        [
-          ["here", HERE],
-          ["gone", ELSEWHERE],
-        ],
-        [],
-      ),
-    );
-    expect(data.hiddenWaiting).toBe(1);
-  });
-
-  it("counts a hidden leaf the surface has not built an instance for yet", () => {
-    // Round-1 W5: the split branch counts on presence evidence alone, and the leaf
-    // branch required an instance. A tab hidden by the scope is hidden whether or
-    // not this surface has caught up with it.
-    const store = source({
-      tabLayouts: new Map([["gone", createLeaf("gone")]]),
-      tabActivePaneIds: new Map(),
-      terminals: new Map() as never,
-    });
-    const data = buildTabBarData(store, scopeWaiting([["gone", ELSEWHERE]], ["gone"]));
-    expect(data.hiddenWaiting).toBe(1);
-  });
-
-  it("counts a collapsed split by its LIVE leaf, not by the dead tab id it kept", () => {
-    // Round-2 W3: `closeSplitPaneById` leaves tabLayouts[A] = leaf{B}. Keyed by A,
-    // which carries no attribution, the tab looked in-scope and the count never
-    // fired for a live pane hidden and waiting.
-    const store = source({
-      tabLayouts: new Map([["collapsed", createLeaf("survivor")]]),
-      tabActivePaneIds: new Map(),
-      terminals: new Map([["survivor", { name: "survivor", exited: false, activityStatus: "waiting" }]]) as never,
-    });
-    const data = buildTabBarData(store, scopeWaiting([["survivor", ELSEWHERE]], []));
-    expect(data.hiddenWaiting).toBe(1);
-  });
-
-  it("counts no pane the evidence cannot place — it was never hidden", () => {
-    const store = leavesWaiting(["here", "unplaced"], ["unplaced"]);
-    const data = buildTabBarData(store, scopeWaiting([["here", HERE]], ["unplaced"]));
-    expect([...data.tabs.keys()]).toEqual(["here", "unplaced"]);
-    expect(data.hiddenWaiting).toBe(0);
-  });
-
-  it("counts no exited pane — a finished process waits on nobody", () => {
-    const store = leavesWaiting(["here", "gone"], ["gone"], ["gone"]);
-    const data = buildTabBarData(
-      store,
-      scopeWaiting(
-        [
-          ["here", HERE],
-          ["gone", ELSEWHERE],
-        ],
-        ["gone"],
-      ),
-    );
-    expect(data.hiddenWaiting).toBe(0);
-  });
-
-  it("counts a hidden split holding two waiting panes ONCE — the unit is the tab", () => {
-    const store = source({
-      tabLayouts: new Map([["gone", createBranch("horizontal", createLeaf("gone"), createLeaf("gone-b"))]]),
-      tabActivePaneIds: new Map([["gone", "gone"]]),
-      terminals: new Map(
-        ["gone", "gone-b"].map((id) => [id, { name: id, exited: false, activityStatus: "waiting" }]),
-      ) as never,
-    });
-    const data = buildTabBarData(
-      store,
-      scopeWaiting(
-        [
-          ["gone", ELSEWHERE],
-          ["gone-b", ELSEWHERE],
-        ],
-        ["gone", "gone-b"],
-      ),
-    );
-    expect([...data.tabs.keys()]).toEqual([]);
-    expect(data.hiddenWaiting).toBe(1);
-  });
-
-  it("counts nothing for a split that is still presented, however it waits", () => {
-    // It cannot be hidden and counted at once: the count happens at the drop.
-    const store = source({
-      tabLayouts: new Map([["mixed", createBranch("horizontal", createLeaf("mixed"), createLeaf("mixed-b"))]]),
-      tabActivePaneIds: new Map([["mixed", "mixed"]]),
-      terminals: new Map(
-        ["mixed", "mixed-b"].map((id) => [id, { name: id, exited: false, activityStatus: "waiting" }]),
-      ) as never,
-    });
-    const data = buildTabBarData(
-      store,
-      scopeWaiting(
-        [
-          ["mixed", HERE],
-          ["mixed-b", ELSEWHERE],
-        ],
-        ["mixed-b"],
-      ),
-    );
-    expect([...data.tabs.keys()]).toEqual(["mixed"]);
-    expect(data.hiddenWaiting).toBe(0);
-  });
-
-  it("hides nothing at all when no attribution has arrived", () => {
-    const store = leaves("a", "b", "c");
-    expect([...buildTabBarData(store, scope([])).tabs.keys()]).toEqual(["a", "b", "c"]);
-  });
-
-  it("hides nothing at all when the surface is unscoped", () => {
-    const store = leaves("a", "b");
-    expect([...buildTabBarData(store).tabs.keys()]).toEqual(["a", "b"]);
-  });
-
-  it("keeps a split with any one pane in scope, and drops one with every pane elsewhere", () => {
-    const store = source({
+  function ownedStore(): TabBarDataSource {
+    return {
       tabLayouts: new Map([
-        ["mixed", createBranch("horizontal", createLeaf("mixed"), createLeaf("mixed-b"))],
-        ["unplaced", createBranch("horizontal", createLeaf("unplaced"), createLeaf("unplaced-b"))],
-        ["gone", createBranch("horizontal", createLeaf("gone"), createLeaf("gone-b"))],
+        ["main", createLeaf("main")],
+        ["here", createLeaf("here")],
+        ["elsewhere", createLeaf("elsewhere")],
       ]),
-      tabActivePaneIds: new Map([
-        ["mixed", "mixed"],
-        ["unplaced", "unplaced"],
-        ["gone", "gone"],
-      ]),
-      terminals: new Map(
-        ["mixed", "mixed-b", "unplaced", "unplaced-b", "gone", "gone-b"].map((id) => [
-          id,
-          { name: id, exited: false, activityStatus: "idle" },
-        ]),
-      ) as never,
-    });
-
-    const shown = buildTabBarData(
-      store,
-      scope([
-        ["mixed", HERE],
-        ["mixed-b", ELSEWHERE],
-        // Every leaf elsewhere but one the evidence does not place at all.
-        ["unplaced", ELSEWHERE],
-        ["gone", ELSEWHERE],
-        ["gone-b", ELSEWHERE],
-      ]),
-    ).tabs;
-    expect([...shown.keys()]).toEqual(["mixed", "unplaced"]);
-  });
-
-  it("keeps a kept split's label and aggregated activity exactly as before", () => {
-    const store = source({
-      tabLayouts: new Map([["tab-1", createBranch("horizontal", createLeaf("tab-1"), createLeaf("pane-b"))]]),
-      tabActivePaneIds: new Map([["tab-1", "tab-1"]]),
+      tabActivePaneIds: new Map(),
       terminals: new Map([
-        ["tab-1", { name: "Shell", exited: false, activityStatus: "idle", customName: "build" }],
-        ["pane-b", { name: "Codex", exited: false, activityStatus: "waiting" }],
+        ["main", { name: "main", exited: false, activityStatus: "idle" }],
+        ["here", { name: "here", exited: false, activityStatus: "idle", worktreeId: HERE }],
+        ["elsewhere", { name: "elsewhere", exited: false, activityStatus: "waiting", worktreeId: ELSEWHERE }],
       ]) as never,
-    });
-    const scoped = buildTabBarData(
-      store,
-      scope([
-        ["tab-1", HERE],
-        ["pane-b", ELSEWHERE],
-      ]),
-    ).tabs.get("tab-1");
-    expect(scoped).toEqual(buildTabBarData(store).tabs.get("tab-1"));
-    expect(scoped?.activityStatus).toBe("waiting");
-    expect(scoped?.customName).toBe("build");
+    };
+  }
+
+  it("shows only main-owned terminals when no linked worktree is selected", () => {
+    expect([...buildTabBarData(ownedStore()).tabs.keys()]).toEqual(["main"]);
   });
 
-  it("presents the bar whatever the tab count while scoped, and hides it below two while not", () => {
-    // The chip is the only thing saying the list is a subset, so a scope filtering
-    // down to one tab must not hide its own escape hatch (design.md D3).
+  it("shows only terminals owned by the selected linked worktree", () => {
+    const scope: TabBarScope = { worktreeId: HERE, attribution: new Map() };
+    expect([...buildTabBarData(ownedStore(), scope).tabs.keys()]).toEqual(["here"]);
+  });
+
+  it("does not let presence attribution move a terminal between owners", () => {
+    const scope: TabBarScope = {
+      worktreeId: HERE,
+      attribution: new Map([
+        ["main", HERE],
+        ["here", ELSEWHERE],
+      ]),
+    };
+    expect([...buildTabBarData(ownedStore(), scope).tabs.keys()]).toEqual(["here"]);
+  });
+
+  it("counts hidden waiting tabs without changing their owner", () => {
+    const data = buildTabBarData(ownedStore(), { worktreeId: HERE, attribution: new Map() });
+    expect(data.hiddenWaiting).toBe(1);
+  });
+
+  it("keeps a split under the owner inherited by its panes", () => {
+    const store: TabBarDataSource = {
+      tabLayouts: new Map([["root", createBranch("horizontal", createLeaf("root"), createLeaf("child"))]]),
+      tabActivePaneIds: new Map([["root", "child"]]),
+      terminals: new Map([
+        ["root", { name: "root", exited: false, activityStatus: "idle", worktreeId: HERE }],
+        ["child", { name: "child", exited: false, activityStatus: "waiting", worktreeId: HERE }],
+      ]) as never,
+    };
+    const tab = buildTabBarData(store, { worktreeId: HERE, attribution: new Map() }).tabs.get("root");
+    expect(tab?.name).toBe("child");
+    expect(tab?.activityStatus).toBe("waiting");
+    expect(tab?.worktreeId).toBe(HERE);
+  });
+
+  it("presents the bar whatever the tab count while linked, and hides it below two in main", () => {
     const one = new Map([["a", { name: "a" }]]);
-    for (const [size, scoped, visible] of [
+    for (const [size, linked, visible] of [
       [0, true, true],
       [1, true, true],
       [0, false, false],
@@ -890,10 +663,10 @@ describe("a scoped tab bar hides only what it can prove belongs elsewhere", () =
     ] as const) {
       const deps = createMockDeps({
         terminals: size === 0 ? new Map() : one,
-        ...(scoped ? { scope: { label: "here", onClear: vi.fn() } } : {}),
+        ...(linked ? { scope: { worktreeId: HERE, label: "here" } } : {}),
       });
       renderTabBar(deps);
-      expect(deps.tabBarEl.classList.contains("visible"), `size ${size}, scoped ${scoped}`).toBe(visible);
+      expect(deps.tabBarEl.classList.contains("visible"), `size ${size}, linked ${linked}`).toBe(visible);
     }
   });
 });
@@ -902,7 +675,6 @@ describe("a scoped tab bar hides only what it can prove belongs elsewhere", () =
 
 describe("a scope is named wherever it is in force", () => {
   const chip = (el: HTMLElement) => el.querySelector<HTMLElement>(".tab-scope");
-  const clearBtn = (el: HTMLElement) => el.querySelector<HTMLButtonElement>(".tab-scope-clear");
   const two = () =>
     new Map([
       ["a", { name: "a" }],
@@ -910,51 +682,127 @@ describe("a scope is named wherever it is in force", () => {
     ]);
 
   it("[I19] carries a chip naming the worktree exactly while scoped, and none when not", () => {
-    const deps = createMockDeps({ terminals: two(), scope: { label: "feat/here", onClear: vi.fn() } });
+    const deps = createMockDeps({ terminals: two(), scope: { worktreeId: "/wt/scope", label: "feat/here" } });
     renderTabBar(deps);
+    expect(chip(deps.tabBarEl)?.textContent).toContain("Worktree");
     expect(chip(deps.tabBarEl)?.textContent).toContain("feat/here");
+    expect(chip(deps.tabBarEl)?.querySelector(".tab-scope-icon svg")).not.toBeNull();
     expect(chip(deps.tabBarEl)?.getAttribute("aria-label")).toBe("Showing only tabs in feat/here");
+    expect(chip(deps.tabBarEl)?.getAttribute("aria-describedby")).toBe("webview-tooltip-widget");
+    expect(chip(deps.tabBarEl)?.hasAttribute("title")).toBe(false);
 
     renderTabBar({ ...deps, scope: undefined });
     expect(chip(deps.tabBarEl)).toBeNull();
   });
 
-  it("gives the clearing control its own accessible name, and calls back exactly once", () => {
-    const onClear = vi.fn();
-    const deps = createMockDeps({ terminals: two(), scope: { label: "feat/here", onClear } });
-    renderTabBar(deps);
-
-    const clear = clearBtn(deps.tabBarEl);
-    expect(clear?.getAttribute("aria-label")).toBe("Clear the feat/here scope");
-    clear?.click();
-    expect(onClear).toHaveBeenCalledTimes(1);
+  it("shows the scoped worktree name through the shared hover tooltip", () => {
+    vi.useFakeTimers();
+    try {
+      const deps = createMockDeps({ terminals: two(), scope: { worktreeId: "/wt/scope", label: "feat/here" } });
+      renderTabBar(deps);
+      chip(deps.tabBarEl)?.dispatchEvent(new MouseEvent("mouseenter"));
+      vi.advanceTimersByTime(300);
+      const tooltip = document.body.querySelector<HTMLElement>(".webview-tooltip");
+      expect(tooltip?.style.display).toBe("block");
+      expect(tooltip?.textContent).toBe("Worktree: feat/here");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("rebinds the control on every render, so a stale scope is never the one cleared", () => {
-    const first = vi.fn();
-    const second = vi.fn();
-    const deps = createMockDeps({ terminals: two(), scope: { label: "one", onClear: first } });
+  it("frames every scoped worktree, including main", () => {
+    const deps = createMockDeps({ terminals: two(), scope: { worktreeId: "/wt/scope", label: "feat/here" } });
     renderTabBar(deps);
-    renderTabBar({ ...deps, scope: { label: "two", onClear: second } });
+    expect(deps.tabBarEl.dataset.worktreeScope).toBe("active");
 
-    clearBtn(deps.tabBarEl)?.click();
-    expect(first).not.toHaveBeenCalled();
-    expect(second).toHaveBeenCalledTimes(1);
+    renderTabBar({ ...deps, scope: { worktreeId: "/wt/scope", label: "main" } });
+    expect(deps.tabBarEl.dataset.worktreeScope).toBe("active");
+
+    renderTabBar({ ...deps, scope: undefined });
+    expect(deps.tabBarEl.dataset.worktreeScope).toBeUndefined();
+  });
+
+  it("hands New Terminal the selected worktree instead of creating in the default cwd", () => {
+    const onAddClick = vi.fn();
+    const deps = createMockDeps({
+      terminals: two(),
+      scope: { worktreeId: "/repo-wt/feat", label: "feat/here" },
+      onAddClick,
+    });
+    renderTabBar(deps);
+
+    deps.tabBarEl.querySelector<HTMLButtonElement>(".tab-add")?.click();
+    expect(onAddClick).toHaveBeenCalledWith("/repo-wt/feat");
+  });
+
+  it("chooses content from the measured space left after terminal tabs", () => {
+    expect(chooseScopeDensity(140, { full: 120, kind: 70, icon: 30 })).toBe("full");
+    expect(chooseScopeDensity(90, { full: 120, kind: 70, icon: 30 })).toBe("kind");
+    expect(chooseScopeDensity(20, { full: 120, kind: 70, icon: 30 })).toBe("icon");
+  });
+
+  it("rebalances when adding tabs without waiting for a viewport resize", () => {
+    const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.id === "tab-bar" ? 280 : 0;
+    });
+    const offsetWidth = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.classList.contains("tab-item")) {
+        return 80;
+      }
+      if (this.classList.contains("tab-add")) {
+        return 28;
+      }
+      return 0;
+    });
+    const scrollWidth = vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (!this.classList.contains("tab-scope")) {
+        return 0;
+      }
+      return this.dataset.density === "full" ? 120 : this.dataset.density === "kind" ? 70 : 30;
+    });
+    try {
+      const deps = createMockDeps({
+        terminals: new Map([["a", { name: "a" }]]),
+        scope: { worktreeId: "/wt/scope", label: "feat/here" },
+      });
+      renderTabBar(deps);
+      expect(chip(deps.tabBarEl)?.dataset.density).toBe("full");
+
+      deps.terminals = new Map([
+        ["a", { name: "a" }],
+        ["b", { name: "b" }],
+      ]);
+      renderTabBar(deps);
+      expect(chip(deps.tabBarEl)?.dataset.density).toBe("kind");
+
+      deps.terminals.set("c", { name: "c" });
+      renderTabBar(deps);
+      expect(chip(deps.tabBarEl)?.dataset.density).toBe("icon");
+    } finally {
+      clientWidth.mockRestore();
+      offsetWidth.mockRestore();
+      scrollWidth.mockRestore();
+    }
   });
 
   const badge = (el: HTMLElement) => el.querySelector<HTMLElement>(".tab-scope-badge");
 
-  it("marks the clearing control with the count of hidden tabs that need a human", () => {
+  it("marks the worktree indicator with the count of hidden tabs that need a human", () => {
     const deps = createMockDeps({
       terminals: two(),
-      scope: { label: "feat/here", onClear: vi.fn(), hiddenWaiting: 2 },
+      scope: { worktreeId: "/wt/scope", label: "feat/here", hiddenWaiting: 2 },
     });
     renderTabBar(deps);
     expect(badge(deps.tabBarEl)?.textContent).toBe("2");
-    // On the control itself, so the mark and the escape are one target.
-    expect(clearBtn(deps.tabBarEl)?.contains(badge(deps.tabBarEl))).toBe(true);
-    expect(clearBtn(deps.tabBarEl)?.getAttribute("aria-label")).toBe(
-      "Clear the feat/here scope — 2 hidden tabs need you",
+    expect(chip(deps.tabBarEl)?.contains(badge(deps.tabBarEl))).toBe(true);
+    expect(chip(deps.tabBarEl)?.getAttribute("aria-label")).toBe(
+      "Showing terminals in feat/here; 2 hidden tabs need you",
     );
   });
 
@@ -962,67 +810,67 @@ describe("a scope is named wherever it is in force", () => {
     // Not a "0": a badge that is always present is a badge nobody reads.
     const deps = createMockDeps({
       terminals: two(),
-      scope: { label: "feat/here", onClear: vi.fn(), hiddenWaiting: 0 },
+      scope: { worktreeId: "/wt/scope", label: "feat/here", hiddenWaiting: 0 },
     });
     renderTabBar(deps);
     expect(badge(deps.tabBarEl)).toBeNull();
 
-    renderTabBar({ ...deps, scope: { label: "feat/here", onClear: vi.fn() } });
+    renderTabBar({ ...deps, scope: { worktreeId: "/wt/scope", label: "feat/here" } });
     expect(badge(deps.tabBarEl)).toBeNull();
   });
 
   it("removes the mark when the last hidden waiting tab stops waiting", () => {
     const deps = createMockDeps({
       terminals: two(),
-      scope: { label: "feat/here", onClear: vi.fn(), hiddenWaiting: 1 },
+      scope: { worktreeId: "/wt/scope", label: "feat/here", hiddenWaiting: 1 },
     });
     renderTabBar(deps);
     expect(badge(deps.tabBarEl)?.textContent).toBe("1");
 
-    renderTabBar({ ...deps, scope: { label: "feat/here", onClear: vi.fn(), hiddenWaiting: 0 } });
+    renderTabBar({ ...deps, scope: { worktreeId: "/wt/scope", label: "feat/here", hiddenWaiting: 0 } });
     // Gone, not blanked — an empty badge still reads as a mark.
     expect(badge(deps.tabBarEl)).toBeNull();
-    expect(clearBtn(deps.tabBarEl)?.getAttribute("aria-label")).toBe("Clear the feat/here scope");
+    expect(chip(deps.tabBarEl)?.getAttribute("aria-label")).toBe("Showing only tabs in feat/here");
   });
 
   it("says one hidden tab in the singular", () => {
     const deps = createMockDeps({
       terminals: two(),
-      scope: { label: "feat/here", onClear: vi.fn(), hiddenWaiting: 1 },
+      scope: { worktreeId: "/wt/scope", label: "feat/here", hiddenWaiting: 1 },
     });
     renderTabBar(deps);
-    expect(clearBtn(deps.tabBarEl)?.getAttribute("aria-label")).toBe(
-      "Clear the feat/here scope — 1 hidden tab needs you",
+    expect(chip(deps.tabBarEl)?.getAttribute("aria-label")).toBe(
+      "Showing terminals in feat/here; 1 hidden tab needs you",
     );
   });
 
   it("updates the mark in place rather than rebuilding the chip", () => {
     const deps = createMockDeps({
       terminals: two(),
-      scope: { label: "feat/here", onClear: vi.fn(), hiddenWaiting: 1 },
+      scope: { worktreeId: "/wt/scope", label: "feat/here", hiddenWaiting: 1 },
     });
     renderTabBar(deps);
     const before = chip(deps.tabBarEl);
-    renderTabBar({ ...deps, scope: { label: "feat/here", onClear: vi.fn(), hiddenWaiting: 3 } });
+    renderTabBar({ ...deps, scope: { worktreeId: "/wt/scope", label: "feat/here", hiddenWaiting: 3 } });
     expect(chip(deps.tabBarEl)).toBe(before);
     expect(badge(deps.tabBarEl)?.textContent).toBe("3");
   });
 
-  it("keeps the chip as the head of the bar, ahead of every tab and the + button", () => {
-    const deps = createMockDeps({ terminals: two(), scope: { label: "feat/here", onClear: vi.fn() } });
+  it("keeps the worktree indicator at the right edge after the tabs and add button", () => {
+    const deps = createMockDeps({ terminals: two(), scope: { worktreeId: "/wt/scope", label: "feat/here" } });
     renderTabBar(deps);
     expect([...deps.tabBarEl.children].map((c) => c.className.split(" ")[0])).toEqual([
-      "tab-scope",
       "tab-item",
       "tab-item",
       "tab-add",
+      "tab-scope",
     ]);
   });
 
   it("survives a re-render that changes no tab, node and all", () => {
     // The tail-trimming loop after the "+" is what would otherwise delete it, and a
     // rebuilt node would drop an in-flight pointer press the way a rebuilt tab does.
-    const deps = createMockDeps({ terminals: two(), scope: { label: "feat/here", onClear: vi.fn() } });
+    const deps = createMockDeps({ terminals: two(), scope: { worktreeId: "/wt/scope", label: "feat/here" } });
     renderTabBar(deps);
     const before = chip(deps.tabBarEl);
     renderTabBar(deps);
@@ -1031,10 +879,10 @@ describe("a scope is named wherever it is in force", () => {
   });
 
   it("renames in place rather than rebuilding when the scope's label moves", () => {
-    const deps = createMockDeps({ terminals: two(), scope: { label: "one", onClear: vi.fn() } });
+    const deps = createMockDeps({ terminals: two(), scope: { worktreeId: "/wt/scope", label: "one" } });
     renderTabBar(deps);
     const before = chip(deps.tabBarEl);
-    renderTabBar({ ...deps, scope: { label: "two", onClear: vi.fn() } });
+    renderTabBar({ ...deps, scope: { worktreeId: "/wt/scope", label: "two" } });
     expect(chip(deps.tabBarEl)).toBe(before);
     expect(chip(deps.tabBarEl)?.textContent).toContain("two");
   });
@@ -1047,41 +895,22 @@ describe("a scope is named wherever it is in force", () => {
     panel.hidden = true;
     document.body.appendChild(panel);
 
-    const deps = createMockDeps({ terminals: two(), scope: { label: "feat/here", onClear: vi.fn() } });
+    const deps = createMockDeps({ terminals: two(), scope: { worktreeId: "/wt/scope", label: "feat/here" } });
     renderTabBar(deps);
     expect(chip(deps.tabBarEl)?.closest(".vault-panel")).toBeNull();
     expect(deps.tabBarEl.contains(chip(deps.tabBarEl))).toBe(true);
   });
 
-  it("presents every tab the scope was hiding once it is cleared", () => {
-    const store: TabBarDataSource = {
-      tabLayouts: new Map([
-        ["here", createLeaf("here")],
-        ["elsewhere", createLeaf("elsewhere")],
-      ]),
-      tabActivePaneIds: new Map(),
-      terminals: new Map([
-        ["here", { name: "here", exited: false, activityStatus: "idle" }],
-        ["elsewhere", { name: "elsewhere", exited: false, activityStatus: "idle" }],
-      ]) as never,
-    };
-    const scope: TabBarScope = {
-      worktreeId: "/wt/here",
-      attribution: new Map([
-        ["here", "/wt/here"],
-        ["elsewhere", "/wt/elsewhere"],
-      ]),
-    };
-
+  it("removes the linked indicator when returning to main terminals", () => {
     const deps = createMockDeps({
-      terminals: buildTabBarData(store, scope).tabs,
-      scope: { label: "here", onClear: vi.fn() },
+      terminals: new Map([["linked", { name: "linked", worktreeId: "/wt/here" }]]),
+      scope: { worktreeId: "/wt/here", label: "here" },
     });
     renderTabBar(deps);
-    expect(deps.tabBarEl.querySelectorAll(".tab-item")).toHaveLength(1);
+    expect(chip(deps.tabBarEl)).not.toBeNull();
 
-    renderTabBar({ ...deps, terminals: buildTabBarData(store).tabs, scope: undefined });
-    expect(deps.tabBarEl.querySelectorAll(".tab-item")).toHaveLength(2);
+    renderTabBar({ ...deps, terminals: new Map([["main", { name: "main" }]]), scope: undefined });
     expect(chip(deps.tabBarEl)).toBeNull();
+    expect([...deps.tabBarEl.querySelectorAll(".tab-name")].map((el) => el.textContent)).toEqual(["main"]);
   });
 });

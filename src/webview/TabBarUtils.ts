@@ -5,13 +5,72 @@
 
 import { getAllSessionIds, type SplitNode } from "./SplitModel";
 import type { TerminalInstance } from "./state/WebviewStateStore";
+import { attachTooltip } from "./ui/Tooltip";
+import { ICON_BRANCH } from "./worktree/worktreeIcons";
 
 /** Minimal terminal info needed for tab bar rendering. */
+const scopeTooltipDisposers = new WeakMap<HTMLElement, () => void>();
+const scopeResizeObservers = new WeakMap<HTMLElement, ResizeObserver>();
+
+type ScopeDensity = "full" | "kind" | "icon";
+
+export function chooseScopeDensity(
+  availableWidth: number,
+  widths: { full: number; kind: number; icon: number },
+): ScopeDensity {
+  if (availableWidth >= widths.full) {
+    return "full";
+  }
+  if (availableWidth >= widths.kind) {
+    return "kind";
+  }
+  return "icon";
+}
+
+function syncScopeDensity(tabBarEl: HTMLElement): void {
+  const scope = tabBarEl.querySelector<HTMLElement>(":scope > .tab-scope");
+  if (!scope) {
+    return;
+  }
+  // JSDOM and detached callers have no layout. Full is the honest fallback;
+  // the browser re-runs this through ResizeObserver once a real width exists.
+  if (tabBarEl.clientWidth <= 0) {
+    scope.dataset.density = "full";
+    return;
+  }
+  const occupied = Array.from(tabBarEl.children)
+    .filter((child) => child !== scope)
+    .reduce((total, child) => total + (child as HTMLElement).offsetWidth, 0);
+  const available = Math.max(0, tabBarEl.clientWidth - occupied);
+  const closeReserve = 0;
+  const measure = (density: ScopeDensity): number => {
+    scope.dataset.density = density;
+    return scope.scrollWidth + closeReserve;
+  };
+  const widths = {
+    full: measure("full"),
+    kind: measure("kind"),
+    icon: measure("icon"),
+  };
+  scope.dataset.density = chooseScopeDensity(available, widths);
+}
+
+function observeScopeDensity(tabBarEl: HTMLElement): void {
+  if (scopeResizeObservers.has(tabBarEl) || typeof ResizeObserver === "undefined") {
+    return;
+  }
+  const observer = new ResizeObserver(() => syncScopeDensity(tabBarEl));
+  observer.observe(tabBarEl);
+  scopeResizeObservers.set(tabBarEl, observer);
+}
+
 export interface TabInfo {
   /** Auto-derived name (default "Terminal N"; mutated by OSC title events). */
   name: string;
   /** User-supplied name; when non-null wins over `name` in the rendered label. */
   customName?: string | null;
+  /** Stable linked-worktree owner. Absent means main. */
+  worktreeId?: string;
   /** Whether the terminal process has exited. */
   exited?: boolean;
   /** Recent PTY output activity for the status indicator. */
@@ -47,17 +106,13 @@ export interface TabBarScope {
   attribution: ReadonlyMap<string, string>;
 }
 
-/**
- * Whether a scope can prove this pane belongs to a different worktree. Anything
- * else — placed here, or not placed at all — is presented: the bar hides only
- * what it can prove belongs elsewhere.
- */
-export function inScope(scope: TabBarScope | undefined, paneId: string): boolean {
-  if (!scope) {
-    return true;
-  }
-  const held = scope.attribution.get(paneId);
-  return held === undefined || held === scope.worktreeId;
+/** Main is the absence of a linked owner; a linked scope matches exactly one id. */
+export function inScope(scope: TabBarScope | undefined, _paneId: string, stableOwner?: string): boolean {
+  return scope ? stableOwner === scope.worktreeId : stableOwner === undefined;
+}
+
+function ownerOf(store: TabBarDataSource, paneId: string): string | undefined {
+  return store.terminals.get(paneId)?.worktreeId;
 }
 
 /**
@@ -128,7 +183,7 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
       // panes is in scope or unplaced, and is dropped only when every one of
       // them is attributed somewhere else.
       const sessionIds = getAllSessionIds(layout);
-      if (!sessionIds.some((sid) => inScope(scope, sid))) {
+      if (!sessionIds.some((sid) => inScope(scope, sid, ownerOf(store, sid)))) {
         // Counted HERE, at the drop, which is why a split can never be presented
         // and counted at once.
         if (tabIsWaiting(sessionIds, store, waiting)) {
@@ -144,6 +199,7 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
         customName: rootInstance?.customName ?? null,
         exited: (activeInstance ?? rootInstance)?.exited,
         activityStatus: anyWaiting ? "waiting" : anyRunning ? "running" : "idle",
+        worktreeId: activeInstance?.worktreeId ?? rootInstance?.worktreeId,
       });
     } else {
       // Single pane tab. The scope decision is keyed by the LEAF's session id, not
@@ -153,14 +209,16 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
       // pre-existing and stays keyed by the tab.
       const paneId = layout.sessionId;
       const instance = store.terminals.get(tabId);
-      if (instance && inScope(scope, paneId)) {
+      const presented = inScope(scope, paneId, ownerOf(store, paneId));
+      if (instance && presented) {
         tabTerminals.set(tabId, {
           name: labelFor(instance) ?? tabId,
           customName: instance.customName,
           exited: instance.exited,
           activityStatus: instance.activityStatus,
+          worktreeId: instance.worktreeId,
         });
-      } else if (!inScope(scope, paneId) && tabIsWaiting([paneId], store, waiting)) {
+      } else if (!presented && tabIsWaiting([paneId], store, waiting)) {
         // Gated on HIDDENNESS, not on holding an instance: the split branch counts
         // a pane on presence evidence alone, and a leaf the surface has not built
         // an instance for yet is the same hidden waiting thing (round-1 W5).
@@ -187,7 +245,7 @@ export interface RenderTabBarDeps {
   activeTabId: string | null;
   onTabClick: (tabId: string) => void;
   onTabClose: (tabId: string) => void;
-  /** Create in the scoped worktree when one is selected; otherwise use main. */
+  /** Create in the scoped worktree when one is selected; otherwise use defaults. */
   onAddClick: (worktreeId?: string) => void;
   /**
    * Double-click on a tab triggers inline rename. Receives the tab id and the
@@ -211,7 +269,6 @@ export interface RenderTabBarDeps {
   scope?: {
     worktreeId: string;
     label: string;
-    onClear: () => void;
     /**
      * Hidden tabs holding a waiting pane. `0` or absent renders NO mark — a badge
      * that is always there is a badge nobody reads (worktree-scope.md § 4.2).
@@ -233,6 +290,12 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
   const { tabBarEl, terminals, activeTabId, onTabClick, onTabClose, onAddClick, onTabRename, onAfterRender, scope } =
     deps;
 
+  if (scope) {
+    tabBarEl.dataset.worktreeScope = "active";
+  } else {
+    delete tabBarEl.dataset.worktreeScope;
+  }
+
   const existingTabs = new Map<string, HTMLDivElement>();
   for (const child of Array.from(tabBarEl.children)) {
     if (child instanceof HTMLDivElement && child.classList.contains("tab-item") && child.dataset.tabId) {
@@ -240,9 +303,8 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     }
   }
 
-  // The chip is the head of the same reconciled child list the tabs and the "+"
-  // live in, so it survives a re-render the way they do and needs no second render
-  // path (design.md D4).
+  // The scope control shares the reconciled child list with tabs and "+", but
+  // stays at the right edge so terminal identity still reads left-to-right.
   let chip = tabBarEl.querySelector<HTMLDivElement>(":scope > .tab-scope") ?? undefined;
   if (scope) {
     if (!chip) {
@@ -252,14 +314,19 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
       // dependable accessible name — a screen reader would reach the branch and
       // the clear button without ever being told the list is filtered.
       chip.setAttribute("role", "group");
+      const content = document.createElement("span");
+      content.className = "tab-scope-chip";
+      const icon = document.createElement("span");
+      icon.className = "tab-scope-icon";
+      icon.innerHTML = ICON_BRANCH;
+      icon.setAttribute("aria-hidden", "true");
+      const kind = document.createElement("span");
+      kind.className = "tab-scope-kind";
+      kind.textContent = "Worktree";
       const name = document.createElement("span");
       name.className = "tab-scope-name";
-      chip.appendChild(name);
-      const clear = document.createElement("button");
-      clear.className = "tab-scope-clear";
-      clear.type = "button";
-      clear.textContent = "\u00d7";
-      chip.appendChild(clear);
+      content.append(icon, kind, name);
+      chip.appendChild(content);
     }
     const name = chip.querySelector<HTMLElement>(".tab-scope-name");
     if (name && name.textContent !== scope.label) {
@@ -267,49 +334,31 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     }
     // Said, not implied by a visual mark: the bar looks complete either way, so
     // the only thing distinguishing a subset from the whole list is this sentence.
-    chip.title = `Showing only tabs in ${scope.label}`;
+    chip.dataset.scopeLabel = `Worktree: ${scope.label}`;
     chip.setAttribute("aria-label", `Showing only tabs in ${scope.label}`);
-    const clear = chip.querySelector<HTMLButtonElement>(".tab-scope-clear");
-    if (clear) {
-      // The count rides ON the escape control, not beside it: the thing that says
-      // something is hidden and the thing that reveals it are one target, so the
-      // count and what clearing produces cannot be reached separately.
-      const hidden = scope.hiddenWaiting ?? 0;
-      let badge = clear.querySelector<HTMLSpanElement>(".tab-scope-badge") ?? undefined;
-      if (hidden > 0) {
-        if (!badge) {
-          badge = document.createElement("span");
-          badge.className = "tab-scope-badge";
-          clear.appendChild(badge);
-        }
-        const text = String(hidden);
-        if (badge.textContent !== text) {
-          badge.textContent = text;
-        }
-      } else {
-        // Removed, not blanked: an empty badge still occupies the control and
-        // still reads as a mark to anyone scanning for one.
-        badge?.remove();
+    if (!scopeTooltipDisposers.has(chip)) {
+      scopeTooltipDisposers.set(chip, attachTooltip(chip, { getText: () => chip?.dataset.scopeLabel ?? "" }));
+    }
+    const hidden = scope.hiddenWaiting ?? 0;
+    const content = chip.querySelector<HTMLElement>(".tab-scope-chip");
+    let badge = content?.querySelector<HTMLSpanElement>(".tab-scope-badge") ?? undefined;
+    if (hidden > 0 && content) {
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "tab-scope-badge";
+        content.appendChild(badge);
       }
-      clear.setAttribute(
+      badge.textContent = String(hidden);
+      chip.setAttribute(
         "aria-label",
-        hidden > 0
-          ? `Clear the ${scope.label} scope — ${hidden} hidden ${hidden === 1 ? "tab needs" : "tabs need"} you`
-          : `Clear the ${scope.label} scope`,
+        `Showing terminals in ${scope.label}; ${hidden} hidden ${hidden === 1 ? "tab needs" : "tabs need"} you`,
       );
-      // Rebound on every render, so a stale closure never outlives the scope it named.
-      clear.onclick = () => {
-        const hadFocus = document.activeElement === clear;
-        scope.onClear();
-        // The click destroys the button it came from, so focus would land on
-        // `<body>` and a keyboard user would restart from the top of the document.
-        // Handed to the nearest surviving control in the same widget (round-2 V8).
-        if (hadFocus) {
-          tabBarEl.querySelector<HTMLButtonElement>(".tab-add")?.focus();
-        }
-      };
+    } else {
+      badge?.remove();
     }
   } else if (chip) {
+    scopeTooltipDisposers.get(chip)?.();
+    scopeTooltipDisposers.delete(chip);
     chip.remove();
     chip = undefined;
   }
@@ -414,12 +463,6 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
   // Preserve nodes that are already in the right position. Avoiding even a
   // same-parent remove/reinsert is what keeps pointerdown/up targeting stable.
   let cursor = tabBarEl.firstElementChild;
-  if (chip) {
-    if (chip !== cursor) {
-      tabBarEl.insertBefore(chip, cursor);
-    }
-    cursor = chip.nextElementSibling;
-  }
   for (const tab of orderedTabs) {
     if (tab !== cursor) {
       tabBarEl.insertBefore(tab, cursor);
@@ -430,6 +473,12 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     tabBarEl.insertBefore(addBtn, cursor);
   }
   cursor = addBtn.nextElementSibling;
+  if (chip) {
+    if (chip !== cursor) {
+      tabBarEl.insertBefore(chip, cursor);
+    }
+    cursor = chip.nextElementSibling;
+  }
   while (cursor) {
     const next = cursor.nextElementSibling;
     cursor.remove();
@@ -442,6 +491,8 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
   } else {
     tabBarEl.classList.remove("visible");
   }
+  syncScopeDensity(tabBarEl);
+  observeScopeDensity(tabBarEl);
 
   // After-render hook (e.g. reposition the inline-rename overlay so it stays
   // anchored to the target tab across re-renders). See add-tab-rename D4.

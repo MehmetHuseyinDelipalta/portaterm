@@ -21,7 +21,6 @@ export interface EmptyScopeRegionDeps {
   onOpenTerminal: () => void;
   /** Absent when no agent can start a session — an inert button would claim one could. */
   onLaunchAgent?: () => void;
-  onClear: () => void;
 }
 
 export function renderEmptyScopeRegion(deps: EmptyScopeRegionDeps): HTMLElement {
@@ -29,13 +28,10 @@ export function renderEmptyScopeRegion(deps: EmptyScopeRegionDeps): HTMLElement 
   if (deps.onLaunchAgent) {
     actions.push({ label: "Launch an agent", onClick: deps.onLaunchAgent });
   }
-  // Last, because it undoes the state rather than acting inside it.
-  actions.push({ label: "Show all tabs", onClick: deps.onClear });
-
   const region = emptyState(
     ICON_TERMINAL,
     `Nothing running in ${deps.label}`,
-    "Terminals in other worktrees are hidden while this one is selected.",
+    "Open a terminal here, or select another worktree to switch terminal groups.",
     actions,
   );
   region.classList.add("empty-scope");

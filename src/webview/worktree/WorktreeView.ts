@@ -293,18 +293,35 @@ export class WorktreeView {
    * repaints once or not at all — the mark is a render input, and repainting on
    * a re-select would rebuild the tree and throw focus away for nothing.
    */
-  private select(worktreeId: string): boolean {
-    if (this.selectedWorktreeId === worktreeId) {
+  private select(info: WorktreeInfo): boolean {
+    if (this.selectedWorktreeId === info.id) {
       return false;
     }
-    // Announced BEFORE the field moves, and the throw is not caught. The listener
-    // persists the scope, and a write that throws must not leave this panel marking
-    // a row the scope never took — the equality guard above would then make the
-    // very row that fixes it a no-op, so the mark would stand until a third row or
-    // the chip cleared it (round-2 V1).
+    // Main selects the main terminal bucket; only linked worktrees become a
+    // named owner scope. The row id stays selected separately for visual state.
+    this.deps.onSelectWorktree?.(info.kind === "linked" ? info.id : null);
+    this.selectedWorktreeId = info.id;
+    return true;
+  }
+
+  /** Follow a newly created terminal to its stable owner. */
+  selectTerminalOwner(worktreeId?: string): void {
+    if (worktreeId === undefined) {
+      const selected = this.data.tree?.repos
+        .flatMap((repo) => repo.worktrees)
+        .find((worktree) => worktree.id === this.selectedWorktreeId);
+      if (selected?.kind === "main") {
+        return;
+      }
+      this.clearSelection();
+      return;
+    }
+    if (this.selectedWorktreeId === worktreeId) {
+      return;
+    }
     this.deps.onSelectWorktree?.(worktreeId);
     this.selectedWorktreeId = worktreeId;
-    return true;
+    this.tree.repaint();
   }
 
   /** Filter the tree by branch, path, and agent title. Ancestors of a match stay. */

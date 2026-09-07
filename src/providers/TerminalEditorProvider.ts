@@ -472,7 +472,15 @@ export class TerminalEditorProvider {
     // the sidebar and panel, so it is a live surface of the window's host.
     this.worktreeSurface = {
       isReady: () => this._ready,
-      post: (msg) => this.safePostMessage(msg),
+      post: (msg) => {
+        if (msg.type === "worktreeTreeResponse") {
+          const linked = new Set(
+            msg.tree?.repos.flatMap((repo) => repo.worktrees.filter((wt) => wt.kind === "linked").map((wt) => wt.id)) ?? [],
+          );
+          this.sessionManager.reconcileWorktreeOwners(this._viewId, linked);
+        }
+        this.safePostMessage(msg);
+      },
       // See TerminalViewProvider: only the provider owning the view can create a
       // pane, and the cwd arrives already resolved by the host (design.md D2).
       openTerminal: async (cwd, worktreeId) => {

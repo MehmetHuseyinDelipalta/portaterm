@@ -69,7 +69,7 @@ interface Surface {
   /** The pane the surface considers active. */
   activePane: string | null;
   /** The worktree the empty-scope region is standing for, or `null`. */
-  emptyScope: { id: string; label: string } | null;
+  emptyScope: { id: string; label: string; worktreeId?: string } | null;
   /**
    * Whether the terminal container is hidden — the state the region's whole point
    * rests on. Asserted instead of the dep call, because a spy proves the seam
@@ -99,7 +99,17 @@ function surface(
   const source = {
     tabLayouts,
     tabActivePaneIds: new Map<string, string>(),
-    terminals: new Map(panes.map((id) => [id, { name: id, exited: false, activityStatus: "idle" }])) as never,
+    terminals: new Map(
+      panes.map((id) => [
+        id,
+        {
+          name: id,
+          exited: false,
+          activityStatus: "idle",
+          ...(id === "pane-panel" ? { worktreeId: PANEL } : {}),
+        },
+      ]),
+    ) as never,
   };
 
   const tabBarEl = document.createElement("div");
@@ -167,7 +177,6 @@ function surface(
               // worktrees identical inputs — which is why nothing here could see
               // the region offering the wrong one (round-3 W8).
               onOpenTerminal: () => out.opened.push(worktree.id),
-              onClear: () => {},
             },
       );
     },
@@ -220,6 +229,7 @@ function surface(
       name: paneId,
       exited: false,
       activityStatus: "idle",
+      worktreeId,
     });
     seam.onAttribution({
       placement: new Map([...panes.map((id) => [id, id === paneId ? worktreeId : MAIN] as [string, string])]),
@@ -248,7 +258,7 @@ describe("what the chip says it is filtering by", () => {
     s.push();
 
     s.row("main")?.click();
-    expect(s.chip()?.textContent).toContain("main");
+    expect(s.chip()).toBeNull();
 
     s.row("feat/worktree-panel")?.click();
     expect(s.chip()?.textContent).toContain("feat/worktree-panel");
@@ -265,14 +275,14 @@ describe("what the chip says it is filtering by", () => {
   it("follows a rename of the worktree it names", () => {
     const s = surface();
     s.push();
-    s.row("main")?.click();
+    s.row("feat/worktree-panel")?.click();
 
     const tree = singleRepoTree();
     const renamed: WorktreeTree = {
       ...tree,
       repos: tree.repos.map((repo) => ({
         ...repo,
-        worktrees: repo.worktrees.map((wt) => (wt.id === MAIN ? { ...wt, branch: "trunk" } : wt)),
+        worktrees: repo.worktrees.map((wt) => (wt.id === PANEL ? { ...wt, branch: "trunk" } : wt)),
       })),
     };
     s.push({ tree: renamed });
@@ -282,41 +292,10 @@ describe("what the chip says it is filtering by", () => {
   it("names the filter to a screen reader rather than only marking it", () => {
     const s = surface();
     s.push();
-    s.row("main")?.click();
+    s.row("feat/worktree-panel")?.click();
     const chip = s.chip();
     expect(chip?.getAttribute("role")).toBe("group");
-    expect(chip?.getAttribute("aria-label")).toBe("Showing only tabs in main");
-  });
-});
-
-describe("clearing the chip", () => {
-  it("unmarks the panel row as well as unfiltering the bar", () => {
-    // The chip cleared the coordinator alone, so the panel went on marking a row
-    // as selected while the bar showed everything — two surfaces disagreeing about
-    // the same selection (round-1 B2).
-    const s = surface();
-    s.push();
-    s.row("main")?.click();
-    expect(s.row("main")?.getAttribute("aria-selected")).toBe("true");
-
-    const drawn = s.renders;
-    s.chip()?.querySelector<HTMLButtonElement>(".tab-scope-clear")?.click();
-    expect(s.renders, "one clear drew the bar more than once").toBe(drawn + 1);
-    expect(s.chip()).toBeNull();
-    expect(s.tabs()).toEqual(["pane-main", "pane-panel", "pane-loose"]);
-    expect(s.row("main")?.getAttribute("aria-selected")).toBe("false");
-    expect(s.controller.selectedWorktree()).toBeNull();
-    expect(s.state.worktreeScope).toBeUndefined();
-  });
-
-  it("leaves the persisted scope gone, not merely hidden", () => {
-    const s = surface();
-    s.push();
-    s.row("main")?.click();
-    expect(s.state.worktreeScope).toBe(MAIN);
-
-    s.chip()?.querySelector<HTMLButtonElement>(".tab-scope-clear")?.click();
-    expect(s.state.worktreeScope).toBeUndefined();
+    expect(chip?.getAttribute("aria-label")).toBe("Showing only tabs in feat/worktree-panel");
   });
 });
 
@@ -327,31 +306,31 @@ describe("a scope that arrived from persistence", () => {
     // wrong exactly when the worktree is gone (round-1 W1).
     const s = surface({ persisted: "/wt/deleted" });
     expect(s.chip()).toBeNull();
-    expect(s.tabs()).toEqual(["pane-main", "pane-panel", "pane-loose"]);
+    expect(s.tabs()).toEqual(["pane-main", "pane-loose"]);
   });
 
   it("comes back into force when the tree does hold it", () => {
-    const s = surface({ persisted: MAIN });
+    const s = surface({ persisted: PANEL });
     s.push();
-    expect(s.chip()?.textContent).toContain("main");
-    expect(s.tabs()).toEqual(["pane-main", "pane-loose"]);
+    expect(s.chip()?.textContent).toContain("feat/worktree-panel");
+    expect(s.tabs()).toEqual(["pane-panel"]);
   });
 
   it("resolves to unscoped when the tree does not, and says so in the panel", () => {
     // Said AFTER the panel holds the tree that dropped it: a notice landing on a
     // panel still drawing the worktree it is about contradicts what is on screen
     // beside it (round-1 W2).
-    const s = surface({ persisted: MAIN });
+    const s = surface({ persisted: PANEL });
     s.push();
     const before = s.paints;
 
-    s.push({ tree: treeWithout(MAIN), rows: { [PANEL]: [pane("b", "pane-panel")] } });
+    s.push({ tree: treeWithout(PANEL), rows: { [PANEL]: [pane("b", "pane-panel")] } });
 
     expect(s.chip()).toBeNull();
     expect(s.state.worktreeScope).toBeUndefined();
     const notice = [...document.querySelectorAll(".wt-notice")].find((n) => n.textContent?.includes("Scope cleared"));
-    expect(notice?.textContent).toContain("main");
-    expect(s.row("main")).toBeUndefined();
+    expect(notice?.textContent).toContain("feat/worktree-panel");
+    expect(s.row("feat/worktree-panel")).toBeUndefined();
 
     // ONE paint, and the notice was in it. Staged too late the panel is rebuilt
     // twice and the first of the two carries no notice; staged against the old
@@ -361,7 +340,7 @@ describe("a scope that arrived from persistence", () => {
   });
 
   it("does not paint the notice beside a row for the worktree it says is gone", () => {
-    const s = surface({ persisted: MAIN });
+    const s = surface({ persisted: PANEL });
     s.push();
     const paintsWithNotice: number[] = [];
     const view = (s.controller as unknown as { view: { setData: (...a: never[]) => void } }).view;
@@ -370,12 +349,12 @@ describe("a scope that arrived from persistence", () => {
       setData(...args);
       if ([...document.querySelectorAll(".wt-notice")].some((n) => n.textContent?.includes("Scope cleared"))) {
         paintsWithNotice.push(
-          [...document.querySelectorAll(".wt-branch")].filter((b) => b.textContent === "main").length,
+          [...document.querySelectorAll(".wt-branch")].filter((b) => b.textContent === "feat/worktree-panel").length,
         );
       }
     };
 
-    s.push({ tree: treeWithout(MAIN), rows: {} });
+    s.push({ tree: treeWithout(PANEL), rows: {} });
     expect(paintsWithNotice, "the notice was never painted").not.toHaveLength(0);
     expect(paintsWithNotice, "painted beside a row for the worktree it says is gone").toEqual(
       paintsWithNotice.map(() => 0),
@@ -383,10 +362,10 @@ describe("a scope that arrived from persistence", () => {
   });
 
   it("announces the drop once, not again on the next tree", () => {
-    const s = surface({ persisted: MAIN });
+    const s = surface({ persisted: PANEL });
     s.push();
-    s.push({ tree: treeWithout(MAIN), rows: {} });
-    s.push({ tree: treeWithout(MAIN), rows: {} });
+    s.push({ tree: treeWithout(PANEL), rows: {} });
+    s.push({ tree: treeWithout(PANEL), rows: {} });
     expect(
       [...document.querySelectorAll(".wt-notice")].filter((n) => n.textContent?.includes("Scope cleared")),
     ).toHaveLength(1);
@@ -398,11 +377,11 @@ describe("what a failure inside the push leaves behind", () => {
     // The queue is drained in a `finally`, or a notice queued for a tree that
     // failed fires against the NEXT one — W2's own failure, reached through the
     // error path (round-2 V3).
-    const s = surface({ persisted: MAIN });
+    const s = surface({ persisted: PANEL });
     s.push();
 
     expect(() =>
-      s.seam.applyTree(treeWithout(MAIN), () => {
+      s.seam.applyTree(treeWithout(PANEL), () => {
         throw new Error("panel push failed");
       }),
     ).toThrow("panel push failed");
@@ -411,23 +390,10 @@ describe("what a failure inside the push leaves behind", () => {
     expect(s.state.worktreeScope).toBeUndefined();
 
     // And the next tree does not re-announce it.
-    s.push({ tree: treeWithout(MAIN), rows: {} });
+    s.push({ tree: treeWithout(PANEL), rows: {} });
     expect(
       [...document.querySelectorAll(".wt-notice")].filter((n) => n.textContent?.includes("Scope cleared")),
     ).toHaveLength(1);
-  });
-});
-
-describe("where the keyboard lands", () => {
-  it("hands focus to the surviving control when the clear destroys its own button", () => {
-    const s = surface();
-    s.push();
-    s.row("main")?.click();
-    const clear = s.chip()?.querySelector<HTMLButtonElement>(".tab-scope-clear");
-    clear?.focus();
-    clear?.click();
-
-    expect(document.activeElement?.className).toBe("tab-add");
   });
 });
 
@@ -437,65 +403,12 @@ describe("what a reload restores, and what it must not", () => {
     // on the user's behalf on one. The panel marking nothing while the chip names
     // a worktree is what the two REQUIRE together, not a gap to be closed by
     // seeding the mark (round-2 V6).
-    const s = surface({ persisted: MAIN });
+    const s = surface({ persisted: PANEL });
     s.push();
 
-    expect(s.chip()?.textContent).toContain("main");
+    expect(s.chip()?.textContent).toContain("feat/worktree-panel");
     expect(s.controller.selectedWorktree(), "a reload selected a worktree on the user's behalf").toBeNull();
-    expect(s.row("main")?.getAttribute("aria-selected")).toBe("false");
-  });
-});
-
-describe("a surface with no worktree panel mounted", () => {
-  /** The seam alone, as `main.ts` builds it when there is no `#vault-panel`. */
-  function bare() {
-    const state: Record<string, unknown> = {};
-    const tabLayouts = new Map<string, SplitNode>([["pane-main", createLeaf("pane-main")]]);
-    let renders = 0;
-    const seam = wireTabBarScope({
-      store: {
-        getState: () => state as { worktreeScope?: unknown },
-        updateState: (patch) => Object.assign(state, patch),
-      },
-      panel: () => null,
-      source: () => ({
-        tabLayouts,
-        tabActivePaneIds: new Map<string, string>(),
-        terminals: new Map([["pane-main", { name: "pane-main", exited: false, activityStatus: "idle" }]]) as never,
-      }),
-      render: () => {
-        renders += 1;
-      },
-      activePane: () => "pane-main",
-      activatePane: () => {},
-      showEmptyScope: () => {},
-    });
-    return { seam, tabLayouts, count: () => renders };
-  }
-
-  it("records the cleared state, so the next ask is not a second redraw", () => {
-    // The clear rendered unconditionally, which left `shouldRender` never seeing
-    // the post-clear signature — so the very next push redrew for a change that
-    // had already been drawn (round-2 V4).
-    const b = bare();
-    b.seam.applyTree(singleRepoTree(), () => {});
-    b.seam.onSelectWorktree(MAIN);
-    b.seam.chip()?.onClear();
-    const drawn = b.count();
-
-    b.seam.applyTree(singleRepoTree(), () => {});
-    expect(b.count(), "the cleared state was never recorded").toBe(drawn);
-  });
-
-  it("clears without a panel to clear through", () => {
-    const b = bare();
-    b.seam.applyTree(singleRepoTree(), () => {});
-    b.seam.onSelectWorktree(MAIN);
-    expect(b.seam.chip()).toBeDefined();
-
-    b.seam.chip()?.onClear();
-    expect(b.seam.chip()).toBeUndefined();
-    expect(b.seam.effectiveScope()).toBeUndefined();
+    expect(s.row("feat/worktree-panel")?.getAttribute("aria-selected")).toBe("false");
   });
 });
 
@@ -512,16 +425,6 @@ describe("what counts as a reason to redraw the bar", () => {
     expect(s.renders, "identical pushes redrew the bar").toBe(drawn);
   });
 
-  it("redraws when a pane changes hands", () => {
-    const s = surface();
-    s.push();
-    s.row("main")?.click();
-    const drawn = s.renders;
-
-    s.push({ rows: { [PANEL]: [pane("a", "pane-main"), pane("b", "pane-panel")] } });
-    expect(s.renders).toBe(drawn + 1);
-    expect(s.tabs()).toEqual(["pane-loose"]);
-  });
 });
 
 // ─── The count, end to end: presence says waiting, the bar says how many ──
@@ -533,29 +436,13 @@ describe("a hidden tab that needs a human is counted", () => {
     s.row("feat/worktree-panel")?.click();
     // Both panes are running; something is hidden, but nothing hidden needs anyone.
     // `pane-loose` is unplaced and so presented in every scope (I18).
-    expect(s.tabs()).toEqual(["pane-panel", "pane-loose"]);
+    expect(s.tabs()).toEqual(["pane-panel"]);
     expect(s.badge()).toBeNull();
 
     s.push({
       rows: { [MAIN]: [pane("a", "pane-main", "waiting")], [PANEL]: [pane("b", "pane-panel")] },
     });
     expect(s.badge()).toBe("1");
-  });
-
-  it("clears to a bar holding the tab the count named", () => {
-    // The count and what clearing produces cannot disagree — this is that claim,
-    // asserted across the two of them rather than on either alone.
-    const s = surface();
-    s.push({
-      rows: { [MAIN]: [pane("a", "pane-main", "waiting")], [PANEL]: [pane("b", "pane-panel")] },
-    });
-    s.row("feat/worktree-panel")?.click();
-    expect(s.badge()).toBe("1");
-    expect(s.tabs()).not.toContain("pane-main");
-
-    s.chip()?.querySelector<HTMLButtonElement>(".tab-scope-clear")?.click();
-    expect(s.tabs()).toContain("pane-main");
-    expect(s.badge()).toBeNull();
   });
 
   it("drops the mark when the hidden pane stops waiting", () => {
@@ -590,7 +477,7 @@ describe("a selection lands on a pane of the worktree it named", () => {
 
   it("moves to the first presented pane when the active one belongs elsewhere", () => {
     const s = placed("pane-panel");
-    s.seam.onSelectWorktree(MAIN);
+    s.seam.onSelectWorktree(null);
 
     expect(s.activations).toEqual(["pane-main"]);
     expect(s.emptyScope).toBeNull();
@@ -598,7 +485,7 @@ describe("a selection lands on a pane of the worktree it named", () => {
 
   it("leaves an active pane that is itself in scope alone", () => {
     const s = placed("pane-main");
-    s.seam.onSelectWorktree(MAIN);
+    s.seam.onSelectWorktree(null);
 
     expect(s.activations).toEqual([]);
   });
@@ -612,7 +499,7 @@ describe("a selection lands on a pane of the worktree it named", () => {
         ["pane-main", createBranch("horizontal", createLeaf("pane-main"), createLeaf("pane-panel"))],
       ]),
     });
-    s.seam.onSelectWorktree(MAIN);
+    s.seam.onSelectWorktree(null);
 
     expect(s.tabs()).toHaveLength(1);
     expect(s.activations).toEqual(["pane-main"]);
@@ -623,7 +510,7 @@ describe("a selection lands on a pane of the worktree it named", () => {
     // Every pane the surface holds is attributed to MAIN, so PANEL holds none.
     s.seam.onSelectWorktree(PANEL);
 
-    expect(s.emptyScope).toEqual({ id: PANEL, label: "feat/worktree-panel" });
+    expect(s.emptyScope).toEqual({ id: PANEL, label: "feat/worktree-panel", worktreeId: PANEL });
     expect(s.activations).toEqual([]);
   });
 
@@ -653,9 +540,9 @@ describe("a selection lands on a pane of the worktree it named", () => {
   });
 
   it("costs one draw for the whole selection", () => {
-    const s = placed("pane-panel");
+    const s = placed("pane-main");
     const before = s.renders;
-    s.seam.onSelectWorktree(MAIN);
+    s.seam.onSelectWorktree(PANEL);
 
     expect(s.renders - before).toBe(1);
   });
@@ -675,18 +562,6 @@ describe("round-1: the region follows the presented set, not just the selection"
     expect(s.emptyScope).toBeNull();
   });
 
-  it("puts the region up when the scope's last pane is re-attributed elsewhere", () => {
-    // W2: a push, not a selection. The requirement is unconditional.
-    const s = surface({ tabIds: ["pane-main"], activePane: "pane-main" });
-    s.push();
-    s.seam.onSelectWorktree(MAIN);
-    expect(s.emptyScope).toBeNull();
-
-    s.push({ rows: { [PANEL]: [pane("a", "pane-main")] } });
-
-    expect(s.emptyScope).toEqual({ id: MAIN, label: "main" });
-  });
-
   it("sees the live leaf of a split collapsed onto its non-original pane", () => {
     // W3: `closeSplitPaneById` leaves tabLayouts[A] = leaf{B} with A's instance
     // gone. Reading tab ids reported nothing, and the region claimed a running
@@ -696,7 +571,7 @@ describe("round-1: the region follows the presented set, not just the selection"
       activePane: "pane-collapsed",
     });
     s.push({ rows: { [MAIN]: [pane("a", "pane-collapsed")] } });
-    s.seam.onSelectWorktree(MAIN);
+    s.seam.onSelectWorktree(null);
 
     expect(s.emptyScope).toBeNull();
     expect(s.containerHidden()).toBe(false);
@@ -726,24 +601,6 @@ describe("round-1: the region follows the presented set, not just the selection"
 
     expect(s.containerHidden()).toBe(false);
     expect(s.region()).toBeNull();
-  });
-
-  it("moves the region's offer to the worktree just selected, not the one before it", () => {
-    // The end-to-end half of round-3 B3. These two worktrees have different
-    // LABELS, so this does not discriminate on the id axis by itself — the unit
-    // test in emptyScopeRegion.test.ts does that. What it guards is the wiring:
-    // `WorktreeView.select` emits the new worktree with no intervening `null`, so
-    // the region survives the move and must offer the worktree now scoped.
-    const s = surface({ tabIds: ["pane-main"], activePane: "pane-main" });
-    s.push();
-    s.seam.onSelectWorktree(PANEL);
-    s.seam.onSelectWorktree(MAIN);
-    // MAIN holds `pane-main`, so it is not empty — go somewhere that is, to keep a
-    // region standing across the move.
-    s.push({ rows: { [PANEL]: [pane("a", "pane-main")] } });
-    s.region()?.querySelector<HTMLButtonElement>("button")?.click();
-
-    expect(s.opened).toEqual([MAIN]);
   });
 
   it("keeps the standing region, and its focus, across a redraw that changes nothing", () => {
