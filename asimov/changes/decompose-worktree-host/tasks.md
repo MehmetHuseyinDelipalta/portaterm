@@ -221,7 +221,7 @@
     3. Trim the destructures and imports the cut leaves unused in `src/providers/worktreeHost/actions/create.ts`.
     4. Run `bun run asm refactor shape src/providers/worktreeHost/actions/create.ts src/providers/worktreeHost/actions/create/submitArm.ts` and split `src/providers/worktreeHost/actions/create/submitArm.ts` again if it fires.
 
-- [ ] 2_17 Extract what a freshly opened form is told
+- [x] 2_17 Extract what a freshly opened form is told — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_16
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/actions/create.ts` and every file under `src/providers/worktreeHost/actions/create/` is under 500 lines
@@ -230,7 +230,7 @@
     - Verify: command pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts
   - **Plan**:
     1. Enumerate free names in both directions (D1a): compile the block in isolation and read the `TS2304` list for direction A, then `grep -n` every identifier it declares across `src/providers/worktreeHost/actions/create.ts` for direction B.
-    2. Create `src/providers/worktreeHost/actions/create/defaultsArm.ts` with the defaults and refs arms (`requestWorktreeCreateDefaults`, `requestWorktreeRefs`), moving them out of `src/providers/worktreeHost/actions/create.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
+    2. Create `src/providers/worktreeHost/actions/create/defaultsArm.ts` with the defaults arm (`requestWorktreeCreateDefaults`) and `src/providers/worktreeHost/actions/create/refsArm.ts` with the refs arm (`requestWorktreeRefs`), moving them out of `src/providers/worktreeHost/actions/create.ts`. One file for both came to 498 lines with `shape` still firing, and only one of the two arms establishes an opening; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
     3. Trim the destructures and imports the cut leaves unused in `src/providers/worktreeHost/actions/create.ts`.
     4. Run `bun run asm refactor shape src/providers/worktreeHost/actions/create.ts src/providers/worktreeHost/actions/create/defaultsArm.ts` and split `src/providers/worktreeHost/actions/create/defaultsArm.ts` again if it fires.
     5. Record `wc -l` for `src/providers/worktreeHost/actions/create.ts` and every file under `src/providers/worktreeHost/actions/create/` in workflow.md Notes.
