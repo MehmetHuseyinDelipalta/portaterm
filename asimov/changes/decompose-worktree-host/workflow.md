@@ -14,7 +14,7 @@
 
 - [x] All tasks done (`tasks.md`)
 - [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
-- [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
+- [x] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
 - [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
 
@@ -26,6 +26,7 @@
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
 
 ## Notes
+- Review cycle 1 round 1 (`asm-review-master`, range `112e0284..1f21b202`): APPROVE, 0 blocking / 0 warnings / 0 suggestions. Persisted at `.reviews/round-1.md`. No fix loop; the cycle ended at the discovery round.
 - Witnesses: OBL-1 pass [exit 0]; OBL-2 pass [exit 0]; OBL-3 pass [exit 0]; OBL-4 pass [exit 0]; OBL-5 pass [exit 1 — the grep printed nothing, which is the pass]; OBL-6 pass [exit 0]; OBL-7 pass [exit 0].
 - Deviation (task 2_21): the re-point alone was not enough. `oneOwner.test.ts`'s `callablesOf` indexed a name LAST-WINS, so `openingRegistry`'s one-line `forgetDepartedRepos(departed)` delegate on the returned object shadowed the module-scope routine of the same name and the assertion ran over an empty body. It now keeps the OUTERMOST spelling — which is the owner in every factory-per-module file this change created.
 - Auto-decision (task 2_10): `asm refactor shape` still reports `giant-literal` on `scanReconcile.ts` at 25% against a 25% bar. `arm`, `cancelCap`, `anyShowing`, `anyDrawingRows`, `enrichmentOwed`, `reconcileRowDrawing` and `reconcileWatches` were hoisted to module scope; the residue is exactly `capHandle`, `scanHandle` and the four members that read or write them, and is not split further.
