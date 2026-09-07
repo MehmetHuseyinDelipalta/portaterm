@@ -25,8 +25,8 @@ import type {
   WorktreeRemoveAssessmentMessage,
   WorktreeTreeResponseMessage,
 } from "../../types/messages";
-import { attributionKey, type PaneReport, waitingKey } from "../paneAttribution";
 import type { VaultView } from "../vault/VaultPanel";
+import { type AgentActions, createAgentActions } from "./controller/agentActions";
 import type { WorktreeControllerDeps } from "./controller/controllerTypes";
 import { createDialogChannels } from "./controller/dialogChannels";
 import { createVisibility, type Visibility } from "./controller/visibility";
@@ -38,7 +38,6 @@ import type {
   WorktreeCreateDefaults,
   WorktreeCreateMode,
   WorktreeInfo,
-  WorktreeLaunchAgent,
   WorktreeOpenAfter,
   WorktreePresence,
   WorktreeProvisionOffer,
@@ -245,8 +244,6 @@ export class WorktreeController {
   private loading: boolean;
   private refreshing = false;
   private rowActivation: WorktreeRowActivation;
-  /** The last attribution reported, keyed for comparison. `null` → none yet. */
-  private lastAttribution: string | null = null;
   /** The host's resolved create destination, per repo. Only it can know one. */
   private readonly createDefaults = new Map<string, WorktreeCreateDefaultsMessage>();
   /**
@@ -314,12 +311,8 @@ export class WorktreeController {
   private readonly dialogChannels = createDialogChannels();
   /** Notices the panel is showing, newest last, one per scope+verb. */
   private actionResults: WorktreeActionResult[] = [];
-  /**
-   * Agents the host said can start a fresh session. Empty until it answers, and
-   * empty is meaningful: no launch item is offered, rather than one that opens a
-   * picker with nothing in it.
-   */
-  private launchAgents: WorktreeLaunchAgent[] = [];
+  /** Launching, resuming, and where each pane is (3_3). */
+  private readonly agentActions: AgentActions;
 
   /** Held rather than passed: the two launch items appear only once one can act. */
   private readonly menuActions: WorktreeMenuActions;
@@ -334,32 +327,8 @@ export class WorktreeController {
 
   private assessSeq = 0;
 
-  /** True between asking which agents can start a session and being told. */
-  private awaitingLaunchTargets = false;
-
-  /** Which answer `launchAgents` came from. Never read at submit — see `frozen`. */
-  private launchOfferId: string | undefined;
-  /**
-   * What the open dialog was RENDERED against, frozen when it opened.
-   *
-   * A dialog shows one offer and one worktree, and the user answers it minutes
-   * later. Reading the panel's current offer at submit — which is what this
-   * used to do — lets an answer that arrived under the open dialog relabel that
-   * old choice as a choice made from the new list (round-4 B1). Frozen here,
-   * a superseded choice is refused by the host instead of admitted.
-   */
-  private frozenLaunch: { worktreeId: string; offerId?: string; generation?: number } | null = null;
   /** The offer the open create form was rendered against. Same rule. */
   private frozenCreateOffer: { offerId?: string } | null = null;
-  /**
-   * What the open agent menu was BUILT against, by row.
-   *
-   * Not read from the tree when the item is clicked: a generation-only update
-   * replaces the tree without repainting — that is D10's deliberate choice —
-   * so at click time the tree and the menu on screen disagree, and the tree is
-   * the wrong one of the two to believe (round-7 B5).
-   */
-  private frozenMenuTarget: { rowId: string; worktreeId: string; generation?: number } | null = null;
   /**
    * Display paths of rows that have LEFT the tree, so a result arriving after
    * the rebuild that removed its row can still say what it was about.
@@ -394,6 +363,20 @@ export class WorktreeController {
 
   private constructor(deps: WorktreeControllerDeps) {
     this.deps = deps;
+    this.agentActions = createAgentActions({
+      postMessage: (msg) => deps.postMessage(msg),
+      onAttribution: (report) => deps.onAttribution?.(report),
+      presence: () => this.presence,
+      infoOf: (worktreeId) => this.infoOf(worktreeId),
+      generationOf: (worktreeId) => this.generationOf(worktreeId),
+      openLaunchDialog: (title, agents) => {
+        this.view.openLaunchDialog(title, agents);
+      },
+      menuActions: () => this.menuActions,
+      push: () => {
+        this.push();
+      },
+    });
     this.visibility = createVisibility({
       postMessage: (msg) => deps.postMessage(msg),
       presenceNeeded: () => deps.presenceNeeded?.(),
@@ -407,9 +390,9 @@ export class WorktreeController {
       push: () => {
         this.push();
       },
-      awaitingLaunchTargets: () => this.awaitingLaunchTargets,
+      awaitingLaunchTargets: () => this.agentActions.awaitingLaunchTargets(),
       noteAwaitingLaunchTargets: () => {
-        this.awaitingLaunchTargets = true;
+        this.agentActions.noteAwaitingLaunchTargets();
       },
     });
     this.menuActions = worktreeMenuActions(
@@ -424,7 +407,7 @@ export class WorktreeController {
     // Always wired, unlike `resumeHere`: the capture is what makes the menu's
     // own view of the tree authoritative, and it must happen even on an open
     // that offers no resume, so a later one cannot inherit an older capture.
-    this.menuActions.captureTarget = (row) => this.captureMenuTarget(row);
+    this.menuActions.captureTarget = (row) => this.agentActions.captureMenuTarget(row);
     // No folder means no tree is ever coming, so the skeleton would be a promise
     // the workspace cannot keep.
     this.loading = deps.init.workspaceRoot !== null;
@@ -588,7 +571,7 @@ export class WorktreeController {
         };
       },
       onLaunchSubmit: (request) => {
-        const frozen = this.frozenLaunch;
+        const frozen = this.agentActions.frozenLaunch();
         if (frozen === null) {
           return;
         }
@@ -599,7 +582,7 @@ export class WorktreeController {
           ...(frozen.offerId === undefined ? {} : { offerId: frozen.offerId }),
           ...(frozen.generation === undefined ? {} : { generation: frozen.generation }),
         });
-        this.frozenLaunch = null;
+        this.agentActions.clearFrozenLaunch();
       },
       onDismissActionResult: (result) => {
         this.actionResults = this.actionResults.filter((r) => r !== result);
@@ -742,13 +725,13 @@ export class WorktreeController {
       persistIdleSeeded: (ids) => deps.store.updateState({ worktreeIdleTailSeeded: ids }),
       // The reply is the next tree+presence envelope, carrying the roster on the
       // row itself — there is no response message to correlate here.
-      onRequestSubagents: (row) => this.requestRoster(row),
+      onRequestSubagents: (row) => this.agentActions.requestRoster(row),
       // Ids only — the host resolves them against its own tree and presence, so
       // a path or session the view guessed can never reach an action (D2).
-      onActivateAgent: (row, activation) => this.activateAgent(row, activation),
+      onActivateAgent: (row, activation) => this.agentActions.activateAgent(row, activation),
       // A subagent has no pane of its own, so its activation is the PARENT's —
       // sending the user anywhere else would be a dead click (design.md D9).
-      onActivateSubagent: (_subagent, parent) => this.activateSubagentParent(parent),
+      onActivateSubagent: (_subagent, parent) => this.agentActions.activateSubagentParent(parent),
       // A getter, not a value: the setting is live, and re-reading it at the
       // click is what lets an update reach a view already painted.
       rowActivation: () => this.rowActivation,
@@ -911,27 +894,6 @@ export class WorktreeController {
     });
   }
 
-  /** Every repo the host has answered for, as the form's seed. */
-  /**
-   * Open the launch dialog for one worktree.
-   *
-   * The worktree is remembered rather than threaded through the dialog: the
-   * dialog collects WHAT to launch, and the panel already knows WHERE, so a
-   * mismatch between the two is not representable.
-   */
-  private openLaunchFor(info: WorktreeInfo): void {
-    // Captured together with the list the dialog is about to render: the offer,
-    // the worktree, and the registration of that worktree are one answer to one
-    // question, and reading any of them again later would be reading a
-    // different question's answer (design.md D10).
-    this.frozenLaunch = {
-      worktreeId: info.id,
-      ...(this.launchOfferId === undefined ? {} : { offerId: this.launchOfferId }),
-      ...(this.generationOf(info.id) === undefined ? {} : { generation: this.generationOf(info.id) }),
-    };
-    this.view.openLaunchDialog(info.branch ?? info.displayPath, this.launchAgents);
-  }
-
   /**
    * The launch offer for one worktree, or `undefined` when there is none to make.
    *
@@ -940,19 +902,12 @@ export class WorktreeController {
    * the one thing `syncLaunchActions` already refuses to do (design.md D4).
    */
   launchOfferFor(worktreeId: string): (() => void) | undefined {
-    if (this.launchAgents.length === 0 || this.infoOf(worktreeId) === undefined) {
-      return undefined;
-    }
-    // Re-resolved when the offer is TAKEN, not when the region was built: the
-    // region outlives several tree pushes, and the dialog would otherwise be
-    // titled with a branch the worktree has since been renamed off
-    // (round-1 suggestion).
-    return () => {
-      const info = this.infoOf(worktreeId);
-      if (info !== undefined) {
-        this.openLaunchFor(info);
-      }
-    };
+    return this.agentActions.launchOfferFor(worktreeId);
+  }
+
+  /** The host's answer to "which agents can start a fresh session here". */
+  handleLaunchTargets(msg: VaultLaunchTargetsMessage): void {
+    this.agentActions.handleLaunchTargets(msg);
   }
 
   private infoOf(worktreeId: string): WorktreeInfo | undefined {
@@ -964,154 +919,7 @@ export class WorktreeController {
     return this.tree?.repos.find((repo) => repo.worktrees.some((wt) => wt.id === worktreeId))?.generation;
   }
 
-  /** Capture what an agent row's menu is being built against. */
-  private captureMenuTarget(row: WorktreeAgentRow): void {
-    const worktreeId = this.worktreeIdOf(row);
-    this.frozenMenuTarget =
-      worktreeId === undefined
-        ? null
-        : {
-            rowId: row.rowId,
-            worktreeId,
-            ...(this.generationOf(worktreeId) === undefined ? {} : { generation: this.generationOf(worktreeId) }),
-          };
-  }
-
-  /** Resume a row's session in the worktree that row is published under. */
-  private resumeHere(row: WorktreeAgentRow): void {
-    const frozen = this.frozenMenuTarget;
-    // The menu this item belongs to must be the one that was captured. A row
-    // that never went through a menu open, or one from an earlier menu, has no
-    // authority here — refusing is the safe direction, and the item cannot be
-    // reached any other way.
-    if (row.entryId === undefined || frozen === null || frozen.rowId !== row.rowId) {
-      return;
-    }
-    this.deps.postMessage({
-      type: "worktreeResumeHere",
-      worktreeId: frozen.worktreeId,
-      rowId: row.rowId,
-      entryId: row.entryId,
-      ...(frozen.generation === undefined ? {} : { generation: frozen.generation }),
-    });
-    this.frozenMenuTarget = null;
-  }
-
-  /**
-   * Which worktree each of this window's panes is running in, read off the
-   * envelope that already carries presence — the only attribution path there is
-   * (design.md D2). An absent key means "not placed", which is why no sentinel
-   * value exists for it: a third value would invite a fourth outcome.
-   *
-   * A pane published under more than one worktree is OMITTED, not resolved by
-   * last-write-wins. Two answers to a question the evidence did not settle is not
-   * proof, and the consumer hides only what it can prove belongs elsewhere.
-   */
-  /**
-   * Where presence puts each pane, and which panes it says are waiting — from ONE
-   * walk, reported together (design.md D1). The two halves answer different
-   * questions and neither gates the other: a contested pane is dropped from the
-   * placement but keeps whatever it said about waiting, because "we cannot say
-   * which worktree this is in" is not a claim about whether it needs a human.
-   */
-  private buildAttribution(): PaneReport {
-    const map = new Map<string, string>();
-    const waiting = new Set<string>();
-    const contested = new Set<string>();
-    for (const [worktreeId, rows] of Object.entries(this.presence?.rowsByWorktreeId ?? {})) {
-      // External rows name agents this window does not host — they carry no pane
-      // of ours and so say nothing about where any of our tabs belongs. Dropped
-      // in one pass rather than tested twice inside the loop below.
-      for (const row of rows.filter((r) => r.scope === "window")) {
-        if (row.paneId === undefined) {
-          continue;
-        }
-        if (row.activity === "waiting") {
-          waiting.add(row.paneId);
-        }
-        const held = map.get(row.paneId);
-        if (held !== undefined && held !== worktreeId) {
-          contested.add(row.paneId);
-        }
-        map.set(row.paneId, worktreeId);
-      }
-    }
-    for (const paneId of contested) {
-      map.delete(paneId);
-    }
-    return { placement: map, waiting };
-  }
-
-  /**
-   * Report attribution, but only where it moved. A presence scan lands on its own
-   * cadence and most of them carry the same placement — reporting each one would
-   * make every scan a reason to redraw the tab bar.
-   */
-  private emitAttribution(): void {
-    const next = this.buildAttribution();
-    // The SAME canonicalisers the render signature uses. Both suppress a duplicate
-    // on the same question and were byte-identical copies of this encoding, which
-    // is one edit away from disagreeing about it (round-1 W3). BOTH halves are in
-    // the key: either moving is a report, and neither moving is silence.
-    const key = `${attributionKey(next.placement)}\u0002${waitingKey(next.waiting)}`;
-    if (key === this.lastAttribution) {
-      return;
-    }
-    this.lastAttribution = key;
-    this.deps.onAttribution?.(next);
-  }
-
-  /** Which worktree the presence envelope published this row under. */
-  private worktreeIdOf(row: WorktreeAgentRow): string | undefined {
-    for (const [worktreeId, rows] of Object.entries(this.presence?.rowsByWorktreeId ?? {})) {
-      if (rows.some((r) => r.rowId === row.rowId)) {
-        return worktreeId;
-      }
-    }
-    return undefined;
-  }
-
-  /** The host's answer to "which agents can start a fresh session here". */
-  handleLaunchTargets(msg: VaultLaunchTargetsMessage): void {
-    // Only the start answer is ours: the continuation dialog asks the same
-    // question with the other capability and gets a different set back.
-    if (msg.capability !== "start") {
-      return;
-    }
-    this.awaitingLaunchTargets = false;
-    // Kept with the list it came with: the host admits a launch only against the
-    // answer this panel actually received, and quoting it is the proof.
-    this.launchOfferId = msg.offerId;
-    this.launchAgents = msg.targets.map((t) => ({
-      id: t.agent,
-      label: t.displayName,
-      permissionChoices: t.permissionChoices,
-      canSeedPrompt: t.canSeedPrompt,
-    }));
-    this.syncLaunchActions();
-    this.push();
-  }
-
-  /**
-   * Both launch items ride on the same host capability, so the host's own answer
-   * gates them together: no agent can start a session here means neither item is
-   * offered, rather than offered and refused.
-   */
-  private syncLaunchActions(): void {
-    // The MENU needs no nudge — `openForWorktree` rebuilds its items at click
-    // time from this same record. The row's launch control does: it is built at
-    // paint, behind a guard `menuActions` is not an input to. That capability is
-    // in the view's render key for exactly this reason, so mutating the record
-    // here and pushing is enough to move it (.reviews/round-1.md B3).
-    if (this.launchAgents.length === 0) {
-      delete this.menuActions.launchAgentHere;
-      delete this.menuActions.resumeHere;
-      return;
-    }
-    this.menuActions.launchAgentHere = (info) => this.openLaunchFor(info);
-    this.menuActions.resumeHere = (row) => this.resumeHere(row);
-  }
-
+  /** Every repo the host has answered for, as the form's seed. */
   private createRepos(): WorktreeCreateDefaults[] {
     const repos: WorktreeCreateDefaults[] = [];
     for (const repo of this.tree?.repos ?? []) {
@@ -1138,7 +946,7 @@ export class WorktreeController {
         ...(answer.collidedWith === undefined ? {} : { collidedWith: answer.collidedWith }),
         // WT-005.3 owns launches; an option that resolves to nothing is worse
         // than no option at all.
-        agents: this.launchAgents,
+        agents: this.agentActions.launchAgents(),
         // Absent until the offer arrives, which the form renders as "not told
         // yet" rather than as "nothing to bring over".
         ...(offer === undefined ? {} : { provisioning: { offerId: offer.offerId, model: offer.model } }),
@@ -1366,7 +1174,8 @@ export class WorktreeController {
       this.push();
       return;
     }
-    this.frozenCreateOffer = { ...(this.launchOfferId === undefined ? {} : { offerId: this.launchOfferId }) };
+    const launchOfferId = this.agentActions.launchOfferId();
+    this.frozenCreateOffer = { ...(launchOfferId === undefined ? {} : { offerId: launchOfferId }) };
     this.view.openCreateDialog(pending.initialRepoId);
   }
 
@@ -1521,7 +1330,7 @@ export class WorktreeController {
     this.reconcile(msg.tree);
     this.tree = msg.tree;
     this.presence = msg.presence;
-    this.emitAttribution();
+    this.agentActions.emitAttribution();
     this.loading = false;
     this.refreshing = false;
     this.deps.onCreateAvailability?.(msg.tree.repos.length > 0);
@@ -1723,32 +1532,6 @@ export class WorktreeController {
           : {}),
       orphanedLabel: label ?? worktreeId,
     };
-  }
-
-  /** The reply is the next envelope, carrying the roster on the row itself. */
-  private requestRoster(row: WorktreeAgentRow): void {
-    if (row.entryId !== undefined) {
-      this.deps.postMessage({ type: "requestWorktreeSubagents", rowId: row.rowId, entryId: row.entryId });
-    }
-  }
-
-  /** Ids only — the host resolves them against its own tree and presence (D2). */
-  private activateAgent(row: WorktreeAgentRow, activation: WorktreeRowActivation): void {
-    if (activation === "focus") {
-      if (row.paneId !== undefined) {
-        this.deps.postMessage({ type: "worktreeFocusPane", rowId: row.rowId, paneId: row.paneId });
-      }
-      return;
-    }
-    if (row.entryId !== undefined) {
-      this.deps.postMessage({ type: "worktreeOpenPreview", rowId: row.rowId, entryId: row.entryId });
-    }
-  }
-
-  private activateSubagentParent(parent: WorktreeAgentRow): void {
-    if (parent.paneId !== undefined) {
-      this.deps.postMessage({ type: "worktreeFocusPane", rowId: parent.rowId, paneId: parent.paneId });
-    }
   }
 
   private push(): void {

@@ -28,7 +28,7 @@
     3. Trim the imports the cut leaves unused in `src/webview/worktree/WorktreeController.ts`.
     4. Run `bun run asm refactor shape src/webview/worktree/WorktreeController.ts src/webview/worktree/controller/visibility.ts` and split `src/webview/worktree/controller/visibility.ts` again if it fires.
 
-- [ ] 3_3 Extract launching, resuming and pane attribution
+- [x] 3_3 Extract launching, resuming and pane attribution — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts exit 0
   - **Deps**: 3_2
   - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5
   - **Boundary**: `src/webview/worktree/controller/agentActions.ts` is under 500 lines, and `src/webview/worktree/WorktreeController.ts` never grows
