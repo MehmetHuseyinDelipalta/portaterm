@@ -19,6 +19,8 @@ export interface SessionSnapshotMetadata {
   shellArgs: string[];
   cwd: string;
   currentCwd: string | null;
+  /** Stable linked-worktree owner. Absent means main (and covers legacy snapshots). */
+  worktreeId?: string;
 
   cols: number;
   rows: number;
@@ -99,6 +101,7 @@ export const KNOWN_METADATA_KEYS: ReadonlySet<string> = new Set<keyof SessionSna
   "shellArgs",
   "cwd",
   "currentCwd",
+  "worktreeId",
   "cols",
   "rows",
   "bufferFile",

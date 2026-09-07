@@ -92,6 +92,8 @@ export interface TerminalSession {
    * restore-terminal-sessions design.md D12 + round-1 B4.
    */
   rootTabId?: string;
+  /** Stable linked-worktree owner. Absent means the main terminal bucket. */
+  worktreeId?: string;
   /** Resolved cwd passed to the PTY at spawn time; used for resolving relative file paths in terminal links. */
   initialCwd?: string;
   /** Latest cwd observed from PTY OSC 7 / OSC 633 reports; undefined until the first parse. */

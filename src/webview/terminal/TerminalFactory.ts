@@ -219,7 +219,7 @@ export class TerminalFactory {
     config: TerminalConfig,
     isActive: boolean,
     customName: string | null = null,
-    options?: { deferOpen?: boolean; isSplitPane?: boolean },
+    options?: { deferOpen?: boolean; isSplitPane?: boolean; worktreeId?: string },
   ): TerminalInstance {
     const containerEl = document.getElementById("terminal-container");
     if (!containerEl) {
@@ -453,6 +453,7 @@ export class TerminalFactory {
       customName,
       terminal,
       container,
+      worktreeId: options?.worktreeId,
       exited: false,
       activityStatus: "idle",
     };

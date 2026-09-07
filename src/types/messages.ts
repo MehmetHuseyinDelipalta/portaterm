@@ -1954,6 +1954,8 @@ export interface InitMessage {
     customName: string | null;
     /** Whether this tab is currently active */
     isActive: boolean;
+    /** Stable linked-worktree owner. Absent means main. */
+    worktreeId?: string;
     /**
      * When true, the entry is a split-pane child of another root tab (not a
      * top-level tab in its own right). The webview MUST create the xterm
@@ -2072,6 +2074,8 @@ export interface TabCreatedMessage {
    * on creation so a hydrated name surfaces on first render without flicker.
    */
   customName: string | null;
+  /** Stable linked-worktree owner. Absent means main. */
+  worktreeId?: string;
 }
 
 /**
@@ -2148,6 +2152,8 @@ export interface SplitPaneCreatedMessage {
   newSessionName: string;
   /** Direction of the split */
   direction: "horizontal" | "vertical";
+  /** Stable linked-worktree owner inherited from the source pane. */
+  worktreeId?: string;
 }
 
 /** Close a specific split pane by session ID (from context menu). */
@@ -3141,6 +3147,8 @@ export interface RestoreFromSnapshotMessage {
    * as `false` (root tab). See .reviews/round-4.md [W4].
    */
   isSplitPane?: boolean;
+  /** Stable linked-worktree owner. Absent means main. */
+  worktreeId?: string;
 }
 
 /**

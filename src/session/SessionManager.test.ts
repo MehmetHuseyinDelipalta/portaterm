@@ -155,6 +155,22 @@ describe("SessionManager: createSession", () => {
     sm.dispose();
   });
 
+  it("keeps a stable linked-worktree owner when cwd changes", () => {
+    const sm = new SessionManager();
+    const webview = createMockWebview();
+    const id = sm.createSession("anywhereTerminal.sidebar", webview, {
+      cwd: "/repo-wt/feat",
+      worktreeId: "/repo-wt/feat",
+    });
+
+    sm.setCurrentCwd(id, "/tmp/outside");
+
+    expect(sm.getSession(id)?.worktreeId).toBe("/repo-wt/feat");
+    expect(sm.getTabsForView("anywhereTerminal.sidebar")[0]?.worktreeId).toBe("/repo-wt/feat");
+    expect(sm.getAllSessionsForView("anywhereTerminal.sidebar")[0]?.worktreeId).toBe("/repo-wt/feat");
+    sm.dispose();
+  });
+
   it("first session in a view is automatically active", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
@@ -245,6 +261,7 @@ describe("SessionManager: createSession", () => {
       expect.objectContaining({ cwd: "/persisted/cwd" }),
     );
     expect(sm.getCurrentCwd(id)).toBe("/persisted/current-cwd");
+    expect(sm.getSession(id)?.worktreeId).toBeUndefined();
 
     sm.dispose();
   });

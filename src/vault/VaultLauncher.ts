@@ -27,6 +27,8 @@ export interface CreateSessionOptions {
   shell: string;
   shellArgs: string[];
   cwd: string;
+  /** Stable linked-worktree owner. Absent means main. */
+  worktreeId?: string;
   /** Present only for Claude (auth/config override); omitted otherwise. */
   env?: Record<string, string>;
   /**

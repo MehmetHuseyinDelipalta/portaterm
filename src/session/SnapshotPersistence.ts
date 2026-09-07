@@ -586,6 +586,7 @@ export class SnapshotPersistence {
       shellArgs: session.shellArgs ?? [],
       cwd: session.initialCwd ?? "",
       currentCwd: session.currentCwd ?? null,
+      worktreeId: session.worktreeId,
       cols: session.cols,
       rows: session.rows,
       bufferFile: `snapshots/${session.id}.snapshot.ans`,

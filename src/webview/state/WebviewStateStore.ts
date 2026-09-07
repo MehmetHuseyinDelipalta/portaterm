@@ -34,6 +34,8 @@ export interface TerminalInstance {
   customName: string | null;
   terminal: Terminal;
   container: HTMLDivElement;
+  /** Stable linked-worktree owner. Absent means the main terminal bucket. */
+  worktreeId?: string;
   /** Whether the PTY process has exited (terminal becomes read-only). */
   exited: boolean;
   /** Current output, semantic, or approval activity used by the tab-bar status indicator. */

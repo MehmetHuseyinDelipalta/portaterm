@@ -196,6 +196,22 @@ describe("SessionManager.generateSnapshotMetadata", () => {
     sm.dispose();
   });
 
+  it("persists the stable linked-worktree owner", () => {
+    const fx = makeFactories();
+    const sm = new SessionManager(undefined, {
+      restoreEnabled: true,
+      headlessFactory: fx.headless,
+      serializeAddonFactory: fx.serializeAddon,
+    });
+    const id = sm.createSession("anywhereTerminal.sidebar", mockWebview(), {
+      worktreeId: "/repo-wt/feat",
+    });
+    mockPtySessions[0].onData?.("data");
+
+    expect(sm.generateSnapshotMetadata(id)?.metadata.worktreeId).toBe("/repo-wt/feat");
+    sm.dispose();
+  });
+
   it("persists isAgentLaunch for vault agent launches (omitted otherwise)", () => {
     const fx = makeFactories();
     const sm = new SessionManager(undefined, {

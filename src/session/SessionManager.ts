@@ -407,6 +407,8 @@ export class SessionManager {
       shell?: string;
       shellArgs?: string[];
       cwd?: string;
+      /** Stable linked-worktree owner. Absent means main. */
+      worktreeId?: string;
       /**
        * Per-session env overrides merged OVER the base (and shell-integration)
        * environment just before spawn. Used by the vault to carry a resumed
@@ -532,6 +534,7 @@ export class SessionManager {
       rootTabId: isSplitPane
         ? (options?.rootTabId ?? restoreFrom?.metadata.rootTabId ?? id)
         : (restoreFrom?.metadata.rootTabId ?? id),
+      worktreeId: options?.worktreeId ?? restoreFrom?.metadata.worktreeId,
       initialCwd: cwd,
       currentCwd: restoreFrom?.metadata.currentCwd ?? undefined,
       shell: resolvedShell,
@@ -809,7 +812,14 @@ export class SessionManager {
    */
   getTabsForView(
     viewId: string,
-  ): Array<{ id: string; name: string; customName: string | null; isActive: boolean; isSplitPane: false }> {
+  ): Array<{
+    id: string;
+    name: string;
+    customName: string | null;
+    isActive: boolean;
+    isSplitPane: false;
+    worktreeId?: string;
+  }> {
     const viewSessionIds = this.viewSessions.get(viewId);
     if (!viewSessionIds) {
       return [];
@@ -821,6 +831,7 @@ export class SessionManager {
       customName: string | null;
       isActive: boolean;
       isSplitPane: false;
+      worktreeId?: string;
     };
     return viewSessionIds
       .map((sid): TabInfo | undefined => {
@@ -828,7 +839,14 @@ export class SessionManager {
         if (!s || s.isSplitPane) {
           return undefined;
         }
-        return { id: s.id, name: s.name, customName: s.customName, isActive: s.isActive, isSplitPane: false };
+        return {
+          id: s.id,
+          name: s.name,
+          customName: s.customName,
+          isActive: s.isActive,
+          isSplitPane: false,
+          worktreeId: s.worktreeId,
+        };
       })
       .filter((tab): tab is TabInfo => tab !== undefined);
   }
@@ -841,7 +859,14 @@ export class SessionManager {
    */
   getAllSessionsForView(
     viewId: string,
-  ): Array<{ id: string; name: string; customName: string | null; isActive: boolean; isSplitPane: boolean }> {
+  ): Array<{
+    id: string;
+    name: string;
+    customName: string | null;
+    isActive: boolean;
+    isSplitPane: boolean;
+    worktreeId?: string;
+  }> {
     const viewSessionIds = this.viewSessions.get(viewId);
     if (!viewSessionIds) {
       return [];
@@ -853,6 +878,7 @@ export class SessionManager {
       customName: string | null;
       isActive: boolean;
       isSplitPane: boolean;
+      worktreeId?: string;
     };
     return viewSessionIds
       .map((sid): SessionInfo | undefined => {
@@ -866,9 +892,20 @@ export class SessionManager {
           customName: s.customName,
           isActive: s.isActive,
           isSplitPane: s.isSplitPane,
+          worktreeId: s.worktreeId,
         };
       })
       .filter((info): info is SessionInfo => info !== undefined);
+  }
+
+  /** Move sessions whose linked owner left the current tree back to main. */
+  reconcileWorktreeOwners(viewId: string, liveLinkedWorktreeIds: ReadonlySet<string>): void {
+    for (const sessionId of this.viewSessions.get(viewId) ?? []) {
+      const session = this.sessions.get(sessionId);
+      if (session?.worktreeId !== undefined && !liveLinkedWorktreeIds.has(session.worktreeId)) {
+        session.worktreeId = undefined;
+      }
+    }
   }
 
   /** Get a session by ID. Returns undefined if not found. */
