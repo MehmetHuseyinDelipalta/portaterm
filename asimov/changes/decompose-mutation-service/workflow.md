@@ -8,7 +8,7 @@
 
 - [ ] Gate 1: direction approved _(only if a real fork; else `[-]`)_
 - [ ] `asm change validate` passes
-- [ ] Gate 2: plan approved
+- [x] Gate 2: plan approved
 
 ## Implement
 
@@ -33,3 +33,11 @@ Blueprint: none
 Lane: full
 Admission: <new-owner|in-contract — owner or contract>
 Planned at: 914dbb2b
+Planned at: 914dbb2b
+Lane: full. Class: refactor. Gate 1 `[-]`: no real fork — the factory-per-module seam is the one changes A and the three archived decompositions used.
+Admission: in-contract — behaviour-preserving decomposition; no new invariant owner
+- Plan attack (asm-oracle) returned OBL-2 supported/OBL-3 supported/OBL-5 supported, OBL-1 and OBL-4 unresolved, and refuted D1's `:999` provisioning boundary. All four corrections applied: the boundary moved to `:1048` with the eight severed identifiers named, OBL-1's semantics narrowed to what its witness establishes, OBL-2's witnesses replaced (the three first recorded were removal fingerprints, a different store), and OBL-4 given a runnable frozen inventory instead of "a per-task grep". OBL-6 added for the destructive create ordering, which the ledger had missed.
+- OBL-1 mutation-verified rather than accepted from the oracle: deleting the disposing wrapper entirely fails 5 of 180. The oracle's `unresolved` was about a WIDER claim than the row's own defeater — the rejection path, which `try/finally` covers structurally and no test exercises.
+- Knowledge candidate: the create's rejection path disposes provision material by `finally` alone, with no test | Surprise: a plan attack read the disposal as absent on rejection because every cited case fulfills; the `finally` at worktreeMutationService.ts:1071-1076 does cover it, but nothing would notice if a refactor turned it into a `.then()` | Evidence: src/worktree/worktreeMutationService.ts#createWorktree wrapper; applyProvision's rejection is swallowed at :919-924 | Consumer: plan | Action: after this series, add one case that rejects out of the coordinator body and asserts dispose was still called. OBL-3 forbids adding it here.
+- serviceTypes.ts is 342 source lines plus ~45 of type imports, not the ~290 first estimated — still under 500, so no extra task.
+

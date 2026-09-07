@@ -8,7 +8,7 @@
 
 - [ ] Gate 1: direction approved _(only if a real fork; else `[-]`)_
 - [ ] `asm change validate` passes
-- [ ] Gate 2: plan approved
+- [x] Gate 2: plan approved
 
 ## Implement
 
@@ -33,3 +33,13 @@ Blueprint: none
 Lane: full
 Admission: <new-owner|in-contract — owner or contract>
 Planned at: 914dbb2b
+Planned at: 914dbb2b
+Lane: full. Class: refactor. Gate 1 `[-]`: no real fork — the collaborator-per-responsibility seam is the `god-class` remedy, and change A already used it here on `foldState.ts`, `keyboardNav.ts` and `dialogChannels.ts`.
+Admission: in-contract — behaviour-preserving decomposition; no new invariant owner
+- Plan attack (asm-oracle) refuted D5 and the `3_11` boundary; both re-verified by hand and both corrected.
+- D5 claimed three private reach-ins and there are **sixteen**. `WorktreeController.test.ts` reaches `createDialogDeps()` 39 times and reads six distinct private controller fields (`dialogChannels`, `view`, `provisionOffers`, `repoRefs`, `createDefaults`, `actionResults`). The rule this yields, now in D5: **the object graph is the contract** — a type may move, the field it hangs on may not.
+- `3_11` was estimated ~480 and is **560** source lines, over the Boundary before a single import. Split at plan time rather than left as an in-task contingency: `worktreeRow.ts` (`3_13`) takes the 197-line row builder at `:1288-1485`.
+- `3_5` was too narrow: the create's four answer caches at `:302-337` come with it, and its two outside writers (visibility at `:805-815`, reconciliation at `:1732-1748`) are now named in the task so the build is told rather than discovering them.
+- De-serialized on the plan attack's reading: the three targets are three independent files, so `3_1..3_6` (controller), `3_7..3_11, 3_13` (view) and `3_12` (notices) are three chains, not one.
+- OBL-1's witness range corrected to `:2250-2272` — the first draft cited only the empty-listing half and missed the dispose half at `:2269-2272`.
+

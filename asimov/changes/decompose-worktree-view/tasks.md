@@ -63,10 +63,11 @@
     - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts
   - **Plan**:
     1. Enumerate free names in both directions (D1a): compile the block in isolation and read the `TS2304` list for direction A — for a class member, every `this.` reference it makes — then `grep -n` every member it declares across `src/webview/worktree/WorktreeController.ts` for direction B.
-    2. Create `src/webview/worktree/controller/createFlow.ts` with the the create flow (`probeSeq`, `refsToken`, `pendingCreate`, `openCreateFor`, `openCreateForRepo`, `openCreate`, `createRepos`, `labelForRepo`, `openPendingCreate`, and the nine host-answer handlers), moving them out of `src/webview/worktree/WorktreeController.ts`; a `this.x` read becomes an accessor call and its negation sites are checked by hand (D4).
+    2. Create `src/webview/worktree/controller/createFlow.ts` with the the create flow (`probeSeq`, `refsToken`, `pendingCreate`, the four answer caches at `:302-337`, `openCreateFor`, `openCreateForRepo`, `openCreate`, `createRepos`, `labelForRepo`, `openPendingCreate`, and the nine host-answer handlers), moving them out of `src/webview/worktree/WorktreeController.ts`; a `this.x` read becomes an accessor call and its negation sites are checked by hand (D4).
     3. Trim the imports the cut leaves unused in `src/webview/worktree/WorktreeController.ts`.
     4. Run `bun run asm refactor shape src/webview/worktree/WorktreeController.ts src/webview/worktree/controller/createFlow.ts` and split `src/webview/worktree/controller/createFlow.ts` again if it fires.
-    5. `pendingCreate` is MOVED, not copied — two records is OBL-3's defeater.
+    5. `pendingCreate` is MOVED, not copied — two records is OBL-3's defeater. Its two outside writers stay outside and reach it through the collaborator's accessors: visibility clears it at `src/webview/worktree/WorktreeController.ts:805-815`, tree reconciliation mutates it and calls `openPendingCreate` at `:1732-1748`.
+    6. `provisionOffers`, `repoRefs`, `createDefaults` and `dialogChannels` stay as controller FIELDS — five suites read them through the instance (D5).
 
 - [ ] 3_6 Extract a tree arriving
   - **Deps**: 3_5
@@ -80,14 +81,16 @@
     2. Create `src/webview/worktree/controller/treeReconcile.ts` with the tree reconciliation (`refreshing`, `repoFor`, `requestRefresh`, `infoOf`, `generationOf`, `handleTreeResponse`, `reconcile`, `push`), moving them out of `src/webview/worktree/WorktreeController.ts`; a `this.x` read becomes an accessor call and its negation sites are checked by hand (D4).
     3. Trim the imports the cut leaves unused in `src/webview/worktree/WorktreeController.ts`.
     4. Run `bun run asm refactor shape src/webview/worktree/WorktreeController.ts src/webview/worktree/controller/treeReconcile.ts` and split `src/webview/worktree/controller/treeReconcile.ts` again if it fires.
-    5. Record `wc -l` for `src/webview/worktree/WorktreeController.ts` and every file under `src/webview/worktree/controller/` in workflow.md Notes; confirm OBL-5 by grep. Any file at 500 or above is split before ticking.
+    5. Record `wc -l` for `src/webview/worktree/WorktreeController.ts` and every file under `src/webview/worktree/controller/` in workflow.md Notes. Any file at 500 or above is split before ticking.
+    6. Confirm OBL-5 by running design.md § Frozen inventory's controller command verbatim; it must print nothing.
+    7. Run design.md OBL-4's BOTH diff forms, `&&`-joined.
 
 
 ## 2. `WorktreeView.ts` — a collaborator per responsibility
 
 
 - [ ] 3_7 Move the view's contract out of the class that implements it
-  - **Deps**: 3_6
+  - **Deps**: none
   - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5
   - **Boundary**: `src/webview/worktree/worktreeView/viewTypes.ts` is under 500 lines, and `src/webview/worktree/WorktreeView.ts` never grows
   - **Acceptance**:
@@ -149,17 +152,17 @@
     - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts
   - **Plan**:
     1. Enumerate free names in both directions (D1a): compile the block in isolation and read the `TS2304` list for direction A — for a class member, every `this.` reference it makes — then `grep -n` every member it declares across `src/webview/worktree/WorktreeView.ts` for direction B.
-    2. Create `src/webview/worktree/worktreeView/treeRender.ts` with the the render (`signature`, `applyAt`, `repaint`, `render`, `restoreFocus`, `renderListing`, `renderListingInner`, `renderedWorktreeIds`, `renderedWorktreeRows`, `renderRepo`, `worktreeMemoKey`, `renderWorktree`, `buildWorktree`), moving them out of `src/webview/worktree/WorktreeView.ts`; a `this.x` read becomes an accessor call and its negation sites are checked by hand (D4).
+    2. Create `src/webview/worktree/worktreeView/treeRender.ts` with the the render pass (`signature`, `applyAt`, `repaint`, `render`, `restoreFocus`, `renderListing`, `renderListingInner`, `renderedWorktreeIds`, `renderedWorktreeRows`, `renderRepo`) — NOT the row builder, which is `3_13`, moving them out of `src/webview/worktree/WorktreeView.ts`; a `this.x` read becomes an accessor call and its negation sites are checked by hand (D4).
     3. Trim the imports the cut leaves unused in `src/webview/worktree/WorktreeView.ts`.
     4. Run `bun run asm refactor shape src/webview/worktree/WorktreeView.ts src/webview/worktree/worktreeView/treeRender.ts` and split `src/webview/worktree/worktreeView/treeRender.ts` again if it fires.
-    5. `rowMemo` stays a `Map` FIELD on `WorktreeView` — `WorktreeView.test.ts:2250-2267` reads it and OBL-4 forbids editing that (D5, OBL-1). Record `wc -l` for `src/webview/worktree/WorktreeView.ts` and every file under `src/webview/worktree/worktreeView/`; confirm OBL-5 by grep.
+    5. `rowMemo` stays a `Map` FIELD on `WorktreeView` — `WorktreeView.test.ts:2250-2272` reads it on BOTH the empty-listing and the dispose path, and OBL-4 forbids editing that (D5, OBL-1).
 
 
 ## 3. `actionNotices.ts` — the sentences
 
 
 - [ ] 3_12 Extract the sentences a result is summarised into
-  - **Deps**: 3_11
+  - **Deps**: none
   - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5
   - **Boundary**: `src/webview/worktree/worktreeView/actionNotices/summaries.ts` is under 500 lines, and `src/webview/worktree/worktreeView/actionNotices.ts` never grows
   - **Acceptance**:
@@ -171,3 +174,20 @@
     3. Trim the imports the cut leaves unused in `src/webview/worktree/worktreeView/actionNotices.ts`.
     4. Run `bun run asm refactor shape src/webview/worktree/worktreeView/actionNotices.ts src/webview/worktree/worktreeView/actionNotices/summaries.ts` and split `src/webview/worktree/worktreeView/actionNotices/summaries.ts` again if it fires.
     5. The timer map and `dispose` stay in `src/webview/worktree/worktreeView/actionNotices.ts` — separating them is OBL-2's defeater.
+
+- [ ] 3_13 Extract the per-worktree row builder
+  - **Deps**: 3_11
+  - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5, design.md § Obligation ledger
+  - **Boundary**: `src/webview/worktree/WorktreeView.ts` and every file under `src/webview/worktree/worktreeView/` is under 500 lines
+  - **Acceptance**:
+    - Outcome: the cut lands and the 510-case net is unchanged.
+    - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts
+  - **Plan**:
+    1. Enumerate free names in both directions (D1a), as in 3_11.
+    2. Create `src/webview/worktree/worktreeView/worktreeRow.ts` with `worktreeMemoKey`, `renderWorktree` and `buildWorktree`, moving them out of `src/webview/worktree/WorktreeView.ts`.
+    3. The memo KEY must still cover every field the row's renderers and their listeners read, including the clock-derived strings — a key that narrows is a retained subtree that differs from a full repaint.
+    4. Trim the imports the cut leaves unused in `src/webview/worktree/WorktreeView.ts`.
+    5. Record `wc -l` for `src/webview/worktree/WorktreeView.ts` and every file under `src/webview/worktree/worktreeView/` in workflow.md Notes. Any file at 500 or above is split before ticking.
+    6. Confirm OBL-5 by running design.md § Frozen inventory's view command verbatim; it must print nothing.
+    7. Run design.md OBL-4's BOTH diff forms, `&&`-joined.
+

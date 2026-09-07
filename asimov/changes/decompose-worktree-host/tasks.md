@@ -24,7 +24,7 @@
     - Verify: command pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts
   - **Plan**:
     1. Enumerate free names in both directions (D1a): compile the block in isolation and read the `TS2304` list for direction A, then `grep -n` every identifier it declares across `src/providers/WorktreeHost.ts` for direction B.
-    2. Create `src/providers/worktreeHost/launchAdmission.ts` with the launch admission and the targets published for it (`admissiblePrompt`, `admissibleLaunch`, `admittedTarget`, `publishLaunchTargets`, `launchOpts`), moving them out of `src/providers/WorktreeHost.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
+    2. Create `src/providers/worktreeHost/launchAdmission.ts` with the launch admission and the targets published for it (`offerSeq`, `admissiblePrompt`, `admissibleLaunch`, `admittedTarget`, `publishLaunchTargets`, `launchOpts`) — `offerSeq` is declared among the provisioning state but only this cluster mints from it (OBL-7), moving them out of `src/providers/WorktreeHost.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
     3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/launchAdmission.ts` and split `src/providers/worktreeHost/launchAdmission.ts` again if it fires.
 
@@ -76,10 +76,10 @@
     - Verify: command pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts
   - **Plan**:
     1. Enumerate free names in both directions (D1a): compile the block in isolation and read the `TS2304` list for direction A, then `grep -n` every identifier it declares across `src/providers/WorktreeHost.ts` for direction B.
-    2. Create `src/providers/worktreeHost/presenceProjection.ts` with the presence projection (`presence`, `rosterKey`, `parentIsLive`, `decay`, `withDelegations`, `publishedRow`, `projected`, `projectedVersion`), moving them out of `src/providers/WorktreeHost.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
+    2. Create `src/providers/worktreeHost/presenceProjection.ts` with the presence projection (`presence`, `rosterKey`, `parentIsLive`, `decay`, `withDelegations`, `publishedRow`) — derivation ONLY; `projected` and `projectedVersion` stay put until `2_11`, their only writer, moving them out of `src/providers/WorktreeHost.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
     3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/presenceProjection.ts` and split `src/providers/worktreeHost/presenceProjection.ts` again if it fires.
-    5. `presence` has 22 read-sites: expose it as ONE accessor the composition root re-exports, never a copied value (OBL-5).
+    5. Expose `presence` as ONE accessor the composition root re-exports, never a copied value (OBL-5).
 
 - [ ] 2_7 Extract which question a surface asked
   - **Deps**: 2_6
@@ -93,7 +93,7 @@
     2. Create `src/providers/worktreeHost/openingRegistry.ts` with the opening registry (`surfaceKey`, `openingKey`, `openingFor`, `retireOpening`, `forgetSurfaceOpenings`, `forgetDepartedRepos`, `surfaceSeq`), moving them out of `src/providers/WorktreeHost.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
     3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/openingRegistry.ts` and split `src/providers/worktreeHost/openingRegistry.ts` again if it fires.
-    5. The token counter is MOVED, not copied — a second counter is OBL-3's defeater. Confirm `dispose`'s `forgetSurfaceOpenings(surfaceKey(surface))` loop still reaches it (OBL-2).
+    5. Confirm `dispose`'s `forgetSurfaceOpenings(surfaceKey(surface))` loop at `src/providers/WorktreeHost.ts:2711-2713` still reaches the moved function rather than a facade-local stub (OBL-2).
 
 - [ ] 2_8 Extract the provisioning offer a repository is shown
   - **Deps**: 2_7
@@ -104,7 +104,7 @@
     - Verify: command pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts
   - **Plan**:
     1. Enumerate free names in both directions (D1a): compile the block in isolation and read the `TS2304` list for direction A, then `grep -n` every identifier it declares across `src/providers/WorktreeHost.ts` for direction B.
-    2. Create `src/providers/worktreeHost/provisionOffers.ts` with the provisioning offers (`offerSeq`, `previewProvisioning`, `withoutAdded`, `privateIdsFor`, `withAdded`, `roomForOneMoreSetup`, `issueWithAdded`, `currentMigrationRegistration`, `migrationSequence`), moving them out of `src/providers/WorktreeHost.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
+    2. Create `src/providers/worktreeHost/provisionOffers.ts` with the provisioning offers (`previewProvisioning`, `withoutAdded`, `privateIdsFor`, `withAdded`, `roomForOneMoreSetup`, `issueWithAdded`, `currentMigrationRegistration`, `migrationSequence`), moving them out of `src/providers/WorktreeHost.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
     3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/provisionOffers.ts` and split `src/providers/worktreeHost/provisionOffers.ts` again if it fires.
 
@@ -144,10 +144,10 @@
     - Verify: command pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts
   - **Plan**:
     1. Enumerate free names in both directions (D1a): compile the block in isolation and read the `TS2304` list for direction A, then `grep -n` every identifier it declares across `src/providers/WorktreeHost.ts` for direction B.
-    2. Create `src/providers/worktreeHost/projectionLoop.ts` with the projection loop (`treeVersion`, `projectionRun`, `projectionDirty`, `commit`, `worktreeIds`, `projectOnce`, `requestProjection`, `ensureProjection`, `commitAndBroadcast`), moving them out of `src/providers/WorktreeHost.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
+    2. Create `src/providers/worktreeHost/projectionLoop.ts` with the projection loop (`projected`, `projectedVersion`, `projectionRun`, `projectionDirty`, `commit`, `worktreeIds`, `projectOnce`, `requestProjection`, `ensureProjection`, `commitAndBroadcast`) — NOT `treeVersion`, which three clusters write and the composition root keeps, moving them out of `src/providers/WorktreeHost.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
     3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/projectionLoop.ts` and split `src/providers/worktreeHost/projectionLoop.ts` again if it fires.
-    5. The dirty flag and the run move TOGETHER; a flag left behind makes the single-flight loop re-enter.
+    5. The dirty flag and the run move TOGETHER; a flag left behind makes the single-flight loop re-enter. Keep the `disposed` guard around the await (OBL-6) — a read resolving after dispose must write nothing.
 
 - [ ] 2_12 Extract what reaches a surface and when
   - **Deps**: 2_11
@@ -161,7 +161,9 @@
     2. Create `src/providers/worktreeHost/surfaceDelivery.ts` with the surface delivery (`deliverable`, `currentMessage`, `postTo`, `deliver`, `broadcast`, `reconcileShowing`, `rebuild`, `attach`, `handleMessage`), moving them out of `src/providers/WorktreeHost.ts`; former `let` bindings become accessor functions and their negation sites are checked by hand (D4).
     3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/surfaceDelivery.ts` and split `src/providers/worktreeHost/surfaceDelivery.ts` again if it fires.
-    5. Record `wc -l` for `src/providers/WorktreeHost.ts` and every file under `src/providers/worktreeHost/` in workflow.md Notes, and confirm OBL-5 by grep. Any file at 500 or above is split before ticking, not deferred.
+    5. Record `wc -l` for `src/providers/WorktreeHost.ts` and every file under `src/providers/worktreeHost/` in workflow.md Notes. Any file at 500 or above is split before ticking, not deferred.
+    6. Confirm OBL-5 by running design.md § Frozen inventory's command verbatim; it must print nothing.
+    7. Run design.md OBL-4's BOTH diff forms, `&&`-joined.
 
 
 ## 2. `actions/create.ts` — one module per arm's subject
