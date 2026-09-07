@@ -130,7 +130,7 @@
     3. Trim the imports the cut leaves unused in `src/webview/worktree/WorktreeView.ts`.
     4. Run `bun run asm refactor shape src/webview/worktree/WorktreeView.ts src/webview/worktree/worktreeView/viewDialogs.ts` and split `src/webview/worktree/worktreeView/viewDialogs.ts` again if it fires.
 
-- [ ] 3_10 Extract the query, the idle tail and the render cap
+- [x] 3_10 Extract the query, the idle tail and the render cap — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts exit 0
   - **Deps**: 3_9
   - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5
   - **Boundary**: `src/webview/worktree/worktreeView/viewFilter.ts` is under 500 lines, and `src/webview/worktree/WorktreeView.ts` never grows

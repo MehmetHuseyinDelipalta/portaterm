@@ -18,7 +18,6 @@ import type { WorktreeRemoveDialogDeps } from "./WorktreeRemoveDialog";
 import { activationFor as sharedActivationFor } from "./worktreeActivation";
 import {
   agentCountLabel,
-  agentRowTitle,
   ageTimestamp,
   branchLabel,
   compactAge,
@@ -49,6 +48,7 @@ import { type CeilingClock, createCeilingClock } from "./worktreeView/ceilingClo
 import { createFoldState, type FoldRepoInput, type FoldState } from "./worktreeView/foldState";
 import { createKeyboardNav, type KeyboardNav } from "./worktreeView/keyboardNav";
 import { createViewDialogs, type ViewDialogs } from "./worktreeView/viewDialogs";
+import { createViewFilter, type ViewFilter } from "./worktreeView/viewFilter";
 import type {
   PresenceDegradation,
   WorktreeAgentRow,
@@ -57,7 +57,6 @@ import type {
   WorktreeRemoveReport,
   WorktreeRepo,
   WorktreeRowActivation,
-  WorktreeSubagentRow,
   WorktreeTree,
 } from "./worktreeViewTypes";
 
@@ -81,11 +80,6 @@ export type { WorktreeViewData, WorktreeViewDeps } from "./worktreeView/viewType
 
 import type { WorktreeViewData, WorktreeViewDeps } from "./worktreeView/viewTypes";
 
-/** The rows a roster actually delivered — nothing for unread, empty or failed. */
-function delegatedRows(row: WorktreeAgentRow): readonly WorktreeSubagentRow[] {
-  return row.delegations?.kind === "ok" ? row.delegations.rows : [];
-}
-
 export class WorktreeView {
   /** The scrollable tree. Appended into the panel body by the owner. */
   readonly element: HTMLElement;
@@ -98,6 +92,8 @@ export class WorktreeView {
   private readonly ceilingClock: CeilingClock;
   /** Every modal the view opens, and the one handle that keeps them single (3_9). */
   private readonly dialogs: ViewDialogs;
+  /** The query, the idle partition and the render cap (3_10). */
+  private readonly filter: ViewFilter;
 
   private data: WorktreeViewData = { tree: null, presence: null, loading: true };
   /**
@@ -110,14 +106,11 @@ export class WorktreeView {
   /** Placing, naming and dismissing action notices (task 1_3). */
   private readonly notices: ActionNotices;
   private disposed = false;
-  private query = "";
   private signature: string | null = null;
   /** Repo/worktree ids whose children are hidden. */
   /** Agent rowIds whose subagents are shown. */
   /** Worktree ids whose default collapse has already been decided once. */
   /** A persisted set was restored, so the first tree carries no defaults to seed. */
-  /** Repos the user asked to see past the render cap. */
-  private readonly uncapped = new Set<string>();
   private readonly disposeTooltips: () => void;
   /** Roving tabindex target — the row keyboard navigation last landed on. */
   /** Roving tabindex and tree traversal (task 1_2). */
@@ -178,10 +171,20 @@ export class WorktreeView {
       rowsFor: (worktreeId) => this.rowsFor(worktreeId),
       degradedSources: () => this.degradedSources(),
     });
+    this.filter = createViewFilter({
+      fold: () => this.fold,
+      data: () => this.data,
+      displayRows: (data, worktreeId) => WorktreeView.displayRows(data, worktreeId),
+      rowsFor: (worktreeId) => this.rowsFor(worktreeId),
+      cap: MAX_WORKTREES_PER_REPO,
+      repaint: () => {
+        this.repaint();
+      },
+    });
     this.nav = createKeyboardNav({
       element: () => this.element,
       toggleCollapsed: (id) => this.toggleCollapsed(id),
-      toggleIdleTail: (repoId) => this.toggleIdleTail(repoId),
+      toggleIdleTail: (repoId) => this.filter.toggleIdleTail(repoId),
       toggleRow: (rowId) => this.toggleRow(rowId),
     });
     this.fold = createFoldState({
@@ -192,7 +195,7 @@ export class WorktreeView {
       persistCollapsed: (keys) => deps.persistCollapsed?.([...keys]),
       persistExpandedRows: (ids) => deps.persistExpandedRows?.([...ids]),
       persistIdleSeeded: (ids) => deps.persistIdleSeeded?.([...ids]),
-      query: () => this.query,
+      query: () => this.filter.query(),
       repaint: () => this.repaint(),
     });
     this.element = document.createElement("div");
@@ -407,12 +410,7 @@ export class WorktreeView {
 
   /** Filter the tree by branch, path, and agent title. Ancestors of a match stay. */
   setQuery(query: string): void {
-    const next = query.trim().toLowerCase();
-    if (next === this.query) {
-      return;
-    }
-    this.query = next;
-    this.repaint();
+    this.filter.setQuery(query);
   }
 
   openCreateDialog(initialRepoId?: string): void {
@@ -563,7 +561,7 @@ export class WorktreeView {
         // Counted here rather than in the collaborator: idleness is a presence
         // question the view owns, and handing the fold state a `data` would give
         // it the display policy along with it.
-        idleCount: repo.worktrees.filter((w) => this.isIdleIn(data, w)).length,
+        idleCount: repo.worktrees.filter((w) => this.filter.isIdleIn(data, w)).length,
         worktrees: repo.worktrees.map((wt) => ({ id: wt.id, inWorkspace: wt.inWorkspace })),
       });
     }
@@ -582,23 +580,6 @@ export class WorktreeView {
   }
 
   // -- Search --------------------------------------------------------------
-
-  /** A worktree survives the filter on its own text, or because a descendant matched. */
-  private matches(info: WorktreeInfo): boolean {
-    if (!this.query) {
-      return true;
-    }
-    const q = this.query;
-    if (branchLabel(info).text.toLowerCase().includes(q) || info.displayPath.toLowerCase().includes(q)) {
-      return true;
-    }
-    return this.rowsFor(info.id).some(
-      (row) =>
-        agentRowTitle(row).toLowerCase().includes(q) ||
-        (row.preview ?? "").toLowerCase().includes(q) ||
-        delegatedRows(row).some((s) => `${s.name} ${s.title ?? ""}`.toLowerCase().includes(q)),
-    );
-  }
 
   // -- Render --------------------------------------------------------------
 
@@ -783,72 +764,11 @@ export class WorktreeView {
         this.repoAnchors.set(repo.repoId, last);
       }
     }
-    if (rendered === 0 && this.query) {
+    if (rendered === 0 && this.filter.query()) {
       this.element.appendChild(worktreeEmptyState("noMatch"));
     }
     this.nav.stampLevels(multiRepo);
     return restoreFocusTo;
-  }
-
-  /**
-   * The worktrees this repo draws: none when it is collapsed, otherwise the
-   * matching ones up to the display cap.
-   */
-  private shownWorktrees(repo: WorktreeRepo, multiRepo: boolean): WorktreeInfo[] {
-    if (multiRepo && this.fold.isCollapsed(repo.repoId)) {
-      return [];
-    }
-    // Filter, then partition, then cap — in that order, so the cap's affordance
-    // keeps reporting only what the CAP excluded and the fold only ever counts
-    // rows the cap admitted. Neither ends up describing the other's rows.
-    const visible = repo.worktrees.filter((w) => this.matches(w));
-    const ordered = [...visible.filter((w) => !this.isIdle(w)), ...visible.filter((w) => this.isIdle(w))];
-    return this.uncapped.has(repo.repoId) ? ordered : ordered.slice(0, MAX_WORKTREES_PER_REPO);
-  }
-
-  /**
-   * A POSITIVE determination that a worktree holds no agents — never a bare
-   * `rows.length === 0`. There are three states, not two: has agents, has none,
-   * and cannot be read. Collapsing the third into the second folds away exactly
-   * the worktrees the degradation marker exists to surface.
-   *
-   * `PresenceDegradation` carries no repository or worktree attribution, so one
-   * failed source suppresses folding everywhere. That is the honest reading of
-   * the data rather than a shortcut.
-   */
-  private isIdle(info: WorktreeInfo): boolean {
-    return this.isIdleIn(this.data, info);
-  }
-
-  /** Against a supplied envelope, because `pruneStaleState` runs on the incoming one. */
-  private isIdleIn(data: WorktreeViewData, info: WorktreeInfo): boolean {
-    const presence = data.presence;
-    if (!presence || presence.degradedSources.length > 0) {
-      return false;
-    }
-    // What is DRAWN, not what was projected: a worktree holding nothing but a
-    // shell pane shows no agent rows, and calling it active kept it out of the
-    // idle tail on the strength of a row the user cannot see (round-1 F001).
-    return WorktreeView.displayRows(data, info.id).length === 0;
-  }
-
-  private toggleIdleTail(repoId: string): void {
-    // A filter REVEALS the tail; it does not re-decide it. `idleTailFolded` already
-    // returns false while a query is up, so the rendered state here is the query's
-    // and not the user's — flipping against the stored state would spend a choice
-    // the user never made on this render.
-    //
-    // Nothing rendered can reach this any more: since W5 no disclosure is drawn while
-    // a query reveals the tail, so no click arrives to guard. Kept because the reveal
-    // rule and this one are the same rule, and a later render that puts the disclosure
-    // back on screen under a filter would otherwise silently spend the fold — the
-    // failure it protects against leaves no trace, only a fold the user did not choose.
-    this.fold.toggleIdleTail(repoId);
-  }
-
-  /** Whether this repo's tail is folded right now — a live filter reveals it. */
-  private idleTailFolded(repoId: string): boolean {
-    return this.fold.idleTailFolded(repoId);
   }
 
   /**
@@ -881,7 +801,7 @@ export class WorktreeView {
 
   /** Returns how many worktree rows this repo contributed (0 → filtered away). */
   private renderRepo(repo: WorktreeRepo, multiRepo: boolean, now: number): number {
-    const visible = repo.worktrees.filter((w) => this.matches(w));
+    const visible = repo.worktrees.filter((w) => this.filter.matches(w));
     if (visible.length === 0 && !repo.degraded) {
       return 0;
     }
@@ -918,24 +838,24 @@ export class WorktreeView {
       );
     }
 
-    const shown = this.shownWorktrees(repo, multiRepo);
-    const tail = shown.filter((w) => this.isIdle(w));
+    const shown = this.filter.shownWorktrees(repo, multiRepo);
+    const tail = shown.filter((w) => this.filter.isIdle(w));
     // A filter reveals the tail, so there is nothing left for a disclosure to
     // disclose — and one that hides zero rows is not merely useless, it is a trap:
     // `expandOrDescend` treats any row carrying `aria-expanded` as expandable, so
     // Left enters the toggle branch and returns before `parentOf` ever runs. The
     // row cannot be left. Not rendering it is what keeps the tail climbable.
-    const folds = tail.length >= IDLE_FOLD_THRESHOLD && !this.query;
-    const folded = folds && this.idleTailFolded(repo.repoId);
+    const folds = tail.length >= IDLE_FOLD_THRESHOLD && !this.filter.query();
+    const folded = folds && this.filter.idleTailFolded(repo.repoId);
     for (const info of shown) {
-      if (folds && this.isIdle(info)) {
+      if (folds && this.filter.isIdle(info)) {
         continue;
       }
       this.renderWorktree(info, now, false);
     }
     if (folds) {
       this.element.appendChild(
-        renderIdleDisclosure(repo.repoId, tail.length, folded, () => this.toggleIdleTail(repo.repoId)),
+        renderIdleDisclosure(repo.repoId, tail.length, folded, () => this.filter.toggleIdleTail(repo.repoId)),
         // levels are stamped after the whole tree is drawn — see `stampLevels`.
       );
       if (!folded) {
@@ -962,7 +882,7 @@ export class WorktreeView {
     if (shown.length < visible.length) {
       this.element.appendChild(
         renderShowAll(visible.length, () => {
-          this.uncapped.add(repo.repoId);
+          this.filter.uncap(repo.repoId);
           this.repaint();
         }),
       );
@@ -989,7 +909,7 @@ export class WorktreeView {
       inTail ? "1" : "0",
       expanded ? "1" : "0",
       selected ? "1" : "0",
-      this.isIdle(info) ? "1" : "0",
+      this.filter.isIdle(info) ? "1" : "0",
       strongestActivity(rows, degraded, now) ?? "",
       this.ceilingClock.strongestConfidenceTip(rows, now) ?? "",
       this.deps.actions?.launchAgentHere ? "1" : "0",
@@ -1083,7 +1003,7 @@ export class WorktreeView {
           // is the claim without the caveat.
           confidenceTip: this.ceilingClock.strongestConfidenceTip(rows, now),
           hasAgents: rows.length > 0,
-          idle: this.isIdle(info),
+          idle: this.filter.isIdle(info),
           inTail,
           expanded,
           selected,
