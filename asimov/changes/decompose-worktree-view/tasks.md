@@ -1,7 +1,7 @@
 ## 1. `WorktreeController.ts` — a collaborator per responsibility
 
 
-- [ ] 3_1 Move the controller's contract out of the class that implements it
+- [x] 3_1 Move the controller's contract out of the class that implements it — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts exit 0
   - **Deps**: none
   - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5
   - **Boundary**: `src/webview/worktree/controller/controllerTypes.ts` is under 500 lines, and `src/webview/worktree/WorktreeController.ts` never grows
