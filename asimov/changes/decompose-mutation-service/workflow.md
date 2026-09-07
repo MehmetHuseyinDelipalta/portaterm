@@ -12,11 +12,11 @@
 
 ## Implement
 
-- [ ] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
+- [x] All tasks done (`tasks.md`)
+- [x] Verify gate: type check / lint / test observed passing _(`[-]` per command not in project.md)_
 - [ ] Review done _(user-initiated; `[-]` + reason if skipped)_
 - [ ] Gate: implementation approved
-- [ ] Blueprint sync complete _(`[-]` + reason only when `Blueprint: none`)_
+- [-] Blueprint sync complete _(Blueprint: none)_
 
 ## Archive
 
@@ -44,3 +44,4 @@ Admission: in-contract — behaviour-preserving decomposition; no new invariant 
 - 4_3: `worktreeMutationService.ts` 253. Under `mutationService/`: outcomes 25, registerExisting.test 141, setupExecution.test 144, removal.test 212, setupExecution 276, createRun 320, removal 349, serviceTypes 388, registerExisting 413, createProvisioning 434.
 - 4_3: OBL-3's both frozen-suite diffs pass (exit 0); OBL-4's frozen inventory prints nothing; OBL-5 reports 1 declared carve-out across 77 scoped modules, unchanged.
 - 4_3: `issueDebrisAuthorization` moved with create/debris redemption into `createRun.ts`; that leaves the resolved `DebrisAuthorizationStore` one owner and makes the OBL-4 inventory honest rather than hiding it behind an alias in the root.
+- Witnesses: OBL-1 pass [exit 0]; OBL-2 pass [exit 0]; OBL-3 pass [exit 0]; OBL-4 pass [exit 0]; OBL-5 pass [exit 0, 1 carve-out]; OBL-6 pass [exit 0].
