@@ -7,14 +7,12 @@
 // the same tree is free.
 
 import { hasGitRepo } from "../worktree/hasGitRepo";
-import type { IgnoredMaterial } from "../worktree/ignoredMaterial";
 import type { MigrationOfferEvidence, MigrationRepositoryBinding } from "../worktree/migrateChanges";
 import type { DelegationRoster } from "../worktree/presenceTypes";
 import { createProvisionOfferStore } from "../worktree/provisioning/offerStore";
 import { createRebuildGate } from "../worktree/rebuildGate";
 import { createWorktreeCache } from "../worktree/WorktreeCache";
 import type { WorktreeTreeDeps } from "../worktree/WorktreeDiscovery";
-import { evaluateRemoval } from "../worktree/worktreeBlockers";
 import type { WorktreeWatch } from "../worktree/worktreeWatchTargets";
 import { createActionRouting } from "./worktreeHost/actionRouting";
 import { createCreateActions } from "./worktreeHost/actions/create";
@@ -23,7 +21,7 @@ import { createRemovalActions } from "./worktreeHost/actions/removal";
 import { createShellActions } from "./worktreeHost/actions/shell";
 import { createAssessLanes } from "./worktreeHost/assessLanes";
 import { createDestinationResolve } from "./worktreeHost/destinationResolve";
-import { createHostLookups, observationOf } from "./worktreeHost/hostLookups";
+import { createHostLookups } from "./worktreeHost/hostLookups";
 import type { WorktreeSurface } from "./worktreeHost/hostTypes";
 import { createLaunchAdmission } from "./worktreeHost/launchAdmission";
 import { createOpeningLifecycle } from "./worktreeHost/openingLifecycle";
@@ -50,6 +48,7 @@ export type {
 } from "./worktreeHost/hostTypes";
 
 import { isKnownSetupOutput } from "./worktreeHost/messageGuards";
+import { createMutationSupport } from "./worktreeHost/mutationSupport";
 import { createSurfaceDelivery, type SurfaceState, WHOLE_TREE_SCOPE } from "./worktreeHost/surfaceDelivery";
 
 const LOG_PREFIX = "[worktree-host]";
@@ -585,130 +584,16 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
       }
     },
 
-    mutationBindings: () => ({
-      forceRebuild: async (repoId) => {
-        await gate.request(repoId, { force: true });
-      },
-      resolve: (target) => {
-        const found = locate(target.worktreeId);
-        if (found === null || found.repo.repoId !== target.repoId) {
-          return null;
-        }
-        return {
-          repoPath: found.repo.mainPath,
-          // git's own string, never the normalized id.
-          worktreePath: found.wt.displayPath,
-          // The head this registration is on. It is not a perfect incarnation
-          // marker — a recreate onto the same commit repeats it — but it is the
-          // strongest one a listing carries, and it is strictly better than the
-          // path alone that B5 found (worktree-model.md).
-          incarnation: `${found.wt.head ?? ""}:${found.wt.branch ?? ""}`,
-          locked: found.wt.locked === true,
-          wasRegistered: true,
-          existedOnDisk: found.wt.missing !== true,
-        };
-      },
-      repoPath: (repoId) => cache.read().repos.find((r) => r.repoId === repoId)?.mainPath ?? null,
-      migrationRegistration: currentMigrationRegistration,
-      // The claim a launch is admitted against, published as its value and
-      // never derived from `degraded` (round-2 B7, round-7 W8, design.md D12).
-      observation: (repoId) => observationOf(repoById(repoId)),
-      createContext: (repoId) => {
-        const repo = cache.read().repos.find((r) => r.repoId === repoId);
-        if (repo === undefined) {
-          return null;
-        }
-        return {
-          mainWorktree: repo.mainPath,
-          // LINKED only — a path inside main is where the default root lives.
-          linkedWorktrees: repo.worktrees.filter((w) => w.id !== repo.mainPath).map((w) => w.id),
-        };
-      },
-      assessRemoval: async (target) => {
-        const found = locate(target.worktreeId);
-        const facts = options.removalFacts;
-        if (found === null || found.repo.repoId !== target.repoId || facts === undefined) {
-          return null;
-        }
-        const observed = observationOf(found.repo);
-        // Run in the worktree itself, not the repo: `--porcelain` is what names
-        // the files a force would destroy, and that is per worktree.
-        //
-        // Not run at all when the directory is gone. Asking an absent cwd for
-        // its status fails every time, which D16 correctly reported as
-        // `unavailable` — permanently, on the one worktree state whose ONLY
-        // remedy is the removal that prunes its registration (round-3 B8).
-        // All four TOGETHER, not one after another. They are independent, and
-        // each serial await is another moment a rebuild can land and replace the
-        // listing everything below is derived from — the window round-9 B8
-        // closed. Awaiting them as one suspension point is what kept adding the
-        // ignored walk from widening it (round-1 B2 fix round).
-        //
-        // Neither the status nor the ignored walk runs when the directory is
-        // gone. Asking an absent cwd for its status fails every time, which D16
-        // correctly reported as `unavailable` — permanently, on the one worktree
-        // state whose ONLY remedy is the removal that prunes its registration
-        // (round-3 B8). A measured zero is the honest answer for the walk: there
-        // is no directory, so there is no ignored material to delete.
-        // Held so the proofs can await the SAME read rather than take their
-        // own. Both entries below join one `Promise.all`, so this adds a read
-        // to the assessment and not a suspension point (design.md D7).
-        const sessionsRead = facts.sessions();
-        const [status, ignored, sessions, panes, claimedByPane, proofs] = await Promise.all([
-          // Run in the worktree itself, not the repo: `--porcelain` is what
-          // names the files a force would destroy, and that is per worktree.
-          found.wt.missing
-            ? Promise.resolve(null)
-            : options.deps.runner.run(["status", "--porcelain"], found.wt.displayPath),
-          found.wt.missing
-            ? Promise.resolve<IgnoredMaterial>({ kind: "measured", entries: 0, bytes: 0 })
-            : facts.ignored(found.wt.displayPath),
-          sessionsRead,
-          facts.panes(),
-          facts.claimedByPane(),
-          // A missing worktree is answered without touching the disk: no
-          // directory means no lock file and no branch to compare, so only the
-          // ownership proof is answered — from the registry read taken anyway.
-          facts.proofs(
-            found.wt.missing
-              ? { path: found.wt.id, locked: false }
-              : {
-                  path: found.wt.id,
-                  locked: found.wt.locked,
-                  ...(found.wt.branch === undefined ? {} : { branch: found.wt.branch }),
-                },
-            sessionsRead,
-          ),
-        ]);
-        // Round-9 B8: those two reads take real time, and a rebuild landing in
-        // between replaces the listing everything below is derived from — the
-        // siblings, and the target itself. An assessment spanning two
-        // observations belongs to neither, so it reports the listing unreadable
-        // rather than answering from a mixture of them.
-        const stillObserved = observed !== undefined && observationOf(repoById(target.repoId)) === observed;
-        return evaluateRemoval({
-          target: found.wt,
-          siblings: found.repo.worktrees,
-          panes,
-          rows: presence().rowsByWorktreeId[target.worktreeId] ?? [],
-          // Every read that can fail is carried as a read, not as its benign
-          // fallback. A failed status is not a clean worktree (round-2 B6).
-          sessions,
-          claimedByPane,
-          proofs,
-          ignored,
-          porcelain:
-            status === null
-              ? { ok: "notApplicable" }
-              : status.code === 0 && !status.timedOut
-                ? { ok: true, value: status.stdout.toString("utf8") }
-                : { ok: false },
-          // The same claim `observeAfter` asks after the attempt, so a removal
-          // cannot be authorized under one reading and classified under another.
-          listingDegraded: !stillObserved,
-        });
-      },
-    }),
+    mutationBindings: () =>
+      createMutationSupport({
+        options,
+        cache,
+        gate,
+        locate,
+        repoById,
+        presence: () => presence(),
+        currentMigrationRegistration,
+      }),
     dispose: () => {
       if (disposed) {
         return;

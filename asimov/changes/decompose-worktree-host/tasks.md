@@ -252,3 +252,38 @@
     3. Trim the destructures and imports the cut leaves unused in `src/providers/worktreeHost/actions/provision.ts`.
     4. Run `bun run asm refactor shape src/providers/worktreeHost/actions/provision.ts src/providers/worktreeHost/actions/provision/asks.ts` and split `src/providers/worktreeHost/actions/provision/asks.ts` again if it fires.
     5. Record `wc -l` for `src/providers/worktreeHost/actions/provision.ts` and `src/providers/worktreeHost/actions/provision/asks.ts` in workflow.md Notes.
+
+## 4. `WorktreeHost.ts` — the composition root itself
+
+D1 kept the wiring, the returned object and `dispose` in the root. After twelve
+cuts that root is still 739 lines, because each extracted module costs the root a
+`createXxx({...})` call the design's arithmetic did not carry. The goal binds at
+500, so two more cuts land: the returned object's mutation-service answers, and
+the create-form cluster's own wiring.
+
+- [x] 2_19 Extract what the mutation service asks the host — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
+  - **Deps**: 2_18
+  - **Refs**: None
+  - **Boundary**: `src/providers/worktreeHost/mutationSupport.ts` is under 500 lines, and no behaviour changes
+  - **Acceptance**:
+    - Outcome: the cut lands and the 519-case net is unchanged.
+    - Verify: command pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts
+  - **Plan**:
+    1. Enumerate free names in both directions (D1a).
+    2. Create `src/providers/worktreeHost/mutationSupport.ts` with the `mutationBindings()` answer — `forceRebuild`, `resolve`, `repoPath`, `migrationRegistration`, `observation`, `createContext`, `assessRemoval` — moving it out of `src/providers/WorktreeHost.ts`. The types module `mutationBindings.ts` that `2_1` split out for the same consumer stays where it is; this is its implementation.
+    3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
+    4. Run `bun run asm refactor shape` on both and answer what fires.
+
+- [ ] 2_20 Extract the create-form cluster's wiring
+  - **Deps**: 2_19
+  - **Refs**: None
+  - **Boundary**: `src/providers/WorktreeHost.ts` is under 500 lines, and every file under `src/providers/worktreeHost/` is under 500 lines
+  - **Acceptance**:
+    - Outcome: the cut lands and the 519-case net is unchanged.
+    - Verify: command pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts
+  - **Plan**:
+    1. Enumerate free names in both directions (D1a).
+    2. Create `src/providers/worktreeHost/composeCreateSurface.ts` holding the per-opening maps and the modules only the create conversation reads — the offer store, `provisionOffers`, `openingLifecycle`, `openingRegistry`, `destinationResolve` and the four action groups — returning the bundle the root wires the router and the delivery to.
+    3. Trim the destructures and imports the cut leaves unused in `src/providers/WorktreeHost.ts`.
+    4. Record `wc -l` for `src/providers/WorktreeHost.ts` and every file under `src/providers/worktreeHost/` in workflow.md Notes.
+    5. Run design.md OBL-4's BOTH diff forms, `&&`-joined, and OBL-5's command verbatim.
