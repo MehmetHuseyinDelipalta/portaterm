@@ -26,6 +26,7 @@
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
 
 ## Notes
+- Auto-decision (task 2_4): `asm refactor shape` still reports `long-function` on `assessLanes.ts` at 26% against a 25% bar, and the body it names is the factory itself — the map plus its three closures. `takeNextAssess`, `serveAssess` and `serveRawRemoval` were hoisted to module scope to answer it; the residue is the seam this change chose and is not split further.
 
 <!-- Blueprint source, lane, and the SHA the plan is written against below. Optional: one-line orphan decisions only — scope boundaries, deviations, rejected alternatives with no home elsewhere. -->
 
