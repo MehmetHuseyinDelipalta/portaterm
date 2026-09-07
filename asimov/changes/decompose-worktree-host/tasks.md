@@ -81,7 +81,7 @@
     4. Run `bun run asm refactor shape src/providers/WorktreeHost.ts src/providers/worktreeHost/presenceProjection.ts` and split `src/providers/worktreeHost/presenceProjection.ts` again if it fires.
     5. Expose `presence` as ONE accessor the composition root re-exports, never a copied value (OBL-5).
 
-- [ ] 2_7 Extract which question a surface asked
+- [x] 2_7 Extract which question a surface asked — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_6
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/openingRegistry.ts` is under 500 lines, and `src/providers/WorktreeHost.ts` never grows

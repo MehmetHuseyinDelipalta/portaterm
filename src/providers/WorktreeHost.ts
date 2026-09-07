@@ -39,9 +39,10 @@ import { createShellActions } from "./worktreeHost/actions/shell";
 import { createAssessLanes } from "./worktreeHost/assessLanes";
 import { createDestinationResolve } from "./worktreeHost/destinationResolve";
 import { createHostLookups, observationOf } from "./worktreeHost/hostLookups";
-import type { Opening, PickedCopyFile, WorktreeSurface } from "./worktreeHost/hostTypes";
+import type { PickedCopyFile, WorktreeSurface } from "./worktreeHost/hostTypes";
 import { createLaunchAdmission } from "./worktreeHost/launchAdmission";
 import { createOpeningLifecycle } from "./worktreeHost/openingLifecycle";
+import { createOpeningRegistry } from "./worktreeHost/openingRegistry";
 import { createPresenceProjection, rosterKey } from "./worktreeHost/presenceProjection";
 
 // Re-exported so no existing importer moved when these types did (task 2_0).
@@ -431,72 +432,26 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     return offers.issue(offerKey, composed.model, composed.heldFiles);
   };
 
-  const retireOpening = (key: string): void => {
-    lifecycle.close(key);
-    const reading = `${key} `;
-    for (const slot of [...provisionReading.keys()]) {
-      if (slot.startsWith(reading)) {
-        provisionReading.delete(slot);
-      }
-    }
-    for (const slot of [...provisionSwitch.keys()]) {
-      if (slot.startsWith(reading)) {
-        provisionSwitch.delete(slot);
-      }
-    }
-    for (const slot of [...provisionBaseline.keys()]) {
-      if (slot.startsWith(reading)) {
-        provisionBaseline.delete(slot);
-      }
-    }
-    for (const slot of [...addedSteps.keys()]) {
-      if (slot.startsWith(reading)) {
-        addedSteps.delete(slot);
-      }
-    }
-    for (const slot of [...addedCopyFiles.keys()]) {
-      if (!slot.startsWith(reading)) {
-        continue;
-      }
-      for (const added of addedCopyFiles.get(slot) ?? []) {
-        added.file.dispose();
-      }
-      addedCopyFiles.delete(slot);
-    }
-    offers.forgetSurface(key);
-    const migrationPrefix = `${key}::`;
-    for (const slot of [...migrationReading.keys()]) {
-      if (slot.startsWith(migrationPrefix)) {
-        migrationReading.delete(slot);
-      }
-    }
-    for (const [offerId, offer] of migrationOffers) {
-      if (offer.surface === key) {
-        migrationOffers.delete(offerId);
-      }
-    }
-    // And the per-repository enumeration records, which are what
-    // `worktreeCreateProbe` and `worktreeAuthorizeDebris` read to decide whether
-    // a request belongs to a live form. Retiring only the provisioning half left
-    // a cancelled form still able to publish discovery replies and — the part
-    // that matters — still able to mint a DEBRIS AUTHORIZATION, which is
-    // deletion authority (.reviews/round-1.md B2, design.md D5).
-    //
-    // The carve-out's own rule is untouched: a deletion still requires an
-    // explicit authorization naming a fingerprint. What changes is that a form
-    // the user cancelled can no longer be the thing that names one.
-    const enumerated = `${key}\u0000`;
-    for (const slot of [...openings.keys()]) {
-      if (slot.startsWith(enumerated)) {
-        openings.delete(slot);
-      }
-    }
-  };
-  /** Drop a surface's opening history too. Only detach may do this. */
-  const forgetSurfaceOpenings = (key: string): void => {
-    retireOpening(key);
-    lifecycle.detach(key);
-  };
+  /**
+   * Which surface asked, which opening of which repository the question
+   * belonged to, and everything dropped when one of those goes away (task 2_7).
+   * The key format `surface\u0000repoId` and both sweeps that parse it are
+   * this module's; the slot maps it sweeps are not.
+   */
+  const { openings, surfaceKey, openingKey, openingFor, retireOpening, forgetSurfaceOpenings, forgetDepartedRepos } =
+    createOpeningRegistry({
+      lifecycle,
+      offers,
+      provisionReading,
+      provisionSwitch,
+      provisionBaseline,
+      addedSteps,
+      addedCopyFiles,
+      migrationReading,
+      migrationOffers,
+      attachedSurfaces: () => surfaces.keys(),
+    });
+
   /**
    * Assessment admission, one lane per REPOSITORY, with at most one job per
    * repository in flight (design.md D1, D6).
@@ -511,108 +466,6 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     },
   });
 
-  /**
-   * The branch enumeration each repository's open dialog is riding.
-   *
-   * Bounded by the number of repositories in the workspace, and each entry is
-   * replaced rather than accumulated: a repository has one open create dialog
-   * at a time, and its latest ask is the only one anything reads.
-   */
-  const openings = new Map<string, Opening>();
-  const surfaceKeys = new WeakMap<WorktreeSurface, string>();
-  let surfaceSeq = 0;
-  /**
-   * One enumeration belongs to one surface's one opening of one repository.
-   *
-   * Keyed by repository alone, a second attached surface's `requestWorktreeRefs`
-   * replaced the promise the first surface's probe was about to consume, so a
-   * dialog could classify against an enumeration it was never shown (round-1 W2).
-   */
-  const openingKey = (s: WorktreeSurface, repoId: string): string => `${surfaceKey(s)}\u0000${repoId}`;
-
-  /** The opening this message belongs to, or nothing if a newer one replaced it. */
-  const openingFor = (s: WorktreeSurface, repoId: string, token: number): Opening | undefined => {
-    const held = openings.get(openingKey(s, repoId));
-    return held?.token === token ? held : undefined;
-  };
-
-  /** Retire every per-repository form capability the rebuilt tree no longer carries. */
-  const forgetDepartedRepos = (departed: ReadonlySet<string>): void => {
-    if (departed.size === 0) {
-      return;
-    }
-    const repositoryOfProvisionSlot = (slot: string): string | undefined => {
-      const surfaceAt = slot.indexOf(" ");
-      const openingAt = slot.lastIndexOf(" ");
-      return surfaceAt >= 0 && openingAt > surfaceAt ? slot.slice(surfaceAt + 1, openingAt) : undefined;
-    };
-    for (const reading of [...provisionReading.keys()]) {
-      const surfaceAt = reading.indexOf(" ");
-      if (surfaceAt >= 0 && departed.has(reading.slice(surfaceAt + 1))) {
-        provisionReading.delete(reading);
-      }
-    }
-    for (const slot of [...provisionSwitch.keys()]) {
-      if (departed.has(repositoryOfProvisionSlot(slot) ?? "")) {
-        provisionSwitch.delete(slot);
-      }
-    }
-    for (const slot of [...provisionBaseline.keys()]) {
-      if (departed.has(repositoryOfProvisionSlot(slot) ?? "")) {
-        provisionBaseline.delete(slot);
-      }
-    }
-    for (const slot of [...addedSteps.keys()]) {
-      if (departed.has(repositoryOfProvisionSlot(slot) ?? "")) {
-        addedSteps.delete(slot);
-      }
-    }
-    for (const slot of [...addedCopyFiles.keys()]) {
-      if (!departed.has(repositoryOfProvisionSlot(slot) ?? "")) {
-        continue;
-      }
-      for (const added of addedCopyFiles.get(slot) ?? []) {
-        added.file.dispose();
-      }
-      addedCopyFiles.delete(slot);
-    }
-    for (const key of [...openings.keys()]) {
-      const repoAt = key.indexOf("\u0000");
-      if (repoAt >= 0 && departed.has(key.slice(repoAt + 1))) {
-        openings.delete(key);
-      }
-    }
-    for (const slot of [...migrationReading.keys()]) {
-      if (departed.has(migrationReading.get(slot)?.repoId ?? "")) {
-        migrationReading.delete(slot);
-      }
-    }
-    for (const offerId of [...migrationOffers.keys()]) {
-      if (departed.has(migrationOffers.get(offerId)?.repoId ?? "")) {
-        migrationOffers.delete(offerId);
-      }
-    }
-    for (const surface of surfaces.keys()) {
-      const key = surfaceKeys.get(surface);
-      if (key === undefined) {
-        continue;
-      }
-      for (const repoId of departed) {
-        offers.forget({ surface: key, repoId });
-      }
-    }
-  };
-
-  const surfaceKey = (s: WorktreeSurface): string => {
-    const held = surfaceKeys.get(s);
-    if (held !== undefined) {
-      return held;
-    }
-    surfaceSeq += 1;
-    const minted = `surface-${surfaceSeq}`;
-    surfaceKeys.set(s, minted);
-    return minted;
-  };
   /**
    * Bumped by every write to the cached tree — never by a delivery attempt.
    *
