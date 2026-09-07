@@ -368,8 +368,8 @@ describe("which worktree each of this window's panes is in", () => {
 
   it("keeps a contested pane's waiting even though its placement is dropped", () => {
     // "We cannot say which worktree this is in" is not a claim about whether it
-    // needs a human. The pane is unplaced, so it is presented in every scope and
-    // never counted — but the two halves answer different questions.
+    // needs a human. Placement and waiting remain independent; stable terminal
+    // ownership later decides whether the waiting pane is hidden.
     const { reports } = capture({
       [MAIN]: [pane("a", "pane-1", "window", "waiting")],
       [PANEL]: [pane("c", "pane-1")],

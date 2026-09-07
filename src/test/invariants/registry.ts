@@ -164,9 +164,9 @@ export const INVARIANTS: readonly InvariantRow[] = [
   {
     id: "I18",
     statement:
-      "A scoped tab bar hides only a pane proven to belong elsewhere; a pane the evidence does not place is presented in every scope",
+      "A terminal appears only in its stable owner bucket; presence attribution never changes terminal ownership",
     owners: ["WT-010.1"],
-    stimulus: "Hide a tab whose pane the attribution map does not hold, rather than presenting it in every scope",
+    stimulus: "Use presence attribution to display a terminal outside its stable owner bucket",
     status: "covered",
   },
   {

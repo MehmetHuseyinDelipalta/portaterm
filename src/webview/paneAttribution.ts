@@ -6,9 +6,8 @@
 // from disagreeing about the same question (round-1 W3).
 
 /**
- * paneId → worktreeId. An ABSENT key means the evidence does not place that pane,
- * which is presented in every scope; there is no third value, because one would
- * invite a fourth outcome (design.md D2).
+ * paneId → worktreeId. An ABSENT key means the evidence does not place that pane.
+ * Terminal visibility is independent: the stable terminal owner selects its bucket.
  */
 export type PaneAttribution = ReadonlyMap<string, string>;
 

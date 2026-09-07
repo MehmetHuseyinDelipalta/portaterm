@@ -622,7 +622,7 @@ describe("the tab bar filters by stable terminal owner", () => {
     expect([...buildTabBarData(ownedStore(), scope).tabs.keys()]).toEqual(["here"]);
   });
 
-  it("does not let presence attribution move a terminal between owners", () => {
+  it("[I18] does not let presence attribution move a terminal between owners", () => {
     const scope: TabBarScope = {
       worktreeId: HERE,
       attribution: new Map([

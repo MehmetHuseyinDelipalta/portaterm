@@ -424,7 +424,6 @@ describe("what counts as a reason to redraw the bar", () => {
     }
     expect(s.renders, "identical pushes redrew the bar").toBe(drawn);
   });
-
 });
 
 // ─── The count, end to end: presence says waiting, the bar says how many ──
@@ -434,8 +433,8 @@ describe("a hidden tab that needs a human is counted", () => {
     const s = surface();
     s.push();
     s.row("feat/worktree-panel")?.click();
-    // Both panes are running; something is hidden, but nothing hidden needs anyone.
-    // `pane-loose` is unplaced and so presented in every scope (I18).
+    // Both panes are running; main-owned panes are hidden here, but none needs anyone.
+    // Presence placement does not move `pane-loose` out of the main owner bucket (I18).
     expect(s.tabs()).toEqual(["pane-panel"]);
     expect(s.badge()).toBeNull();
 

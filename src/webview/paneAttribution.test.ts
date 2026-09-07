@@ -31,7 +31,7 @@ describe("attributionKey", () => {
 
   it("separates an unplaced pane from an absent one — they are the same state", () => {
     // There is no third value: a pane the evidence cannot place is simply not a
-    // key, which is what makes it presented in every scope (I18).
+    // key. Its stable terminal owner, not this map, controls visibility (I18).
     expect(attributionKey(new Map())).toBe(attributionKey(new Map()));
   });
 });

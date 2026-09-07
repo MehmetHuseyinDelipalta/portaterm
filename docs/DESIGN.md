@@ -365,7 +365,7 @@ specific false claim the view could otherwise make.
 | I15 | A failed or timed-out mutation still forces a rebuild; a state git and the filesystem disagree about is reported as indeterminate, never as a clean failure |
 | I16 | Agent-reported identity is a lookup key only; no reported path is opened on the report's authority |
 | I17 | The confirmation ceiling degrades an unconfirmed `running` rather than animating it or calling it idle |
-| I18 | A scoped tab bar hides only a pane proven to belong elsewhere; a pane the evidence does not place is presented in every scope |
+| I18 | A terminal appears only in its stable owner bucket; presence attribution never changes terminal ownership |
 | I19 | No filter is invisible, and none silences an attention state |
 
 **An invariant enters this table with the task that proves it, never ahead of it.**
