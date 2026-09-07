@@ -28,7 +28,7 @@
     4. Trim the destructures and imports the cut leaves unused in `src/worktree/worktreeMutationService.ts`.
     5. Run `bun run asm refactor shape` on both files and split again if either fires.
 
-- [ ] 4_3 Extract the create's control flow
+- [x] 4_3 Extract the create's control flow — verified: pnpm exec vitest run src/worktree/worktreeMutationService.test.ts src/worktree/mutationService/ src/extension.worktreeMutations.test.ts exit 0
   - **Deps**: 4_2
   - **Refs**: design.md D1, design.md D1a, design.md D4, design.md § Obligation ledger
   - **Boundary**: `src/worktree/worktreeMutationService.ts` and every file under `src/worktree/mutationService/` is under 500 lines, and the create's destructive ordering is unchanged (OBL-6)
