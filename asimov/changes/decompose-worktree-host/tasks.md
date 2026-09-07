@@ -239,7 +239,7 @@
 ## 3. `actions/provision.ts` — the asks
 
 
-- [ ] 2_18 Extract the copy-file and setup-step asks
+- [x] 2_18 Extract the copy-file and setup-step asks — verified: pnpm exec vitest run src/providers/WorktreeHost.actions.test.ts src/providers/WorktreeHost.presence.test.ts src/providers/WorktreeHost.test.ts src/providers/WorktreeHost.delegations.test.ts src/providers/WorktreeHost.scale.test.ts src/providers/WorktreeHost.invalidation.test.ts src/providers/WorktreeHost.secondSurface.test.ts exit 0
   - **Deps**: 2_17
   - **Refs**: None
   - **Boundary**: `src/providers/worktreeHost/actions/provision.ts` and every file under `src/providers/worktreeHost/actions/provision/` is under 500 lines
