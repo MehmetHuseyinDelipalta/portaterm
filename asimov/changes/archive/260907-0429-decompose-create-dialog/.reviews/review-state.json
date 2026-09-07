@@ -1,0 +1,14 @@
+{
+  "rounds": [
+    {
+      "round": 1,
+      "mode": "discovery",
+      "blocking": 0,
+      "verdict": "WARN",
+      "at": 1788739688626,
+      "elapsedMs": 869788,
+      "specialists": 7
+    }
+  ],
+  "overrides": []
+}
