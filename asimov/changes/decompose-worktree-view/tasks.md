@@ -191,3 +191,21 @@
     6. Confirm OBL-5 by running design.md § Frozen inventory's view command verbatim; it must print nothing.
     7. Run design.md OBL-4's BOTH diff forms, `&&`-joined.
 
+
+
+## 4. `WorktreeController.ts` — the composition root itself
+
+
+- [x] 3_14 Cut the view's dep object out of the constructor — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts exit 0
+  - **Deps**: 3_6
+  - **Refs**: design.md D1, design.md D1a, design.md D4, design.md D5
+  - **Boundary**: `src/webview/worktree/WorktreeController.ts` and every file under `src/webview/worktree/controller/` is under 500 lines. The OBJECT GRAPH is unchanged: `view.deps` still holds one object with the same fields, and `createDialogDeps()` still returns the same contract — only the literal's home moves (D5).
+  - **Acceptance**:
+    - Outcome: the cut lands and the 510-case net is unchanged.
+    - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts src/webview/worktree/WorktreeController.test.ts src/webview/worktree/WorktreeController.state.test.ts src/webview/worktree/controller/dialogChannels.test.ts src/webview/worktree/worktreeView/actionNotices.test.ts src/webview/worktree/worktreeTreeView.test.ts src/webview/worktree/WorktreeContextMenu.test.ts
+  - **Plan**:
+    1. After `3_1`-`3_6` the class is a facade over six collaborators and still 937 lines, because the constructor's `new WorktreeView({...})` literal is 454 of them. D1's cluster list is exhausted; this is the residue the design's arithmetic did not carry.
+    2. Create `src/webview/worktree/controller/composeViewDeps.ts` with `buildViewDeps(seam)` returning exactly the object the constructor passes today, and — when the two halves exceed the Boundary — `src/webview/worktree/controller/composeCreateDialogDeps.ts` for the `createDialogDeps()` half.
+    3. The seam is one narrow interface of accessors, never the controller instance: what the literal reads is `deps.postMessage`, the six collaborators, and the pinned fields.
+    4. Record `wc -l` for `src/webview/worktree/WorktreeController.ts` and every file under `src/webview/worktree/controller/` in workflow.md Notes. Any file at 500 or above is split before ticking.
+    5. Re-run design.md OBL-5's controller command and OBL-4's BOTH diff forms, `&&`-joined.
