@@ -234,6 +234,11 @@ export function createFormFields() {
   pathRow.className = "wt-path-row";
   pathRow.appendChild(pathInput);
 
+  // The refusal sentence under the destination input. The same rule the base ref
+  // carries, for the same reason: a mode whose target is not the user's to choose
+  // says so rather than accepting a value it will not use. A repair acts on the
+  // registration's own directory, and an override here displayed one path while
+  // the request carried another (round-4 B3).
   const pathNote = document.createElement("p");
   pathNote.className = "wt-fhint";
   pathNote.id = "wt-path-note";

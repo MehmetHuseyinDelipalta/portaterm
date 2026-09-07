@@ -161,7 +161,13 @@ export function createDestinationField(deps: DestinationFieldDeps): DestinationF
     });
     pathRow.appendChild(pickDestination);
   }
-  pathField.appendChild(pathRow);
+  // BEFORE the hint, not after it. `formFields.ts` appends `pathNote` when the
+  // elements are built and this module runs 133 lines later, so an append here
+  // would seat the refusal sentence ABOVE the input it describes — a screen
+  // reader would announce the refusal before reaching the control (round-1 F001).
+  // The base built both in one block; the cut split them, and this is what
+  // restores the order it had.
+  pathField.insertBefore(pathRow, fields.pathNote);
   explain(
     labelOf(pathField),
     "The folder this worktree is created in. Left empty it goes to the location shown above, derived from the branch name; a value here overrides that for this create only.",

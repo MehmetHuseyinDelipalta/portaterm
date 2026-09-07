@@ -138,7 +138,6 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     repoId: () => draft.repoId,
     pullRequests: () => currentRepo().pullRequests,
   });
-  /** Which row is active while the list is open; -1 when none is. */
 
   shell.dialog.appendChild(nameField);
 
@@ -200,12 +199,6 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     detachToggle,
     "Detaching checks the worktree out at a commit without creating a branch. Work there belongs to no branch until you make one, so it is for looking at a past state rather than building on it.",
   );
-
-  // The same rule the base ref carries, for the same reason: a mode whose
-  // target is not the user's to choose says so rather than accepting a value it
-  // will not use. A repair acts on the registration's own directory, and an
-  // override here displayed one path while the request carried another
-  // (round-4 B3).
 
   shell.dialog.appendChild(migrationField);
 
@@ -337,7 +330,6 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     afterNote,
     folderField,
     agentBox,
-    canLaunch: () => currentRepo().agents.length > 0,
     agents: () => currentRepo().agents,
     syncDerived: () => syncDerived(),
     openAfterOptions,
@@ -380,12 +372,10 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     baseLeft: () => submission.baseLeft(),
     pickAsking: () => destination.pickAsking(),
     ensureDestTip,
-    releaseDestTip,
     syncMigration,
     syncAfterHint: () => afterCreate.syncAfterHint(),
     syncWaitForSetup,
     refreshFocusTrap: () => shell.refreshFocusTrap(),
-    openAfterOptions,
   });
   function syncDerived(settled = false): void {
     derive.sync(settled);
@@ -396,12 +386,6 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   function rebuildAfterOptions(): void {
     afterCreate.rebuildAfterOptions();
   }
-
-  /**
-   * Re-derive the path and its hint from the branch, and re-validate. The hint
-   * names the collided path AND the suffixed one the create will actually use —
-   * showing only the pretty default would be a claim the form cannot keep.
-   */
 
   // `change` rather than `input`: asking the host on every keystroke would be a
   // request per character. `input` still re-renders locally, so the field never

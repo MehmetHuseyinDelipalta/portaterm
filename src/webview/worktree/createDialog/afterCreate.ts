@@ -20,7 +20,6 @@ export interface AfterCreateDeps {
   readonly afterNote: HTMLElement;
   readonly folderField: HTMLElement;
   readonly agentBox: WorktreeAgentBox;
-  canLaunch(): boolean;
   agents(): readonly WorktreeLaunchAgent[];
   /** The full re-derive, which this drives but is not part of. */
   syncDerived(): void;

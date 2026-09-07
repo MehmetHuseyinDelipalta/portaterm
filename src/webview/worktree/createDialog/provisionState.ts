@@ -42,6 +42,8 @@ export interface ProvisionStateDeps {
   /** A destination pick is out, which holds the same controls an ask does. */
   pickAsking(): boolean;
   canSave: boolean;
+  /** Declared but not read here: the ask ARMS are the view's, and this keeps the
+   *  channel set one shape across the two modules that receive it. */
   canAskStep: boolean;
   canAskCopy: boolean;
   onProvisionSave?: (msg: { repoId: string; switch: number; offerId: string; kept: string[] }) => void;

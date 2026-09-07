@@ -32,7 +32,7 @@ import type { WorktreeAgentBox } from "../worktreeAgentBox";
 import type { WorktreeBranchMode, WorktreeCreateDefaults, WorktreeMigrationOffer } from "../worktreeViewTypes";
 import type { BranchChoices } from "./branchChoices";
 import { partialListText } from "./branchChoices";
-import type { AfterChoice, DraftModel } from "./draftModel";
+import type { DraftModel } from "./draftModel";
 import type { FormFields } from "./formFields";
 import { lastSegment, shortPath } from "./paths";
 import type { ProvisionState } from "./provisionState";
@@ -58,13 +58,11 @@ export interface DerivePassDeps {
   baseLeft(): boolean;
   pickAsking(): boolean;
   ensureDestTip(): void;
-  releaseDestTip(): void;
   syncMigration(offer: WorktreeMigrationOffer | undefined): void;
   /** The hint under the after-create choice (createDialog/afterCreate.ts). */
   syncAfterHint(): void;
   syncWaitForSetup(): void;
   refreshFocusTrap(): void;
-  openAfterOptions(canLaunch: boolean): readonly { value: AfterChoice; label: string }[];
 }
 
 export interface DerivePass {
