@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.19.1] — 2026-09-08
+
+### Changed
+
+- **Worktree creation is more compact.** File choices stay on one line, routine files collapse separately from items needing review, and setup summaries show which commands are available and selected without changing consent defaults.
+- **Creation adapts to the terminal panel.** Short panels use the full surface; wide panels place preparation beside launch settings with independent scrolling. The explicit Panel height action toggles VS Code's panel size without resetting the draft.
+
+### Fixed
+
+- **Narrow Worktrees and Vault views stay usable.** Header actions wrap without overlap, branch labels and status badges remain readable, and main/open chips keep their trailing alignment.
+- **Creating another worktree is easier to find.** Populated repository lists keep a Create worktree action below their rows with proper tree keyboard navigation; main-only repositories retain their existing explanation and action.
+- **Long create forms keep their actions accessible.** The title and footer stay outside the scrolling fields, and dense file/setup offers no longer expand unrelated routine choices.
+
 ## [0.19.0] — 2026-09-08
 
 ### Added
