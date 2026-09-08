@@ -6,14 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-09-08
+
 ### Added
 
-- **Tab rename is now discoverable.** The existing root-tab rename command is contributed to the Command Palette and to the clicked tab's context menu. Double-click remains available; no default keybinding is shipped.
-- **Claude hook installation v1.** On macOS and Linux, the opt-in Claude observer now reconciles one frozen fail-open command into the currently resolved `settings.json`, preserving user hooks and refusing ambiguous ownership rather than guessing. Disabling or using the removal command cleans only that current destination; no historical-location ledger or sweep is retained. Windows remains unsupported with zero configuration I/O until a real Windows Claude Code spike validates the boundary.
+- **Git worktree workspace.** Browse worktrees across the workspace, see attached agents and recent activity, and open session previews directly from the tree.
+- **Complete worktree tools.** Create worktrees from branches, refs, or pull requests; bring over selected files or changes; run setup steps; and safely lock, prune, remove, or repair worktrees.
+- **Better agent integration.** Optional Claude Code and OpenCode observation provides clearer session identity and activity states. Tab rename is now available from the Command Palette and tab context menu.
+
+### Changed
+
+- **Terminals are organized by worktree.** Selecting a worktree shows its terminal tabs, and created or resumed sessions return to the correct worktree after reloads and split-pane changes.
+- **Vault launch actions are simpler.** Claude Code, Codex, and OpenCode now use Resume or Continue; Fork actions have been removed.
 
 ### Removed
 
-- **Windows Cursor hook observability is temporarily removed.** This upgrade is removal-only on Windows: enabling or disabling the feature now cleans up exact released entries and wrappers but installs no new command. No new command is installed because the inline hook has not yet been executed on a real Windows Cursor Agent. Restoration requires a successful real Windows spike before inline generation resumes.
+- **Cursor hook observation on Windows is temporarily unavailable** until native support is validated.
+
+### Fixed
+
+- **Session previews are more reliable and responsive** when reading live databases, missing sessions, symlinked worktrees, malformed timestamps, and rapidly changing data.
+- **Terminal and worktree operations are safer.** Active agents receive better close warnings, while removal, branch deletion, split closing, and navigation avoid stale or conflicting state.
 
 ## [0.18.1] — 2026-08-24
 
