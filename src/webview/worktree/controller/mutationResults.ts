@@ -211,7 +211,7 @@ function askRemoval(deps: MutationResultsDeps, state: AssessState, worktreeId: s
 }
 
 /** One notice per scope and verb, wherever the outcome came from. */
-function showActionResult(deps: MutationResultsDeps, state: AssessState, raw: WorktreeActionResult): void {
+function showActionResult(deps: MutationResultsDeps, _state: AssessState, raw: WorktreeActionResult): void {
   const result = rescope(deps, raw);
   // Keyed on the CANONICAL identity, not on the field that happens to hold it.
   // `rescope` moves a `worktreeId` the tree has not seen yet into
@@ -282,7 +282,7 @@ function handleRemoveAssessment(
  * through the panel's own notice list — the one place this panel says what
  * happened — rather than a second channel the user has to learn (design.md D7).
  */
-function reportScopeCleared(deps: MutationResultsDeps, state: AssessState, worktreeId: string, label: string): void {
+function reportScopeCleared(deps: MutationResultsDeps, _state: AssessState, worktreeId: string, label: string): void {
   stageScopeCleared(deps, worktreeId, label);
   deps.push();
 }
