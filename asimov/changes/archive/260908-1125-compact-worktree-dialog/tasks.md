@@ -192,3 +192,16 @@
   - **Plan**:
     1. Place row tools within the branch track before the chips in src/webview/worktree/worktreePanel.css, keeping text clearance and the existing narrow fallback.
     2. Add layout-rule regression coverage in src/webview/worktree/WorktreeView.test.ts and actual geometry in asimov/changes/compact-worktree-dialog/verification/create-footer-browser.js.
+
+## 9. Review remediation
+
+- [x] 9_1 Integrate repository creation into tree keyboard traversal — verified: pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts exit 0
+  - **Deps**: 8_2
+  - **Refs**: specs/worktree-panel/spec.md#visible-repository-lists-keep-a-create-action-below-their-worktrees, asimov/specs/worktree-panel/spec.md#keyboard-traversal-follows-the-declared-hierarchy
+  - **Acceptance**:
+    - Outcome: Repository create footers participate in the existing tree keyboard hierarchy.
+    - Verify: command pnpm exec vitest run src/webview/worktree/WorktreeView.test.ts
+  - **Plan**:
+    1. Give the footer a tree item role and stable navigation identity in src/webview/worktree/worktreeTreeView.ts, integrated through src/webview/worktree/worktreeView/keyboardNav.ts.
+    2. Exercise focus traversal, repaint retention and repository targeting in src/webview/worktree/WorktreeView.test.ts.
+    3. Verify native key activation, footer rendering and trailing-chip geometry in asimov/changes/compact-worktree-dialog/verification/create-footer-browser.js; retain asimov/changes/compact-worktree-dialog/verification/create-footer-browser-results.json and asimov/changes/compact-worktree-dialog/verification/preview-create-footer-final.png.

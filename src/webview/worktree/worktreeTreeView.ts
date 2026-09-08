@@ -1019,7 +1019,8 @@ export function renderShowAll(total: number, onShowAll: () => void): HTMLElement
 export function renderCreateWorktreeAction(repo: WorktreeRepo, onCreate: () => void): HTMLElement {
   const button = rowAction(ICON_PLUS, `Create worktree in ${repo.label}`, onCreate);
   button.className = "wt-create-worktree";
-  button.tabIndex = 0;
+  button.setAttribute("role", "treeitem");
+  button.dataset.createRepoId = repo.repoId;
   const label = document.createElement("span");
   label.textContent = "Create worktree";
   button.appendChild(label);

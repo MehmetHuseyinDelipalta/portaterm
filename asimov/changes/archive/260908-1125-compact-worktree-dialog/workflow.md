@@ -13,15 +13,15 @@
 ## Implement
 
 - [x] All tasks done (`tasks.md`)
-- [ ] Verify gate: type check, check-mode lint, I10, all 8128 tests and independent-scroll/ultra-narrow browser matrices passed; latest extension bundle and native VS Code panel-size interaction not run.
-- [ ] Review done — prior Oracle audit corrected; no post-fix Oracle review requested.
-- [ ] Gate: implementation approved
+- [x] Verify gate: typecheck, check-mode lint, I10, all 8136 tests with two workers, production bundle/requires/size/VSIX gates, and dense/adaptive/ultra-narrow/footer browser matrices passed.
+- [x] Review done — production-only round 1: zero blockers, F001 warning fixed and verified by task 9_1 plus native browser key traversal.
+- [x] Gate: implementation approved — user authorized approval/archive after fixes verify, followed by local-main merge and release 0.19.1.
 - [-] Blueprint sync complete — no blueprint for this change.
 
 ## Archive
 
-- [ ] Apply deltas: `bun run asm change apply`
-- [ ] Archive change: `bun run asm change archive`
+- [x] Apply deltas: `bun run asm change apply`
+- [x] Archive change: `bun run asm change archive`
 
 > Commit everything after archive. No box: `archive` ticks its own before the commit exists, and a tick is evidence — git history is the record here.
 
@@ -89,3 +89,11 @@ User follow-up: add a create action below populated repo lists while retaining t
 
 Pilot checkpoint: user authorized committing current UI work before a matched three-file test-pruning experiment. Type check, check-mode lint (seven existing warnings), I10 and full unit suite passed after fixing a footer-test callback lint error. No new extension build or native editor interaction. Phase-8 browser matrix/report remains incomplete; the Verify gate stays open.
 Pilot protocol: Luna then Terra on identical committed tests, disjoint per-file edits, snapshots before exact-file restoration; independent blind Opus and Sol judgments. No candidate is adopted automatically.
+
+Review remediation: user requested fixing F001, then approval and archive once verified. Integrate the existing footer as a leaf in the existing tree navigation owner; no new capability or provisioning contract. Test-pruning candidates remain unadopted and both judges use isolated checkpoint snapshots.
+
+Final verification: 333 suites / 8136 tests passed with --maxWorkers=2; two default-worker runs timed out at unchanged adoptWorktree.integration.test.ts:183 (5000ms), while its isolated 17 tests passed. Machine load exceeded 10; no test timeout/assertion changed. A wrapper falsely surfaced exit 0 for the first failed suite, so log inspection rejected it and direct subprocess exit-code capture governed the reruns.
+Final browser: real WorktreeView/VaultPanel/CSS verified footer End/Up/Down/Left/Right, native Enter/Space dispatch exactly once, repaint focus, main-only/no-match/cap/unavailable behavior, and chip geometry at 80–760px. Existing density/adaptive/ultra-narrow matrices reran successfully. See verification/create-footer-browser-results.json and verification/preview-create-footer-final.png.
+Witnesses: I10 pass exit 0; existing assembly and view witnesses passed in the full unit suite. Production bundle rebuilt and all require/size/VSIX gates passed. Native VS Code panel-height command was not manually clicked; provider guards and simulated-host browser behavior are verified, not live-editor behavior.
+F001 closure: footer is a leaf treeitem with a namespaced create-repo key, existing roving focus and hierarchy depth; task 9_1 and browser witness verify its corrected behavior. Review has no accepted BLOCK finding or open rebuttal requiring another round.
+Pilot boundary: original three test files restored byte-for-byte after both pruning runs; only the independently requested F001 test migration and two behavioral cases follow the checkpoint. No pruning candidate is adopted or included in release; experiment evidence lives outside the repository.

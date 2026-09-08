@@ -116,3 +116,7 @@ WHEN a session row, a subagent row, or a row control presents content that is tr
 - **WHEN** the user hovers a session row whose title is truncated, or moves keyboard focus to it
 - **THEN** the full title is presented
 
+### Requirement: Narrow panel headers keep controls distinct
+
+The Vault header SHALL keep its Worktrees and Sessions selectors and active-view actions operable and non-overlapping without changing body state on resize. Compact selectors SHALL retain accessible names, tooltips and selected state. When one icon row cannot fit, actions SHALL wrap below navigation and both expanded and collapsed headers SHALL fit all controls.
+

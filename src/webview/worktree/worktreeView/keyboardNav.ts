@@ -12,7 +12,7 @@
 import { idleTailKey } from "./foldState";
 
 /** Every row kind that takes part in traversal. */
-const NAV_ROWS = ".wt-repo, .wt-idle, .wt-row, .wt-arow, .wt-srow";
+const NAV_ROWS = ".wt-repo, .wt-idle, .wt-row, .wt-arow, .wt-srow, .wt-create-worktree";
 
 /**
  * One tab stop for the tree, and one more inside the row that owns it: a row's
@@ -78,6 +78,9 @@ export function createKeyboardNav(deps: KeyboardNavDeps): KeyboardNav {
   }
 
   function keyOf(row: HTMLElement): string {
+    if (row.dataset.createRepoId !== undefined) {
+      return `create:${row.dataset.createRepoId}`;
+    }
     // The disclosure's `idleKey` IS its repo's id, byte-identical to the header's
     // `repoId` — two row kinds, one string. Namespacing the navigation key the same
     // way the collapse key is namespaced is what keeps them apart; without it the
@@ -109,7 +112,7 @@ export function createKeyboardNav(deps: KeyboardNavDeps): KeyboardNav {
     if (row.classList.contains("wt-repo")) {
       return 0;
     }
-    if (row.classList.contains("wt-idle")) {
+    if (row.classList.contains("wt-idle") || row.classList.contains("wt-create-worktree")) {
       return 1;
     }
     if (row.classList.contains("wt-row")) {

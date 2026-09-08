@@ -1,0 +1,13 @@
+[
+  "single: native Enter/Space dispatch once, arrows/hierarchy/repaint/roving stop PASS",
+  "multi: native Enter/Space dispatch once, arrows/hierarchy/repaint/roving stop PASS",
+  "main-only, unavailable callback, cap/uncap, no-match PASS",
+  "80px: actual row geometry, stable trailing chips, action clearance PASS",
+  "100px: actual row geometry, stable trailing chips, action clearance PASS",
+  "140px: actual row geometry, stable trailing chips, action clearance PASS",
+  "210px: actual row geometry, stable trailing chips, action clearance PASS",
+  "280px: actual row geometry, stable trailing chips, action clearance PASS",
+  "320px: actual row geometry, stable trailing chips, action clearance PASS",
+  "400px: actual row geometry, stable trailing chips, action clearance PASS",
+  "760px: actual row geometry, stable trailing chips, action clearance PASS"
+]

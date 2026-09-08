@@ -4685,13 +4685,50 @@ it("reflows very narrow branch rows without hiding their status marks", () => {
 });
 
 describe("persistent repository create footer", () => {
+  it.each([
+    ["single repo", singleRepoTree, "1"],
+    ["multiple repos", twoRepoTree, "2"],
+  ] as const)("keeps create in the roving hierarchy and retains focus after repaint: %s", (_name, makeTree, level) => {
+    const tree = makeTree();
+    const created: string[] = [];
+    const { view, host } = mount({ onCreateForRepo: (id) => created.push(id) });
+    const press = (key: string): void => {
+      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    };
+    view.setData(populated({ tree }));
+    const footer = host.querySelectorAll<HTMLButtonElement>(".wt-create-worktree").item(tree.repos.length - 1);
+    expect(footer.getAttribute("role")).toBe("treeitem");
+    expect(footer.getAttribute("aria-level")).toBe(level);
+    expect(footer.tabIndex).toBe(-1);
+    host.querySelector<HTMLElement>('[role="treeitem"][tabindex="0"]')?.focus();
+    press("End");
+    expect(document.activeElement).toBe(footer);
+    expect(host.querySelectorAll('[role="treeitem"][tabindex="0"]')).toHaveLength(1);
+    press("ArrowUp");
+    expect(document.activeElement).not.toBe(footer);
+    press("ArrowDown");
+    expect(document.activeElement).toBe(footer);
+    view.setData({ ...populated({ tree }), refreshing: true });
+    const repainted = host.querySelectorAll<HTMLButtonElement>(".wt-create-worktree").item(tree.repos.length - 1);
+    expect(repainted).not.toBe(footer);
+    expect(document.activeElement).toBe(repainted);
+    repainted.click();
+    expect(created).toEqual([tree.repos[tree.repos.length - 1]!.repoId]);
+    press("ArrowRight");
+    expect(document.activeElement).toBe(repainted);
+    press("ArrowLeft");
+    expect(document.activeElement).toBe(
+      tree.repos.length > 1 ? host.querySelectorAll(".wt-repo").item(tree.repos.length - 1) : repainted,
+    );
+  });
+
   it("offers a keyboard-reachable create after a populated list", () => {
     const created: string[] = [];
     const { view, host } = mount({ onCreateForRepo: (repoId) => created.push(repoId) });
     view.setData(populated());
     const footer = host.querySelector<HTMLButtonElement>(".wt-create-worktree");
     expect(footer).not.toBeNull();
-    expect(footer?.tabIndex).toBe(0);
+    expect(footer?.tabIndex).toBe(-1);
     expect(footer?.textContent).toBe("Create worktree");
     expect(view.element.lastElementChild).toBe(footer);
     expect(host.querySelector(".wt-empty-inline")).toBeNull();
