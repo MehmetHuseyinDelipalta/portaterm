@@ -246,3 +246,44 @@ describe("an agent whose every posture is dangerous", () => {
     expect(box.needsPosture()).toBe(false);
   });
 });
+
+describe("compact agent controls", () => {
+  it("reveals an optional prompt and retains its value when collapsed", () => {
+    const box = createWorktreeAgentBox([CLAUDE], undefined, undefined, { compact: true });
+    document.body.appendChild(box.element);
+    const toggle = box.element.querySelector<HTMLButtonElement>(".wt-prompt-toggle");
+    const input = box.element.querySelector<HTMLTextAreaElement>("#wt-prompt");
+    expect(toggle).not.toBeNull();
+    expect(input?.closest("[hidden]")).not.toBeNull();
+    toggle?.click();
+    expect(input?.closest("[hidden]")).toBeNull();
+    expect(document.activeElement).toBe(input);
+    if (!input) {
+      throw new Error("missing prompt");
+    }
+    input.value = "Investigate the flaky tests";
+    input.dispatchEvent(new Event("input"));
+    toggle?.click();
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle?.textContent).toContain("Edit first prompt");
+    expect(box.read().prompt).toBe("Investigate the flaky tests");
+  });
+
+  it("shows a permission warning only for a deliberate dangerous choice", () => {
+    const box = createWorktreeAgentBox([CLAUDE], undefined, undefined, { compact: true });
+    document.body.appendChild(box.element);
+    const warning = box.element.querySelector<HTMLElement>(".wt-agent-permission-warning");
+    expect(warning?.hidden).toBe(true);
+    const perm = box.element.querySelector<HTMLSelectElement>("#wt-perm");
+    if (!perm) {
+      throw new Error("missing permissions");
+    }
+    perm.value = "bypassPermissions";
+    perm.dispatchEvent(new Event("change"));
+    expect(warning?.hidden).toBe(false);
+    expect(warning?.textContent).toContain("Bypass permission checks");
+    perm.value = "default";
+    perm.dispatchEvent(new Event("change"));
+    expect(warning?.hidden).toBe(true);
+  });
+});

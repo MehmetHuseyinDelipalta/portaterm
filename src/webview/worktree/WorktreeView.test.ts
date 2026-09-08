@@ -2366,7 +2366,7 @@ describe("dialogs", () => {
     }
     name.value = "feat/login";
     name.dispatchEvent(new Event("input", { bubbles: true }));
-    [...host.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Create worktree"))?.click();
+    [...host.querySelectorAll("button")].find((b) => b.querySelector(".wt-create-label") !== null)?.click();
     expect(order).toEqual(["submit", "closed"]);
   });
 
@@ -4371,9 +4371,10 @@ describe("create on the repo group header", () => {
     view.setData(populated());
 
     expect(host.querySelectorAll(".wt-repo")).toHaveLength(0);
-    // By identity, not by container: with no `.wt-repo` in the DOM a descendant
-    // selector rooted at one cannot match, so it would pass for the wrong reason.
-    expect(host.querySelectorAll('[aria-label^="Create worktree"]')).toHaveLength(0);
+    // The sole create control comes from the persistent list footer, not a header.
+    const creates = host.querySelectorAll('[aria-label^="Create worktree"]');
+    expect(creates).toHaveLength(1);
+    expect(creates[0]?.classList.contains("wt-create-worktree")).toBe(true);
   });
 });
 
@@ -4668,4 +4669,103 @@ describe("[3_3] a roster dispatch the host refuses", () => {
     expect(document.activeElement).not.toBe(document.body);
     expect(view.element.contains(document.activeElement)).toBe(true);
   });
+});
+
+it("reflows very narrow branch rows without hiding their status marks", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const css = fs.readFileSync(path.join(here, "worktreePanel.css"), "utf8");
+  const narrow = /@container vault \(max-width: 220px\)\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
+  expect(narrow).toContain("grid-template-columns: 16px minmax(0, 1fr)");
+  expect(narrow).toContain(".wt-marks");
+  expect(narrow).toContain("flex-wrap: wrap");
+  const { view } = mount();
+  view.setData(populated());
+  expect(view.element.querySelector(".wt-badge--missing")?.textContent).toBe("missing");
+  expect(view.element.querySelector(".wt-badge--locked")?.textContent).toBe("locked");
+});
+
+describe("persistent repository create footer", () => {
+  it("offers a keyboard-reachable create after a populated list", () => {
+    const created: string[] = [];
+    const { view, host } = mount({ onCreateForRepo: (repoId) => created.push(repoId) });
+    view.setData(populated());
+    const footer = host.querySelector<HTMLButtonElement>(".wt-create-worktree");
+    expect(footer).not.toBeNull();
+    expect(footer?.tabIndex).toBe(0);
+    expect(footer?.textContent).toBe("Create worktree");
+    expect(view.element.lastElementChild).toBe(footer);
+    expect(host.querySelector(".wt-empty-inline")).toBeNull();
+    footer?.click();
+    expect(created).toEqual([REPO_ID]);
+  });
+
+  it("keeps the main-only explanation with exactly one create action", () => {
+    const tree = singleRepoTree();
+    tree.repos[0]!.worktrees = tree.repos[0]!.worktrees.filter((w) => w.kind === "main");
+    const created: string[] = [];
+    const { view, host } = mount({ onCreateForRepo: (id) => created.push(id) });
+    view.setData(populated({ tree }));
+    expect(host.querySelector(".vault-empty-title")?.textContent).toBe("No other worktrees yet");
+    expect(host.querySelectorAll(".wt-create-worktree,.wt-empty-inline .vault-empty-action")).toHaveLength(1);
+    host.querySelector<HTMLButtonElement>(".wt-empty-inline .vault-empty-action")?.click();
+    expect(created).toEqual([REPO_ID]);
+  });
+
+  it("targets each displayed repository and disappears with its collapsed body", () => {
+    const tree = twoRepoTree();
+    const created: string[] = [];
+    const { view, host } = mount({ onCreateForRepo: (id) => created.push(id) });
+    view.setData(populated({ tree }));
+    const footers = Array.from(host.querySelectorAll<HTMLButtonElement>(".wt-create-worktree"));
+    expect(footers).toHaveLength(2);
+    footers.forEach((button) => {
+      button.click();
+    });
+    expect(created).toEqual(tree.repos.map((repo) => repo.repoId));
+    host.querySelector<HTMLElement>(".wt-repo")?.click();
+    expect(host.querySelectorAll(".wt-create-worktree")).toHaveLength(1);
+  });
+
+  it("stays after Show all and survives uncapping without duplicates", () => {
+    const tree = singleRepoTree();
+    tree.repos[0]!.worktrees = Array.from({ length: 25 }, (_, i) =>
+      worktree({ id: `/repo/w${i}`, branch: `feature-${i}` }),
+    );
+    const { view, host } = mount({ onCreateForRepo: () => {} });
+    view.setData(populated({ tree }));
+    const showAll = host.querySelector<HTMLButtonElement>(".wt-showall");
+    const footer = host.querySelector(".wt-create-worktree");
+    expect(showAll).not.toBeNull();
+    expect(footer).not.toBeNull();
+    expect(showAll!.compareDocumentPosition(footer!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    showAll?.click();
+    expect(host.querySelector(".wt-showall")).toBeNull();
+    expect(host.querySelectorAll(".wt-create-worktree")).toHaveLength(1);
+    expect(view.element.lastElementChild).toBe(host.querySelector(".wt-create-worktree"));
+  });
+
+  it("does not offer creation without a callback or matching repository", () => {
+    const { view, host } = mount();
+    view.setData(populated());
+    expect(host.querySelector(".wt-create-worktree")).toBeNull();
+    const available = mount({ onCreateForRepo: () => {} });
+    available.view.setData(populated());
+    available.view.setQuery("no-repository-matches-this");
+    expect(available.host.querySelector(".wt-create-worktree")).toBeNull();
+    for (const tree of [noRepoTree(), gitMissingTree()]) {
+      available.view.setData(populated({ tree }));
+      expect(available.host.querySelector(".wt-create-worktree")).toBeNull();
+    }
+  });
+});
+
+it("reserves action clearance before trailing chips rather than after them", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const css = fs.readFileSync(path.join(here, "worktreePanel.css"), "utf8");
+  const row = /\.wt-row\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+  const marks = /\.wt-marks\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+  const tools = /\.wt-rowtools\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+  expect(row).toContain("grid-template-columns: 16px minmax(0, 1fr) auto;");
+  expect(marks).toContain("grid-column: 3");
+  expect(tools).toContain("grid-column: 2");
 });

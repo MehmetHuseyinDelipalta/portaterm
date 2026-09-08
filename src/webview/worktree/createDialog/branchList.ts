@@ -162,7 +162,8 @@ export function createBranchList(deps: BranchListDeps): BranchList {
     if (room === undefined) {
       return; // jsdom, or a detached node — the stylesheet's own floor applies
     }
-    const below = Math.round(window.innerHeight - room.bottom - 12);
+    const body = nameInput.closest(".wt-create-body")?.getBoundingClientRect();
+    const below = Math.round(Math.min(window.innerHeight, body?.bottom ?? window.innerHeight) - room.bottom - 12);
     listBox.style.setProperty("--wt-branch-room", `${Math.max(below, 0)}px`);
   }
 

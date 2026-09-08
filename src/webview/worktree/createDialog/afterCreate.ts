@@ -18,6 +18,7 @@ export interface AfterCreateDeps {
   readonly model: DraftModel;
   readonly afterSelect: HTMLSelectElement;
   readonly afterNote: HTMLElement;
+  readonly createLabel: HTMLElement;
   readonly folderField: HTMLElement;
   readonly agentBox: WorktreeAgentBox;
   agents(): readonly WorktreeLaunchAgent[];
@@ -46,6 +47,13 @@ export function createAfterCreate(deps: AfterCreateDeps): AfterCreate {
    * to launch" is its own.
    */
   function syncAfterHint(): void {
+    deps.createLabel.textContent =
+      model.afterChoice() === "agent"
+        ? "Create & start"
+        : model.afterChoice() === "none"
+          ? "Create worktree"
+          : "Create & open";
+    afterNote.hidden = model.afterChoice() === "agent";
     if (model.afterChoice() === "none") {
       afterNote.textContent = "No terminal, folder, or agent opens after creation.";
     } else if (model.afterChoice() === "terminal") {
@@ -56,9 +64,7 @@ export function createAfterCreate(deps: AfterCreateDeps): AfterCreate {
           ? "Adds the worktree folder to this workspace."
           : "Opens the worktree folder in a separate window.";
     } else {
-      const selected = agentBox.read().agentId;
-      const label = deps.agents().find((agent) => agent.id === selected)?.label ?? "the selected agent";
-      afterNote.textContent = `Starts ${label} in the worktree.`;
+      afterNote.textContent = "";
     }
   }
 

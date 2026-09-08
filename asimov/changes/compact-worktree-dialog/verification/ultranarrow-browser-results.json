@@ -1,0 +1,18 @@
+{
+  "environment": "Real dialog, VaultPanel and worktree row renderer with production CSS in Chromium; HTTP cache disabled; host command callback simulated.",
+  "results": [
+    "200-row offer: real wheel scrolls only preparation; launch column stays fixed; oversized Advanced scrolls separately",
+    "220 real Tab moves through both independently scrolling columns keep focus visible",
+    "Neutral panel-height toggle remains reachable in tall/full-surface/stacked layouts without auto-dispatch; one-column scroll retained",
+    "80px header: both bodies, expanded/collapsed fit, non-overlapping center hit targets, real Search/Create clicks PASS",
+    "100px header: both bodies, expanded/collapsed fit, non-overlapping center hit targets, real Search/Create clicks PASS",
+    "120px header: both bodies, expanded/collapsed fit, non-overlapping center hit targets, real Search/Create clicks PASS",
+    "140px header: both bodies, expanded/collapsed fit, non-overlapping center hit targets, real Search/Create clicks PASS",
+    "150px header: both bodies, expanded/collapsed fit, non-overlapping center hit targets, real Search/Create clicks PASS",
+    "180px header: both bodies, expanded/collapsed fit, non-overlapping center hit targets, real Search/Create clicks PASS",
+    "210px header: both bodies, expanded/collapsed fit, non-overlapping center hit targets, real Search/Create clicks PASS",
+    "280px header: both bodies, expanded/collapsed fit, non-overlapping center hit targets, real Search/Create clicks PASS",
+    "400px header: both bodies, expanded/collapsed fit, non-overlapping center hit targets, real Search/Create clicks PASS",
+    "Real tree rows: branches remain at least 20px wide and main/open/locked/missing badges plus row actions fit at every tested width"
+  ]
+}

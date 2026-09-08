@@ -1230,6 +1230,17 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           break;
         }
 
+        case "toggleMaximizedPanel":
+          if (this.location === "panel" && this._view === webviewView && webviewView.visible) {
+            void vscode.commands.executeCommand("workbench.action.toggleMaximizedPanel").then(undefined, (err) => {
+              console.warn("[AnyWhere Terminal] Panel resize failed:", err);
+              void vscode.window.showWarningMessage(
+                "Could not resize the panel. Try Toggle Maximized Panel from the Command Palette.",
+              );
+            });
+          }
+          break;
+
         case "focus":
           this.markFocused();
           break;

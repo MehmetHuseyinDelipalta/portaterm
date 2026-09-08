@@ -84,7 +84,7 @@
 /* ── Worktree row ───────────────────────────────────────────────────────── */
 .wt-row {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
   padding: 3px 10px 3px 8px;
@@ -111,6 +111,10 @@
   flex: 0 0 auto;
 }
 .wt-branch {
+  grid-column: 2;
+  grid-row: 1;
+  padding-right: 43px;
+  box-sizing: border-box;
   min-width: 0;
   font-size: 13px;
   white-space: nowrap;
@@ -130,6 +134,9 @@
   text-decoration-color: color-mix(in srgb, var(--vscode-foreground) 35%, transparent);
 }
 .wt-marks {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1182,11 +1189,8 @@
 .wt-bring-box {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 9px;
-  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
+  gap: 12px;
+  min-width: 0;
 }
 .wt-brow {
   display: grid;
@@ -1260,15 +1264,13 @@
    the form's own controls off the measure. */
 .wt-brow-code {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 4px;
-  border-radius: 3px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  padding: 0;
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 11px;
   color: var(--vscode-foreground);
-  background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+  background: transparent;
 }
 
 /* A repository that declares nothing still gets a sentence — an empty box would
@@ -1490,6 +1492,9 @@
    the moment the row becomes the tree's stop — and revealed on hover, on focus,
    and on the SELECTED row, so reaching them never requires a pointer. */
 .wt-rowtools {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -1575,21 +1580,36 @@
 .wt-bring-add {
   display: flex;
   align-items: center;
-  padding: 4px 0 2px;
+  margin-left: auto;
 }
 
 .wt-bring-add-action {
-  padding: 2px 8px;
-  border: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
-  border-radius: 2px;
-  background: var(--vscode-button-secondaryBackground, transparent);
-  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-  font-family: inherit;
+  font-size: 11px;
+}
+
+.wt-inline-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font: inherit;
   font-size: 11px;
   cursor: pointer;
 }
-
-.wt-bring-add-action:disabled {
+.wt-inline-action:hover:not(:disabled) {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground);
+}
+.wt-inline-action:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+.wt-inline-action:disabled {
   opacity: 0.5;
   cursor: default;
 }
@@ -1635,23 +1655,9 @@
 }
 
 .wt-bring-save {
-  padding: 2px 8px;
-  border: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
-  border-radius: 2px;
-  background: var(--vscode-button-secondaryBackground, transparent);
-  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-  font-family: inherit;
   font-size: 11px;
-  cursor: pointer;
-}
-
-.wt-bring-save:hover {
-  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
-}
-
-.wt-bring-save:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: 1px;
+  padding-left: 0;
+  color: var(--vscode-textLink-foreground);
 }
 
 .wt-bring-save-note {
@@ -1722,4 +1728,557 @@
 .wt-path-pick:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* Creation provisioning: one surface, with local actions and source attribution. */
+.wt-provision-group {
+  min-width: 0;
+}
+.wt-provision-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-height: 26px;
+}
+.wt-provision-heading > span:first-child {
+  font-weight: 600;
+}
+.wt-files-count,
+.wt-setup-count {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+.wt-files-toggle {
+  margin-left: auto;
+}
+.wt-provision-heading .wt-bring-add + .wt-files-toggle {
+  margin-left: 0;
+}
+.wt-files-shared {
+  color: var(--vscode-editorWarning-foreground);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.wt-bring-source-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 4px 0;
+}
+.wt-bring-source-label {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.wt-bring-source-group .wt-brow {
+  position: relative;
+  min-height: 24px;
+  gap: 6px;
+}
+.wt-bring-source-group .wt-brow-top b,
+.wt-bring-source-group .wt-brow-source-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.wt-bring-source-group .wt-brow-meta {
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+.wt-bring-source-group .wt-brow-note {
+  flex-basis: 100%;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.wt-bring-source {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+.wt-bring-source-select {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+.wt-bring-save-row {
+  padding-top: 6px;
+  border-top: 1px solid var(--vscode-widget-border, transparent);
+}
+.wt-setup-suggestions-toggle {
+  margin-top: 4px;
+  padding-left: 0;
+}
+.wt-setup-suggestions-toggle::before {
+  content: "›";
+  margin-right: 6px;
+}
+.wt-setup-suggestions-toggle[aria-expanded="true"]::before {
+  transform: rotate(90deg);
+}
+
+/* Keep the creation form compact without changing standalone launch dialogs. */
+.wt-create-dialog {
+  width: min(560px, calc(100vw - 32px));
+  overflow: hidden;
+  gap: 0;
+  padding: 18px;
+  border-radius: 8px;
+}
+.wt-create-dialog .wt-dialog-title {
+  flex-shrink: 0;
+  font-size: 15px;
+  margin-bottom: 16px;
+}
+.wt-create-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  margin: 0 -18px;
+  padding: 0 18px 14px;
+}
+.wt-create-body > * {
+  flex-shrink: 0;
+}
+.wt-create-body .wt-branch-list {
+  max-height: min(220px, var(--wt-branch-room, 220px));
+}
+.wt-create-primary > .wt-bring {
+  position: relative;
+  padding: 8px 0;
+  gap: 8px;
+  border-top: 1px solid var(--vscode-widget-border, transparent);
+  border-bottom: 1px solid var(--vscode-widget-border, transparent);
+}
+.wt-create-dialog .wt-bring > .wt-flabel {
+  min-height: 28px;
+  line-height: 28px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.wt-create-dialog .wt-bring-sum {
+  display: block;
+  line-height: 1.4;
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.wt-create-launch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  align-items: start;
+  gap: 8px 10px;
+}
+.wt-create-launch .wt-agentbox {
+  display: contents;
+}
+.wt-create-launch .wt-cols {
+  grid-column: 2;
+  grid-row: 1;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+}
+.wt-agent-permission-warning {
+  color: var(--vscode-editorWarning-foreground);
+}
+.wt-create-launch .wt-folder-mode,
+.wt-create-launch .wt-prompt-field,
+.wt-create-launch .wt-agent-permission-warning {
+  grid-column: 1 / -1;
+}
+.wt-create-dialog .wt-after-note {
+  font-size: 10px;
+}
+.wt-create-dialog .wt-prompt-toggle {
+  align-self: flex-start;
+  padding-left: 0;
+}
+.wt-create-dialog .wt-prompt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.wt-create-dialog .wt-textarea {
+  min-height: 72px;
+}
+.wt-create-dialog .wt-select,
+.wt-create-dialog .wt-input {
+  height: 28px;
+  border-radius: 4px;
+}
+.wt-create-dialog .wt-dialog-actions {
+  position: static;
+  flex-shrink: 0;
+  margin: 0 -18px -18px;
+  padding: 12px 18px;
+}
+.wt-create-dialog .wt-btn {
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+.wt-create-dialog .wt-btn:not(.wt-btn--primary) {
+  color: var(--vscode-descriptionForeground);
+  background: transparent;
+}
+.wt-create-dialog .wt-btn:not(.wt-btn--primary):hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground);
+}
+@media (max-width: 420px) {
+  .wt-create-launch {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wt-create-launch .wt-cols {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .wt-create-dialog {
+    padding: 14px;
+  }
+  .wt-create-body {
+    margin: 0 -14px;
+    padding: 0 14px 14px;
+  }
+  .wt-create-dialog .wt-dialog-actions {
+    margin: 0 -14px -14px;
+    padding: 10px 14px;
+  }
+}
+
+.wt-create-dialog .wt-bring-source {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  width: 65%;
+  max-width: 310px;
+}
+.wt-create-dialog .wt-bring-source > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.wt-defaults-toggle {
+  padding-left: 0;
+}
+.wt-defaults-body {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+/* A suggested command is one choice, not a stack of source headings. */
+.wt-setup-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wt-brow--suggested-step {
+  position: relative;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  min-height: 28px;
+  align-items: start;
+}
+.wt-brow--suggested-step .wt-brow-cb {
+  margin-top: 5px;
+}
+.wt-brow--suggested-step .wt-brow-top {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.wt-brow--suggested-step .wt-brow-meta {
+  flex-wrap: wrap;
+  line-height: 23px;
+}
+.wt-brow--suggested-step .wt-brow-note {
+  flex-basis: 100%;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--vscode-descriptionForeground);
+}
+.wt-brow--suggested-step .wt-brow-src {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  max-width: 160px;
+  padding-top: 4px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.wt-suggestion-tag {
+  color: var(--vscode-descriptionForeground);
+}
+.wt-suggestion-tag::after {
+  content: "·";
+  margin-left: 5px;
+}
+@media (max-width: 420px) {
+  .wt-brow--suggested-step .wt-brow-src {
+    max-width: 110px;
+  }
+}
+
+.wt-create-primary > .wt-bring--sparse {
+  padding: 10px 0;
+  gap: 0;
+}
+.wt-create-dialog .wt-wait-setup > label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.wt-create-dialog .wt-wait-setup input {
+  margin: 0;
+  width: 13px;
+  height: 13px;
+  accent-color: var(--vscode-checkbox-selectBackground, var(--vscode-focusBorder));
+}
+.wt-create-dialog .wt-wait-setup {
+  margin-top: 10px;
+}
+.wt-repository-defaults .wt-bring-save-row {
+  margin-top: 0;
+}
+
+/* File choices stay dense; only conflict explanations get another line. */
+.wt-files-body,
+.wt-files-routine-body,
+.wt-files-links-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wt-brow--file {
+  position: relative;
+  grid-template-columns: 13px minmax(0, 1fr) auto auto;
+  gap: 0 8px;
+  min-height: 26px;
+}
+.wt-brow--file .wt-brow-cb {
+  grid-column: 1;
+  grid-row: 1;
+}
+.wt-brow--file .wt-brow-top {
+  grid-column: 3;
+  grid-row: 1;
+}
+.wt-brow--file .wt-brow-top b {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.wt-brow--file .wt-brow-meta {
+  grid-column: 2;
+  grid-row: 1;
+  flex-wrap: wrap;
+  min-height: 26px;
+}
+.wt-brow--file .wt-brow-code {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wt-brow--file .wt-brow-suggested {
+  flex: 0 1 auto;
+  max-width: 50%;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+.wt-brow--file .wt-brow-note:not(.wt-brow-suggested) {
+  flex-basis: 100%;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  overflow-wrap: anywhere;
+}
+.wt-brow--file .wt-brow-src {
+  grid-column: 4;
+  grid-row: 1;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 420px) {
+  .wt-brow--file .wt-brow-src {
+    max-width: 80px;
+  }
+}
+
+.wt-files-shared-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 8px;
+}
+.wt-setup-order {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  margin: 2px 0 6px;
+}
+
+.wt-create-primary,
+.wt-create-secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.wt-create-primary > *,
+.wt-create-secondary > * {
+  flex-shrink: 0;
+}
+@media (max-height: 560px) {
+  .wt-create-scrim {
+    display: none;
+  }
+  .wt-create-dialog {
+    inset: 0;
+    transform: none;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    padding: 12px;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .wt-create-dialog .wt-dialog-title {
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+  .wt-create-body {
+    margin: 0 -12px;
+    padding: 0 12px 10px;
+  }
+  .wt-create-dialog .wt-dialog-actions {
+    margin: 0 -12px -12px;
+    padding: 8px 12px;
+  }
+}
+@media (max-height: 560px) and (min-width: 760px) {
+  .wt-create-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+    overflow: hidden;
+    gap: 20px;
+  }
+  .wt-create-primary,
+  .wt-create-secondary {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+  .wt-create-secondary {
+    padding-left: 20px;
+    border-left: 1px solid var(--vscode-widget-border, transparent);
+  }
+  .wt-create-launch {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wt-create-launch .wt-cols {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+.wt-create-panel-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+}
+.wt-create-panel-size:not([hidden]) + .wt-dismiss {
+  margin-left: 0;
+}
+
+@container vault (max-width: 220px) {
+  .wt-row {
+    grid-template-columns: 16px minmax(0, 1fr);
+    gap: 3px 6px;
+    margin: 0 2px;
+    padding: 3px 6px;
+  }
+  .wt-branch {
+    padding-right: 0;
+  }
+  .wt-marks,
+  .wt-rowtools {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    justify-self: stretch;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .wt-marks:empty,
+  .wt-rowtools:empty {
+    display: none;
+  }
+}
+
+.wt-create-worktree {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 8px);
+  box-sizing: border-box;
+  margin: 6px 4px 4px;
+  padding: 4px 8px;
+  min-height: 26px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.wt-create-worktree > svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
+.wt-create-worktree > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.wt-create-worktree:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+.wt-create-worktree:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
 }

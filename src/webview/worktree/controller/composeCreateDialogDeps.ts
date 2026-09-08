@@ -74,6 +74,9 @@ export function buildCreateDialogDeps(seam: ViewDepsSeam): Omit<WorktreeCreateDi
     // successor — the same trap `onCreateClosed` already avoids by taking
     // the opening from the view (round-1 B3, round-1 F002).
     repos: seam.createRepos(),
+    ...(seam.host.ownerDocument.body.dataset.terminalLocation === "panel"
+      ? { onTogglePanelSize: () => seam.postMessage({ type: "toggleMaximizedPanel" }) }
+      : {}),
     // The destination depends on the branch, so every settled branch edit
     // re-asks and the answer replaces the seed in place (round-3 B12).
     onSelectionChange: (selection) => {

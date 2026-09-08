@@ -28,6 +28,8 @@ import type {
 import type { CreateSelection } from "./resolutionAsks";
 
 export interface WorktreeCreateDialogDeps {
+  /** Present only when the host is the bottom-panel terminal surface. */
+  onTogglePanelSize?: () => void;
   /** One entry per repo; a single entry suppresses the picker entirely (§ 3.2). */
   repos: WorktreeCreateDefaults[];
   /** Which repo the create was invoked from. */

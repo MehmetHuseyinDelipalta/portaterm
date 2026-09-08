@@ -28,8 +28,9 @@ import { SETUP_STEP_ADDED_SOURCE, type WorktreeSetupStepAskMessage } from "../..
 import { field } from "../worktreeDialogShell";
 import type { WorktreeProvisionOffer } from "../worktreeViewTypes";
 import { bothOrAll, claimingPerGroup } from "./bringContention";
-import { bringProblem, bringRow, switchRow } from "./bringRowView";
-import { bringRows, bringSummary } from "./bringSummaries";
+import { bringProblem, sourcePicker } from "./bringRowView";
+import { bringRows, bringSummary, changedFileIds } from "./bringSummaries";
+import { createProvisionGroups } from "./provisionGroups";
 import type { PendingStep, ProvisionState } from "./provisionState";
 import { addedOf } from "./tickRecords";
 
@@ -50,6 +51,7 @@ export interface ProvisionViewDeps {
 export interface ProvisionView {
   /** The section itself, so the wait control can be attached inside it. */
   readonly field: HTMLElement;
+  readonly defaults: HTMLElement;
   /** Redraw from the repository's offer. Called on every derive. */
   sync(offer: WorktreeProvisionOffer | undefined): void;
   /** Enablement of every control an in-flight ask must hold, derived, never toggled. */
@@ -64,7 +66,12 @@ export function createProvisionView(deps: ProvisionViewDeps): ProvisionView {
   // describes the worktree being made rather than what happens once it exists.
   // The section is never a gate: a repository that declares nothing, and one
   // whose provider file cannot be read, both still submit.
-  const bringField = field("Bring over");
+  const bringField = field("Environment");
+  let groups: ReturnType<typeof createProvisionGroups> | undefined;
+  const bringHeading = bringField.firstElementChild as HTMLElement;
+  const defaults = document.createElement("div");
+  defaults.className = "wt-repository-defaults";
+  defaults.hidden = true;
   bringField.classList.add("wt-bring");
   const bringSum = document.createElement("span");
   bringSum.className = "wt-bring-sum";
@@ -93,8 +100,9 @@ export function createProvisionView(deps: ProvisionViewDeps): ProvisionView {
   // form SUBMITS, and a create started by pressing Save is the one thing
   // this must never do.
   saveButton.type = "button";
-  saveButton.className = "wt-bring-save";
-  saveButton.textContent = "Save current choices as defaults";
+  saveButton.className = "wt-bring-save wt-inline-action";
+  saveButton.textContent = "Save file defaults";
+  saveButton.title = "Save eligible file choices and the selected source to .vscode/worktree.json";
   // What the repository will NOT keep, said before the save rather than after
   // it. Setup steps and ports are the two choices the configuration has no
   // vocabulary for — § 7 forbids persisting a pre-ticked command, and an
@@ -105,13 +113,28 @@ export function createProvisionView(deps: ProvisionViewDeps): ProvisionView {
   // Only the half the label does not already carry. "Save current choices as
   // defaults" says what the press records; what it cannot say is what it leaves
   // out, and that is the whole note now.
-  saveNote.textContent = "Added files, setup steps and ports apply to this create only.";
+  saveNote.textContent = "Writes .vscode/worktree.json. Added files, setup steps and ports apply to this create only.";
   // The note states what pressing this does NOT record. A sighted user reads it
   // beside the button; without the association a screen reader announces the
   // button alone, which is the half of the sentence that sounds complete
   // (.reviews/round-1.md F014).
   saveButton.setAttribute("aria-describedby", saveNote.id);
-  saveRow.append(saveButton, saveNote);
+  const defaultsToggle = document.createElement("button");
+  defaultsToggle.type = "button";
+  defaultsToggle.className = "wt-inline-action wt-defaults-toggle";
+  defaultsToggle.textContent = "Repository defaults…";
+  defaultsToggle.setAttribute("aria-expanded", "false");
+  defaultsToggle.setAttribute("aria-controls", "wt-defaults-body");
+  const defaultsBody = document.createElement("div");
+  defaultsBody.id = "wt-defaults-body";
+  defaultsBody.className = "wt-defaults-body";
+  defaultsBody.hidden = true;
+  defaultsBody.append(saveButton, saveNote);
+  defaultsToggle.addEventListener("click", () => {
+    defaultsBody.hidden = !defaultsBody.hidden;
+    defaultsToggle.setAttribute("aria-expanded", String(!defaultsBody.hidden));
+  });
+  saveRow.append(defaultsToggle, defaultsBody);
   saveButton.addEventListener("click", () => {
     if (bring.askSave()) {
       saveButton.disabled = true;
@@ -125,8 +148,10 @@ export function createProvisionView(deps: ProvisionViewDeps): ProvisionView {
   addCopyRow.className = "wt-bring-add";
   const addCopyButton = document.createElement("button");
   addCopyButton.type = "button";
-  addCopyButton.className = "wt-bring-add-action wt-bring-add-copy";
-  addCopyButton.textContent = "Add file to copy…";
+  addCopyButton.className = "wt-bring-add-action wt-bring-add-copy wt-inline-action";
+  addCopyButton.textContent = "+ File";
+  addCopyButton.setAttribute("aria-label", "Add file to copy for this create");
+  addCopyButton.title = "Copy an additional file into this worktree";
   addCopyRow.appendChild(addCopyButton);
   addCopyButton.addEventListener("click", () => {
     // Focus is read HERE, before the control is disabled a moment later: a
@@ -144,8 +169,9 @@ export function createProvisionView(deps: ProvisionViewDeps): ProvisionView {
   addStepRow.className = "wt-bring-add";
   const addStepButton = document.createElement("button");
   addStepButton.type = "button";
-  addStepButton.className = "wt-bring-add-action wt-bring-add-step wt-bring-add-setup";
-  addStepButton.textContent = "Add setup step…";
+  addStepButton.className = "wt-bring-add-action wt-bring-add-step wt-bring-add-setup wt-inline-action";
+  addStepButton.textContent = "+ Command";
+  addStepButton.setAttribute("aria-label", "Add setup command for this create");
   addStepButton.title = "Run a command in the new worktree after files are brought over. Applies to this create only.";
   addStepRow.appendChild(addStepButton);
   const askStep = (op: WorktreeSetupStepAskMessage["op"], pressed?: HTMLElement): void => {
@@ -185,7 +211,7 @@ export function createProvisionView(deps: ProvisionViewDeps): ProvisionView {
     // A switch is latest-wins and may be taken over an in-flight switch or
     // save; only an open input holds it, since its answer would land in a
     // source the user had moved on from (design.md D5).
-    for (const b of bringBox.querySelectorAll<HTMLButtonElement>(".wt-bring-switch-take")) {
+    for (const b of bringBox.querySelectorAll<HTMLSelectElement>(".wt-bring-source-select")) {
       b.disabled = asking;
     }
     saveButton.disabled = bring.saving() || asking;
@@ -210,6 +236,7 @@ export function createProvisionView(deps: ProvisionViewDeps): ProvisionView {
     // Text and one hidden flag: no row is rebuilt, so no checkbox is reset.
     if (drawn !== null && ticked !== undefined) {
       bringSum.textContent = bringSummary(drawn, ticked);
+      groups?.syncSelection(ticked);
       syncYieldNotes(ticked);
     }
     deps.syncWaitForSetup();
@@ -299,6 +326,7 @@ export function createProvisionView(deps: ProvisionViewDeps): ProvisionView {
       bringSum.textContent = "";
       bringBox.replaceChildren();
       saveRow.remove();
+      defaults.hidden = true;
       bring.clearDrawn();
       deps.syncWaitForSetup();
       return;
@@ -310,6 +338,8 @@ export function createProvisionView(deps: ProvisionViewDeps): ProvisionView {
     if (bring.isDrawn(offer.offerId)) {
       return;
     }
+    const restoreSource = document.activeElement?.classList.contains("wt-bring-source-select") === true;
+    const changedFiles = changedFileIds(bring.drawnModel(), offer.model);
     const settled = bring.settle(offer);
     const ticked = settled.ticked;
     bringField.hidden = false;
@@ -322,16 +352,22 @@ export function createProvisionView(deps: ProvisionViewDeps): ProvisionView {
     // And only where a save can actually be made: a control whose press the
     // host would never hear is the same nothing as a control with no offer
     // behind it (.reviews/round-1.md F009).
+    defaults.hidden = !settled.canOfferSave;
     if (settled.canOfferSave) {
-      bringField.appendChild(saveRow);
+      defaults.appendChild(saveRow);
+    } else {
+      saveRow.remove();
     }
+    const hasSourceChoice = offer.model.providers.some((provider) => !provider.active);
+    bringHeading.hidden = !hasSourceChoice;
+    bringField.classList.toggle("wt-bring--sparse", !hasSourceChoice);
     // After the selection exists, never before: the counts are read off it.
     bringSum.textContent = bringSummary(offer.model, ticked);
+    bringSum.hidden = offer.model.problems.length === 0;
     const held = ticked;
     const rows = bringRows(offer.model).map((row) => ({ ...row, checked: held.has(row.id) }));
     // Every source the host detected and did not choose. `active` is the host's
     // word for which one supplied the rows above.
-    const inactive = offer.model.providers.filter((p) => !p.active);
     // Problems sit inside the box beside the rows, not instead of them: an
     // unknown key does not discard the keys that parsed, and reporting only the
     // problem would understate what the create is about to do.
@@ -341,22 +377,33 @@ export function createProvisionView(deps: ProvisionViewDeps): ProvisionView {
       ? undefined
       : (kind: "edit" | "remove", itemId: string, control?: HTMLElement) =>
           askStep({ kind, offerId: offer.offerId, itemId }, control);
-    let addedSeen = 0;
+    groups = createProvisionGroups({
+      rows,
+      changedFiles,
+      ...(deps.canAskCopy ? { addCopy: addCopyRow } : {}),
+      ...(deps.canAskStep ? { addStep: addStepRow } : {}),
+      onStep,
+    });
     bringBox.replaceChildren(
-      ...rows.map((row, i) => bringRow(row, i, onStep, row.added === true ? addedSeen++ : 0)),
+      ...(hasSourceChoice
+        ? [
+            sourcePicker(offer.model.providers, (providerId) => {
+              if (bring.takeSwitch(offer.offerId, providerId)) {
+                saveRow.remove();
+                defaults.hidden = true;
+                syncStepControls();
+              }
+            }),
+          ]
+        : []),
       ...offer.model.problems.map((problem) => bringProblem(problem)),
-      ...inactive.map((provider) =>
-        switchRow(provider, () => {
-          if (bring.takeSwitch(offer.offerId, provider.id)) {
-            saveRow.remove();
-            syncStepControls();
-          }
-        }),
-      ),
-      ...(deps.canAskCopy ? [addCopyRow] : []),
-      ...(deps.canAskStep ? [addStepRow] : []),
+      ...groups.elements,
     );
+    groups.syncSelection(held);
     syncStepControls();
+    if (restoreSource) {
+      bringBox.querySelector<HTMLSelectElement>(".wt-bring-source-select")?.focus();
+    }
     if (settled.stepAnswered?.restoreFocus === true) {
       restoreStepFocus(settled.stepAnswered, offer.model);
     }
@@ -378,6 +425,7 @@ export function createProvisionView(deps: ProvisionViewDeps): ProvisionView {
   }
   return {
     field: bringField,
+    defaults,
     sync: syncBringOver,
     syncControls: syncStepControls,
   };

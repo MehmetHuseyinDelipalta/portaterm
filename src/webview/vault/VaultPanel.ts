@@ -480,6 +480,9 @@ export class VaultPanel {
         this.expand();
       });
       btn.dataset.view = view;
+      btn.setAttribute("aria-label", label);
+      btn.removeAttribute("title");
+      this.disposers.push(attachTooltip(btn, { text: hint }));
       btn.addEventListener("click", (ev) => ev.stopPropagation());
     }
     // A toggle whose worktree half leads nowhere would be a control offering a

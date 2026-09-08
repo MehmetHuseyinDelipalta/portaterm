@@ -1274,13 +1274,13 @@ describe("a mutating verb reaches git from the menu item a user can see", () => 
     await settleUntil(
       () =>
         [...document.querySelectorAll<HTMLButtonElement>("button")].some(
-          (b) => /create worktree/i.test(b.textContent ?? "") && !b.disabled,
+          (b) => b.querySelector(".wt-create-label") !== null && !b.disabled,
         ),
       "the create button to become submittable",
     );
 
-    const create = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-      /create worktree/i.test(b.textContent ?? ""),
+    const create = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.querySelector(".wt-create-label") !== null,
     );
     if (create === undefined) {
       throw new Error("the create form has no submit button");
@@ -1357,8 +1357,8 @@ describe("a mutating verb reaches git from the menu item a user can see", () => 
     await settle();
 
     document.querySelector<HTMLInputElement>("#wt-migrate-changes")?.click();
-    const create = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      button.textContent?.startsWith("Create worktree"),
+    const create = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.querySelector(".wt-create-label") !== null,
     );
     if (create === undefined) {
       throw new Error("no Create button");
@@ -1592,8 +1592,8 @@ describe("a mutating verb reaches git from the menu item a user can see", () => 
     after.value = "agent";
     after.dispatchEvent(new Event("change"));
     await settle();
-    const create = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-      /create worktree/i.test(b.textContent ?? ""),
+    const create = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.querySelector(".wt-create-label") !== null,
     );
     create?.click();
     // The predicate must be the LAST thing the assertions read, not the first:
@@ -1897,7 +1897,7 @@ describe("the invariants that span the host and the webview", () => {
       };
 
       clickItem(openMenu("feature"), /new worktree/i);
-      await settle();
+      await settleUntil(() => late.length === 1, "the intercepted first opening's offer");
       expect(late, "the first opening's read never produced an offer to hold").toHaveLength(1);
 
       // The provider file moves between the two forms, so the two reads are
@@ -1910,13 +1910,14 @@ describe("the invariants that span the host and the webview", () => {
       // walk adds is that the panel refuses the first one even so.
       clickItem(openMenu("feature"), /new worktree/i);
       await settleUntil(
-        () => document.querySelectorAll(".wt-bring-box .wt-brow-code").length > 0,
+        () =>
+          [...document.querySelectorAll(".wt-bring-box .wt-brow-code")].some((e) => e.textContent === ".env.second"),
         "the live opening's provisioning rows",
       );
       expect(
         [...document.querySelectorAll(".wt-bring-box .wt-brow-code")].map((e) => e.textContent),
         "the live opening was never answered, so the replay below proves nothing",
-      ).toEqual([".env.second", ".env"]);
+      ).toEqual([".env", ".env.second"]);
 
       surface.post = deliver;
       const held = late[0];
@@ -1929,8 +1930,8 @@ describe("the invariants that span the host and the webview", () => {
       // Still the live opening's own model. The predecessor's arrived, was routed
       // by the shipped table, and the panel declined to draw it.
       expect([...document.querySelectorAll(".wt-bring-box .wt-brow-code")].map((e) => e.textContent)).toEqual([
-        ".env.second",
         ".env",
+        ".env.second",
       ]);
     } finally {
       fs.rmSync(path.join(REPO, ".env"), { force: true });
@@ -1980,7 +1981,7 @@ describe("the invariants that span the host and the webview", () => {
     provisioningAuthorizationStable = false;
 
     [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => /create worktree/i.test(button.textContent ?? ""))
+      .find((button) => button.querySelector(".wt-create-label") !== null)
       ?.click();
     await settleUntil(() => provisionResults.length > 0, "the failed provisioning result");
 
@@ -2046,7 +2047,7 @@ describe("the invariants that span the host and the webview", () => {
     fs.mkdirSync(destination, { recursive: true });
 
     [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((b) => /create worktree/i.test(b.textContent ?? ""))
+      .find((b) => b.querySelector(".wt-create-label") !== null)
       ?.click();
     // The CREATE's notice, not any notice. This assembly also carries an
     // unrelated "not being watched" one, which was already on screen before the
@@ -2133,7 +2134,7 @@ describe("the invariants that span the host and the webview", () => {
     fs.mkdirSync(destination, { recursive: true });
 
     [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => /create worktree/i.test(button.textContent ?? ""))
+      .find((button) => button.querySelector(".wt-create-label") !== null)
       ?.click();
     await settleUntil(
       () =>
@@ -2211,7 +2212,7 @@ describe("the invariants that span the host and the webview", () => {
     fs.mkdirSync(destination, { recursive: true });
 
     [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => /create worktree/i.test(button.textContent ?? ""))
+      .find((button) => button.querySelector(".wt-create-label") !== null)
       ?.click();
     await settleUntil(() => setupHarness.runs.length === 1, "the setup run");
     await settleUntil(
@@ -2281,7 +2282,7 @@ describe("the invariants that span the host and the webview", () => {
       fs.mkdirSync(destination, { recursive: true });
 
       [...document.querySelectorAll<HTMLButtonElement>("button")]
-        .find((b) => /create worktree/i.test(b.textContent ?? ""))
+        .find((b) => b.querySelector(".wt-create-label") !== null)
         ?.click();
       await settleUntil(() => createNotices().length > 0, "the create to report back");
       await settle();
@@ -2365,7 +2366,7 @@ describe("the invariants that span the host and the webview", () => {
       fs.mkdirSync(destination, { recursive: true });
 
       [...document.querySelectorAll<HTMLButtonElement>("button")]
-        .find((b) => /create worktree/i.test(b.textContent ?? ""))
+        .find((b) => b.querySelector(".wt-create-label") !== null)
         ?.click();
       await settleUntil(() => createNotices().length > 0, "the create to report back");
       await settle();
@@ -2438,7 +2439,7 @@ describe("the invariants that span the host and the webview", () => {
     fs.mkdirSync(destination, { recursive: true });
 
     [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => /create worktree/i.test(button.textContent ?? ""))
+      .find((button) => button.querySelector(".wt-create-label") !== null)
       ?.click();
     await settleUntil(() => setupHarness.runs.length === 1, "setup to start");
     expect(outbound.find((message) => message.type === "worktreeCreate")).toMatchObject({
@@ -2498,7 +2499,7 @@ describe("the invariants that span the host and the webview", () => {
     // `prepareEntryGate` to `null` and takes the create down the branch F011 was
     // found on.
     [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((b) => /create worktree/i.test(b.textContent ?? ""))
+      .find((b) => b.querySelector(".wt-create-label") !== null)
       ?.click();
     await settleUntil(() => createNotices().length > 0, "the create to report something back to the panel");
     await settle();
@@ -2630,7 +2631,7 @@ describe("the invariants that span the host and the webview", () => {
       const configuredRows = rows.filter((candidate) => candidate.querySelector(".wt-brow-suggested") === null);
       expect(configuredRows).toHaveLength(3);
       // Both providers contributed, so neither offers to switch to itself.
-      expect(document.querySelectorAll(".wt-bring-switch")).toHaveLength(0);
+      expect(document.querySelectorAll(".wt-bring-source-select")).toHaveLength(0);
       expect(document.querySelector(".wt-bring-sum")?.textContent).toBe("2 copied");
     } finally {
       fs.rmSync(path.join(REPO, ".env.local"), { force: true });
@@ -2654,12 +2655,17 @@ describe("the invariants that span the host and the webview", () => {
     const first = [...document.querySelectorAll(".wt-bring-box .wt-brow-meta")].map((m) => m.textContent ?? "");
     expect(first.some((t) => t.includes(".env"))).toBe(true);
     expect(first.some((t) => t.includes("node_modules"))).toBe(false);
-    const offered = [...document.querySelectorAll(".wt-bring-switch")];
+    const offered = [...document.querySelectorAll(".wt-bring-source-select")];
     expect(offered).toHaveLength(1);
-    expect(offered[0]?.querySelector(".wt-bring-switch-files")?.textContent).toBe("orca.yaml, .worktreeinclude");
+    expect(offered[0]?.querySelector('option[value="orca"]')?.textContent).toBe("orca.yaml, .worktreeinclude");
 
     const noticesBefore = document.querySelectorAll(".wt-notice").length;
-    document.querySelector<HTMLButtonElement>(".wt-bring-switch-take")?.click();
+    const source = document.querySelector<HTMLSelectElement>(".wt-bring-source-select");
+    if (!source) {
+      throw new Error("missing source selector");
+    }
+    source.value = "orca";
+    source.dispatchEvent(new Event("change", { bubbles: true }));
     await settleUntil(
       () =>
         [...document.querySelectorAll(".wt-bring-box .wt-brow-meta")].some((m) =>
@@ -2685,7 +2691,10 @@ describe("the invariants that span the host and the webview", () => {
           row.querySelector<HTMLInputElement>(".wt-brow-cb")?.checked === false,
       ),
     ).toBe(true);
-    expect(document.querySelector(".wt-bring-switch-files")?.textContent).toBe("asimov/worktree.yaml");
+    expect(document.querySelector('.wt-bring-source-select option[value="asimov"]')?.textContent).toBe(
+      "asimov/worktree.yaml",
+    );
+    expect(document.querySelector<HTMLSelectElement>(".wt-bring-source-select")?.value).toBe("orca");
     // Taking a switch submits nothing and creates nothing.
     expect(document.querySelectorAll(".wt-notice")).toHaveLength(noticesBefore);
     expect(document.querySelector("#wt-branch")).not.toBeNull();
@@ -2860,8 +2869,8 @@ describe("the invariants that span the host and the webview", () => {
     btn.click();
   }
   clickCreate.button = (): HTMLButtonElement => {
-    const btn = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-      b.textContent?.startsWith("Create worktree"),
+    const btn = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.querySelector(".wt-create-label") !== null,
     );
     if (btn === undefined) {
       throw new Error("no Create button");
@@ -2896,8 +2905,8 @@ describe("the invariants that span the host and the webview", () => {
     // What the user is told, before anything is submitted.
     expect(document.querySelector<HTMLElement>("#wt-action-note")?.textContent).toContain("Repairs the stale");
 
-    const create = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-      b.textContent?.startsWith("Create worktree"),
+    const create = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.querySelector(".wt-create-label") !== null,
     );
     if (create === undefined) {
       throw new Error("no Create button");
@@ -3612,7 +3621,7 @@ describe("a setup step typed into the host's own input runs for this create and 
     }
     fs.mkdirSync(destination, { recursive: true });
     [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => /create worktree/i.test(button.textContent ?? ""))
+      .find((button) => button.querySelector(".wt-create-label") !== null)
       ?.click();
     await settleUntil(() => setupHarness.runs.length === 1, "setup to start");
 
@@ -3649,7 +3658,7 @@ describe("a setup step typed into the host's own input runs for this create and 
     envBox.dispatchEvent(new Event("change", { bubbles: true }));
 
     const save = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-      /save current choices/i.test(b.textContent ?? ""),
+      b.classList.contains("wt-bring-save"),
     );
     if (save === undefined) {
       throw new Error("the form offered no save");

@@ -65,6 +65,7 @@ export interface SectionsDeps {
   /** The bring-over section's own field: the wait line is its last row, because
    *  what the wait gates is the setup rows above it. */
   readonly bringField: HTMLElement;
+  readonly defaults: HTMLElement;
   readonly safeInitialAgentId: string | undefined;
   currentRepo(): WorktreeCreateDefaults;
   syncOpenAfter(): void;
@@ -82,6 +83,7 @@ export interface Sections {
   readonly waitBox: HTMLInputElement;
   readonly disabledReason: HTMLElement;
   readonly createBtn: HTMLButtonElement;
+  readonly createLabel: HTMLElement;
   /**
    * Re-decide the wait's visibility and enablement from the agent choice and the
    * current setup selection. Called wherever either can have changed: the
@@ -93,6 +95,9 @@ export interface Sections {
 
 export function createSections(deps: SectionsDeps): Sections {
   const { dialog, actions, fields, model } = deps;
+  dialog.classList.add("wt-create-dialog");
+  const launch = document.createElement("div");
+  launch.className = "wt-create-launch";
 
   // ── After creating ──────────────────────────────────────────────────────
   const afterField = field("After creating", "wt-after");
@@ -120,24 +125,23 @@ export function createSections(deps: SectionsDeps): Sections {
   });
   folderField.appendChild(folderSelect);
   folderField.hidden = true;
-  dialog.append(afterField, folderField);
+  launch.append(afterField, folderField);
+  dialog.appendChild(launch);
 
   // ── Agent box — shown only for `openAfter: "agent"` ─────────────────────
   // The block itself is shared with the standalone launch dialog, so create-then-
   // launch and launch-here collect the same thing rather than two things that
   // happen to look alike (design.md D7).
-  const agentBox = createWorktreeAgentBox(deps.currentRepo().agents, () => deps.syncDerived(), deps.safeInitialAgentId);
+  const agentBox = createWorktreeAgentBox(
+    deps.currentRepo().agents,
+    () => deps.syncDerived(),
+    deps.safeInitialAgentId,
+    { compact: true },
+  );
   agentBox.setVisible(model.afterChoice() === "agent");
-  dialog.appendChild(agentBox.element);
+  launch.appendChild(agentBox.element);
 
-  // ── Wait-for-setup — under the setup rows it gates, never in the agent box ─
-  // Its own control, not a field on `agentBox`: it is about SETUP sequencing,
-  // not about the agent's own posture, and the two must stay two facts
-  // (design.md D6). Shown only while an agent launch is chosen AND the offer
-  // carries a setup step; disabled while it carries one that is not ticked
-  // (spec `agent-startup-honours-the-setup-wait-choice`). Off by default and
-  // never pre-ticked — this never touches a setup row's own default-unchecked
-  // state.
+  // Sequencing belongs beside setup, and appears only once there is something to wait for.
   const waitField = document.createElement("div");
   waitField.className = "wt-wait-setup";
   waitField.hidden = true;
@@ -147,7 +151,7 @@ export function createSections(deps: SectionsDeps): Sections {
   waitBox.type = "checkbox";
   waitBox.id = "wt-wait-setup";
   const waitText = document.createElement("span");
-  waitText.textContent = "Wait for setup to finish before starting the agent";
+  waitText.textContent = "Start agent after setup";
   waitLabel.append(waitBox, waitText);
   waitField.appendChild(waitLabel);
   // The order the current state produces, said rather than left to be inferred
@@ -156,8 +160,7 @@ export function createSections(deps: SectionsDeps): Sections {
   const waitNote = document.createElement("span");
   waitNote.className = "wt-fhint wt-wait-note";
   waitField.appendChild(waitNote);
-  // The last line of the bring-over section: what it gates is the rows above
-  // it. `saveRow` is attached after it whenever an offer is drawn.
+  // The setup choices above own this sequencing control.
   deps.bringField.appendChild(waitField);
 
   /**
@@ -187,12 +190,8 @@ export function createSections(deps: SectionsDeps): Sections {
    * control cannot be seen to be armed for must not silently keep armed.
    */
   function syncWaitForSetup(): void {
-    // Hidden where there is nothing it could ever gate; disabled where there
-    // is something and it is not ticked — that absence is a consequence of the
-    // row above it, and hiding it there would read as a layout change.
-    const drawn = deps.bring.drawnModel();
-    waitField.hidden = model.afterChoice() !== "agent" || drawn === null || drawn.setup.length === 0;
     const selected = deps.bring.hasSelectedSetup();
+    waitField.hidden = model.afterChoice() !== "agent" || !selected;
     waitBox.disabled = !selected || deps.bring.anyAsking();
     if (!selected) {
       // Nothing to wait for is not a gate. The user's own choice is kept for
@@ -205,12 +204,8 @@ export function createSections(deps: SectionsDeps): Sections {
       // then on, in both directions.
       waitBox.checked = waitChoice ?? true;
     }
-    // Nothing while nothing is selected: the disabled box already says it.
-    waitNote.textContent = !selected
-      ? ""
-      : waitBox.checked
-        ? "The agent starts after the selected setup finishes."
-        : "The agent starts while the selected setup is still running.";
+    waitNote.hidden = !selected || waitBox.checked;
+    waitNote.textContent = waitNote.hidden ? "" : "The agent starts while the selected setup is still running.";
   }
 
   // ── Advanced — collapsed, and out of the focus order while it is ────────
@@ -236,13 +231,13 @@ export function createSections(deps: SectionsDeps): Sections {
   advChev.innerHTML = ICON_CHEVRON_DOWN;
   advChev.setAttribute("aria-hidden", "true");
   const advLabel = document.createElement("span");
-  advLabel.textContent = "Branch source, base ref, and location";
+  advLabel.textContent = "Branch, location & defaults";
   advToggle.append(advChev, advLabel);
   const advBody = document.createElement("div");
   advBody.className = "wt-advanced-body";
   advBody.id = "wt-advanced-body";
   advBody.hidden = true;
-  advBody.append(fields.modeField, fields.baseField, fields.pathField);
+  advBody.append(fields.modeField, fields.baseField, fields.pathField, deps.defaults);
   advToggle.addEventListener("click", () => {
     advBody.hidden = !advBody.hidden;
     advToggle.setAttribute("aria-expanded", advBody.hidden ? "false" : "true");
@@ -259,9 +254,22 @@ export function createSections(deps: SectionsDeps): Sections {
   disabledReason.setAttribute("aria-live", "polite");
   actions.appendChild(disabledReason);
   const cancelBtn = textButton("Cancel", "plain", () => deps.cancel());
-  const createBtn = textButton("Create worktree", "primary", () => deps.submit());
-  createBtn.appendChild(keyHint("⌘↵"));
+  const createBtn = textButton("", "primary", () => deps.submit());
+  const createLabel = document.createElement("span");
+  createLabel.className = "wt-create-label";
+  createLabel.textContent = "Create worktree";
+  createBtn.append(createLabel, keyHint("⌘↵"));
   actions.append(cancelBtn, createBtn);
   dialog.appendChild(actions);
-  return { afterSelect, afterNote, folderField, agentBox, waitBox, disabledReason, createBtn, syncWaitForSetup };
+  return {
+    afterSelect,
+    afterNote,
+    folderField,
+    agentBox,
+    waitBox,
+    disabledReason,
+    createBtn,
+    createLabel,
+    syncWaitForSetup,
+  };
 }

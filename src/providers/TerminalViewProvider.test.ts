@@ -23,7 +23,11 @@ vi.mock("./previewFileLink", () => ({
 import type * as vscode from "vscode";
 import { createPaneEvidenceStore } from "../session/PaneEvidenceStore";
 import { SessionManager } from "../session/SessionManager";
-import { env as vscodeMockEnv, window as vscodeMockWindow } from "../test/__mocks__/vscode";
+import {
+  commands as vscodeMockCommands,
+  env as vscodeMockEnv,
+  window as vscodeMockWindow,
+} from "../test/__mocks__/vscode";
 import { VaultLaunchError } from "../vault/LaunchBuilder";
 import type { VaultLauncher } from "../vault/VaultLauncher";
 import type { VaultService } from "../vault/VaultService";
@@ -1776,5 +1780,36 @@ describe("TerminalViewProvider: split attachment lifecycle", () => {
     }
     expect(sm.getAllSessionsForView(provider.getViewId())).toHaveLength(before);
     sm.dispose();
+  });
+});
+
+describe("TerminalViewProvider: explicit panel sizing", () => {
+  it.each(["panel", "sidebar"] as const)("gates panel sizing by the %s provider location", (location) => {
+    const execute = vi.spyOn(vscodeMockCommands, "executeCommand");
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, location);
+    const { webviewView, messageHandlers, disposeHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    try {
+      expect(execute).not.toHaveBeenCalledWith("workbench.action.toggleMaximizedPanel");
+      for (const handler of messageHandlers) {
+        handler({ type: "toggleMaximizedPanel" });
+      }
+      const calls = execute.mock.calls.filter(([command]) => command === "workbench.action.toggleMaximizedPanel");
+      expect(calls).toHaveLength(location === "panel" ? 1 : 0);
+      if (location === "panel") {
+        expect(calls[0]).toEqual(["workbench.action.toggleMaximizedPanel"]);
+      }
+      execute.mockClear();
+      for (const dispose of disposeHandlers) {
+        dispose();
+      }
+      for (const handler of messageHandlers) {
+        handler({ type: "toggleMaximizedPanel" });
+      }
+      expect(execute).not.toHaveBeenCalledWith("workbench.action.toggleMaximizedPanel");
+    } finally {
+      sm.dispose();
+    }
   });
 });

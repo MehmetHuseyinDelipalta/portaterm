@@ -4152,12 +4152,33 @@ describe("the two-level view control", () => {
     expect(host.querySelectorAll(".vault-header .vault-view-toggle button")).toHaveLength(2);
     expect(host.querySelector(".vault-title")).toBeNull();
     expect(host.querySelector(".vault-header__count")).toBeNull();
-    // Every value labelled at every width: the control has to answer "which body
-    // am I in" without a hover.
+    // Labels remain in the DOM; CSS compacts them while accessible names and
+    // the selected icon continue to identify each body.
     for (const view of ["worktree", "sessions"]) {
       expect(viewBtn(host, view)?.querySelector(".vault-segmented-label")?.textContent).toBeTruthy();
     }
     expect(host.querySelectorAll(".vault-view-toggle button[data-mode]")).toHaveLength(0);
+  });
+
+  it("keeps explicit accessible names and tooltips when header labels become icon-only", () => {
+    vi.useFakeTimers();
+    const { host, panel } = panelWith();
+    try {
+      const worktrees = viewBtn(host, "worktree");
+      const sessions = viewBtn(host, "sessions");
+      expect(worktrees?.getAttribute("aria-label")).toBe("Worktrees");
+      expect(sessions?.getAttribute("aria-label")).toBe("Sessions");
+      expect(worktrees).toBeTruthy();
+      expect(hoverTooltipText(worktrees!)).toContain("worktrees");
+      sessions?.click();
+      expect(sessions?.getAttribute("aria-selected")).toBe("true");
+      worktrees?.click();
+      expect(worktrees?.getAttribute("aria-selected")).toBe("true");
+      expect(sessions?.getAttribute("aria-selected")).toBe("false");
+    } finally {
+      panel.dispose();
+      vi.useRealTimers();
+    }
   });
 
   it("[1_1] combines session grouping and folder scope in one body row", () => {
@@ -4352,6 +4373,15 @@ describe("round-1 review fixes", () => {
     expect(block(css, ".vault-body"), ".vault-body is not a column").toContain("flex-direction: column");
     // And it keeps its height under pressure instead of being squeezed to nothing.
     expect(block(css, ".vault-groupbar"), ".vault-groupbar can shrink").toContain("flex: 0 0 auto");
+  });
+
+  it("allows an ultra-narrow header to wrap without a fixed collapsed-height clip", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const css = fs.readFileSync(path.join(here, "vaultPanel.css"), "utf8");
+    expect(block(css, ".vault-header")).toContain("flex-wrap: wrap");
+    expect(block(css, ".vault-header")).toContain("height: auto");
+    expect(block(css, ".vault-panel.vault-collapsed")).toContain("flex: 0 0 auto");
+    expect(css).toMatch(/@container vault-header \(max-width: 140px\)/);
   });
 
   it("[2_1] withdraws the grouping strip in the body that has nothing to group", () => {

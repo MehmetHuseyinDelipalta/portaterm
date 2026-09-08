@@ -14,6 +14,7 @@
 
 import { worktreeSignature } from "../worktreeRenderSignature";
 import {
+  renderCreateWorktreeAction,
   renderIdleDisclosure,
   renderNotice,
   renderRefreshingMarker,
@@ -461,6 +462,9 @@ export function createTreeRender(deps: TreeRenderDeps): TreeRender {
           repaint();
         }),
       );
+    }
+    if (!isUnbranched(repo) && deps.view.onCreateForRepo) {
+      deps.element().appendChild(renderCreateWorktreeAction(repo, () => deps.view.onCreateForRepo?.(repo.repoId)));
     }
     return visible.length;
   }

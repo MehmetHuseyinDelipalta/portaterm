@@ -63,6 +63,7 @@ export function createWorktreeAgentBox(
   agents: readonly WorktreeLaunchAgent[],
   onChange?: () => void,
   preferredAgentId?: string,
+  options: { compact?: boolean } = {},
 ): WorktreeAgentBox {
   let offered: readonly WorktreeLaunchAgent[] = agents;
   let agentId: string | undefined;
@@ -100,7 +101,42 @@ export function createWorktreeAgentBox(
   };
   showCount();
   promptInput.addEventListener("input", showCount);
-  promptField.append(promptInput, promptCount);
+  const promptBody = document.createElement("div");
+  promptBody.className = "wt-prompt-body";
+  promptBody.id = "wt-prompt-body";
+  promptBody.append(promptInput, promptCount);
+  const promptToggle = document.createElement("button");
+  promptToggle.type = "button";
+  promptToggle.className = "wt-prompt-toggle wt-inline-action";
+  promptToggle.setAttribute("aria-controls", promptBody.id);
+  const syncPromptToggle = (): void => {
+    promptToggle.setAttribute("aria-expanded", String(!promptBody.hidden));
+    promptToggle.textContent = !promptBody.hidden
+      ? "Hide first prompt"
+      : promptInput.value.trim()
+        ? "Edit first prompt"
+        : "+ Add first prompt";
+  };
+  if (options.compact) {
+    promptField.classList.add("wt-prompt-field");
+    promptBody.hidden = true;
+    promptField.firstElementChild?.remove();
+    promptInput.setAttribute("aria-label", "First prompt (optional)");
+    promptInput.placeholder = "What should the agent work on?";
+    promptField.append(promptToggle, promptBody);
+  } else {
+    promptField.append(promptInput, promptCount);
+  }
+  syncPromptToggle();
+  promptToggle.addEventListener("click", () => {
+    promptBody.hidden = !promptBody.hidden;
+    syncPromptToggle();
+    if (!promptBody.hidden) {
+      promptInput.focus();
+    }
+    onChange?.();
+  });
+  promptInput.addEventListener("input", syncPromptToggle);
 
   const hint = document.createElement("span");
   hint.className = "wt-fhint";
@@ -110,7 +146,11 @@ export function createWorktreeAgentBox(
   dangerTag.textContent = "dangerous";
   hint.append(dangerTag, document.createTextNode("choices are never preselected."));
 
-  element.append(cols, promptField, hint);
+  const permissionWarning = document.createElement("span");
+  permissionWarning.className = "wt-fhint wt-agent-permission-warning";
+  permissionWarning.setAttribute("role", "status");
+  permissionWarning.hidden = true;
+  element.append(cols, promptField, options.compact ? permissionWarning : hint);
 
   const current = (): WorktreeLaunchAgent | undefined => offered.find((a) => a.id === agentId);
 
@@ -141,12 +181,21 @@ export function createWorktreeAgentBox(
       opt.selected = choice.id === permissionChoiceId;
       permSelect.appendChild(opt);
     }
+    const selectedPermission = choices.find((choice) => choice.id === permissionChoiceId);
+    permissionWarning.hidden = selectedPermission?.dangerous !== true;
+    permissionWarning.textContent = selectedPermission?.dangerous
+      ? `Dangerous permission mode: ${selectedPermission.label}.`
+      : "";
     // A prompt field for an agent that cannot be seeded would promise delivery
     // nothing performs.
     promptField.hidden = agent === undefined || !agent.canSeedPrompt;
     if (promptField.hidden) {
       promptInput.value = "";
       showCount();
+      if (options.compact) {
+        promptBody.hidden = true;
+      }
+      syncPromptToggle();
     }
   }
 

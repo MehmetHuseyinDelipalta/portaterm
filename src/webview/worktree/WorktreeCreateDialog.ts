@@ -131,7 +131,25 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     migrationField,
   } = fields;
 
-  shell.dialog.appendChild(dialogTitle("Create worktree", undefined, cancel));
+  const title = dialogTitle("Create worktree", undefined, cancel);
+  if (deps.onTogglePanelSize) {
+    const panelSize = document.createElement("button");
+    panelSize.type = "button";
+    panelSize.className = "wt-inline-action wt-create-panel-size";
+    panelSize.setAttribute("aria-label", "Toggle panel height");
+    panelSize.title = "Toggle panel height (VS Code maximized panel)";
+    const icon = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "↕";
+    panelSize.append(icon, document.createTextNode("Panel height"));
+    panelSize.addEventListener("click", () => {
+      if (!model.closed()) {
+        deps.onTogglePanelSize?.();
+      }
+    });
+    title.insertBefore(panelSize, title.querySelector(".wt-dismiss"));
+  }
+  shell.dialog.appendChild(title);
 
   const branches = createBranchChoices({
     refs: () => offeredRefs(),
@@ -265,6 +283,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     model,
     bring,
     bringField: bringView.field,
+    defaults: bringView.defaults,
     safeInitialAgentId,
     currentRepo,
     syncOpenAfter: () => syncOpenAfter(),
@@ -273,7 +292,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
     cancel: () => cancel(),
     submit: () => submit(),
   });
-  const { afterSelect, afterNote, folderField, agentBox, waitBox, disabledReason, createBtn } = sections;
+  const { afterSelect, afterNote, folderField, agentBox, waitBox, disabledReason, createBtn, createLabel } = sections;
   const syncWaitForSetup = sections.syncWaitForSetup;
 
   const asks = createResolutionAsks({
@@ -326,6 +345,7 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
   // under the choice.
   const afterCreate = createAfterCreate({
     model,
+    createLabel,
     afterSelect,
     afterNote,
     folderField,
@@ -430,6 +450,22 @@ export function openWorktreeCreateDialog(root: HTMLElement, deps: WorktreeCreate
       submit();
     }
   });
+
+  shell.scrim.classList.add("wt-create-scrim");
+  const body = document.createElement("div");
+  body.className = "wt-create-body";
+  const primary = document.createElement("div");
+  primary.className = "wt-create-primary";
+  const secondary = document.createElement("div");
+  secondary.className = "wt-create-secondary";
+  for (const child of Array.from(shell.dialog.children)) {
+    if (child !== shell.actions && !child.classList.contains("wt-dialog-title")) {
+      const column = child.matches(".wt-create-launch, .wt-advanced") ? secondary : primary;
+      column.appendChild(child);
+    }
+  }
+  body.append(primary, secondary);
+  shell.dialog.insertBefore(body, shell.actions);
 
   attachHostBindings({
     model,

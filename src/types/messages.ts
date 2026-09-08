@@ -187,6 +187,11 @@ export interface AckMessage {
   tabId: string;
 }
 
+/** Explicit user request; only the bottom-panel provider may resize the host panel. */
+export interface ToggleMaximizedPanelMessage {
+  type: "toggleMaximizedPanel";
+}
+
 /** Surface-focus signal used only for provider recency. */
 export interface FocusMessage {
   type: "focus";
@@ -1806,6 +1811,7 @@ export type WebViewToExtensionMessage =
   | RequestCloseSplitPaneMessage
   | SplitPaneAttachmentResultMessage
   | FocusMessage
+  | ToggleMaximizedPanelMessage
   | TerminalNavigationCommittedMessage
   | OpenLinkMessage
   | OpenFileMessage

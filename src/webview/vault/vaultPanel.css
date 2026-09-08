@@ -38,20 +38,24 @@
   --vault-accent-cursor: oklch(0.72 0.11 230);
 }
 
-/* Collapsed — only the header strip shows; the body is hidden and the section
-   shrinks to the 24px header (mirrors the file tree's root-collapsed behaviour). */
+/* Fit the header even when ultra-narrow navigation needs a second row. */
 .vault-panel.vault-collapsed {
-  flex: 0 0 24px;
+  flex: 0 0 auto;
 }
 
 /* ── Header (collapse toggle + persistent body navigation) ────────────── */
 .vault-header {
+  container: vault-header / inline-size;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  height: 24px;
-  flex: 0 0 24px;
-  padding: 0 6px;
+  justify-content: flex-end;
+  gap: 0 4px;
+  min-height: 24px;
+  height: auto;
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  box-sizing: border-box;
   user-select: none;
 }
 .vault-header__collapse-btn {
@@ -2404,4 +2408,29 @@ body:has(#tab-bar.visible) .vault-preview--max {
 }
 .empty-scope .vault-empty-action:last-child:hover {
   background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
+}
+
+/* Header-only containment leaves body-mounted dialogs viewport-relative. */
+@container vault-header (max-width: 300px) {
+  .vault-view-toggle button:not([aria-selected="true"]) .vault-segmented-label {
+    display: none;
+  }
+}
+@container vault-header (max-width: 240px) {
+  .vault-view-toggle .vault-segmented-label {
+    display: none;
+  }
+  .vault-view-toggle button {
+    justify-content: center;
+    padding: 3px 5px;
+  }
+}
+
+@container vault-header (max-width: 140px) {
+  .vault-header__main {
+    flex-basis: 100%;
+  }
+  .vault-view-toggle button {
+    padding: 3px 2px;
+  }
 }

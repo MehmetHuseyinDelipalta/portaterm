@@ -1,0 +1,22 @@
+{
+  "environment": "Real create-dialog module and production CSS in Chromium; simulated host. Effective CSS viewport sizes, not actual VS Code zoom controls.",
+  "results": [
+    "390x360: normal/sparse/files, geometry and real Tab traversal PASS",
+    "560x360: normal/sparse/files, geometry and real Tab traversal PASS",
+    "1024x360: normal/sparse/files, geometry and real Tab traversal PASS",
+    "390x900: normal/sparse/files, geometry and real Tab traversal PASS",
+    "560x1200: normal/sparse/files, geometry and real Tab traversal PASS",
+    "1440x900: normal/sparse/files, geometry and real Tab traversal PASS",
+    "500x350: normal/sparse/files, geometry and real Tab traversal PASS",
+    "320x240: normal/sparse/files, geometry and real Tab traversal PASS",
+    "200-row offer: 140 routine copies collapsed, 1 review row, 20 links summarized in 16.5px, 39 commands unchecked; expanded focus PASS",
+    "Wrapped action feedback and keyboard visibility PASS (injected layout fixture)",
+    "no-offer: initial rendering, safe defaults and Tab traversal PASS",
+    "empty: initial rendering, safe defaults and Tab traversal PASS",
+    "no-agents: initial rendering, safe defaults and Tab traversal PASS",
+    "dangerous: initial rendering, safe defaults and Tab traversal PASS",
+    "Pending host input: disabled competing controls and focus PASS",
+    "Long paths/full hover, long scripts and light theme PASS",
+    "40 branch options: arrow navigation keeps active options inside the scrolling body"
+  ]
+}

@@ -4277,3 +4277,28 @@ describe("[D1, D8] pressing Configure in the real form reaches the host as a sav
     expect(save.opening).toBe(asked.opening);
   });
 });
+
+describe("create form panel-size capability", () => {
+  it.each(["panel", "sidebar", "editor", ""])("offers host sizing only for location %s", (location) => {
+    document.body.setAttribute("data-terminal-location", location);
+    const h = mount();
+    try {
+      const deps = (
+        h.controller as unknown as { view: { deps: { createDialogDeps(): { onTogglePanelSize?: () => void } } } }
+      ).view.deps.createDialogDeps();
+      expect(h.posts.some((msg) => msg.type === "toggleMaximizedPanel")).toBe(false);
+      if (location === "panel") {
+        expect(deps.onTogglePanelSize).toBeTypeOf("function");
+        deps.onTogglePanelSize?.();
+        expect(h.posts.filter((msg) => msg.type === "toggleMaximizedPanel")).toEqual([
+          { type: "toggleMaximizedPanel" },
+        ]);
+      } else {
+        expect(deps.onTogglePanelSize).toBeUndefined();
+      }
+    } finally {
+      h.controller.dispose();
+      document.body.removeAttribute("data-terminal-location");
+    }
+  });
+});

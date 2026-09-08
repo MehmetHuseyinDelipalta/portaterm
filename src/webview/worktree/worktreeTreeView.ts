@@ -1015,6 +1015,17 @@ export function renderShowAll(total: number, onShowAll: () => void): HTMLElement
   return btn;
 }
 
+/** An always-visible create door below a repository's displayed worktrees. */
+export function renderCreateWorktreeAction(repo: WorktreeRepo, onCreate: () => void): HTMLElement {
+  const button = rowAction(ICON_PLUS, `Create worktree in ${repo.label}`, onCreate);
+  button.className = "wt-create-worktree";
+  button.tabIndex = 0;
+  const label = document.createElement("span");
+  label.textContent = "Create worktree";
+  button.appendChild(label);
+  return button;
+}
+
 /** The distinct causes of an empty tree. Each gets its own copy — none is an error. */
 export type WorktreeEmptyKind = "noFolder" | "noRepo" | "gitMissing" | "noMatch" | "unbranched";
 

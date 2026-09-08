@@ -219,6 +219,19 @@ function rowDescriptors(model: WorktreeProvisionOffer["model"]): Map<string, str
   return out;
 }
 
+/** Offer ids change on reread; only semantically new file choices need fresh review. */
+export function changedFileIds(
+  before: WorktreeProvisionOffer["model"] | null,
+  after: WorktreeProvisionOffer["model"],
+): ReadonlySet<string> {
+  if (before === null) {
+    return new Set();
+  }
+  const known = new Set(rowDescriptors(before).values());
+  const current = rowDescriptors(after);
+  return new Set(after.entries.filter((entry) => !known.has(current.get(entry.id) ?? "")).map((entry) => entry.id));
+}
+
 /**
  * Move a selection off the offer it was taken under and onto the one answering it.
  *

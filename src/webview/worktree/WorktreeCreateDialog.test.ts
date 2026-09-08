@@ -75,6 +75,23 @@ function type(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function chooseSource(root: ParentNode | HTMLSelectElement, value?: string): void {
+  const select =
+    root instanceof HTMLSelectElement ? root : root.querySelector<HTMLSelectElement>(".wt-bring-source-select");
+  if (!select) {
+    throw new Error("missing source selector");
+  }
+  if (select.disabled) {
+    return;
+  }
+  const next = value ?? Array.from(select.options).find((option) => option.value !== select.value)?.value;
+  if (next === undefined) {
+    throw new Error("missing alternate source");
+  }
+  select.value = next;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 describe("sanitizeBranchForPath", () => {
   it("turns a branch into one safe path segment", () => {
     expect(sanitizeBranchForPath("feat/worktree ui")).toBe("feat-worktree-ui");
@@ -88,7 +105,7 @@ describe("create worktree — the default and every consequential action explain
     expect(q<HTMLSelectElement>("#wt-after").value).toBe("agent");
     expect(q<HTMLSelectElement>("#wt-agent").value).toBe("claude");
     expect(q<HTMLSelectElement>("#wt-perm").value).toBe("default");
-    expect(q(".wt-after-note").textContent).toContain("Claude Code");
+    expect(q(".wt-after-note").hidden).toBe(true);
   });
 
   it("does not read a no-axis agent as evidence of a safe default", () => {
@@ -152,7 +169,7 @@ describe("create worktree — the default and every consequential action explain
     const { q } = open();
     const after = q<HTMLSelectElement>("#wt-after");
     const note = q(".wt-after-note");
-    expect(note.textContent).toContain("Claude Code");
+    expect(note.hidden).toBe(true);
     after.value = "none";
     after.dispatchEvent(new Event("change"));
     expect(note.textContent).toContain("No terminal");
@@ -197,7 +214,8 @@ describe("create worktree — the default and every consequential action explain
     const after = h.q<HTMLSelectElement>("#wt-after");
     after.value = "agent";
     after.dispatchEvent(new Event("change"));
-    expect(h.q(".wt-after-note").textContent).toBe("Starts Bare in the worktree.");
+    expect(h.q(".wt-after-note").hidden).toBe(true);
+    expect(h.q<HTMLSelectElement>("#wt-agent").selectedOptions[0]?.textContent).toBe("Bare");
     after.value = "folder";
     after.dispatchEvent(new Event("change"));
     expect(h.q(".wt-after-note").textContent).toBe("Adds the worktree folder to this workspace.");
@@ -206,7 +224,7 @@ describe("create worktree — the default and every consequential action explain
   it("names the immediate repository-default write instead of saying Configure", () => {
     const { host } = open({ repos: [createDefaults({ provisioning: provisionOffer() })], onProvisionSave: () => {} });
     const save = host.querySelector<HTMLButtonElement>(".wt-bring-save");
-    expect(save?.textContent).toBe("Save current choices as defaults");
+    expect(save?.textContent).toBe("Save file defaults");
     expect(save?.textContent).not.toContain("Configure");
     // The note carries only what the label does not: the label already says it
     // saves the current choices as defaults, so the note says what that leaves
@@ -247,8 +265,8 @@ describe("create worktree — the default and every consequential action explain
     // empty" (260906-at-create-dialog-blur-from-autofocus).
     const { host, q } = open();
     const reason = (): string => host.querySelector<HTMLElement>(".wt-create-disabled-reason")?.textContent ?? "";
-    const create = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find((b) =>
-      b.textContent?.startsWith("Create worktree"),
+    const create = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(
+      (b) => b.querySelector(".wt-create-label") !== null,
     );
     expect(create, "the form has no Create button").toBeDefined();
     expect(reason()).toBe("");
@@ -1040,8 +1058,8 @@ describe("the form waits for the destination it is going to submit (round-4 B12)
 
   /** The Create button, by its label — the form gives it no id. */
   function createButton(host: HTMLElement): HTMLButtonElement {
-    const btn = [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-      /create worktree/i.test(b.textContent ?? ""),
+    const btn = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.querySelector(".wt-create-label") !== null,
     );
     if (!btn) {
       throw new Error("no Create button");
@@ -1196,7 +1214,7 @@ describe("the form is a worktree form (§ 3.2.1)", () => {
     const { q } = open();
     const toggle = q<HTMLButtonElement>(".wt-advanced-toggle");
     expect(toggle.querySelector(".wt-chev svg")).not.toBeNull();
-    expect(toggle.textContent?.trim()).toBe("Branch source, base ref, and location");
+    expect(toggle.textContent?.trim()).toBe("Branch, location & defaults");
     toggle.click();
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(toggle.querySelector(".wt-chev svg")).not.toBeNull();
@@ -1465,7 +1483,7 @@ describe("wait for setup — the agent-launch checkbox (design.md D6)", () => {
     chooseAgent(q);
     tick(setupRow(host), true);
     const said = q<HTMLElement>(".wt-wait-setup").textContent ?? "";
-    expect(said).toContain("after the selected setup finishes");
+    expect(said).toBe("Start agent after setup");
   });
 
   it("states the overlapping order when the user clears it", () => {
@@ -1527,12 +1545,12 @@ describe("wait for setup — the agent-launch checkbox (design.md D6)", () => {
     expect(q<HTMLElement>(".wt-wait-setup").hidden).toBe(true);
   });
 
-  it("[1_1] is visible but disabled while the offer's setup step is not selected", () => {
+  it("[1_1] is hidden and disabled while the offer's setup step is not selected", () => {
     // Disabled, not hidden, HERE: the absence is a consequence of the unticked
     // row above it, and hiding it would read as a layout change.
     const { q } = withOffer();
     chooseAgent(q);
-    expect(q<HTMLElement>(".wt-wait-setup").hidden).toBe(false);
+    expect(q<HTMLElement>(".wt-wait-setup").hidden).toBe(true);
     expect(q<HTMLInputElement>("#wt-wait-setup").disabled).toBe(true);
   });
 
@@ -1545,10 +1563,11 @@ describe("wait for setup — the agent-launch checkbox (design.md D6)", () => {
     expect(q<HTMLElement>(".wt-wait-setup").hidden).toBe(true);
   });
 
-  it("[1_1] says nothing about selecting a step", () => {
+  it("[1_1] does not explain an unavailable wait choice", () => {
     const { q } = withOffer();
     chooseAgent(q);
     expect(q<HTMLElement>(".wt-wait-note").textContent).toBe("");
+    expect(q<HTMLElement>(".wt-wait-note").hidden).toBe(true);
   });
 
   it("[1_1] sits inside the bring-over section it gates", () => {
@@ -2069,7 +2088,8 @@ describe("Bring over — fallback suggestions are explicit, explained, and curre
     const { host } = withSuggestions();
     const said = Array.from(host.querySelectorAll<HTMLElement>(".wt-brow")).map((r) => r.textContent ?? "");
     expect(said.some((t) => t.includes(ENV_WHY))).toBe(true);
-    expect(said.some((t) => t.includes(SETUP_WHY))).toBe(true);
+    expect(said.some((t) => t.includes("Suggested") && t.includes("pnpm-lock.yaml"))).toBe(true);
+    expect(said.some((t) => t.includes(SETUP_WHY))).toBe(false);
   });
 
   it("[1_2] keeps the secrets warning readable when the hint is truncated", () => {
@@ -2613,17 +2633,16 @@ describe("[D5] a source that did not win stays visible and selectable", () => {
     });
   }
 
-  it("draws one row per inactive source, naming every file it reads", () => {
+  it("offers every source in one selector, naming every file it reads", () => {
     const { host } = withProviders([
       { id: "asimov", files: ["asimov/worktree.yaml"], present: ["asimov/worktree.yaml"], active: true },
       ORCA,
     ]);
 
-    const rows = host.querySelectorAll(".wt-bring-switch");
-    expect(rows).toHaveLength(1);
-    // Both files, because orca is one provider over two and naming one of them
-    // would tell the user something other than what the host read.
-    expect(rows[0]?.querySelector(".wt-bring-switch-files")?.textContent).toBe("orca.yaml, .worktreeinclude");
+    const selects = host.querySelectorAll<HTMLSelectElement>(".wt-bring-source-select");
+    expect(selects).toHaveLength(1);
+    expect(selects[0]?.options).toHaveLength(2);
+    expect(selects[0]?.options[1]?.textContent).toBe("orca.yaml, .worktreeinclude");
   });
 
   it("draws none for the source that supplied the offer", () => {
@@ -2631,7 +2650,7 @@ describe("[D5] a source that did not win stays visible and selectable", () => {
       { id: "asimov", files: ["asimov/worktree.yaml"], present: ["asimov/worktree.yaml"], active: true },
     ]);
 
-    expect(host.querySelectorAll(".wt-bring-switch")).toHaveLength(0);
+    expect(host.querySelectorAll(".wt-bring-source-select")).toHaveLength(0);
   });
 
   it("posts the provider id and nothing else, with an increasing sequence", () => {
@@ -2644,9 +2663,8 @@ describe("[D5] a source that did not win stays visible and selectable", () => {
       ],
       (r) => taken.push(r),
     );
-    const buttons = host.querySelectorAll<HTMLButtonElement>(".wt-bring-switch-take");
-    buttons[0]?.click();
-    buttons[1]?.click();
+    chooseSource(host, "orca");
+    chooseSource(host, "vscodeTasks");
 
     expect(taken).toEqual([
       { repoId: REPO_ID, switch: 1, provider: "orca" },
@@ -2674,10 +2692,10 @@ describe("[D5] a source that did not win stays visible and selectable", () => {
       onSubmit: (draft) => submitted.push(draft),
       onProvisionSwitch: () => {},
     });
-    host.querySelector<HTMLButtonElement>(".wt-bring-switch-take")?.click();
+    chooseSource(host);
 
     expect(submitted).toEqual([]);
-    expect(host.querySelector<HTMLButtonElement>(".wt-bring-switch-take")?.type).toBe("button");
+    expect(host.querySelector<HTMLSelectElement>(".wt-bring-source-select")?.value).toBe("orca");
   });
 
   it("replaces the rows when a new offer arrives rather than appending them", () => {
@@ -2714,9 +2732,11 @@ describe("[D5] a source that did not win stays visible and selectable", () => {
       }),
     });
 
-    const rows = host.querySelectorAll(".wt-bring-switch");
+    const rows = host.querySelectorAll(".wt-bring-source-select");
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.querySelector(".wt-bring-switch-files")?.textContent).toBe("asimov/worktree.yaml");
+    expect(rows[0]?.querySelectorAll("option")).toHaveLength(2);
+    expect((rows[0] as HTMLSelectElement).value).toBe("orca");
+    expect(rows[0]?.querySelector('option[value="asimov"]')?.textContent).toBe("asimov/worktree.yaml");
   });
 
   it("still says what the worktree will lack when the winning source declared nothing", () => {
@@ -2741,22 +2761,21 @@ describe("[D5] a source that did not win stays visible and selectable", () => {
 
     // A switch row is an offer, not something this worktree gets — so it must
     // not stand in for the sentence that says the section is empty.
-    expect(host.querySelectorAll(".wt-bring-switch")).toHaveLength(1);
+    expect(host.querySelectorAll(".wt-bring-source-select")).toHaveLength(1);
     expect(host.querySelector(".wt-bring-empty")?.hasAttribute("hidden")).toBe(false);
   });
 
-  it("gives the buttons accessible names that differ", () => {
+  it("labels the selector and gives each alternate source a distinct option name", () => {
     const { host } = withProviders([
       { id: "asimov", files: ["asimov/worktree.yaml"], present: ["asimov/worktree.yaml"], active: true },
       ORCA,
       { id: "vscodeTasks", files: [".vscode/tasks.json"], present: [".vscode/tasks.json"], active: false },
     ]);
-    const buttons = [...host.querySelectorAll<HTMLButtonElement>(".wt-bring-switch-take")];
-    const names = buttons.map((b) => b.getAttribute("aria-label") ?? b.textContent ?? "");
-
-    // Visually the file list sits beside the button and answers "which one".
-    // To a screen reader walking the controls it is not part of the name, so
-    // every choice announced itself identically.
+    const select = host.querySelector<HTMLSelectElement>(".wt-bring-source-select");
+    expect(select?.labels?.[0]?.textContent).toBe("Source");
+    const names = Array.from(select?.options ?? [])
+      .slice(1)
+      .map((option) => option.textContent);
     expect(names).toHaveLength(2);
     expect(new Set(names).size).toBe(2);
     expect(names[0]).toContain("orca.yaml");
@@ -2820,7 +2839,7 @@ describe("Bring over — recording the choice in the repository's own configurat
     return {
       host,
       posted,
-      take: () => host.querySelector<HTMLButtonElement>(".wt-bring-switch-take")?.click(),
+      take: () => chooseSource(host),
       configure: () => host.querySelector<HTMLButtonElement>(".wt-bring-save")?.click(),
       answered: (offerId: string) =>
         applyOffer?.(REPO_ID, provisionOffer({ offerId, model: provisionModel({ providers: TWO_SOURCES }) })),
@@ -2901,7 +2920,7 @@ describe("Bring over — recording the choice in the repository's own configurat
     });
     const offer = provisionOffer({ model: provisionModel({ providers: TWO_SOURCES }) });
     applyOffer?.(REPO_ID, offer);
-    host.querySelector<HTMLButtonElement>(".wt-bring-switch-take")?.click();
+    chooseSource(host);
     const picker = host.querySelector<HTMLSelectElement>("#wt-repo-select");
     if (picker === null) {
       throw new Error("expected a repo picker");
@@ -2967,7 +2986,7 @@ describe("Bring over — recording the choice in the repository's own configurat
     const { host } = withSave();
     const note = host.querySelector(".wt-bring-save-note")?.textContent ?? "";
 
-    expect(note).toBe("Added files, setup steps and ports apply to this create only.");
+    expect(note).toBe("Writes .vscode/worktree.json. Added files, setup steps and ports apply to this create only.");
   });
 
   it("offers nothing to record when no offer has arrived", () => {
@@ -3134,7 +3153,7 @@ describe("Bring over — recording the choice in the repository's own configurat
     cb.checked = true;
     cb.dispatchEvent(new Event("change", { bubbles: true }));
     host.querySelector<HTMLButtonElement>(".wt-bring-save")?.click();
-    host.querySelector<HTMLButtonElement>(".wt-bring-switch-take")?.click();
+    chooseSource(host);
     applyOffer?.(REPO_ID, provisionOffer({ offerId: "provision-2", model: { ...reminted(), providers: TWO } }));
 
     const carried = [...host.querySelectorAll<HTMLInputElement>(".wt-brow-cb")].find((c) => c.value === "j5");
@@ -3770,12 +3789,20 @@ describe("Escape closes the branch list before it dismisses the dialog (D7)", ()
       throw new Error("no branch input");
     }
     input.getBoundingClientRect = () => ({ bottom: 600 }) as DOMRect;
+    const body = host.querySelector<HTMLElement>(".wt-create-body");
+    if (!body) {
+      throw new Error("no scrolling body");
+    }
+    body.getBoundingClientRect = () => ({ bottom: 750 }) as DOMRect;
     Object.defineProperty(window, "innerHeight", { value: 700, configurable: true });
 
     type(input, "feat");
 
     const listBox = host.querySelector<HTMLElement>("#wt-branch-list");
     expect(listBox?.style.getPropertyValue("--wt-branch-room")).toBe("88px");
+    body.getBoundingClientRect = () => ({ bottom: 650 }) as DOMRect;
+    type(input, "feature");
+    expect(listBox?.style.getPropertyValue("--wt-branch-room")).toBe("38px");
   });
 
   it("[4_2][r2 B1] scrolls the row the keyboard moved to into view", () => {
@@ -4182,8 +4209,8 @@ describe("the base ref states when it cannot apply", () => {
 
   /** Create, by its label — `.wt-btn--primary` matches an earlier button too. */
   function primary(host: HTMLElement): HTMLButtonElement {
-    const btn = [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-      /create worktree/i.test(b.textContent ?? ""),
+    const btn = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.querySelector(".wt-create-label") !== null,
     );
     if (btn === undefined) {
       throw new Error("the form has no Create button");
@@ -4683,8 +4710,8 @@ describe("the base ref states when it cannot apply", () => {
   describe("[5_3] one effective resolution drives the form", () => {
     /** The Create button by its label — several controls carry `wt-btn--primary`. */
     function createBtn(h: { host: HTMLElement }): HTMLButtonElement {
-      const found = [...h.host.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.startsWith("Create worktree"),
+      const found = [...h.host.querySelectorAll<HTMLButtonElement>("button")].find(
+        (b) => b.querySelector(".wt-create-label") !== null,
       );
       if (found === undefined) {
         throw new Error("missing Create");
@@ -4816,8 +4843,8 @@ describe("create worktree — recover a debris destination", () => {
       accept: () => h.q<HTMLInputElement>("#wt-recover-accept"),
       note: () => h.q<HTMLElement>("#wt-recover-note"),
       create: () => {
-        const found = [...h.host.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-          b.textContent?.startsWith("Create worktree"),
+        const found = [...h.host.querySelectorAll<HTMLButtonElement>("button")].find(
+          (b) => b.querySelector(".wt-create-label") !== null,
         );
         if (found === undefined) {
           throw new Error("missing Create");
@@ -5760,10 +5787,11 @@ describe("provisioning save action weight", () => {
     expect(ruleOf(css(), ".wt-dest")).toContain("vscode-editor-font-family");
   });
 
-  it("[1_1] paints the save as a secondary button", () => {
+  it("[1_1] paints the save as a lightweight contextual action", () => {
     const rule = ruleOf(css(), ".wt-bring-save");
     expect(rule, "no save button rule").toBeTruthy();
-    expect(rule).toContain("--vscode-button-secondaryBackground");
+    expect(rule).toContain("--vscode-textLink-foreground");
+    expect(ruleOf(css(), ".wt-inline-action")).toContain("background: transparent");
     expect(rule).toContain("font-size: 11px");
   });
 
@@ -5803,8 +5831,8 @@ describe("terms the form uses", () => {
     // "Advanced" tells a user the contents are for someone else, not what they
     // are. Naming the three inputs lets them decide without opening it.
     expect(toggle?.textContent).not.toBe("Advanced");
-    expect(toggle?.textContent?.toLowerCase()).toContain("branch source");
-    expect(toggle?.textContent?.toLowerCase()).toContain("base ref");
+    expect(toggle?.textContent?.toLowerCase()).toContain("branch");
+    expect(toggle?.textContent?.toLowerCase()).toContain("defaults");
     expect(toggle?.textContent?.toLowerCase()).toContain("location");
   });
 
@@ -5884,8 +5912,8 @@ describe("create worktree — choosing the folder the worktree is created in", (
 
   /** Create, by its label — `.wt-btn--primary` matches an earlier button too. */
   const create = (host: HTMLElement): HTMLButtonElement => {
-    const btn = [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-      /create worktree/i.test(b.textContent ?? ""),
+    const btn = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.querySelector(".wt-create-label") !== null,
     );
     if (btn === undefined) {
       throw new Error("the form has no Create button");
@@ -6306,11 +6334,11 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
     return { ...h, asks, answer, rows, addedRows, ticks, addButton };
   }
 
-  it("offers the add action last in the section, and posts an add with the shared sequence and no text", () => {
+  it("offers the add action in the setup heading, and posts an add with the shared sequence and no text", () => {
     const { q, asks, addButton } = withAsk();
     type(q<HTMLInputElement>("#wt-branch"), "feat/x");
 
-    expect(q<HTMLElement>(".wt-bring-box").lastElementChild?.classList.contains("wt-bring-add")).toBe(true);
+    expect(addButton().closest(".wt-setup-group .wt-provision-heading")).not.toBeNull();
     addButton().click();
 
     expect(asks).toEqual([{ repoId: REPO_ID, switch: 1, op: { kind: "add" } }]);
@@ -6341,7 +6369,7 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
     ).toContain("Waiting for the setup step.");
     expect(addButton().disabled).toBe(true);
     expect(q<HTMLButtonElement>(".wt-bring-save").disabled).toBe(true);
-    expect(q<HTMLButtonElement>(".wt-bring-switch-take").disabled).toBe(true);
+    expect(q<HTMLSelectElement>(".wt-bring-source-select").disabled).toBe(true);
   });
 
   it("is released only by a different offer id, and an added row arrives ticked with edit and remove", () => {
@@ -6533,11 +6561,11 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
     expect(ticks()).toEqual([true, false]);
 
     // The denser source has room for one marker row (design.md D3).
-    q<HTMLButtonElement>(".wt-bring-switch-take").click();
+    chooseSource(q<HTMLSelectElement>(".wt-bring-source-select"));
     answer("o3", { providers: dense, setup: [added("one", "s4")] });
     expect(ticks()).toEqual([true]);
 
-    q<HTMLButtonElement>(".wt-bring-switch-take").click();
+    chooseSource(q<HTMLSelectElement>(".wt-bring-source-select"));
     answer("o4", { providers: sparse, setup: [provider("p4"), added("one", "s5"), added("two", "s6")] });
     expect(ticks()).toEqual([true, false]);
   });
@@ -6607,7 +6635,7 @@ describe("a setup step added for this create only (add-a-setup-step-for-this-cre
     box.checked = false;
     box.dispatchEvent(new Event("change", { bubbles: true }));
 
-    q<HTMLButtonElement>(".wt-bring-switch-take").click();
+    chooseSource(q<HTMLSelectElement>(".wt-bring-source-select"));
     answer("o3", {
       entries: [],
       setup: [added("one", "s3")],
@@ -6720,7 +6748,7 @@ describe("a file added to copy for this create only", () => {
     expect(addCopy().disabled).toBe(true);
     expect(q<HTMLButtonElement>(".wt-bring-add-setup").disabled).toBe(true);
     expect(q<HTMLButtonElement>(".wt-bring-save").disabled).toBe(true);
-    expect(q<HTMLButtonElement>(".wt-bring-switch-take").disabled).toBe(true);
+    expect(q<HTMLSelectElement>(".wt-bring-source-select").disabled).toBe(true);
     expect(q<HTMLButtonElement>(".wt-path-pick").disabled).toBe(true);
     expect(q<HTMLInputElement>(".wt-brow-cb").disabled).toBe(true);
     expect(q<HTMLInputElement>("#wt-wait-setup").disabled).toBe(true);
@@ -6831,10 +6859,10 @@ describe("a file added to copy for this create only", () => {
     second.checked = false;
     second.dispatchEvent(new Event("change", { bubbles: true }));
 
-    h.q<HTMLButtonElement>(".wt-bring-switch-take").click();
+    chooseSource(h.q<HTMLSelectElement>(".wt-bring-source-select"));
     h.answer("o2", { entries: [picked("one.env", "d1")], providers: dense });
     expect(h.ticks()).toEqual([true]);
-    h.q<HTMLButtonElement>(".wt-bring-switch-take").click();
+    chooseSource(h.q<HTMLSelectElement>(".wt-bring-source-select"));
     h.answer("o3", { entries: [picked("one.env", "s1"), picked("two.env", "s2")], providers: sparse });
     expect(h.ticks()).toEqual([true, false]);
   });
@@ -6860,5 +6888,580 @@ describe("a file added to copy for this create only", () => {
   it("offers no copy action when the host callback is unavailable", () => {
     const { host } = withCopy({}, { onCopyFileAsk: undefined });
     expect(host.querySelector(".wt-bring-add-copy")).toBeNull();
+  });
+});
+
+describe("compact creation — provisioning hierarchy", () => {
+  function compact(model: Partial<ProvisionModel> = {}) {
+    let answer: ((repoId: string, offer: WorktreeProvisionOffer) => void) | undefined;
+    const switches: unknown[] = [];
+    const h = open({
+      repos: [createDefaults({ provisioning: provisionOffer({ model: provisionModel(model) }) })],
+      bindProvisioning: (fn) => {
+        answer = fn;
+      },
+      onProvisionSwitch: (msg) => switches.push(msg),
+      onCopyFileAsk: () => {},
+      onSetupStepAsk: () => {},
+    });
+    return {
+      ...h,
+      switches,
+      answer: (next: ProvisionModel) => answer?.(REPO_ID, provisionOffer({ offerId: "updated", model: next })),
+    };
+  }
+
+  it("collapses ordinary files but keeps setup, ports and shared-main consequences visible", () => {
+    const { q } = compact();
+    expect(q(".wt-files-body").hidden).toBe(true);
+    expect(q(".wt-files-shared").closest("[hidden]")).toBeNull();
+    expect(q(".wt-files-shared").textContent).toContain("writes to main");
+    const setup = q<HTMLInputElement>(".wt-setup-group .wt-brow-cb");
+    expect(setup.closest("[hidden]")).toBeNull();
+    expect(setup.checked).toBe(false);
+    expect(q(".wt-ports-group .wt-brow").closest("[hidden]")).toBeNull();
+    q<HTMLButtonElement>(".wt-files-toggle").click();
+    expect(q(".wt-files-body").hidden).toBe(false);
+    expect(q(".wt-files-toggle").getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("counts selected setup separately from available commands", () => {
+    const { q } = compact();
+    expect(q(".wt-setup-count").textContent).toBe("1 configured · 0 selected");
+    const cb = q<HTMLInputElement>(".wt-setup-group .wt-brow-cb");
+    cb.checked = true;
+    cb.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(q(".wt-setup-count").textContent).toBe("1 configured · 1 selected");
+  });
+
+  it("opens files for replacement offers instead of concealing changed selections", () => {
+    const h = compact();
+    expect(h.q(".wt-files-body").hidden).toBe(true);
+    h.answer(provisionModel({ entries: [{ id: "changed", mode: "copy", path: ".env.local", source: "orca.yaml" }] }));
+    expect(h.q(".wt-files-body").hidden).toBe(false);
+    expect(h.q(".wt-files-body").textContent).toContain(".env.local");
+  });
+
+  it("exposes suggested files and keeps fallback commands distinct from declared setup", () => {
+    const { q } = compact({
+      entries: [{ id: "env", mode: "copy", path: ".env", source: ".env", suggestion: "May contain secrets" }],
+      setup: [
+        { id: "declared", kind: "shell", script: "pnpm build", source: "asimov/worktree.yaml" },
+        {
+          id: "suggested",
+          kind: "shell",
+          script: "bun install",
+          source: "bun.lock",
+          suggestion: "Runs after files are copied.",
+        },
+      ],
+    });
+    expect(q(".wt-files-body").hidden).toBe(false);
+    expect(q(".wt-files-body").textContent).toContain("May contain secrets");
+    expect(q(".wt-setup-declared").textContent).toContain("pnpm build");
+    expect(q(".wt-setup-suggestions").textContent).toContain("bun install");
+    expect(q(".wt-setup-suggestions").hidden).toBe(false);
+  });
+
+  it("isolates one suggestion from 140 routine copies and preserves their ticks after reminted offers", () => {
+    const entries = Array.from({ length: 140 }, (_, i) => ({
+      id: `c${i}`,
+      mode: "copy" as const,
+      path: `files/${i}`,
+      source: "orca.yaml",
+    }));
+    const suggestion = {
+      id: "env",
+      mode: "copy" as const,
+      path: ".env",
+      source: ".env",
+      suggestion: "May contain secrets",
+    };
+    const h = compact({ entries: [...entries, suggestion], setup: [], ports: [] });
+    expect(h.q(".wt-files-body").querySelectorAll(".wt-brow")).toHaveLength(1);
+    expect(h.q(".wt-files-routine-body").hidden).toBe(true);
+    expect(h.q(".wt-files-routine-body").querySelectorAll("input:checked")).toHaveLength(140);
+    h.answer(
+      provisionModel({
+        entries: [...entries.map((e) => ({ ...e, id: `new-${e.id}` })), suggestion],
+        setup: [],
+        ports: [],
+      }),
+    );
+    expect(h.q(".wt-files-body").querySelectorAll(".wt-brow")).toHaveLength(1);
+    expect(h.q(".wt-files-routine-body").hidden).toBe(true);
+  });
+
+  it("exposes a changed copy but keeps reminted unchanged files collapsed", () => {
+    const entries = [{ id: "old", mode: "copy" as const, path: "stable", source: "orca.yaml" }];
+    const h = compact({ entries, setup: [], ports: [] });
+    h.answer(
+      provisionModel({
+        entries: [
+          { ...entries[0]!, id: "reminted" },
+          { ...entries[0]!, id: "new", path: "new-file" },
+        ],
+        setup: [],
+        ports: [],
+      }),
+    );
+    expect(h.q(".wt-files-body").textContent).toContain("new-file");
+    expect(h.q(".wt-files-body").textContent).not.toContain("stable");
+    expect(h.q(".wt-files-routine-body").hidden).toBe(true);
+  });
+
+  it("aggregates 20 links and reveals only shared choices without losing focus on deselection", () => {
+    const entries = Array.from({ length: 20 }, (_, i) => ({
+      id: `link-${i}`,
+      mode: "link" as const,
+      path: `shared/${i}`,
+      source: "orca.yaml",
+    }));
+    const h = compact({
+      entries: [...entries, { id: "copy", mode: "copy", path: "ordinary", source: "orca.yaml" }],
+      setup: [],
+      ports: [],
+    });
+    expect(h.q(".wt-files-shared").textContent).toBe("20 shared folders — writes to main");
+    h.q<HTMLButtonElement>(".wt-files-links-toggle").click();
+    expect(h.q(".wt-files-links-body").querySelectorAll(".wt-brow")).toHaveLength(20);
+    expect(h.q(".wt-files-links-body").hidden).toBe(false);
+    expect(h.q(".wt-files-body").hidden).toBe(true);
+    const cb = h.q<HTMLInputElement>(".wt-files-links-body input");
+    cb.focus();
+    cb.checked = false;
+    cb.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(document.activeElement).toBe(cb);
+    expect(h.q(".wt-files-shared").textContent).toBe("19 shared folders — writes to main");
+  });
+
+  it("keeps offer order across suggested and configured commands with explicit counts", () => {
+    const setup = [
+      { id: "a", kind: "shell" as const, script: "first", source: "orca.yaml" },
+      { id: "b", kind: "shell" as const, script: "second", source: "bun.lock", suggestion: "Suggested" },
+      { id: "c", kind: "shell" as const, script: "third", source: "orca.yaml" },
+      { id: "d", kind: "shell" as const, script: "fourth", source: "bun.lock", suggestion: "Suggested" },
+    ];
+    const h = compact({ entries: [], setup, ports: [] });
+    expect(
+      Array.from(h.q(".wt-setup-group").querySelectorAll<HTMLInputElement>("input")).map((cb) => cb.value),
+    ).toEqual(["a", "b", "c", "d"]);
+    expect(h.q(".wt-setup-count").textContent).toBe("2 configured · 2 suggested · 0 selected");
+    expect(h.q(".wt-setup-order").textContent).toBe("Selected commands run top to bottom.");
+    expect(h.q(".wt-setup-group").querySelectorAll("input:checked")).toHaveLength(0);
+  });
+
+  it("exposes every contender and its live refusal without expanding unrelated copies", () => {
+    const entries = Array.from({ length: 140 }, (_, i) => ({
+      id: `routine-${i}`,
+      mode: "copy" as const,
+      path: `files/${i}`,
+      source: "orca.yaml",
+    }));
+    const h = compact({
+      entries: [
+        ...entries,
+        { id: "native", mode: "copy", path: "MixedCase", source: ".vscode/worktree.json" },
+        { id: "other", mode: "link", path: "mixedcase", source: "orca.yaml" },
+      ],
+      setup: [],
+      ports: [],
+      contenders: [{ members: ["native", "other"], natives: ["native"] }],
+    });
+    const review = h.q(".wt-files-body");
+    expect(review.querySelectorAll(".wt-brow")).toHaveLength(2);
+    expect(review.closest("[hidden]")).toBeNull();
+    expect(h.q(".wt-files-routine-body").hidden).toBe(true);
+    const note = h.q(".wt-brow-yield");
+    expect(note.textContent).toContain("refused while MixedCase is selected");
+    expect(note.hidden).toBe(false);
+    h.q<HTMLInputElement>('input[value="native"]').click();
+    expect(note.hidden).toBe(true);
+    expect(review.querySelectorAll(".wt-brow")).toHaveLength(2);
+  });
+
+  it("keeps counts inclusive of collapsed suggestions and carries their explicit selection", () => {
+    const setup = [
+      { id: "configured", kind: "shell" as const, script: "build", source: "orca.yaml" },
+      { id: "one", kind: "shell" as const, script: "pnpm install", source: "pnpm-lock.yaml", suggestion: "Suggested" },
+      { id: "two", kind: "shell" as const, script: "bun install", source: "bun.lock", suggestion: "Suggested" },
+    ];
+    const h = compact({ entries: [], ports: [], setup });
+    expect(h.q(".wt-setup-suggestions").hidden).toBe(true);
+    expect(h.q(".wt-setup-count").textContent).toBe("1 configured · 2 suggested · 0 selected");
+    h.q<HTMLButtonElement>(".wt-setup-suggestions-toggle").click();
+    h.q<HTMLInputElement>('input[value="two"]').click();
+    h.q<HTMLButtonElement>(".wt-setup-suggestions-toggle").click();
+    expect(h.q(".wt-setup-count").textContent).toBe("1 configured · 2 suggested · 1 selected");
+    h.q<HTMLButtonElement>(".wt-bring-add-setup").click();
+    h.answer(
+      provisionModel({ entries: [], ports: [], setup: setup.map((step) => ({ ...step, id: `new-${step.id}` })) }),
+    );
+    expect(h.q(".wt-setup-suggestions").hidden).toBe(false);
+    expect(h.q<HTMLInputElement>('input[value="new-two"]').checked).toBe(true);
+    expect(h.q<HTMLInputElement>('input[value="new-one"]').checked).toBe(false);
+    expect(h.q<HTMLInputElement>('input[value="new-configured"]').checked).toBe(false);
+  });
+
+  it("uses one labelled source selector and contextual add actions", () => {
+    const { q, host, switches } = compact({
+      providers: [
+        { id: "asimov", files: ["asimov/worktree.yaml"], present: ["asimov/worktree.yaml"], active: true },
+        { id: "orca", files: ["orca.yaml", ".worktreeinclude"], present: ["orca.yaml"], active: false },
+      ],
+    });
+    const source = q<HTMLSelectElement>(".wt-bring-source-select");
+    expect(source.labels?.[0]?.textContent).toBe("Source");
+    expect(source.value).toBe("asimov");
+    source.value = "orca";
+    source.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(switches).toEqual([{ repoId: REPO_ID, switch: 1, provider: "orca" }]);
+    expect(host.textContent).not.toContain("Use this instead");
+    expect(q(".wt-bring-add-copy").textContent).toBe("+ File");
+    expect(q(".wt-bring-add-setup").textContent).toBe("+ Command");
+    expect(q(".wt-bring-add-copy").closest(".wt-files-group")).not.toBeNull();
+    expect(q(".wt-bring-add-setup").closest(".wt-setup-group")).not.toBeNull();
+  });
+});
+
+describe("compact creation — launch controls", () => {
+  it("keeps all launch modes and changes the primary action to match", () => {
+    const { q } = open();
+    const after = q<HTMLSelectElement>("#wt-after");
+    expect(Array.from(after.options).map((option) => option.value)).toEqual(["none", "terminal", "agent", "folder"]);
+    expect(q(".wt-create-label").textContent).toBe("Create & start");
+    after.value = "folder";
+    after.dispatchEvent(new Event("change"));
+    expect(q(".wt-create-label").textContent).toBe("Create & open");
+    expect(q(".wt-folder-mode").hidden).toBe(false);
+    after.value = "none";
+    after.dispatchEvent(new Event("change"));
+    expect(q(".wt-create-label").textContent).toBe("Create worktree");
+  });
+});
+
+describe("compact creation — repository defaults", () => {
+  it("reveals the persistence boundary before offering the save action", () => {
+    const { q } = open({
+      repos: [createDefaults({ provisioning: provisionOffer() })],
+      onProvisionSave: () => {},
+    });
+    expect(q(".wt-bring-save").closest("[hidden]")).not.toBeNull();
+    q<HTMLButtonElement>("#wt-advanced-toggle").click();
+    q<HTMLButtonElement>(".wt-defaults-toggle").click();
+    expect(q(".wt-bring-save").closest("[hidden]")).toBeNull();
+    expect(q(".wt-defaults-body").textContent).toContain("Writes .vscode/worktree.json");
+    expect(q(".wt-defaults-body").textContent).toContain("setup steps and ports apply to this create only");
+  });
+});
+
+describe("sparse creation — files and suggestions", () => {
+  function sparse(over: Partial<ProvisionModel> = {}) {
+    return open({
+      repos: [
+        createDefaults({
+          provisioning: provisionOffer({
+            model: provisionModel({
+              entries: [],
+              ports: [],
+              providers: [],
+              setup: [
+                {
+                  id: "bun",
+                  kind: "shell",
+                  script: "bun install",
+                  source: "bun.lock",
+                  suggestion: "Runs after files are copied.",
+                },
+              ],
+              ...over,
+            }),
+          }),
+        }),
+      ],
+      onCopyFileAsk: () => {},
+      onSetupStepAsk: () => {},
+    });
+  }
+
+  it("shows a useful empty-file line without counters or an inert Edit control", () => {
+    const { q } = sparse();
+    expect(q(".wt-files-count").textContent).toBe("No extra files");
+    expect(q(".wt-files-toggle").hidden).toBe(true);
+    expect(q(".wt-bring-add-copy").closest("[hidden]")).toBeNull();
+  });
+
+  it("shows one unchecked suggestion directly with inline provenance", () => {
+    const { q, host } = sparse();
+    expect(host.querySelector(".wt-setup-suggestions-toggle")).toBeNull();
+    const row = q(".wt-setup-suggestions .wt-brow");
+    expect(row.closest("[hidden]")).toBeNull();
+    expect(row.querySelector<HTMLInputElement>("input")?.checked).toBe(false);
+    expect(row.querySelector(".wt-brow-code")?.textContent).toBe("bun install");
+    expect(row.querySelector(".wt-brow-src")?.textContent).toContain("Suggested");
+    expect(row.querySelector(".wt-brow-source-name")?.textContent).toBe("bun.lock");
+    expect(row.textContent).not.toContain("Runs after files are copied.");
+    expect(host.querySelector(".wt-setup-suggestions .wt-bring-source-label")).toBeNull();
+    expect(q(".wt-setup-count").hidden).toBe(true);
+  });
+
+  it("does not suppress a command-specific warning while compacting suggestions", () => {
+    const { q } = sparse({
+      setup: [
+        {
+          id: "custom",
+          kind: "shell",
+          script: "prepare",
+          source: "setup.json",
+          suggestion: "Requires access to the package registry.",
+        },
+      ],
+    });
+    expect(q(".wt-setup-suggestions").textContent).toContain("Requires access to the package registry.");
+  });
+
+  it("still permits deselecting an existing file when its selected count is zero", () => {
+    const { q } = sparse({
+      entries: [{ id: "env", mode: "copy", path: ".env", source: ".env", suggestion: "May contain secrets." }],
+    });
+    expect(q(".wt-files-count").textContent).toBe("0 selected · 0 shared");
+    expect(q(".wt-files-toggle").hidden).toBe(false);
+    expect(q(".wt-files-body").textContent).toContain("May contain secrets.");
+  });
+});
+
+describe("sparse creation — relevant controls only", () => {
+  function sparse() {
+    const posted: unknown[] = [];
+    const h = open({
+      repos: [
+        createDefaults({
+          provisioning: provisionOffer({ model: provisionModel({ entries: [], ports: [], providers: [] }) }),
+        }),
+      ],
+      onProvisionSave: (msg) => posted.push(msg),
+    });
+    return { ...h, posted };
+  }
+
+  it("removes the redundant agent sentence but keeps folder consequences", () => {
+    const { q } = sparse();
+    expect(q(".wt-after-note").hidden).toBe(true);
+    expect(q(".wt-after-note").textContent).toBe("");
+    const after = q<HTMLSelectElement>("#wt-after");
+    after.value = "folder";
+    after.dispatchEvent(new Event("change"));
+    expect(q(".wt-after-note").hidden).toBe(false);
+    expect(q(".wt-after-note").textContent).toContain("this workspace");
+  });
+
+  it("shows waiting only for selected setup and remembers an explicit overlapping choice", () => {
+    const { q } = sparse();
+    const setup = q<HTMLInputElement>(".wt-setup-declared input");
+    const wait = q<HTMLInputElement>("#wt-wait-setup");
+    expect(q(".wt-wait-setup").hidden).toBe(true);
+    setup.click();
+    expect(q(".wt-wait-setup").hidden).toBe(false);
+    expect(wait.checked).toBe(true);
+    expect(q(".wt-wait-setup label").textContent).toBe("Start agent after setup");
+    expect(q(".wt-wait-note").hidden).toBe(true);
+    wait.click();
+    expect(q(".wt-wait-note").hidden).toBe(false);
+    expect(q(".wt-wait-note").textContent).toContain("while");
+    setup.click();
+    expect(q(".wt-wait-setup").hidden).toBe(true);
+    setup.click();
+    expect(q(".wt-wait-setup").hidden).toBe(false);
+    expect(wait.checked).toBe(false);
+  });
+
+  it("puts defaults behind the existing advanced disclosure without changing the save message", () => {
+    const { q, posted } = sparse();
+    expect(q(".wt-defaults-toggle").closest("#wt-advanced-body")).not.toBeNull();
+    expect(q(".wt-defaults-toggle").closest("[hidden]")).not.toBeNull();
+    expect(q("#wt-advanced-toggle").textContent).toBe("Branch, location & defaults");
+    q<HTMLButtonElement>("#wt-advanced-toggle").click();
+    q<HTMLButtonElement>(".wt-defaults-toggle").click();
+    expect(q(".wt-bring-save").closest("[hidden]")).toBeNull();
+    q<HTMLButtonElement>(".wt-bring-save").click();
+    expect(posted).toEqual([{ repoId: REPO_ID, switch: 1, offerId: "provision-1", kept: [] }]);
+  });
+
+  it("omits Environment when there is no source choice, not the problem rows", () => {
+    const { q } = open({
+      repos: [createDefaults({ provisioning: provisionOffer({ model: malformedProvisionModel() }) })],
+    });
+    expect(q(".wt-bring > .wt-flabel").hidden).toBe(true);
+    expect(q(".wt-bring-problem").closest("[hidden]")).toBeNull();
+    expect(q(".wt-bring-problem").textContent).toContain("Unexpected key");
+  });
+});
+
+describe("compact file choices — one row per file", () => {
+  const paths = ["apps/desktop/.env", "apps/server/.env", "apps/web/.env", "packages/infra/.env"];
+
+  it("renders workspace suggestions as flat rows without repeating the path as a source heading", () => {
+    const { q } = open({
+      repos: [
+        createDefaults({
+          provisioning: provisionOffer({
+            model: provisionModel({
+              entries: paths.map((path, i) => ({
+                id: `env-${i}`,
+                mode: "copy",
+                path,
+                source: path,
+                suggestion: "May contain secrets.",
+              })),
+              ports: [],
+              setup: [],
+            }),
+          }),
+        }),
+      ],
+    });
+    const body = q(".wt-files-body");
+    expect(body.querySelectorAll(".wt-bring-source-label")).toHaveLength(0);
+    const rows = Array.from(body.children);
+    expect(rows).toHaveLength(4);
+    rows.forEach((row, i) => {
+      expect(row.classList.contains("wt-brow--file")).toBe(true);
+      expect(row.querySelector<HTMLInputElement>("input")?.checked).toBe(false);
+      expect(row.querySelector(".wt-brow-code")?.textContent).toBe(paths[i]);
+      expect(row.querySelector<HTMLElement>(".wt-brow-code")?.title).toBe(paths[i]);
+      expect(row.querySelector<HTMLElement>(".wt-brow-src")?.hidden).toBe(true);
+      expect(row.querySelector(".wt-brow-suggested")?.textContent).toBe("May contain secrets.");
+    });
+  });
+
+  it("retains distinct source attribution and the shared-main warning on file rows", () => {
+    const { q } = open({ repos: [createDefaults({ provisioning: provisionOffer() })] });
+    q<HTMLButtonElement>(".wt-files-toggle").click();
+    const rows = Array.from(q(".wt-files-body").querySelectorAll<HTMLElement>(".wt-brow"));
+    expect(rows.every((row) => row.classList.contains("wt-brow--file"))).toBe(true);
+    const source = rows[0]?.querySelector<HTMLElement>(".wt-brow-src");
+    expect(source?.hidden).toBe(false);
+    expect(source?.title).toBe("asimov/worktree.yaml");
+    q<HTMLButtonElement>(".wt-files-links-toggle").click();
+    const linked = q(".wt-files-links-body .wt-brow");
+    expect(linked.classList.contains("wt-brow--file")).toBe(true);
+    expect(linked.closest("[hidden]")).toBeNull();
+    expect(linked.querySelector(".wt-brow-warn")?.textContent).toBe("writes to main");
+    expect(q(".wt-files-shared").hidden).toBe(false);
+  });
+});
+
+describe("compact creation — scroll ownership", () => {
+  it("keeps title and footer outside the form body while preserving modal focus scope", () => {
+    const { q } = open();
+    const dialog = q(".wt-create-dialog");
+    const body = q(".wt-create-body");
+    expect(body.parentElement).toBe(dialog);
+    expect(q(".wt-dialog-title").parentElement).toBe(dialog);
+    expect(q(".wt-dialog-actions").parentElement).toBe(dialog);
+    expect(body.contains(q("#wt-branch"))).toBe(true);
+    expect(body.contains(q(".wt-create-launch"))).toBe(true);
+    expect(body.contains(q("#wt-advanced-toggle"))).toBe(true);
+    expect(body.contains(q(".wt-dialog-actions"))).toBe(false);
+  });
+});
+
+describe("adaptive creation — stable form columns", () => {
+  it("separates preparation from launch settings within the same modal", () => {
+    const { q } = open({ repos: [createDefaults({ provisioning: provisionOffer() })] });
+    const primary = q(".wt-create-primary");
+    const secondary = q(".wt-create-secondary");
+    expect(primary.contains(q("#wt-branch"))).toBe(true);
+    expect(primary.contains(q(".wt-bring"))).toBe(true);
+    expect(secondary.contains(q(".wt-create-launch"))).toBe(true);
+    expect(secondary.contains(q("#wt-advanced-toggle"))).toBe(true);
+    expect(q(".wt-create-body").children).toHaveLength(2);
+    expect(q(".wt-scrim").classList.contains("wt-create-scrim")).toBe(true);
+  });
+
+  it("keeps values, nodes, disclosures and focus through resize events", () => {
+    const { q } = open({ repos: [createDefaults({ provisioning: provisionOffer() })] });
+    const branch = q<HTMLInputElement>("#wt-branch");
+    type(branch, "feat/keep-draft");
+    q<HTMLInputElement>(".wt-setup-group input").click();
+    q<HTMLButtonElement>(".wt-prompt-toggle").click();
+    const prompt = q<HTMLTextAreaElement>(".wt-textarea");
+    prompt.value = "Keep this first prompt";
+    prompt.dispatchEvent(new Event("input", { bubbles: true }));
+    q<HTMLButtonElement>("#wt-advanced-toggle").click();
+    prompt.focus();
+    window.dispatchEvent(new Event("resize"));
+    expect(q("#wt-branch")).toBe(branch);
+    expect(branch.value).toBe("feat/keep-draft");
+    expect(q(".wt-textarea")).toBe(prompt);
+    expect(prompt.value).toBe("Keep this first prompt");
+    expect(document.activeElement).toBe(prompt);
+    expect(q<HTMLInputElement>(".wt-setup-group input").checked).toBe(true);
+    expect(q("#wt-advanced-body").hidden).toBe(false);
+    expect(q(".wt-prompt-body").hidden).toBe(false);
+  });
+});
+
+describe("adaptive creation — explicit panel sizing", () => {
+  it("does not resize on open or viewport changes and keeps the draft on activation", () => {
+    const onTogglePanelSize = vi.fn();
+    const oldHeight = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", { value: 350, configurable: true });
+    const { q, dispose } = open({ onTogglePanelSize });
+    try {
+      const button = q<HTMLButtonElement>(".wt-create-panel-size");
+      expect(button.hidden).toBe(false);
+      expect(button.getAttribute("aria-label")).toBe("Toggle panel height");
+      const branch = q<HTMLInputElement>("#wt-branch");
+      type(branch, "feat/still-here");
+      expect(onTogglePanelSize).not.toHaveBeenCalled();
+      button.click();
+      expect(onTogglePanelSize).toHaveBeenCalledTimes(1);
+      expect(q("#wt-branch")).toBe(branch);
+      expect(branch.value).toBe("feat/still-here");
+      Object.defineProperty(window, "innerHeight", { value: 900, configurable: true });
+      window.dispatchEvent(new Event("resize"));
+      expect(button.hidden).toBe(false);
+      expect(onTogglePanelSize).toHaveBeenCalledTimes(1);
+    } finally {
+      dispose();
+      Object.defineProperty(window, "innerHeight", { value: oldHeight, configurable: true });
+    }
+  });
+
+  it.each(["dispose", "cancel", "escape", "scrim"])("releases sizing state on %s", (exit) => {
+    const oldHeight = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", { value: 350, configurable: true });
+    const onTogglePanelSize = vi.fn();
+    const h = open({ onTogglePanelSize });
+    const button = h.q<HTMLButtonElement>(".wt-create-panel-size");
+    try {
+      button.click();
+      expect(onTogglePanelSize).toHaveBeenCalledTimes(1);
+      onTogglePanelSize.mockClear();
+      if (exit === "dispose") {
+        h.dispose();
+      } else if (exit === "cancel") {
+        h.q<HTMLButtonElement>(".wt-dialog-actions .wt-btn:not(.wt-btn--primary)").click();
+      } else if (exit === "escape") {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      } else {
+        h.q<HTMLDivElement>(".wt-scrim").click();
+      }
+      expect(h.host.querySelector(".wt-create-dialog")).toBeNull();
+      Object.defineProperty(window, "innerHeight", { value: 900, configurable: true });
+      window.dispatchEvent(new Event("resize"));
+      expect(button.isConnected).toBe(false);
+      button.click();
+      expect(onTogglePanelSize).not.toHaveBeenCalled();
+    } finally {
+      h.dispose();
+      Object.defineProperty(window, "innerHeight", { value: oldHeight, configurable: true });
+    }
+  });
+
+  it("omits the action without host capability", () => {
+    const { host } = open();
+    expect(host.querySelector(".wt-create-panel-size")).toBeNull();
   });
 });

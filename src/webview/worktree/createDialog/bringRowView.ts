@@ -19,6 +19,7 @@
 // names — and a second assertion of the same markup proves nothing.
 
 import { ICON_CLOSE, ICON_RENAME } from "../../vault/icons";
+import { selectControl } from "../worktreeDialogShell";
 import type { WorktreeProvisionOffer } from "../worktreeViewTypes";
 import type { BringRow } from "./bringSummaries";
 
@@ -43,38 +44,27 @@ export function bringProblem(problem: WorktreeProvisionOffer["model"]["problems"
   return el;
 }
 
-/**
- * A source that was detected and did not supply the offer.
- *
- * One row per source, naming every file it reads — orca is one provider over
- * two, and a row naming one of them would be telling the user something other
- * than what the host read (design.md D8). Hiding it instead would leave a
- * repository looking as if it had never configured the tool it uses.
- */
-export function switchRow(
-  provider: WorktreeProvisionOffer["model"]["providers"][number],
-  take: () => void,
+/** One selector for all detected sources; switching still requests a host-owned offer. */
+export function sourcePicker(
+  providers: WorktreeProvisionOffer["model"]["providers"],
+  take: (providerId: string) => void,
 ): HTMLElement {
   const el = document.createElement("div");
-  el.className = "wt-bring-switch";
-  const files = document.createElement("span");
-  files.className = "wt-bring-switch-files";
-  // Provider-file text, set with `textContent` like every other piece of it.
-  files.textContent = provider.files.join(", ");
-  const take_ = document.createElement("button");
-  // Explicitly a button. A default-type button inside the form SUBMITS, and a
-  // switch that created a worktree is the one thing this must never do.
-  take_.type = "button";
-  take_.className = "wt-bring-switch-take";
-  take_.textContent = "Use this instead";
-  // The visible label is the same on every row, and the file list that tells
-  // them apart sits beside the button rather than inside it — so to a screen
-  // reader walking the controls every choice announced itself identically
-  // (.reviews/round-1.md F006). Naming the button after its own source is what
-  // makes the rows distinguishable without changing what is drawn.
-  take_.setAttribute("aria-label", `Use ${provider.files.join(", ")} instead`);
-  take_.addEventListener("click", take);
-  el.append(files, take_);
+  el.className = "wt-bring-source";
+  const label = document.createElement("label");
+  label.htmlFor = "wt-bring-source";
+  label.textContent = "Source";
+  const active = providers.find((provider) => provider.active);
+  const choices = providers.filter((provider) => !provider.active || provider === active);
+  const select = selectControl(
+    label.htmlFor,
+    choices.map((provider) => ({ value: provider.id, label: provider.files.join(", ") })),
+    active?.id,
+  );
+  select.classList.add("wt-bring-source-select");
+  select.title = "Configuration source for this create. Save defaults separately to remember it.";
+  select.addEventListener("change", () => take(select.value));
+  el.append(label, select);
   return el;
 }
 
@@ -125,6 +115,10 @@ export function bringRow(
 ): HTMLElement {
   const el = document.createElement("div");
   el.className = row.excluded === true ? "wt-brow wt-brow--excluded" : "wt-brow";
+  const isFile = row.verb === "Copy" || row.verb === "Link" || row.excluded === true;
+  if (isFile) {
+    el.classList.add("wt-brow--file");
+  }
   const topId = `wt-brow-top-${index}`;
   const metaId = `wt-brow-meta-${index}`;
   const top = document.createElement("label");
@@ -154,7 +148,12 @@ export function bringRow(
   // the file that declared them is not part of the name.
   const src = document.createElement("span");
   src.className = "wt-brow-src";
-  src.textContent = row.source;
+  src.title = row.source;
+  src.hidden = isFile && row.source === row.subject;
+  const sourceName = document.createElement("span");
+  sourceName.className = "wt-brow-source-name";
+  sourceName.textContent = row.source;
+  src.appendChild(sourceName);
   if (row.added === true && onStep !== undefined) {
     // Only a row the host marked. A provider-declared step is not the form's
     // to edit, and the host would refuse the ask anyway (design.md D3).
@@ -175,6 +174,7 @@ export function bringRow(
   const code = document.createElement("code");
   code.className = "wt-brow-code";
   code.textContent = row.subject;
+  code.title = row.subject;
   meta.appendChild(code);
   if (row.contender !== undefined) {
     // Inside the meta line the subject already owns, not a sibling block: the
@@ -200,18 +200,22 @@ export function bringRow(
     meta.appendChild(note);
   }
   if (row.suggestion !== undefined) {
-    // The reason a row nobody configured is here at all. Host text — but set
-    // with `textContent` anyway, like every other note in this section.
-    const why = document.createElement("span");
-    why.className = "wt-brow-note wt-brow-suggested";
-    why.textContent = row.suggestion;
-    // On the row's line rather than under it, so a narrow panel clips it. The
-    // secrets warning is the only on-screen marker that a row is a secret file,
-    // so it stays reachable when clipped instead of disappearing with the
-    // measure.
-    why.title = row.suggestion;
-    why.setAttribute("aria-label", row.suggestion);
-    meta.appendChild(why);
+    if (row.verb === "Run setup") {
+      el.classList.add("wt-brow--suggested-step");
+      const suggested = document.createElement("span");
+      suggested.className = "wt-brow-suggested wt-suggestion-tag";
+      suggested.textContent = "Suggested";
+      src.prepend(suggested);
+    }
+    // Only the generic sequencing note is redundant; specific warnings stay visible.
+    if (row.verb !== "Run setup" || row.suggestion !== "Runs after files are copied.") {
+      const why = document.createElement("span");
+      why.className = row.verb === "Run setup" ? "wt-brow-note" : "wt-brow-note wt-brow-suggested";
+      why.textContent = row.suggestion;
+      why.title = row.suggestion;
+      why.setAttribute("aria-label", row.suggestion);
+      meta.appendChild(why);
+    }
   }
   if (row.contested === true && row.group !== undefined) {
     // Live like the yielding note, and for the same reason: the user settles
