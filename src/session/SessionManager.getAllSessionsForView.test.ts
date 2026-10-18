@@ -58,7 +58,7 @@ describe("SessionManager.getAllSessionsForView", () => {
 
   it("returns just the root when the view has no splits (matches getTabsForView for the !isSplitPane subset)", () => {
     const sm = new SessionManager();
-    const viewId = "anywhereTerminal.sidebar";
+    const viewId = "portaterm.sidebar";
     const webview = makeWebview();
 
     const rootId = sm.createSession(viewId, webview, { shell: "/bin/zsh" });

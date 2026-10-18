@@ -68,7 +68,7 @@ describe("TerminalEditorProvider.createPanel", () => {
     TerminalEditorProvider.createPanel(ctx, sm);
 
     expect(createSpy).toHaveBeenCalledWith(
-      "anywhereTerminal.editor",
+      "portaterm.editor",
       "Terminal",
       expect.anything(),
       expect.objectContaining({
@@ -362,7 +362,7 @@ describe("TerminalEditorProvider — the workbench rollout flag", () => {
   it("carries no flag on init, and a stale one in settings changes nothing", async () => {
     // Same retirement as the sidebar: nothing reads the key, so a settings.json
     // that still holds it reaches neither init nor a listener.
-    __setConfigValues({ "anywhereTerminal.worktree.workbench": false });
+    __setConfigValues({ "portaterm.worktree.workbench": false });
     const { posts, sm } = await readyPanel();
 
     const init = posts.find((m) => m.type === "init");
@@ -370,7 +370,7 @@ describe("TerminalEditorProvider — the workbench rollout flag", () => {
     expect(init).not.toHaveProperty("worktreeWorkbench");
     posts.length = 0;
 
-    __fireConfigChange(["anywhereTerminal.worktree.workbench"]);
+    __fireConfigChange(["portaterm.worktree.workbench"]);
 
     expect(posts.filter((m) => m.type === "worktreeWorkbench")).toEqual([]);
     sm.dispose();

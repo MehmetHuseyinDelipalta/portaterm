@@ -1,19 +1,19 @@
 {
-  "name": "anywhere-terminal",
-  "displayName": "AnyWhere Terminal",
+  "name": "portaterm",
+  "displayName": "Portaterm",
   "description": "Run a real terminal anywhere in VS Code or Cursor — Primary Sidebar, Secondary Sidebar, bottom Panel, or as an editor tab. With tabs, split panes, theming, and WebGL rendering.",
   "version": "0.19.1",
-  "publisher": "huybuidac",
+  "publisher": "mhd",
   "license": "MIT",
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/huybuidac/anywhere-terminal"
+    "url": "https://github.com/MehmetHuseyinDelipalta/portaterm"
   },
   "bugs": {
-    "url": "https://github.com/huybuidac/anywhere-terminal/issues"
+    "url": "https://github.com/MehmetHuseyinDelipalta/portaterm/issues"
   },
-  "homepage": "https://github.com/huybuidac/anywhere-terminal#readme",
+  "homepage": "https://github.com/MehmetHuseyinDelipalta/portaterm#readme",
   "keywords": [
     "terminal",
     "xterm",
@@ -44,43 +44,43 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:anywhereTerminal.sidebar",
-    "onView:anywhereTerminal.panel",
-    "onCommand:anywhereTerminal.newTerminalInEditor",
-    "onCommand:anywhereTerminal.newTerminal",
-    "onCommand:anywhereTerminal.focusSidebar",
-    "onCommand:anywhereTerminal.focusPanel",
-    "onCommand:anywhereTerminal.moveToSecondary",
-    "onCommand:anywhereTerminal.splitHorizontal",
-    "onCommand:anywhereTerminal.splitVertical",
-    "onCommand:anywhereTerminal.closeSplitPane",
-    "onCommand:anywhereTerminal.renameTab",
-    "onWebviewPanel:anywhereTerminal.editor"
+    "onView:portaterm.sidebar",
+    "onView:portaterm.panel",
+    "onCommand:portaterm.newTerminalInEditor",
+    "onCommand:portaterm.newTerminal",
+    "onCommand:portaterm.focusSidebar",
+    "onCommand:portaterm.focusPanel",
+    "onCommand:portaterm.moveToSecondary",
+    "onCommand:portaterm.splitHorizontal",
+    "onCommand:portaterm.splitVertical",
+    "onCommand:portaterm.closeSplitPane",
+    "onCommand:portaterm.renameTab",
+    "onWebviewPanel:portaterm.editor"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "configuration": {
-      "title": "AnyWhere Terminal",
+      "title": "Portaterm",
       "properties": {
-        "anywhereTerminal.shell.macOS": {
+        "portaterm.shell.macOS": {
           "type": "string",
           "default": "",
           "scope": "machine",
           "description": "Custom shell path for macOS. Leave empty to auto-detect (VS Code's resolved default shell, then $SHELL → /bin/zsh → /bin/bash → /bin/sh)."
         },
-        "anywhereTerminal.shell.linux": {
+        "portaterm.shell.linux": {
           "type": "string",
           "default": "",
           "scope": "machine",
           "description": "Custom shell path for Linux. Leave empty to auto-detect (VS Code's resolved default shell, then $SHELL → /bin/bash → /bin/sh)."
         },
-        "anywhereTerminal.shell.windows": {
+        "portaterm.shell.windows": {
           "type": "string",
           "default": "",
           "scope": "machine",
           "description": "Custom shell path for Windows. Leave empty to auto-detect (VS Code's resolved default shell, then %ComSpec% → cmd.exe)."
         },
-        "anywhereTerminal.shell.args": {
+        "portaterm.shell.args": {
           "type": "array",
           "items": {
             "type": "string"
@@ -89,17 +89,17 @@
           "scope": "machine",
           "description": "Custom shell arguments. Leave empty to use defaults (e.g., --login for zsh/bash)."
         },
-        "anywhereTerminal.scrollback": {
+        "portaterm.scrollback": {
           "type": "number",
           "default": 10000,
           "description": "Maximum number of lines in the scrollback buffer."
         },
-        "anywhereTerminal.sessionRestore.enabled": {
+        "portaterm.sessionRestore.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Restore terminal scrollback and metadata across VS Code restarts. NOTE: the persisted scrollback is plaintext on disk — anything echoed in the terminal (passwords typed at prompts, .env file contents, API tokens, kubeconfigs) lands in <storageUri>/snapshots until the per-snapshot caps evict it. Use Cmd+K (clear) before sensitive output, or set this to false to opt out entirely."
         },
-        "anywhereTerminal.worktree.rowActivation": {
+        "portaterm.worktree.rowActivation": {
           "type": "string",
           "enum": [
             "focus",
@@ -112,76 +112,76 @@
           "default": "focus",
           "description": "What activating an agent row in the Worktree panel does. External agent rows always open their session preview, because they have no pane in this window to focus."
         },
-        "anywhereTerminal.worktree.createRoot": {
+        "portaterm.worktree.createRoot": {
           "type": "string",
           "default": ".claude/worktrees",
           "description": "Where new worktrees are created. A relative path is resolved against the repository's main worktree. Leave unset to use the layout this repository's existing worktrees already follow, falling back to .claude/worktrees when there is none."
         },
-        "anywhereTerminal.cursorAgent.hooks.enabled": {
+        "portaterm.cursorAgent.hooks.enabled": {
           "type": "boolean",
           "default": false,
           "scope": "machine",
           "description": "Enable observational Cursor Agent hooks on this machine. Hooks are fail-open and only report terminal activity."
         },
-        "anywhereTerminal.agentHooks.claude.enabled": {
+        "portaterm.agentHooks.claude.enabled": {
           "type": "boolean",
           "default": false,
           "scope": "machine",
           "description": "Enable observational Claude Code hooks on this machine. Enabling reconciles a managed entry in the currently resolved Claude settings.json and has Claude Code post each hook event to a local loopback port; disabling reconciles that same current destination only. Hooks are fail-open. Authenticated Claude Code session identity and activity are surfaced in the terminal and worktree UI."
         },
-        "anywhereTerminal.agentHooks.claudeConfigDir": {
+        "portaterm.agentHooks.claudeConfigDir": {
           "type": "string",
           "default": "",
           "scope": "machine",
           "description": "Absolute path to the directory holding the Claude settings.json to install hooks into. A relative path is ignored. Leave empty to use CLAUDE_CONFIG_DIR, or ~/.claude when that is unset."
         },
-        "anywhereTerminal.opencode.hooks.enabled": {
+        "portaterm.opencode.hooks.enabled": {
           "type": "boolean",
           "default": false,
           "scope": "machine",
           "description": "Let OpenCode report which session each terminal is running, so its worktree row is named. Reporting is fail-open, sends only the session id, and never touches your own OpenCode configuration."
         },
-        "anywhereTerminal.fileSearch.maxResults": {
+        "portaterm.fileSearch.maxResults": {
           "type": "number",
           "default": 50,
           "minimum": 1,
           "maximum": 1000,
           "description": "Maximum number of files returned by the workspace-wide search fallback when clicking a path. The QuickPick disambiguation UI degrades past ~50 — bump higher if you regularly see truncated lists. Expert-only: values above ~200 with no workspace open and a deep cwd can stress the file search; the 2-second timeout will cancel it but you may see brief stalls."
         },
-        "anywhereTerminal.fontSize": {
+        "portaterm.fontSize": {
           "type": "number",
           "default": 0,
           "description": "Font size in pixels. Set to 0 to inherit from VS Code (terminal.integrated.fontSize → editor.fontSize → 14)."
         },
-        "anywhereTerminal.fontFamily": {
+        "portaterm.fontFamily": {
           "type": "string",
           "default": "",
           "description": "Font family for the terminal. Leave empty to inherit from VS Code (terminal.integrated.fontFamily → editor.fontFamily → monospace)."
         },
-        "anywhereTerminal.cursorBlink": {
+        "portaterm.cursorBlink": {
           "type": "boolean",
           "default": true,
           "description": "Whether the terminal cursor should blink."
         },
-        "anywhereTerminal.defaultCwd": {
+        "portaterm.defaultCwd": {
           "type": "string",
           "default": "",
           "description": "Default working directory for new terminals. Leave empty to use workspace root or home directory."
         },
-        "anywhereTerminal.hoverPreview.delay": {
+        "portaterm.hoverPreview.delay": {
           "type": "number",
           "default": 300,
           "minimum": 100,
           "maximum": 2000,
           "description": "Debounce in milliseconds before the hover preview popup fetches the file. Lower = snappier, higher = less I/O on incidental mouse-over."
         },
-        "anywhereTerminal.hoverPreview.blockSensitive": {
+        "portaterm.hoverPreview.blockSensitive": {
           "type": "boolean",
           "default": true,
           "scope": "application",
           "description": "Block auto-preview for dotfiles (.env, .bashrc), known-sensitive folders (.git, .ssh, .aws, node_modules), and files outside the workspace. The user can press Cmd (macOS) / Ctrl (Win/Linux) during the hover to override. Application-scoped: a hostile workspace cannot disable this trust policy via .vscode/settings.json."
         },
-        "anywhereTerminal.fileTree.autoReveal": {
+        "portaterm.fileTree.autoReveal": {
           "type": [
             "boolean",
             "string"
@@ -194,7 +194,7 @@
           "default": true,
           "description": "When enabled, the file tree highlights the file currently focused in the editor. Use 'focusNoScroll' to select without scrolling."
         },
-        "anywhereTerminal.fileTree.autoRevealExclude": {
+        "portaterm.fileTree.autoRevealExclude": {
           "type": "object",
           "additionalProperties": {
             "anyOf": [
@@ -222,204 +222,204 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "anywhereTerminal",
-          "title": "AnyWhere Terminal",
+          "id": "portaterm",
+          "title": "Portaterm",
           "icon": "media/icon.svg"
         }
       ],
       "panel": [
         {
-          "id": "anywhereTerminalPanel",
-          "title": "AnyWhere Terminal",
+          "id": "portatermPanel",
+          "title": "Portaterm",
           "icon": "media/icon.svg"
         }
       ]
     },
     "views": {
-      "anywhereTerminal": [
+      "portaterm": [
         {
-          "id": "anywhereTerminal.sidebar",
-          "name": "AnyWhere Terminal",
+          "id": "portaterm.sidebar",
+          "name": "Portaterm",
           "type": "webview"
         }
       ],
-      "anywhereTerminalPanel": [
+      "portatermPanel": [
         {
-          "id": "anywhereTerminal.panel",
-          "name": "AnyWhere Terminal",
+          "id": "portaterm.panel",
+          "name": "Portaterm",
           "type": "webview"
         }
       ]
     },
     "commands": [
       {
-        "command": "anywhereTerminal.agentHooks.uninstall",
-        "title": "AnyWhere Terminal: Remove Current Agent Hooks"
+        "command": "portaterm.agentHooks.uninstall",
+        "title": "Portaterm: Remove Current Agent Hooks"
       },
       {
-        "command": "anywhereTerminal.renameTab",
-        "category": "AnyWhere Terminal",
+        "command": "portaterm.renameTab",
+        "category": "Portaterm",
         "title": "Rename Tab…"
       },
       {
-        "command": "anywhereTerminal.newTerminalInEditor",
-        "title": "AnyWhere Terminal: New Terminal in Editor"
+        "command": "portaterm.newTerminalInEditor",
+        "title": "Portaterm: New Terminal in Editor"
       },
       {
-        "command": "anywhereTerminal.newTerminal",
-        "title": "AnyWhere Terminal: New Terminal",
+        "command": "portaterm.newTerminal",
+        "title": "Portaterm: New Terminal",
         "icon": "$(plus)"
       },
       {
-        "command": "anywhereTerminal.killTerminal",
-        "title": "AnyWhere Terminal: Kill Terminal",
+        "command": "portaterm.killTerminal",
+        "title": "Portaterm: Kill Terminal",
         "icon": "$(trash)"
       },
       {
-        "command": "anywhereTerminal.clearTerminal",
-        "title": "AnyWhere Terminal: Clear Terminal"
+        "command": "portaterm.clearTerminal",
+        "title": "Portaterm: Clear Terminal"
       },
       {
-        "command": "anywhereTerminal.focusSidebar",
-        "title": "AnyWhere Terminal: Focus Sidebar"
+        "command": "portaterm.focusSidebar",
+        "title": "Portaterm: Focus Sidebar"
       },
       {
-        "command": "anywhereTerminal.focusPanel",
-        "title": "AnyWhere Terminal: Focus Panel"
+        "command": "portaterm.focusPanel",
+        "title": "Portaterm: Focus Panel"
       },
       {
-        "command": "anywhereTerminal.moveToSecondary",
-        "title": "AnyWhere Terminal: Move to Secondary Sidebar"
+        "command": "portaterm.moveToSecondary",
+        "title": "Portaterm: Move to Secondary Sidebar"
       },
       {
-        "command": "anywhereTerminal.splitHorizontal",
-        "title": "AnyWhere Terminal: Split Horizontal",
+        "command": "portaterm.splitHorizontal",
+        "title": "Portaterm: Split Horizontal",
         "icon": "media/split-horizontal.svg"
       },
       {
-        "command": "anywhereTerminal.splitVertical",
-        "title": "AnyWhere Terminal: Split Vertical",
+        "command": "portaterm.splitVertical",
+        "title": "Portaterm: Split Vertical",
         "icon": "media/split-vertical.svg"
       },
       {
-        "command": "anywhereTerminal.closeSplitPane",
-        "title": "AnyWhere Terminal: Close Split Pane"
+        "command": "portaterm.closeSplitPane",
+        "title": "Portaterm: Close Split Pane"
       },
       {
-        "command": "anywhereTerminal.newTerminal.sidebar",
-        "title": "AnyWhere Terminal: New Terminal (Sidebar)",
+        "command": "portaterm.newTerminal.sidebar",
+        "title": "Portaterm: New Terminal (Sidebar)",
         "icon": "$(plus)"
       },
       {
-        "command": "anywhereTerminal.newTerminal.panel",
-        "title": "AnyWhere Terminal: New Terminal (Panel)",
+        "command": "portaterm.newTerminal.panel",
+        "title": "Portaterm: New Terminal (Panel)",
         "icon": "$(plus)"
       },
       {
-        "command": "anywhereTerminal.killTerminal.sidebar",
-        "title": "AnyWhere Terminal: Kill Terminal (Sidebar)",
+        "command": "portaterm.killTerminal.sidebar",
+        "title": "Portaterm: Kill Terminal (Sidebar)",
         "icon": "$(trash)"
       },
       {
-        "command": "anywhereTerminal.killTerminal.panel",
-        "title": "AnyWhere Terminal: Kill Terminal (Panel)",
+        "command": "portaterm.killTerminal.panel",
+        "title": "Portaterm: Kill Terminal (Panel)",
         "icon": "$(trash)"
       },
       {
-        "command": "anywhereTerminal.splitHorizontal.sidebar",
-        "title": "AnyWhere Terminal: Split Horizontal (Sidebar)",
+        "command": "portaterm.splitHorizontal.sidebar",
+        "title": "Portaterm: Split Horizontal (Sidebar)",
         "icon": "media/split-horizontal.svg"
       },
       {
-        "command": "anywhereTerminal.splitHorizontal.panel",
-        "title": "AnyWhere Terminal: Split Horizontal (Panel)",
+        "command": "portaterm.splitHorizontal.panel",
+        "title": "Portaterm: Split Horizontal (Panel)",
         "icon": "media/split-horizontal.svg"
       },
       {
-        "command": "anywhereTerminal.splitVertical.sidebar",
-        "title": "AnyWhere Terminal: Split Vertical (Sidebar)",
+        "command": "portaterm.splitVertical.sidebar",
+        "title": "Portaterm: Split Vertical (Sidebar)",
         "icon": "media/split-vertical.svg"
       },
       {
-        "command": "anywhereTerminal.splitVertical.panel",
-        "title": "AnyWhere Terminal: Split Vertical (Panel)",
+        "command": "portaterm.splitVertical.panel",
+        "title": "Portaterm: Split Vertical (Panel)",
         "icon": "media/split-vertical.svg"
       },
       {
-        "command": "anywhereTerminal.ctx.clearTerminal",
+        "command": "portaterm.ctx.clearTerminal",
         "title": "Clear Terminal"
       },
       {
-        "command": "anywhereTerminal.ctx.newTerminal",
+        "command": "portaterm.ctx.newTerminal",
         "title": "New Terminal"
       },
       {
-        "command": "anywhereTerminal.ctx.killTerminal",
+        "command": "portaterm.ctx.killTerminal",
         "title": "Kill Terminal"
       },
       {
-        "command": "anywhereTerminal.ctx.closePane",
+        "command": "portaterm.ctx.closePane",
         "title": "Close Pane"
       },
       {
-        "command": "anywhereTerminal.ctx.splitVertical",
+        "command": "portaterm.ctx.splitVertical",
         "title": "Split Vertical"
       },
       {
-        "command": "anywhereTerminal.ctx.splitHorizontal",
+        "command": "portaterm.ctx.splitHorizontal",
         "title": "Split Horizontal"
       },
       {
-        "command": "anywhereTerminal.ctx.revealInFileTree",
+        "command": "portaterm.ctx.revealInFileTree",
         "title": "Reveal in File Tree"
       },
       {
-        "command": "anywhereTerminal.insertPath",
-        "title": "Insert Path in AnyWhere Terminal"
+        "command": "portaterm.insertPath",
+        "title": "Insert Path in Portaterm"
       },
       {
-        "command": "anywhereTerminal.setFileTreePosition",
-        "title": "AnyWhere Terminal: Move File Tree…",
+        "command": "portaterm.setFileTreePosition",
+        "title": "Portaterm: Move File Tree…",
         "icon": "$(layout)"
       },
       {
-        "command": "anywhereTerminal.exportBuffer",
-        "category": "AnyWhere Terminal",
+        "command": "portaterm.exportBuffer",
+        "category": "Portaterm",
         "title": "Export Buffer to File…"
       },
       {
-        "command": "anywhereTerminal.exportLastCommand",
-        "category": "AnyWhere Terminal",
+        "command": "portaterm.exportLastCommand",
+        "category": "Portaterm",
         "title": "Export Last Command Output…"
       },
       {
-        "command": "anywhereTerminal.exportCommand",
-        "category": "AnyWhere Terminal",
+        "command": "portaterm.exportCommand",
+        "category": "Portaterm",
         "title": "Export Command…"
       },
       {
-        "command": "anywhereTerminal.exportPick.sidebar",
+        "command": "portaterm.exportPick.sidebar",
         "title": "Export…",
         "icon": "$(save-as)"
       },
       {
-        "command": "anywhereTerminal.exportPick.panel",
+        "command": "portaterm.exportPick.panel",
         "title": "Export…",
         "icon": "$(save-as)"
       },
       {
-        "command": "anywhereTerminal.openVault",
-        "category": "AnyWhere Terminal",
+        "command": "portaterm.openVault",
+        "category": "Portaterm",
         "title": "Open AI Vault",
         "icon": "$(archive)"
       },
       {
-        "command": "anywhereTerminal.openVault.sidebar",
+        "command": "portaterm.openVault.sidebar",
         "title": "Open AI Vault",
         "icon": "$(archive)"
       },
       {
-        "command": "anywhereTerminal.openVault.panel",
+        "command": "portaterm.openVault.panel",
         "title": "Open AI Vault",
         "icon": "$(archive)"
       }
@@ -427,210 +427,210 @@
     "menus": {
       "view/title": [
         {
-          "command": "anywhereTerminal.newTerminal.sidebar",
-          "when": "view == anywhereTerminal.sidebar",
+          "command": "portaterm.newTerminal.sidebar",
+          "when": "view == portaterm.sidebar",
           "group": "navigation"
         },
         {
-          "command": "anywhereTerminal.newTerminal.panel",
-          "when": "view == anywhereTerminal.panel",
+          "command": "portaterm.newTerminal.panel",
+          "when": "view == portaterm.panel",
           "group": "navigation"
         },
         {
-          "command": "anywhereTerminal.splitVertical.sidebar",
-          "when": "view == anywhereTerminal.sidebar",
+          "command": "portaterm.splitVertical.sidebar",
+          "when": "view == portaterm.sidebar",
           "group": "navigation"
         },
         {
-          "command": "anywhereTerminal.splitVertical.panel",
-          "when": "view == anywhereTerminal.panel",
+          "command": "portaterm.splitVertical.panel",
+          "when": "view == portaterm.panel",
           "group": "navigation"
         },
         {
-          "command": "anywhereTerminal.splitHorizontal.sidebar",
-          "when": "view == anywhereTerminal.sidebar",
+          "command": "portaterm.splitHorizontal.sidebar",
+          "when": "view == portaterm.sidebar",
           "group": "navigation"
         },
         {
-          "command": "anywhereTerminal.splitHorizontal.panel",
-          "when": "view == anywhereTerminal.panel",
+          "command": "portaterm.splitHorizontal.panel",
+          "when": "view == portaterm.panel",
           "group": "navigation"
         },
         {
-          "command": "anywhereTerminal.exportPick.sidebar",
-          "when": "view == anywhereTerminal.sidebar",
+          "command": "portaterm.exportPick.sidebar",
+          "when": "view == portaterm.sidebar",
           "group": "export@1"
         },
         {
-          "command": "anywhereTerminal.exportPick.panel",
-          "when": "view == anywhereTerminal.panel",
+          "command": "portaterm.exportPick.panel",
+          "when": "view == portaterm.panel",
           "group": "export@1"
         },
         {
-          "command": "anywhereTerminal.openVault.sidebar",
-          "when": "view == anywhereTerminal.sidebar",
+          "command": "portaterm.openVault.sidebar",
+          "when": "view == portaterm.sidebar",
           "group": "navigation"
         },
         {
-          "command": "anywhereTerminal.openVault.panel",
-          "when": "view == anywhereTerminal.panel",
+          "command": "portaterm.openVault.panel",
+          "when": "view == portaterm.panel",
           "group": "navigation"
         }
       ],
       "webview/context": [
         {
-          "command": "anywhereTerminal.renameTab",
+          "command": "portaterm.renameTab",
           "when": "webviewSection == 'terminalTab'",
           "group": "tab@1"
         },
         {
-          "command": "anywhereTerminal.ctx.clearTerminal",
+          "command": "portaterm.ctx.clearTerminal",
           "when": "webviewSection == 'splitPane'",
           "group": "terminal@1"
         },
         {
-          "command": "anywhereTerminal.ctx.newTerminal",
+          "command": "portaterm.ctx.newTerminal",
           "when": "webviewSection == 'splitPane'",
           "group": "terminal@2"
         },
         {
-          "command": "anywhereTerminal.ctx.killTerminal",
+          "command": "portaterm.ctx.killTerminal",
           "when": "webviewSection == 'splitPane'",
           "group": "terminal@3"
         },
         {
-          "command": "anywhereTerminal.ctx.closePane",
+          "command": "portaterm.ctx.closePane",
           "when": "webviewSection == 'splitPane'",
           "group": "split@1"
         },
         {
-          "command": "anywhereTerminal.ctx.splitVertical",
+          "command": "portaterm.ctx.splitVertical",
           "when": "webviewSection == 'splitPane'",
           "group": "split@2"
         },
         {
-          "command": "anywhereTerminal.ctx.splitHorizontal",
+          "command": "portaterm.ctx.splitHorizontal",
           "when": "webviewSection == 'splitPane'",
           "group": "split@3"
         },
         {
-          "command": "anywhereTerminal.ctx.revealInFileTree",
+          "command": "portaterm.ctx.revealInFileTree",
           "when": "webviewSection == 'splitPane'",
           "group": "navigation@1"
         },
         {
-          "command": "anywhereTerminal.exportLastCommand",
+          "command": "portaterm.exportLastCommand",
           "when": "webviewSection == 'splitPane'",
           "group": "export@1"
         },
         {
-          "command": "anywhereTerminal.exportCommand",
+          "command": "portaterm.exportCommand",
           "when": "webviewSection == 'splitPane'",
           "group": "export@2"
         },
         {
-          "command": "anywhereTerminal.exportBuffer",
+          "command": "portaterm.exportBuffer",
           "when": "webviewSection == 'splitPane'",
           "group": "export@3"
         }
       ],
       "explorer/context": [
         {
-          "command": "anywhereTerminal.insertPath",
-          "group": "anywhereTerminal@1"
+          "command": "portaterm.insertPath",
+          "group": "portaterm@1"
         }
       ],
       "commandPalette": [
         {
-          "command": "anywhereTerminal.ctx.clearTerminal",
+          "command": "portaterm.ctx.clearTerminal",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.ctx.newTerminal",
+          "command": "portaterm.ctx.newTerminal",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.ctx.killTerminal",
+          "command": "portaterm.ctx.killTerminal",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.ctx.closePane",
+          "command": "portaterm.ctx.closePane",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.ctx.splitVertical",
+          "command": "portaterm.ctx.splitVertical",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.ctx.splitHorizontal",
+          "command": "portaterm.ctx.splitHorizontal",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.ctx.revealInFileTree",
+          "command": "portaterm.ctx.revealInFileTree",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.newTerminal.sidebar",
+          "command": "portaterm.newTerminal.sidebar",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.newTerminal.panel",
+          "command": "portaterm.newTerminal.panel",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.killTerminal.sidebar",
+          "command": "portaterm.killTerminal.sidebar",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.killTerminal.panel",
+          "command": "portaterm.killTerminal.panel",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.splitHorizontal.sidebar",
+          "command": "portaterm.splitHorizontal.sidebar",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.splitHorizontal.panel",
+          "command": "portaterm.splitHorizontal.panel",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.splitVertical.sidebar",
+          "command": "portaterm.splitVertical.sidebar",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.splitVertical.panel",
+          "command": "portaterm.splitVertical.panel",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.exportPick.sidebar",
+          "command": "portaterm.exportPick.sidebar",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.exportPick.panel",
+          "command": "portaterm.exportPick.panel",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.openVault.sidebar",
+          "command": "portaterm.openVault.sidebar",
           "when": "false"
         },
         {
-          "command": "anywhereTerminal.openVault.panel",
+          "command": "portaterm.openVault.panel",
           "when": "false"
         }
       ]
     },
     "keybindings": [
       {
-        "command": "anywhereTerminal.splitVertical",
+        "command": "portaterm.splitVertical",
         "key": "ctrl+\\",
         "mac": "cmd+\\",
-        "when": "focusedView == anywhereTerminal.sidebar || focusedView == anywhereTerminal.panel"
+        "when": "focusedView == portaterm.sidebar || focusedView == portaterm.panel"
       },
       {
-        "command": "anywhereTerminal.splitHorizontal",
+        "command": "portaterm.splitHorizontal",
         "key": "ctrl+shift+\\",
         "mac": "cmd+shift+\\",
-        "when": "focusedView == anywhereTerminal.sidebar || focusedView == anywhereTerminal.panel"
+        "when": "focusedView == portaterm.sidebar || focusedView == portaterm.panel"
       }
     ]
   },
@@ -657,7 +657,8 @@
     "gate:fs-deletion": "bun src/test/invariants/fsDeletionGate.ts",
     "test:unit:watch": "vitest watch",
     "test:unit:coverage": "vitest run --coverage",
-    "vsix": "rm -f anywhere-terminal-*.vsix && vsce package --no-dependencies",
+    "vsix": "rm -f portaterm-*.vsix && vsce package --no-dependencies",
+    "install:local": "pnpm dlx @vscode/vsce@3 package --no-dependencies -o portaterm-local.vsix && ${EDITOR_CLI:-cursor} --install-extension portaterm-local.vsix --force",
     "release": "bash scripts/release.sh",
     "asm": "bun run \"$(git rev-parse --git-common-dir 2>/dev/null || echo .git)/../.agents/skills/asimov/scripts/asm.ts\""
   },

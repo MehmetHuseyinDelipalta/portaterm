@@ -159,7 +159,7 @@ describe("SessionManager.generateSnapshotMetadata", () => {
       serializeAddonFactory: fx.serializeAddon,
     });
     const a = sm.createSession("sidebar", mockWebview());
-    const b = sm.createSession("anywhereTerminal.panel", mockWebview());
+    const b = sm.createSession("portaterm.panel", mockWebview());
     mockPtySessions[0].onData?.("a");
     mockPtySessions[1].onData?.("b");
     sm.generateSnapshotMetadata(a);
@@ -203,7 +203,7 @@ describe("SessionManager.generateSnapshotMetadata", () => {
       headlessFactory: fx.headless,
       serializeAddonFactory: fx.serializeAddon,
     });
-    const id = sm.createSession("anywhereTerminal.sidebar", mockWebview(), {
+    const id = sm.createSession("portaterm.sidebar", mockWebview(), {
       worktreeId: "/repo-wt/feat",
     });
     mockPtySessions[0].onData?.("data");
@@ -219,7 +219,7 @@ describe("SessionManager.generateSnapshotMetadata", () => {
       headlessFactory: fx.headless,
       serializeAddonFactory: fx.serializeAddon,
     });
-    const agent = sm.createSession("anywhereTerminal.sidebar", mockWebview(), {
+    const agent = sm.createSession("portaterm.sidebar", mockWebview(), {
       shell: "claude",
       shellArgs: ["--resume", "x"],
       isAgentLaunch: true,
@@ -227,7 +227,7 @@ describe("SessionManager.generateSnapshotMetadata", () => {
     mockPtySessions[0].onData?.("data");
     expect(sm.generateSnapshotMetadata(agent)!.metadata.isAgentLaunch).toBe(true);
 
-    const plain = sm.createSession("anywhereTerminal.sidebar", mockWebview());
+    const plain = sm.createSession("portaterm.sidebar", mockWebview());
     mockPtySessions[1].onData?.("data");
     expect(sm.generateSnapshotMetadata(plain)!.metadata.isAgentLaunch).toBeUndefined();
     sm.dispose();
@@ -240,7 +240,7 @@ describe("SessionManager.generateSnapshotMetadata", () => {
       headlessFactory: fx.headless,
       serializeAddonFactory: fx.serializeAddon,
     });
-    const id = sm.createSession("anywhereTerminal.sidebar", mockWebview());
+    const id = sm.createSession("portaterm.sidebar", mockWebview());
     mockPtySessions[0].onData?.("x");
     const session = sm.getSession(id);
     expect(session).toBeDefined();
@@ -289,7 +289,7 @@ describe("SessionManager.generateSnapshotMetadata", () => {
       outputChars: 3,
       outputTruncated: false,
     };
-    const id = sm.createSession("anywhereTerminal.sidebar", mockWebview(), {
+    const id = sm.createSession("portaterm.sidebar", mockWebview(), {
       restoreFrom: {
         metadata: {
           sessionId,
@@ -329,7 +329,7 @@ describe("SessionManager.generateSnapshotMetadata", () => {
       headlessFactory: fx.headless,
       serializeAddonFactory: fx.serializeAddon,
     });
-    const id = sm.createSession("anywhereTerminal.sidebar", mockWebview());
+    const id = sm.createSession("portaterm.sidebar", mockWebview());
     mockPtySessions[0].onData?.("x");
     const m = sm.generateSnapshotMetadata(id)!.metadata;
     expect(m.trackedCommands).toBeUndefined();
@@ -343,8 +343,8 @@ describe("SessionManager.generateSnapshotMetadata", () => {
       headlessFactory: fx.headless,
       serializeAddonFactory: fx.serializeAddon,
     });
-    const a = sm.createSession("anywhereTerminal.sidebar", mockWebview());
-    const b = sm.createSession("anywhereTerminal.panel", mockWebview());
+    const a = sm.createSession("portaterm.sidebar", mockWebview());
+    const b = sm.createSession("portaterm.panel", mockWebview());
     mockPtySessions[0].onData?.("x");
     mockPtySessions[1].onData?.("x");
     expect(sm.generateSnapshotMetadata(a)!.metadata.viewLocation).toBe("sidebar");
@@ -399,8 +399,8 @@ describe("SessionManager snapshot replay navigation", () => {
       buffer: "x",
     });
 
-    const first = sm.createSession("anywhereTerminal.sidebar", mockWebview(), { restoreFrom: restore("first") });
-    const second = sm.createSession("anywhereTerminal.sidebar", mockWebview(), { restoreFrom: restore("second") });
+    const first = sm.createSession("portaterm.sidebar", mockWebview(), { restoreFrom: restore("first") });
+    const second = sm.createSession("portaterm.sidebar", mockWebview(), { restoreFrom: restore("second") });
 
     expect(sm.getSession(first)?.isActive).toBe(false);
     expect(sm.getSession(second)?.isActive).toBe(false);

@@ -62,7 +62,7 @@ export interface OpenFileLinkDeps {
   /**
    * Resolve the cap on findFiles results (controls how many matches the
    * QuickPick UI is willing to show). Read from
-   * `anywhereTerminal.fileSearch.maxResults` by the providers; optional
+   * `portaterm.fileSearch.maxResults` by the providers; optional
    * here so legacy test deps keep working — falls back to `DEFAULT_FIND_FILES_MAX_RESULTS`.
    */
   getFileSearchMaxResults?(): number;
@@ -74,7 +74,7 @@ const FIND_FILES_EXCLUDE = "{**/node_modules/**,**/.git/**}";
 /**
  * Default cap on findFiles results when ambiguity is possible. Most
  * workspaces have < 50 same-named files; the quickPick UI degrades past
- * that. Users can override via `anywhereTerminal.fileSearch.maxResults`
+ * that. Users can override via `portaterm.fileSearch.maxResults`
  * (e.g. when working in monorepos with many duplicate filenames).
  */
 export const DEFAULT_FIND_FILES_MAX_RESULTS = 50;
@@ -200,9 +200,7 @@ export async function openFileLink(msg: OpenFileMessage, deps: OpenFileLinkDeps)
   // the parser regresses, this keeps the handler from emitting a misleading
   // "File not found" for something the user knew was a folder.
   if (/[/\\]$/.test(msg.path)) {
-    console.warn(
-      `[AnyWhere Terminal] openFileLink: trailing slash on ${JSON.stringify(msg.path)}, treating as directory`,
-    );
+    console.warn(`[Portaterm] openFileLink: trailing slash on ${JSON.stringify(msg.path)}, treating as directory`);
     return;
   }
 
@@ -259,7 +257,7 @@ export async function openFileLink(msg: OpenFileMessage, deps: OpenFileLinkDeps)
       // unexpected (permission denied, I/O error) so support has signal — we
       // still fall through and try remaining candidates.
       if (code !== "FileNotFound" && code !== "ENOENT") {
-        console.warn(`[AnyWhere Terminal] stat(${candidate}) failed:`, err);
+        console.warn(`[Portaterm] stat(${candidate}) failed:`, err);
       }
     }
   }
@@ -280,9 +278,7 @@ export async function openFileLink(msg: OpenFileMessage, deps: OpenFileLinkDeps)
   //   ≥2 → quickPick disambiguation; user-cancel is no-op (no error toast)
   // Directory click → silent abort. Skip findFiles + skip toast.
   if (resolvedFsPath === undefined && sawDirectory) {
-    console.warn(
-      `[AnyWhere Terminal] openFileLink: target resolved to a directory, skipping. Trace:\n  ${trace.join("\n  ")}`,
-    );
+    console.warn(`[Portaterm] openFileLink: target resolved to a directory, skipping. Trace:\n  ${trace.join("\n  ")}`);
     return;
   }
 
@@ -330,7 +326,7 @@ export async function openFileLink(msg: OpenFileMessage, deps: OpenFileLinkDeps)
     try {
       rawMax = deps.getFileSearchMaxResults?.() ?? DEFAULT_FIND_FILES_MAX_RESULTS;
     } catch (err) {
-      console.warn("[AnyWhere Terminal] getFileSearchMaxResults threw, using default:", err);
+      console.warn("[Portaterm] getFileSearchMaxResults threw, using default:", err);
     }
     const maxResults =
       typeof rawMax === "number" && Number.isFinite(rawMax)
@@ -398,7 +394,7 @@ export async function openFileLink(msg: OpenFileMessage, deps: OpenFileLinkDeps)
       }
     } catch (err) {
       trace.push(`findFiles fallback → threw: ${(err as Error)?.message ?? err}`);
-      console.warn("[AnyWhere Terminal] findFiles fallback failed:", err);
+      console.warn("[Portaterm] findFiles fallback failed:", err);
     } finally {
       cancelSource.dispose();
     }

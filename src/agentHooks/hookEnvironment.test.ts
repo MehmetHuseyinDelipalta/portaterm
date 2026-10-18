@@ -10,7 +10,7 @@ function credentials(): SessionEnvironmentContributor & { released: string[] } {
   const released: string[] = [];
   return {
     released,
-    create: (sessionId) => ({ ANYWHERE_TERMINAL_AGENT_HOOK_URL: `http://127.0.0.1/${sessionId}/tok` }),
+    create: (sessionId) => ({ PORTATERM_AGENT_HOOK_URL: `http://127.0.0.1/${sessionId}/tok` }),
     release: (sessionId) => {
       released.push(sessionId);
     },
@@ -22,7 +22,7 @@ describe("what a terminal is told", () => {
     const composed = withHookEnvironment(credentials(), () => ({ OPENCODE_CONFIG_DIR: "/storage/opencode-config" }));
 
     expect(composed.create("t1")).toEqual({
-      ANYWHERE_TERMINAL_AGENT_HOOK_URL: "http://127.0.0.1/t1/tok",
+      PORTATERM_AGENT_HOOK_URL: "http://127.0.0.1/t1/tok",
       OPENCODE_CONFIG_DIR: "/storage/opencode-config",
     });
   });
@@ -30,7 +30,7 @@ describe("what a terminal is told", () => {
   it("carries the credential alone while reporting is off", () => {
     const composed = withHookEnvironment(credentials(), () => ({}));
 
-    expect(composed.create("t1")).toEqual({ ANYWHERE_TERMINAL_AGENT_HOOK_URL: "http://127.0.0.1/t1/tok" });
+    expect(composed.create("t1")).toEqual({ PORTATERM_AGENT_HOOK_URL: "http://127.0.0.1/t1/tok" });
   });
 
   it("still revokes the credential, which is the only part that expires", () => {
@@ -61,7 +61,7 @@ describe("what a terminal is told", () => {
     const contributed = composed.create("t1", { OPENCODE_CONFIG_DIR: "/home/u/my-opencode" });
 
     expect(contributed.OPENCODE_CONFIG_DIR).toBeUndefined();
-    expect(contributed.ANYWHERE_TERMINAL_AGENT_HOOK_URL).toBe("http://127.0.0.1/t1/tok");
+    expect(contributed.PORTATERM_AGENT_HOOK_URL).toBe("http://127.0.0.1/t1/tok");
   });
 });
 

@@ -1,4 +1,7 @@
-AnyWhere Terminal
+Portaterm
+Copyright (c) 2026 Mehmet Hüseyin Delipalta
+
+Based on AnyWhere Terminal (https://github.com/huybuidac/anywhere-terminal)
 Copyright (c) 2026 Huy Bui Dac
 
 This product bundles third-party software whose licenses are listed below.
@@ -20,7 +23,7 @@ src/vs/workbench/contrib/terminal/common/scripts/):
   - shellIntegration.ps1
 
 These files are used at runtime to enable OSC 633 shell-integration markers
-inside AnyWhere Terminal sessions, mirroring the behavior of VS Code's
+inside Portaterm sessions, mirroring the behavior of VS Code's
 integrated terminal.
 
 License: MIT

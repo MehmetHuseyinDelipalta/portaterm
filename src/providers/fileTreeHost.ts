@@ -442,14 +442,14 @@ export class FileTreeHost implements RootProvider {
               canSelectFiles: false,
               canSelectMany: false,
               openLabel: "Open Folder",
-              title: "Open Folder in AnyWhere Terminal File Tree",
+              title: "Open Folder in Portaterm File Tree",
             });
             if (!picked || picked.length === 0) {
               return;
             }
             if (!this.attachPost || !this.attachReady?.()) {
               void vscode.window.showWarningMessage(
-                "AnyWhere Terminal file tree is no longer available. Reopen it and try again.",
+                "Portaterm file tree is no longer available. Reopen it and try again.",
               );
               return;
             }
@@ -460,8 +460,8 @@ export class FileTreeHost implements RootProvider {
               source: "openFolder",
             });
           } catch (err) {
-            console.error("[AnyWhere Terminal] Open Folder dialog failed:", err);
-            void vscode.window.showErrorMessage("AnyWhere Terminal could not open the folder picker.");
+            console.error("[Portaterm] Open Folder dialog failed:", err);
+            void vscode.window.showErrorMessage("Portaterm could not open the folder picker.");
           }
         })();
         return true;
@@ -489,7 +489,7 @@ export class FileTreeHost implements RootProvider {
     try {
       await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(msg.path));
     } catch {
-      await vscode.window.showErrorMessage("AnyWhere Terminal could not reveal the selected item.");
+      await vscode.window.showErrorMessage("Portaterm could not reveal the selected item.");
     }
   }
 
@@ -500,7 +500,7 @@ export class FileTreeHost implements RootProvider {
     try {
       await vscode.env.clipboard.writeText(msg.path);
     } catch {
-      await vscode.window.showErrorMessage("AnyWhere Terminal could not copy the selected path.");
+      await vscode.window.showErrorMessage("Portaterm could not copy the selected path.");
     }
   }
 
@@ -514,7 +514,7 @@ export class FileTreeHost implements RootProvider {
     try {
       await vscode.env.clipboard.writeText(toForwardSlash(rel));
     } catch {
-      await vscode.window.showErrorMessage("AnyWhere Terminal could not copy the selected path.");
+      await vscode.window.showErrorMessage("Portaterm could not copy the selected path.");
     }
   }
 
@@ -528,14 +528,14 @@ export class FileTreeHost implements RootProvider {
     try {
       stat = await vscode.workspace.fs.stat(vscode.Uri.file(msg.path));
     } catch {
-      await vscode.window.showErrorMessage("AnyWhere Terminal could not delete the selected item.");
+      await vscode.window.showErrorMessage("Portaterm could not delete the selected item.");
       return;
     }
 
     const isDirectory = (stat.type & vscode.FileType.Directory) !== 0;
     const isFile = (stat.type & vscode.FileType.File) !== 0;
     if (!isDirectory && !isFile) {
-      await vscode.window.showErrorMessage("AnyWhere Terminal could not delete the selected item.");
+      await vscode.window.showErrorMessage("Portaterm could not delete the selected item.");
       return;
     }
 
@@ -557,7 +557,7 @@ export class FileTreeHost implements RootProvider {
     try {
       await vscode.workspace.fs.delete(vscode.Uri.file(msg.path), { recursive: isDirectory, useTrash: true });
     } catch {
-      await vscode.window.showErrorMessage("AnyWhere Terminal could not delete the selected item.");
+      await vscode.window.showErrorMessage("Portaterm could not delete the selected item.");
       return;
     }
 

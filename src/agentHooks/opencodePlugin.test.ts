@@ -51,11 +51,11 @@ describe("the plugin OpenCode loads", () => {
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "at-oc-plugin-"));
     hook = await receiver();
-    process.env.ANYWHERE_TERMINAL_AGENT_HOOK_URL = hook.url;
+    process.env.PORTATERM_AGENT_HOOK_URL = hook.url;
   });
 
   afterEach(async () => {
-    delete process.env.ANYWHERE_TERMINAL_AGENT_HOOK_URL;
+    delete process.env.PORTATERM_AGENT_HOOK_URL;
     if (previous === undefined) {
       delete process.env[OPENCODE_CONFIG_DIR_ENV];
     } else {
@@ -148,7 +148,7 @@ describe("the plugin OpenCode loads", () => {
     await new Promise<void>((resolve) => stalled.listen(0, "127.0.0.1", resolve));
     const address = stalled.address();
     const port = typeof address === "object" && address !== null ? address.port : 0;
-    process.env.ANYWHERE_TERMINAL_AGENT_HOOK_URL = `http://127.0.0.1:${port}/t1/tok`;
+    process.env.PORTATERM_AGENT_HOOK_URL = `http://127.0.0.1:${port}/t1/tok`;
     const plugin = await loadPlugin(dir);
 
     await expect(
@@ -173,7 +173,7 @@ describe("the plugin OpenCode loads", () => {
   });
 
   it("stays quiet when no credential is in the environment", async () => {
-    delete process.env.ANYWHERE_TERMINAL_AGENT_HOOK_URL;
+    delete process.env.PORTATERM_AGENT_HOOK_URL;
     const plugin = await loadPlugin(dir);
 
     await plugin.event({ event: { type: "session.created", properties: { sessionID: "ses_abc123" } } });

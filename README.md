@@ -1,4 +1,6 @@
-# AnyWhere Terminal
+# Portaterm
+
+> Fork of [AnyWhere Terminal](https://github.com/huybuidac/anywhere-terminal) by Huy Bui Dac (MIT), extended with additional features.
 
 **A real terminal you can put anywhere in VS Code or Cursor — and a home base for your AI coding agents.**
 
@@ -8,24 +10,24 @@ Sidebar, secondary sidebar, bottom panel, or an editor tab. Split it, tab it, th
 ![VS Code](https://img.shields.io/badge/VS%20Code-1.105%2B-007ACC.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
 
-![AnyWhere Terminal demo](images/demo.png)
+![Portaterm demo](images/demo.png)
 
 ## Install
 
-**VS Code** — search `AnyWhere Terminal` in Extensions, or:
+**VS Code** — search `Portaterm` in Extensions, or:
 
 ```
-ext install huybuidac.anywhere-terminal
+ext install mhd.portaterm
 ```
 
-**Cursor, Windsurf, Antigravity, VSCodium & other VS Code-compatible editors** — search `AnyWhere Terminal` (published to [Open VSX](https://open-vsx.org/extension/huybuidac/anywhere-terminal)).
+**Cursor, Windsurf, Antigravity, VSCodium & other VS Code-compatible editors** — search `Portaterm` (published to [Open VSX](https://open-vsx.org/extension/mhd/portaterm)).
 
 ## Quickstart
 
-1. Click the **AnyWhere Terminal** icon in the Activity Bar — a session starts automatically.
+1. Click the **Portaterm** icon in the Activity Bar — a session starts automatically.
 2. Drag the view to **any** sidebar, panel, or editor group.
 3. Use the title bar to add tabs or split panes. Right-click for context actions.
-4. Open the **AI Vault** from the panel header (or `AnyWhere Terminal: Open AI Vault`) to browse and continue your AI-CLI sessions.
+4. Open the **AI Vault** from the panel header (or `Portaterm: Open AI Vault`) to browse and continue your AI-CLI sessions.
 
 ## At a glance
 
@@ -68,19 +70,19 @@ Activate a supported transcript row to open a movable, content-rich floating pre
 
 ### Cursor history and Agent CLI
 
-AnyWhere Terminal previews local history from both **Cursor Agent CLI** and **Cursor IDE Composer**, and launches only a **user-installed** Cursor Agent CLI. Install the CLI from Cursor's [official installation guide](https://prod.cursor.com/docs/cli/installation); the extension does not bundle, mirror, update, or redistribute Cursor's proprietary executable.
+Portaterm previews local history from both **Cursor Agent CLI** and **Cursor IDE Composer**, and launches only a **user-installed** Cursor Agent CLI. Install the CLI from Cursor's [official installation guide](https://prod.cursor.com/docs/cli/installation); the extension does not bundle, mirror, update, or redistribute Cursor's proprietary executable.
 
 - **Executable resolution** — launch probes `agent` first, then the backward-compatible `cursor-agent` alias. The candidate must expose Cursor's interactive prompt, Resume, plan-mode, and force capabilities; the desktop-app launcher `cursor` is never used as the agent CLI.
 - **Vault sources** — eligible CLI chats come from bounded `~/.cursor/chats/` metadata, with explicit detail decoding from compatible WAL-aware `store.db` snapshots and project JSONL mirrors. Supported Cursor IDE Composer headers and bubbles come from the local `globalStorage/state.vscdb`. List indexing and persisted caches remain metadata-only. Project transcripts under `~/.cursor/projects/` are never listed on their own — they are read only as an exact mirror of the same project's CLI chat, or as the child transcript a sub-agent card points at.
 - **Actions** — row activation opens preview. A validated `CLI` row may explicitly Resume as `<detected-agent> --resume <chat-id>` or Continue in a new Cursor terminal. `IDE` entries never Resume, and project-history data never grants Resume capability; Cursor fork, cross-store Resume, and ACP embedding remain unsupported.
 - **Proof before Resume** — Resume and Copy Resume Command first read the chat's own bounded store profile and require the stored agent identity to match the chat directory. A missing, locked, unreadable, unsupported, or mismatched store refuses the action before any executable is probed, so the clipboard is untouched and no terminal is created; the row itself stays in the list.
-- **Optional status observation** — set machine-scoped `anywhereTerminal.cursorAgent.hooks.enabled` to `true` to show working, approval-required, and idle tab states. It defaults to `false`. AnyWhere Terminal adds and removes only its owned entries in `~/.cursor/hooks.json`, preserves unrelated hooks, authenticates events to the matching live pane over loopback, and fails open if the observer is unavailable. Recent PTY output remains the fallback when hooks are disabled or stale.
+- **Optional status observation** — set machine-scoped `portaterm.cursorAgent.hooks.enabled` to `true` to show working, approval-required, and idle tab states. It defaults to `false`. Portaterm adds and removes only its owned entries in `~/.cursor/hooks.json`, preserves unrelated hooks, authenticates events to the matching live pane over loopback, and fails open if the observer is unavailable. Recent PTY output remains the fallback when hooks are disabled or stale.
 - **Hook privacy** — observation uses status event names only. Prompt text, shell output, raw hook bodies, account identity, and transcript content are not persisted, logged, cached, or posted to the webview.
 - **Troubleshooting** — run `agent status` (or `cursor-agent status`) to verify authentication and `agent --help` to verify the expected capabilities. If hook setup cannot safely reconcile the user-owned config, or the native Windows wrapper cannot pass its no-op probe, Cursor remains usable and the tab falls back to PTY-output activity.
 
 ## 🔗 Made for AI coding CLIs
 
-Running an agent in the terminal floods it with file paths, diffs, and image attachments. AnyWhere Terminal makes that output **navigable**.
+Running an agent in the terminal floods it with file paths, diffs, and image attachments. Portaterm makes that output **navigable**.
 
 - **Clickable file paths** — paths in terminal output are underlined and open in the editor on click, jumping to the parsed line/column. Understands `src/foo.ts:42:7`, line ranges, Python tracebacks, Windows paths, `file://` URIs, and Claude/Codex CLI line-wrapping (`Read(/abs/path · lines 180-299)`).
 - **Hover to preview** — hover any path for a syntax-highlighted (Shiki) preview with line numbers and markdown rendering; the target line scrolls into view. A trust-policy gate keeps dotfiles and sensitive folders from auto-previewing — press `Cmd`/`Ctrl` to override for one file.
@@ -88,7 +90,7 @@ Running an agent in the terminal floods it with file paths, diffs, and image att
 
 ## 🪟 Put it anywhere
 
-The built-in terminal is awkward to reposition and can't live in the sidebar. AnyWhere Terminal lets you put a full terminal **anywhere** — without losing PTY semantics, WebGL rendering, theming, or clickable links.
+The built-in terminal is awkward to reposition and can't live in the sidebar. Portaterm lets you put a full terminal **anywhere** — without losing PTY semantics, WebGL rendering, theming, or clickable links.
 
 - **Place it anywhere** — Primary Sidebar, Secondary Sidebar, Bottom Panel, or Editor Tab; each location remembers its own state.
 - **Tabs + split panes** — horizontal/vertical splits with drag-to-resize, recursive.
@@ -108,15 +110,15 @@ The built-in terminal is awkward to reposition and can't live in the sidebar. An
 | `Cmd+Backspace` | Kill input line |
 | `Shift+Enter` | Insert newline |
 
-Rename a root tab by double-clicking its label, choosing **Rename Tab…** from the tab context menu, or running **AnyWhere Terminal: Rename Tab…** from the Command Palette. No default rename keybinding is shipped.
+Rename a root tab by double-clicking its label, choosing **Rename Tab…** from the tab context menu, or running **Portaterm: Rename Tab…** from the Command Palette. No default rename keybinding is shipped.
 
 > Replace `Cmd` with `Ctrl` on non-macOS (Windows/Linux support in progress).
 
-Run `Cmd+Shift+P` → `AnyWhere Terminal:` for the full command list.
+Run `Cmd+Shift+P` → `Portaterm:` for the full command list.
 
 ## Settings
 
-Key settings under `anywhereTerminal.*` (see the Settings UI for the full list):
+Key settings under `portaterm.*` (see the Settings UI for the full list):
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -146,9 +148,9 @@ Terminals attempt to survive two distinct interruptions:
 - **Window reload (`Cmd+R` / `workbench.action.reloadWindow`)** — every terminal location keeps its PTY alive across the reload. Editor-tab terminals use a 5 s grace window before tearing down; if VS Code revives the panel within that window (the normal case), the shell continues without interruption — including long-running processes like `npm run dev`.
 - **Full restart (quit and relaunch VS Code, or open a fresh workspace)** — the shell process itself does **not** survive (a fresh PTY is spawned), but the scrollback, custom tab name, view location (sidebar / panel / editor), and last known `cwd` are restored. A dim divider line marks the boundary between the restored buffer and the new shell prompt: `─── restored — last update at HH:MM ───`. If the prior shell had exited, the divider includes the exit code and the restored tab is read-only.
 
-Persistence is workspace-scoped (when a workspace folder is open): snapshots from workspace A are not surfaced in workspace B. Storage is capped at 20 snapshots per workspace, 1 MB per snapshot, and 7 days of age — whichever comes first. Disable the entire pipeline via `anywhereTerminal.sessionRestore.enabled` if you don't want any state written to disk; toggling the setting off also purges existing snapshots. When no workspace folder is open, persistence is disabled for that window (the no-folder global directory could otherwise leak snapshots between unrelated no-folder windows).
+Persistence is workspace-scoped (when a workspace folder is open): snapshots from workspace A are not surfaced in workspace B. Storage is capped at 20 snapshots per workspace, 1 MB per snapshot, and 7 days of age — whichever comes first. Disable the entire pipeline via `portaterm.sessionRestore.enabled` if you don't want any state written to disk; toggling the setting off also purges existing snapshots. When no workspace folder is open, persistence is disabled for that window (the no-folder global directory could otherwise leak snapshots between unrelated no-folder windows).
 
-> **What's persisted**: the serialized xterm scrollback buffer is written verbatim to disk. **Anything echoed or displayed in the terminal — passwords typed at a prompt, `cat`'d `.env` files, `aws configure` output, API tokens pasted to verify, kubeconfigs printed via `kubectl config view`, etc. — is stored in plaintext** under VS Code's per-extension storage directory until evicted by the caps above. The clear-screen command (`Cmd+K` / right-click → Clear) now also clears the persisted buffer, so use it as a privacy boundary before screen-share or hand-off. If your shell often surfaces secrets and you don't want any of them on disk, set `anywhereTerminal.sessionRestore.enabled` to `false`.
+> **What's persisted**: the serialized xterm scrollback buffer is written verbatim to disk. **Anything echoed or displayed in the terminal — passwords typed at a prompt, `cat`'d `.env` files, `aws configure` output, API tokens pasted to verify, kubeconfigs printed via `kubectl config view`, etc. — is stored in plaintext** under VS Code's per-extension storage directory until evicted by the caps above. The clear-screen command (`Cmd+K` / right-click → Clear) now also clears the persisted buffer, so use it as a privacy boundary before screen-share or hand-off. If your shell often surfaces secrets and you don't want any of them on disk, set `portaterm.sessionRestore.enabled` to `false`.
 
 > Process revive (the actual shell process surviving a full restart) is out of scope for this release. A future opt-in path may integrate `tmux` / `screen` / `zellij` for users who need that.
 
@@ -158,9 +160,9 @@ Three Command Palette entries write the active terminal's content to a file:
 
 | Command | What it writes |
 |---|---|
-| **AnyWhere Terminal: Export Buffer to File…** | Full scrollback of the focused terminal. Always available regardless of shell integration. |
-| **AnyWhere Terminal: Export Last Command Output…** | The most-recently-completed command (`$ <command>` + exit code + cwd + output). Requires shell integration. |
-| **AnyWhere Terminal: Export Command…** | Pick a tracked command from a quickpick (most-recent-first), then save. Requires shell integration. |
+| **Portaterm: Export Buffer to File…** | Full scrollback of the focused terminal. Always available regardless of shell integration. |
+| **Portaterm: Export Last Command Output…** | The most-recently-completed command (`$ <command>` + exit code + cwd + output). Requires shell integration. |
+| **Portaterm: Export Command…** | Pick a tracked command from a quickpick (most-recent-first), then save. Requires shell integration. |
 
 The save dialog offers two formats:
 
@@ -171,7 +173,7 @@ The save dialog offers two formats:
 
 ### Shell integration
 
-Per-command export ("Export Last Command Output" and "Export Command") relies on the same **OSC 633** shell-integration sequences that VS Code's built-in terminal uses. AnyWhere Terminal auto-injects VS Code's MIT-licensed scripts at PTY spawn for these shells:
+Per-command export ("Export Last Command Output" and "Export Command") relies on the same **OSC 633** shell-integration sequences that VS Code's built-in terminal uses. Portaterm auto-injects VS Code's MIT-licensed scripts at PTY spawn for these shells:
 
 | Shell | macOS | Linux | Windows |
 |---|---|---|---|
@@ -200,7 +202,7 @@ pnpm run watch        # rebuild on change
 pnpm run test:unit    # unit tests
 ```
 
-Press `F5` in VS Code to launch an Extension Development Host. Issues and PRs welcome at <https://github.com/huybuidac/anywhere-terminal/issues>.
+Press `F5` in VS Code to launch an Extension Development Host. Issues and PRs welcome at <https://github.com/MehmetHuseyinDelipalta/portaterm/issues>.
 
 Release process: see [`docs/RELEASING.md`](docs/RELEASING.md).
 

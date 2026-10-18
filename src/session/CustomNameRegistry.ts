@@ -10,7 +10,7 @@
 const CUSTOM_NAME_MAX_LENGTH = 80;
 
 /** workspaceState key for the per-terminal-number custom-name record. */
-const CUSTOM_NAMES_STORAGE_KEY = "anywhereTerminal.tabCustomNames";
+const CUSTOM_NAMES_STORAGE_KEY = "portaterm.tabCustomNames";
 
 /**
  * Minimal subset of `vscode.Memento` (read/write key-value) actually used.
@@ -94,7 +94,7 @@ export class CustomNameRegistry {
       snapshot[k] = v;
     }
     void this.storage.update(CUSTOM_NAMES_STORAGE_KEY, snapshot).then(undefined, (err) => {
-      console.error("[AnyWhere Terminal] Failed to persist custom tab names:", err);
+      console.error("[Portaterm] Failed to persist custom tab names:", err);
     });
   }
 }

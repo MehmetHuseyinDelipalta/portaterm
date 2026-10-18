@@ -168,7 +168,7 @@ describe("exportBuffer", () => {
     const deps = makeDeps({ surface, sessionManager: makeSessionManager(), focusedSessionId: undefined });
     await exportBuffer(deps);
     expect(toasts).toEqual([
-      { kind: "warn", message: "AnyWhere Terminal: focus a terminal session before exporting.", items: [] },
+      { kind: "warn", message: "Portaterm: focus a terminal session before exporting.", items: [] },
     ]);
     expect(surface.showSaveDialog).not.toHaveBeenCalled();
   });
@@ -181,7 +181,7 @@ describe("exportBuffer", () => {
     expect(toasts).toEqual([
       {
         kind: "error",
-        message: "AnyWhere Terminal: scrollback dump failed — timed out.",
+        message: "Portaterm: scrollback dump failed — timed out.",
         items: [],
       },
     ]);
@@ -229,7 +229,7 @@ describe("exportLastCommand", () => {
       {
         kind: "info",
         message:
-          "AnyWhere Terminal: no tracked commands yet. Commands track from window reload onward and require shell integration — see Help.",
+          "Portaterm: no tracked commands yet. Commands track from window reload onward and require shell integration — see Help.",
         items: ["Help"],
       },
     ]);

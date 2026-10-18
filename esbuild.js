@@ -1,4 +1,4 @@
-// esbuild.js — Dual-target build for AnyWhere Terminal
+// esbuild.js — Dual-target build for Portaterm
 //
 // Extension bundle: dist/extension.js (CJS, Node.js)
 // WebView bundle:   media/webview.js  (IIFE, browser)

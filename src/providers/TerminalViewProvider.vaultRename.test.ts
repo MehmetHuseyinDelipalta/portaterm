@@ -73,7 +73,7 @@ function mountProvider(vault: FakeVault): {
   const postMessageSpy = vi.fn(() => Promise.resolve(true));
   const webviewView = {
     visible: true,
-    viewType: "anywhereTerminal.sidebar",
+    viewType: "portaterm.sidebar",
     webview: {
       html: "",
       options: {},

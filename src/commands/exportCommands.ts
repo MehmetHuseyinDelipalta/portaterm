@@ -1,8 +1,8 @@
 // src/commands/exportCommands.ts — Three command palette entries:
 //
-//   anywhereTerminal.exportBuffer         → full scrollback dump
-//   anywhereTerminal.exportLastCommand    → most-recently-completed command
-//   anywhereTerminal.exportCommand        → quickpick over tracked commands
+//   portaterm.exportBuffer         → full scrollback dump
+//   portaterm.exportLastCommand    → most-recently-completed command
+//   portaterm.exportCommand        → quickpick over tracked commands
 //
 // See:
 //   asimov/changes/export-terminal-session/specs/terminal-session-export/spec.md
@@ -49,9 +49,9 @@ export interface ExportCommandDeps {
   readmeShellIntegrationUrl: string;
 }
 
-export const NO_FOCUS_TOAST = "AnyWhere Terminal: focus a terminal session before exporting.";
+export const NO_FOCUS_TOAST = "Portaterm: focus a terminal session before exporting.";
 const NO_TRACKED_TOAST =
-  "AnyWhere Terminal: no tracked commands yet. Commands track from window reload onward and require shell integration — see Help.";
+  "Portaterm: no tracked commands yet. Commands track from window reload onward and require shell integration — see Help.";
 const HELP_LABEL = "Help";
 
 // Filter extensions are DISJOINT so the user's filter choice maps unambiguously
@@ -73,7 +73,7 @@ export function exportBuffer(deps: ExportCommandDeps): Promise<void> {
       dump = await deps.sessionManager.requestScrollbackDump(sessionId);
     } catch (err) {
       await deps.vsc.showErrorMessage(
-        `AnyWhere Terminal: scrollback dump failed — ${err instanceof Error ? err.message : String(err)}.`,
+        `Portaterm: scrollback dump failed — ${err instanceof Error ? err.message : String(err)}.`,
       );
       return { abort: true };
     }
@@ -268,7 +268,7 @@ async function writeWithErrorToast(deps: ExportCommandDeps, target: vscode.Uri, 
     await writeExportAtomically(target, content, deps.vsc.fs);
   } catch (err) {
     await deps.vsc.showErrorMessage(
-      `AnyWhere Terminal: failed to write ${target.fsPath} — ${err instanceof Error ? err.message : String(err)}.`,
+      `Portaterm: failed to write ${target.fsPath} — ${err instanceof Error ? err.message : String(err)}.`,
     );
   }
 }

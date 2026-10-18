@@ -522,7 +522,7 @@ export function renderAgentsHeader(count: number, attachedCount: number, onColla
   attachedIcon.setAttribute("aria-hidden", "true");
   attached.append(attachedIcon, document.createTextNode(`${attachedCount} open`));
   label.appendChild(attached);
-  header.dataset.tip = `${attachedCount} open in AnyWhere Terminal · Collapse agents`;
+  header.dataset.tip = `${attachedCount} open in Portaterm · Collapse agents`;
 
   const chev = document.createElement("span");
   chev.className = "wt-chev";
@@ -703,8 +703,7 @@ export function renderAgentRow(row: WorktreeAgentRow, opts: AgentRowOptions, cb:
     if (opts.atAttachment === "active") {
       badge.classList.add("is-active");
     }
-    const label =
-      opts.atAttachment === "active" ? "Focused in AnyWhere Terminal" : "Open in AnyWhere Terminal — focus terminal";
+    const label = opts.atAttachment === "active" ? "Focused in Portaterm" : "Open in Portaterm — focus terminal";
     badge.setAttribute("aria-label", label);
     badge.dataset.tip = label;
     badge.addEventListener("click", (ev) => {

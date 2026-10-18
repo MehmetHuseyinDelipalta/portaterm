@@ -38,7 +38,7 @@ describe("SessionManager flushSnapshotsSync + flushIndexAwaited", () => {
       storage: storage as any,
     });
     const a = sm.createSession("sidebar", mockWebview());
-    const b = sm.createSession("anywhereTerminal.panel", mockWebview());
+    const b = sm.createSession("portaterm.panel", mockWebview());
     mockPtySessions[0].onData?.("aa");
     mockPtySessions[1].onData?.("bb");
     sm.flushSnapshotsSync();

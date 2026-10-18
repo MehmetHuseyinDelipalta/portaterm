@@ -126,13 +126,13 @@ export class PtySession {
     options: { cols?: number; rows?: number; cwd?: string; env?: Record<string, string> },
   ): void {
     if (this._isAlive) {
-      console.warn(`[AnyWhere Terminal] PtySession ${this.id}: spawn() called while already alive`);
+      console.warn(`[Portaterm] PtySession ${this.id}: spawn() called while already alive`);
       return;
     }
 
     // Prevent re-spawning on a previously used session — create a new PtySession instead
     if (this._hasSpawned) {
-      console.warn(`[AnyWhere Terminal] PtySession ${this.id}: spawn() called on already-used session`);
+      console.warn(`[Portaterm] PtySession ${this.id}: spawn() called on already-used session`);
       return;
     }
 
@@ -163,7 +163,7 @@ export class PtySession {
         try {
           this._oscParser.feed(data, this._shellIntegrationSink);
         } catch (err) {
-          console.error("[AnyWhere Terminal] OSC parser/sink threw:", err);
+          console.error("[Portaterm] OSC parser/sink threw:", err);
         }
       }
       this._onDataCallback?.(data);

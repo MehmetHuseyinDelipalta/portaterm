@@ -210,10 +210,10 @@ export function buildEnvironment(): Record<string, string> {
   }
 
   // Identify our terminal program
-  env.TERM_PROGRAM = "AnyWhereTerminal";
+  env.TERM_PROGRAM = "Portaterm";
 
   // Extension version
-  const ext = vscode.extensions.getExtension("anywhere-terminal.anywhere-terminal");
+  const ext = vscode.extensions.getExtension("mhd.portaterm");
   env.TERM_PROGRAM_VERSION = ext?.packageJSON?.version ?? "0.0.0";
 
   return env;

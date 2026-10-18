@@ -115,7 +115,7 @@ describe("AgentHookController", () => {
         installed: true,
         reason: "lock-release-failed",
         affected: ["/tmp/settings.json"],
-        unresolved: ["/tmp/settings.json.anywhere-terminal.lock"],
+        unresolved: ["/tmp/settings.json.portaterm.lock"],
       }),
     });
 
@@ -127,7 +127,7 @@ describe("AgentHookController", () => {
     expect(onWarning).toHaveBeenCalledWith(
       "cursor",
       "install",
-      "lock-release-failed: /tmp/settings.json, /tmp/settings.json.anywhere-terminal.lock",
+      "lock-release-failed: /tmp/settings.json, /tmp/settings.json.portaterm.lock",
     );
   });
 
@@ -138,7 +138,7 @@ describe("AgentHookController", () => {
         installed: false,
         reason: "write-failed",
         affected: ["/profiles/work/settings.json"],
-        unresolved: ["/profiles/work/settings.json.anywhere-terminal.lock"],
+        unresolved: ["/profiles/work/settings.json.portaterm.lock"],
       }),
     });
 
@@ -147,7 +147,7 @@ describe("AgentHookController", () => {
     expect(onWarning).toHaveBeenCalledWith(
       "cursor",
       "install",
-      "write-failed: /profiles/work/settings.json, /profiles/work/settings.json.anywhere-terminal.lock",
+      "write-failed: /profiles/work/settings.json, /profiles/work/settings.json.portaterm.lock",
     );
   });
 
@@ -226,7 +226,7 @@ describe("AgentHookController", () => {
         removed: true,
         reason: "lock-release-failed",
         affected: ["/tmp/settings.json"],
-        unresolved: ["/tmp/settings.json.anywhere-terminal.lock"],
+        unresolved: ["/tmp/settings.json.portaterm.lock"],
       }),
     });
 
@@ -236,7 +236,7 @@ describe("AgentHookController", () => {
     expect(onWarning).toHaveBeenCalledWith(
       "cursor",
       "uninstall",
-      "lock-release-failed: /tmp/settings.json, /tmp/settings.json.anywhere-terminal.lock",
+      "lock-release-failed: /tmp/settings.json, /tmp/settings.json.portaterm.lock",
     );
   });
 

@@ -1,4 +1,4 @@
-// src/settings/FileTreeSettingsReader.ts — Reads anywhereTerminal.fileTree.* settings
+// src/settings/FileTreeSettingsReader.ts — Reads portaterm.fileTree.* settings
 // See: specs/auto-reveal-active-file/spec.md#requirement-disabled-state
 
 import * as vscode from "vscode";
@@ -22,7 +22,7 @@ const DEFAULT_EXCLUDE: Record<string, true> = {
 let _warnedWhenCondition = false;
 
 /**
- * Read `anywhereTerminal.fileTree.*` settings and return a normalized config.
+ * Read `portaterm.fileTree.*` settings and return a normalized config.
  *
  * - autoReveal: `true` / `"true"` → `'reveal'`; `false` / `"false"` → `'none'`;
  *   `"focusNoScroll"` → `'focusNoScroll'`; anything else → `'reveal'` (default).
@@ -31,7 +31,7 @@ let _warnedWhenCondition = false;
  *   in v1 — logged once at warn level.
  */
 export function readFileTreeSettings(): FileTreeAutoRevealConfig {
-  const config = vscode.workspace.getConfiguration("anywhereTerminal.fileTree");
+  const config = vscode.workspace.getConfiguration("portaterm.fileTree");
   const rawMode = config.get<boolean | string>("autoReveal", true);
   const rawExclude = config.get<Record<string, unknown>>("autoRevealExclude", DEFAULT_EXCLUDE);
 
@@ -66,7 +66,7 @@ function normalizeExclude(raw: Record<string, unknown> | null | undefined): Read
       // 'when'-condition shape: keep the pattern (treat as 'true') and warn once
       if (!_warnedWhenCondition) {
         console.warn(
-          `[AnyWhere Terminal] autoRevealExclude: pattern '${pattern}' has a 'when'-condition value, which is not honored in this version. Treating as 'true'.`,
+          `[Portaterm] autoRevealExclude: pattern '${pattern}' has a 'when'-condition value, which is not honored in this version. Treating as 'true'.`,
         );
         _warnedWhenCondition = true;
       }

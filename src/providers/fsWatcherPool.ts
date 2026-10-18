@@ -29,7 +29,7 @@
 
 import * as vscode from "vscode";
 
-const LOG_PREFIX = "[AnyWhere Terminal][fs-watcher-pool]";
+const LOG_PREFIX = "[Portaterm][fs-watcher-pool]";
 
 /** Trailing debounce window for per-directory create/delete coalescing. */
 export const DEBOUNCE_MS = 150;

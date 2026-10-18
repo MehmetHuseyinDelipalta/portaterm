@@ -5,7 +5,7 @@ import type { AgentHookRegistration, AgentHookSession } from "../AgentHookRuntim
 import { parseAgentSessionReport } from "../reportTypes";
 
 export const OPENCODE_HOOK_SLUG = "opencode";
-export const OPENCODE_HOOK_ENV_VAR = "ANYWHERE_TERMINAL_AGENT_HOOK_URL";
+export const OPENCODE_HOOK_ENV_VAR = "PORTATERM_AGENT_HOOK_URL";
 
 export function opencodeAgentRegistration(): AgentHookRegistration {
   return {

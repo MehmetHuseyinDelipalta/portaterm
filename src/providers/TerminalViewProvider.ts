@@ -86,8 +86,8 @@ const MAX_PENDING_SPLIT_CHILDREN = 64;
  * See: docs/design/webview-provider.md
  */
 export class TerminalViewProvider implements vscode.WebviewViewProvider {
-  public static readonly sidebarViewType = "anywhereTerminal.sidebar";
-  public static readonly panelViewType = "anywhereTerminal.panel";
+  public static readonly sidebarViewType = "portaterm.sidebar";
+  public static readonly panelViewType = "portaterm.panel";
 
   /** The active webview view instance. Set after resolveWebviewView, cleared on dispose. */
   private _view: vscode.WebviewView | undefined;
@@ -254,7 +254,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     );
 
     // 4a-bis. Wire hover-preview settings bridge — re-post on every change to
-    // `anywhereTerminal.hoverPreview.*` so the webview controller / popup
+    // `portaterm.hoverPreview.*` so the webview controller / popup
     // pick up new debounce / wrap / disabled toggles without reload.
     // See: asimov/changes/add-hover-file-preview/design.md D17
     disposables.push(
@@ -422,7 +422,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     try {
       await this.launchVaultSession(entryId, mode, webview);
     } catch (err) {
-      console.error("[AnyWhere Terminal] Failed to launch vault session:", err);
+      console.error("[Portaterm] Failed to launch vault session:", err);
       void this.safeSendWithRetry(webview, {
         type: "error",
         message: err instanceof Error ? err.message : "Failed to launch AI session",
@@ -523,7 +523,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         ...(msg.permissionChoiceId ? { permissionChoiceId: msg.permissionChoiceId } : {}),
       });
     } catch (err) {
-      console.error("[AnyWhere Terminal] Failed to continue vault session:", err);
+      console.error("[Portaterm] Failed to continue vault session:", err);
       void this.safeSendWithRetry(webview, {
         type: "error",
         message: err instanceof Error ? err.message : "Failed to continue AI session",
@@ -629,7 +629,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       try {
         wrote = await this.vaultService.writeNativeTitle(entryId, normalized);
       } catch (err) {
-        console.error("[AnyWhere Terminal] Native vault rename failed:", err);
+        console.error("[Portaterm] Native vault rename failed:", err);
       }
       if (wrote) {
         // Agent-owned title is now the single source of truth — drop any overlay
@@ -643,7 +643,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
             this.safePostMessage(webview, { type: "vaultSessionsResponse", result, fromCache: false });
           }
         } catch (err) {
-          console.error("[AnyWhere Terminal] Failed to refresh vault after native rename:", err);
+          console.error("[Portaterm] Failed to refresh vault after native rename:", err);
           // Best-effort: serve the cached list so the panel isn't left spinning —
           // the native title lands on the next store-watcher refresh (review S2).
           const cached = this.vaultService.listCached();
@@ -671,7 +671,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         this.safePostMessage(webview, { type: "vaultSessionsResponse", result, fromCache: false });
       }
     } catch (err) {
-      console.error("[AnyWhere Terminal] Failed to refresh vault after rename:", err);
+      console.error("[Portaterm] Failed to refresh vault after rename:", err);
     }
   }
 
@@ -694,7 +694,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         () => token !== this._vaultRefreshSeq,
       );
     } catch (err) {
-      console.error("[AnyWhere Terminal] Vault auto-refresh failed:", err);
+      console.error("[Portaterm] Vault auto-refresh failed:", err);
     }
   }
 
@@ -832,7 +832,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         });
       }
     } catch (err) {
-      console.error("[AnyWhere Terminal] Failed to create tab:", err);
+      console.error("[Portaterm] Failed to create tab:", err);
       void this.safeSendWithRetry(webview, {
         type: "error",
         message: err instanceof Error ? err.message : "Failed to create new terminal tab",
@@ -849,7 +849,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   ): void {
     // Basic shape validation
     if (!msg || typeof msg !== "object" || !("type" in msg) || typeof (msg as { type: unknown }).type !== "string") {
-      console.warn("[AnyWhere Terminal] Invalid message from webview:", msg);
+      console.warn("[Portaterm] Invalid message from webview:", msg);
       return;
     }
 
@@ -1195,7 +1195,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
               }
             });
           } catch (err) {
-            console.error("[AnyWhere Terminal] Failed to create split session:", err);
+            console.error("[Portaterm] Failed to create split session:", err);
             void this.safeSendWithRetry(webviewView.webview, {
               type: "error",
               message: err instanceof Error ? err.message : "Failed to create split terminal",
@@ -1233,7 +1233,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         case "toggleMaximizedPanel":
           if (this.location === "panel" && this._view === webviewView && webviewView.visible) {
             void vscode.commands.executeCommand("workbench.action.toggleMaximizedPanel").then(undefined, (err) => {
-              console.warn("[AnyWhere Terminal] Panel resize failed:", err);
+              console.warn("[Portaterm] Panel resize failed:", err);
               void vscode.window.showWarningMessage(
                 "Could not resize the panel. Try Toggle Maximized Panel from the Command Palette.",
               );
@@ -1266,7 +1266,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
               showQuickPick: vscode.window.showQuickPick,
               getFileSearchMaxResults: () =>
                 vscode.workspace
-                  .getConfiguration("anywhereTerminal.fileSearch")
+                  .getConfiguration("portaterm.fileSearch")
                   .get<number>("maxResults", DEFAULT_FIND_FILES_MAX_RESULTS),
             });
           }
@@ -1317,7 +1317,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
               (message as { key: string }).key as Parameters<typeof updateHoverPreviewSetting>[0],
               (message as { value: boolean | number }).value,
             ).catch((err) => {
-              console.warn("[AnyWhere Terminal] updateHoverPreviewSetting failed:", err);
+              console.warn("[Portaterm] updateHoverPreviewSetting failed:", err);
             });
           }
           break;
@@ -1327,7 +1327,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           break;
       }
     } catch (err) {
-      console.error(`[AnyWhere Terminal] Error handling message ${message.type}:`, err);
+      console.error(`[Portaterm] Error handling message ${message.type}:`, err);
       // Don't rethrow — isolated error shouldn't crash the provider
     }
   }
@@ -1422,7 +1422,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           this.fileTreeHost.notifyInitDelivered();
         }
         if (!initDelivered) {
-          console.error("[AnyWhere Terminal] init delivery failed during reload — skipping restore posts.");
+          console.error("[Portaterm] init delivery failed during reload — skipping restore posts.");
           this.sessionManager.resumeOutputForView(viewId);
           return;
         }
@@ -1487,9 +1487,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           // closing. Log and skip the restore loop; the persisted snapshots
           // remain on disk and will be retried on the next activate. Output
           // resume still fires so the fresh PTY isn't permanently paused.
-          console.error(
-            "[AnyWhere Terminal] init delivery failed during restore — skipping restoreFromSnapshot posts.",
-          );
+          console.error("[Portaterm] init delivery failed during restore — skipping restoreFromSnapshot posts.");
           this.sessionManager.resumeOutputForView(viewId);
           return;
         }
@@ -1554,7 +1552,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       }
     } catch (err) {
       // Spawn failure: send error message (with retry for transient failures)
-      console.error("[AnyWhere Terminal] Failed to initialize terminal:", err);
+      console.error("[Portaterm] Failed to initialize terminal:", err);
 
       void this.safeSendWithRetry(webviewView.webview, {
         type: "error",

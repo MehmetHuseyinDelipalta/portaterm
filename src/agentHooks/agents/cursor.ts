@@ -9,7 +9,7 @@ export const CURSOR_HOOK_FRESHNESS_MS = 30 * 60 * 1000;
 
 /** Frozen: already referenced by wrapper scripts installed in users' Cursor config. */
 export const CURSOR_HOOK_SLUG = "cursor";
-export const CURSOR_HOOK_ENV_VAR = "ANYWHERE_TERMINAL_CURSOR_URL";
+export const CURSOR_HOOK_ENV_VAR = "PORTATERM_CURSOR_URL";
 
 /**
  * Canonical, ordered Cursor hook event list. The installer registers exactly

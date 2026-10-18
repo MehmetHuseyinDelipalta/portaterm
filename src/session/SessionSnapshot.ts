@@ -3,8 +3,8 @@
 
 import type { TrackedCommand } from "./TrackedCommand";
 
-export const SESSION_SNAPSHOTS_INDEX_KEY = "anywhereTerminal.sessionSnapshots.index";
-export const LIVE_EDITOR_PANELS_KEY = "anywhereTerminal.editorPanels.live";
+export const SESSION_SNAPSHOTS_INDEX_KEY = "portaterm.sessionSnapshots.index";
+export const LIVE_EDITOR_PANELS_KEY = "portaterm.editorPanels.live";
 
 export type ViewLocation = "sidebar" | "panel" | "editor";
 

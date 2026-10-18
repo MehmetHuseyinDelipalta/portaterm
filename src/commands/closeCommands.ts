@@ -51,12 +51,12 @@ export interface CloseCommandDeps {
  * reason: they were a door the earlier sweep never listed.
  */
 export const CLOSE_COMMAND_IDS = [
-  "anywhereTerminal.killTerminal",
-  "anywhereTerminal.killTerminal.sidebar",
-  "anywhereTerminal.killTerminal.panel",
-  "anywhereTerminal.closeSplitPane",
-  "anywhereTerminal.ctx.killTerminal",
-  "anywhereTerminal.ctx.closePane",
+  "portaterm.killTerminal",
+  "portaterm.killTerminal.sidebar",
+  "portaterm.killTerminal.panel",
+  "portaterm.closeSplitPane",
+  "portaterm.ctx.killTerminal",
+  "portaterm.ctx.closePane",
 ] as const;
 
 export interface CloseCommands {
@@ -83,23 +83,23 @@ export function createCloseCommands(deps: CloseCommandDeps): CloseCommands {
   };
 
   const byId = {
-    "anywhereTerminal.killTerminal": killFor(deps.focusedActiveSession),
+    "portaterm.killTerminal": killFor(deps.focusedActiveSession),
     // Bound to one surface rather than to whichever is focused. Same gate; only
     // the resolution differs, which is why resolution is the seam.
-    "anywhereTerminal.killTerminal.sidebar": killFor(() => deps.surfaceActiveSession("sidebar")),
-    "anywhereTerminal.killTerminal.panel": killFor(() => deps.surfaceActiveSession("panel")),
+    "portaterm.killTerminal.sidebar": killFor(() => deps.surfaceActiveSession("sidebar")),
+    "portaterm.killTerminal.panel": killFor(() => deps.surfaceActiveSession("panel")),
     // Gated at the COMMAND rather than on the `requestCloseSplitPane` that comes
     // back: the webview disposes the pane before it posts that, so by then there
     // is nothing left to decline.
-    "anywhereTerminal.closeSplitPane": () => {
+    "portaterm.closeSplitPane": () => {
       const target = deps.focusedActiveSession();
       if (target) {
         void closePaneGated(target, gates);
       }
     },
-    "anywhereTerminal.ctx.killTerminal": (ctx?: CloseCommandContext) =>
+    "portaterm.ctx.killTerminal": (ctx?: CloseCommandContext) =>
       killFor(() => ctx?.paneSessionId ?? deps.ctxActiveSession(ctx))(),
-    "anywhereTerminal.ctx.closePane": (ctx?: CloseCommandContext) => {
+    "portaterm.ctx.closePane": (ctx?: CloseCommandContext) => {
       // This command names its pane outright, so there is nothing to fall back
       // to: acting on the focused surface's pane instead would be acting on a
       // different pane than the one right-clicked.

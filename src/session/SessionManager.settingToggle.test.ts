@@ -1,4 +1,4 @@
-// Mid-session toggle of `anywhereTerminal.sessionRestore.enabled`.
+// Mid-session toggle of `portaterm.sessionRestore.enabled`.
 // See: asimov/changes/restore-terminal-sessions/design.md D11.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

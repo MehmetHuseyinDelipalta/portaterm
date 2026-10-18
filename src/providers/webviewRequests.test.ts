@@ -312,8 +312,8 @@ describe("handleVaultSessionsRequest", () => {
     await settleRetries();
 
     const messages = spy.mock.calls.map(([m]) => m);
-    expect(messages).toContain("[AnyWhere Terminal] Failed to list vault sessions (editor):");
-    expect(messages).toContain("[AnyWhere Terminal] Failed to list vault sessions:");
+    expect(messages).toContain("[Portaterm] Failed to list vault sessions (editor):");
+    expect(messages).toContain("[Portaterm] Failed to list vault sessions:");
   });
 });
 
@@ -418,7 +418,7 @@ describe("handleFilePreviewRequest", () => {
     });
 
     const messages = spy.mock.calls.map(([m]) => m);
-    expect(messages).toContain("[AnyWhere Terminal] requestFilePreview failed (editor):");
-    expect(messages).toContain("[AnyWhere Terminal] requestFilePreview failed:");
+    expect(messages).toContain("[Portaterm] requestFilePreview failed (editor):");
+    expect(messages).toContain("[Portaterm] requestFilePreview failed:");
   });
 });

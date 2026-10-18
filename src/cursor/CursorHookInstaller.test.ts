@@ -37,8 +37,7 @@ async function config(path: string) {
 
 function windowsMemoryFixture(document: Record<string, unknown>, wrapperContents?: string) {
   const configPath = "C:\\Users\\alice\\.cursor\\hooks.json";
-  const storagePath =
-    "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\globalStorage\\huybuidac.anywhere-terminal\\cursor-hooks";
+  const storagePath = "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\globalStorage\\mhd.portaterm\\cursor-hooks";
   const wrapperPath = win32.join(storagePath, "cursor-hook-observer.cmd");
   const files = new Map<string, string>([[configPath, JSON.stringify(document)]]);
   if (wrapperContents !== undefined) {
@@ -420,7 +419,7 @@ describe("CursorHookInstaller", () => {
     const paths = await fixture();
     const original = JSON.stringify({ version: 1, hooks: {} });
     await writeFile(paths.configPath, original);
-    const lockPath = `${paths.configPath}.anywhere-terminal.lock`;
+    const lockPath = `${paths.configPath}.portaterm.lock`;
     await writeFile(lockPath, "owner still live");
     const installer = new CursorHookInstaller(paths, {
       now: () => 100_000,
@@ -458,7 +457,7 @@ describe("CursorHookInstaller", () => {
     const firstInstall = first.install();
     await entered;
 
-    const lockPath = `${paths.configPath}.anywhere-terminal.lock`;
+    const lockPath = `${paths.configPath}.portaterm.lock`;
     const second = new CursorHookInstaller(paths, {
       now: () => 60_000,
       sleep: async () => undefined,
@@ -487,7 +486,7 @@ describe("CursorHookInstaller", () => {
         hooks: operation === "uninstall" ? { sessionStart: [{ command: CURSOR_HOOK_COMMAND, timeout: 2 }] } : {},
       }),
     );
-    const lockPath = `${paths.configPath}.anywhere-terminal.lock`;
+    const lockPath = `${paths.configPath}.portaterm.lock`;
     const installer = new CursorHookInstaller(paths, {
       fs: {
         unlink: async (path) => {
@@ -512,7 +511,7 @@ describe("CursorHookInstaller", () => {
     const paths = await fixture();
     const original = JSON.stringify({ version: 1, hooks: {} });
     await writeFile(paths.configPath, original);
-    await writeFile(`${paths.configPath}.anywhere-terminal.lock`, "active");
+    await writeFile(`${paths.configPath}.portaterm.lock`, "active");
     let sleeps = 0;
     const installer = new CursorHookInstaller(paths, {
       now: Date.now,
@@ -537,8 +536,7 @@ describe("CursorHookInstaller", () => {
   });
 
   it("uses a valid sibling temporary path for Windows-shaped configuration paths", async () => {
-    const storagePath =
-      "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\globalStorage\\huybuidac.anywhere-terminal\\cursor-hooks";
+    const storagePath = "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\globalStorage\\mhd.portaterm\\cursor-hooks";
     const legacyCommand = `"${win32.join(storagePath, "cursor-hook-observer.cmd")}"`;
     const { memoryFs, paths, replacements } = windowsMemoryFixture({
       version: 1,
@@ -624,8 +622,7 @@ describe("CursorHookInstaller", () => {
   });
 
   it("removes the exact released Windows entry and wrapper instead of installing new bytes", async () => {
-    const storagePath =
-      "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\globalStorage\\huybuidac.anywhere-terminal\\cursor-hooks";
+    const storagePath = "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\globalStorage\\mhd.portaterm\\cursor-hooks";
     const legacyCommand = `"${win32.join(storagePath, "cursor-hook-observer.cmd")}"`;
     const { files, memoryFs, paths, wrapperPath } = windowsMemoryFixture(
       { version: 1, hooks: { sessionStart: [{ command: legacyCommand, timeout: 2 }] } },
@@ -655,7 +652,7 @@ describe("CursorHookInstaller", () => {
 
   it("preserves Windows lock failure details instead of replacing them with platform support", async () => {
     const { files, memoryFs, paths, wrapperPath } = windowsMemoryFixture({ version: 1, hooks: {} }, "legacy");
-    const lockPath = `${paths.configPath}.anywhere-terminal.lock`;
+    const lockPath = `${paths.configPath}.portaterm.lock`;
     files.set(lockPath, "held");
     const installer = new CursorHookInstaller(paths, {
       fs: memoryFs,
@@ -671,8 +668,7 @@ describe("CursorHookInstaller", () => {
   });
 
   it("reports a Windows wrapper that remains after its entry was removed", async () => {
-    const storagePath =
-      "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\globalStorage\\huybuidac.anywhere-terminal\\cursor-hooks";
+    const storagePath = "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\globalStorage\\mhd.portaterm\\cursor-hooks";
     const legacyCommand = `"${win32.join(storagePath, "cursor-hook-observer.cmd")}"`;
     const { files, memoryFs, paths, wrapperPath } = windowsMemoryFixture(
       { version: 1, hooks: { sessionStart: [{ command: legacyCommand, timeout: 2 }] } },
@@ -700,8 +696,7 @@ describe("CursorHookInstaller", () => {
     "install",
     "uninstall",
   ] as const)("retains the released Windows wrapper when %s preserves a custom event reference", async (operation) => {
-    const storagePath =
-      "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\globalStorage\\huybuidac.anywhere-terminal\\cursor-hooks";
+    const storagePath = "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\globalStorage\\mhd.portaterm\\cursor-hooks";
     const legacyCommand = `"${win32.join(storagePath, "cursor-hook-observer.cmd")}"`;
     const { files, memoryFs, paths, wrapperPath } = windowsMemoryFixture(
       {
@@ -732,8 +727,7 @@ describe("CursorHookInstaller", () => {
     "install",
     "uninstall",
   ] as const)("reports a final Windows lock-release failure after %s without erasing committed state", async (operation) => {
-    const storagePath =
-      "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\globalStorage\\huybuidac.anywhere-terminal\\cursor-hooks";
+    const storagePath = "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\globalStorage\\mhd.portaterm\\cursor-hooks";
     const legacyCommand = `"${win32.join(storagePath, "cursor-hook-observer.cmd")}"`;
     const { files, memoryFs, paths, wrapperPath } = windowsMemoryFixture(
       {
@@ -742,7 +736,7 @@ describe("CursorHookInstaller", () => {
       },
       "legacy",
     );
-    const lockPath = `${paths.configPath}.anywhere-terminal.lock`;
+    const lockPath = `${paths.configPath}.portaterm.lock`;
     const baseUnlink = memoryFs.unlink;
     memoryFs.unlink = vi.fn(async (path: import("node:fs").PathLike) => {
       if (String(path) === lockPath) {
@@ -789,7 +783,7 @@ describe("CursorHookInstaller", () => {
       try {
         const input = '{"hook_event_name":"stop"}\n\n';
         const result = await runHook(CURSOR_HOOK_COMMAND, {
-          environment: { ANYWHERE_TERMINAL_CURSOR_URL: cursorHookUrl(listener.url) },
+          environment: { PORTATERM_CURSOR_URL: cursorHookUrl(listener.url) },
           input,
         });
 
@@ -811,7 +805,7 @@ describe("CursorHookInstaller", () => {
       const listener = await httpRecorder();
       try {
         const result = await runHook(CURSOR_HOOK_COMMAND, {
-          environment: url ? { ANYWHERE_TERMINAL_CURSOR_URL: url } : {},
+          environment: url ? { PORTATERM_CURSOR_URL: url } : {},
           input: JSON.stringify({ pad: "x".repeat(1024 * 1024) }),
         });
         expect(result.code).toBe(0);
@@ -829,7 +823,7 @@ describe("CursorHookInstaller", () => {
         const sinkPort = typeof address === "object" && address !== null ? address.port : 0;
         const malicious = `http://127.0.0.1:123@127.0.0.1:${sinkPort}/123e4567-e89b-12d3-a456-426614174000/${"a".repeat(64)}`;
         await runHook(CURSOR_HOOK_COMMAND, {
-          environment: { ANYWHERE_TERMINAL_CURSOR_URL: malicious },
+          environment: { PORTATERM_CURSOR_URL: malicious },
           input: '{"secret":"prompt"}',
         });
         expect(sink.bodies).toEqual([]);
@@ -840,7 +834,7 @@ describe("CursorHookInstaller", () => {
         ).replace("--globoff --proto '=http' ", "");
         expect(control).not.toBe(CURSOR_HOOK_COMMAND);
         await runHook(control, {
-          environment: { ANYWHERE_TERMINAL_CURSOR_URL: malicious },
+          environment: { PORTATERM_CURSOR_URL: malicious },
           input: '{"secret":"prompt"}',
         });
         expect(sink.bodies).toEqual(['{"secret":"prompt"}']);
@@ -865,7 +859,7 @@ describe("CursorHookInstaller", () => {
       try {
         const result = await runHook(CURSOR_HOOK_COMMAND, {
           environment: {
-            ANYWHERE_TERMINAL_CURSOR_URL: cursorHookUrl(listener.url),
+            PORTATERM_CURSOR_URL: cursorHookUrl(listener.url),
             "BASH_FUNC_awk%%": "() { printf 'function-awk\\n' >&2; return 1; }",
             "BASH_FUNC_command%%": "() { printf 'function-command\\n' >&2; return 1; }",
             PATH: `${directory}:${process.env.PATH ?? ""}`,
@@ -892,7 +886,7 @@ describe("CursorHookInstaller", () => {
       try {
         const result = await runHook(CURSOR_HOOK_COMMAND, {
           environment: {
-            ANYWHERE_TERMINAL_CURSOR_URL: cursorHookUrl(listener.url),
+            PORTATERM_CURSOR_URL: cursorHookUrl(listener.url),
             SHELLOPTS: "xtrace",
           },
           input: '{"secret":"not-on-stderr"}',
@@ -920,7 +914,7 @@ describe("CursorHookInstaller", () => {
         const input = '{"secret":"loopback-only"}';
         const result = await runHook(CURSOR_HOOK_COMMAND, {
           environment: {
-            ANYWHERE_TERMINAL_CURSOR_URL: cursorHookUrl(listener.url),
+            PORTATERM_CURSOR_URL: cursorHookUrl(listener.url),
             CURL_HOME: home,
             HOME: home,
             http_proxy: proxy.url,
@@ -934,7 +928,7 @@ describe("CursorHookInstaller", () => {
         const control = CURSOR_HOOK_COMMAND.replace("--disable ", "").replace("--noproxy '*' ", "");
         await runHook(control, {
           environment: {
-            ANYWHERE_TERMINAL_CURSOR_URL: cursorHookUrl(listener.url),
+            PORTATERM_CURSOR_URL: cursorHookUrl(listener.url),
             CURL_HOME: home,
             HOME: home,
             http_proxy: proxy.url,
@@ -953,7 +947,7 @@ describe("CursorHookInstaller", () => {
         const missing = CURSOR_HOOK_COMMAND.replace(`command -p ${utility}`, `command -p ${utility}_absent_for_test`);
         expect(missing).not.toBe(CURSOR_HOOK_COMMAND);
         const lookup = await runHook(missing, {
-          environment: { ANYWHERE_TERMINAL_CURSOR_URL: cursorHookUrl("http://127.0.0.1:1") },
+          environment: { PORTATERM_CURSOR_URL: cursorHookUrl("http://127.0.0.1:1") },
           input,
         });
         expect(lookup).toMatchObject({ code: 0, writerError: undefined });
@@ -969,7 +963,7 @@ describe("CursorHookInstaller", () => {
     it("bounds an unavailable loopback listener", async () => {
       const result = await runHook(CURSOR_HOOK_COMMAND, {
         environment: {
-          ANYWHERE_TERMINAL_CURSOR_URL: `http://127.0.0.1:1/123e4567-e89b-12d3-a456-426614174000/${"a".repeat(64)}`,
+          PORTATERM_CURSOR_URL: `http://127.0.0.1:1/123e4567-e89b-12d3-a456-426614174000/${"a".repeat(64)}`,
         },
       });
       expect(result.code).toBe(0);
@@ -1053,7 +1047,7 @@ describe("where a replacement is staged", () => {
 // Release, against a real filesystem. `beforeReplace` runs inside the lock, so it
 // is where a competing writer's substitution is scheduled.
 describe("which lock a release removes", () => {
-  const lockOf = (configPath: string) => `${configPath}.anywhere-terminal.lock`;
+  const lockOf = (configPath: string) => `${configPath}.portaterm.lock`;
 
   it("leaves a lock the name no longer identifies, rather than deleting it", async () => {
     const paths = await fixture();

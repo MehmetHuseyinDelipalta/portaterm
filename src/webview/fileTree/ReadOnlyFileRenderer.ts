@@ -98,7 +98,7 @@ function applyFolderDirty(row: HTMLElement, counts: FolderDirtyCounts | undefine
 }
 
 /** Custom MIME type that authoritatively marks a drag as originating from this file tree. */
-export const FILE_TREE_DRAG_MIME = "application/x-anywhere-terminal-file-tree-path";
+export const FILE_TREE_DRAG_MIME = "application/x-portaterm-file-tree-path";
 
 /** Cached DOM references for a recycled file-tree row. */
 export interface RowTemplate extends ITemplateData {

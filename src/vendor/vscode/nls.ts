@@ -1,4 +1,4 @@
-// AnyWhere Terminal: localized() stub for vendored VS Code list widget.
+// Portaterm: localized() stub for vendored VS Code list widget.
 //
 // The vendored TS files under src/vendor/vscode/ are upstream VS Code source
 // (Microsoft copyright; see THIRD_PARTY_NOTICES). This file is NOT vendored

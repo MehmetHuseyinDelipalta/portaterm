@@ -13,8 +13,8 @@ import { createWorktreeActions, pickCopyFilePath, type WorktreeActionDeps } from
 import { __resetAll, __setShowOpenDialog } from "./test/__mocks__/vscode";
 import type { ExtensionToWebViewMessage } from "./types/messages";
 
-const SIDEBAR = "anywhereTerminal.sidebar";
-const PANEL = "anywhereTerminal.panel";
+const SIDEBAR = "portaterm.sidebar";
+const PANEL = "portaterm.panel";
 const EDITOR = "editor-abc";
 
 function deferred<T>() {
@@ -81,7 +81,7 @@ describe("a focused pane is revealed where it actually lives", () => {
     const h = harness();
     await h.actions.focusPane("pane-1", PANEL);
 
-    expect(h.commands).toEqual([["anywhereTerminal.panel.focus"]]);
+    expect(h.commands).toEqual([["portaterm.panel.focus"]]);
     expect(h.viewPosts).toEqual([[PANEL, { type: "worktreeActivatePane", paneId: "pane-1" }]]);
   });
 
@@ -89,7 +89,7 @@ describe("a focused pane is revealed where it actually lives", () => {
     const h = harness();
     await h.actions.focusPane("pane-1", SIDEBAR);
 
-    expect(h.commands).toEqual([["anywhereTerminal.sidebar.focus"]]);
+    expect(h.commands).toEqual([["portaterm.sidebar.focus"]]);
     expect(h.viewPosts).toEqual([[SIDEBAR, { type: "worktreeActivatePane", paneId: "pane-1" }]]);
   });
 

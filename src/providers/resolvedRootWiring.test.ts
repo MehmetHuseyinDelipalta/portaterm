@@ -163,7 +163,7 @@ function mountView(m: ResolvedPathMemo, location: "sidebar" | "panel"): Surface 
   const { webview, posted, boot, failInit } = makeWebviewSeam();
   const webviewView = {
     visible: true,
-    viewType: `anywhereTerminal.${location}`,
+    viewType: `portaterm.${location}`,
     webview,
     onDidChangeVisibility: () => ({ dispose: () => {} }),
     onDidDispose: () => ({ dispose: () => {} }),

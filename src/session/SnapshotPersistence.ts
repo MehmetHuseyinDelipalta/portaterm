@@ -70,7 +70,7 @@ export function viewLocationOf(viewId: string): ViewLocation {
   if (viewId.startsWith("editor-")) {
     return "editor";
   }
-  if (viewId === "anywhereTerminal.panel") {
+  if (viewId === "portaterm.panel") {
     return "panel";
   }
   return "sidebar";
@@ -219,13 +219,13 @@ export class SnapshotPersistence {
         try {
           seeded.write(seededBuffer, () => resolve());
         } catch (err) {
-          console.error("[AnyWhere Terminal] Failed to seed headless mirror from restore buffer:", err);
+          console.error("[Portaterm] Failed to seed headless mirror from restore buffer:", err);
           resolve();
         }
       });
       this.writeBarriers.set(session.id, seedBarrier);
     } catch (err) {
-      console.error("[AnyWhere Terminal] Failed to construct seeded headless mirror:", err);
+      console.error("[Portaterm] Failed to construct seeded headless mirror:", err);
     }
   }
 
@@ -276,7 +276,7 @@ export class SnapshotPersistence {
     try {
       outcome = await storage.commitBufferAsync(id, result.buffer, capturedGen);
     } catch (err) {
-      console.error("[AnyWhere Terminal] commitLiveSnapshot commitBufferAsync failed:", err);
+      console.error("[Portaterm] commitLiveSnapshot commitBufferAsync failed:", err);
       return;
     }
     if (!this.isStillCurrent(storage, generation)) {
@@ -317,14 +317,14 @@ export class SnapshotPersistence {
     try {
       this.storage.commitBufferSync(id, result.buffer);
     } catch (err) {
-      console.error("[AnyWhere Terminal] commitExitSnapshot commitBufferSync failed:", err);
+      console.error("[Portaterm] commitExitSnapshot commitBufferSync failed:", err);
       return;
     }
     this._snapshotIndex[id] = result.metadata;
     try {
       this.storage.commitIndexSync({ version: 1, entries: { ...this._snapshotIndex } });
     } catch (err) {
-      console.error("[AnyWhere Terminal] commitExitSnapshot commitIndexSync failed:", err);
+      console.error("[Portaterm] commitExitSnapshot commitIndexSync failed:", err);
     }
   }
 
@@ -353,7 +353,7 @@ export class SnapshotPersistence {
       try {
         this.storage.commitIndexSync({ version: 1, entries: { ...this._snapshotIndex } });
       } catch (err) {
-        console.error("[AnyWhere Terminal] commitClearSnapshot (no-mirror) commitIndexSync failed:", err);
+        console.error("[Portaterm] commitClearSnapshot (no-mirror) commitIndexSync failed:", err);
       }
       return;
     }
@@ -367,7 +367,7 @@ export class SnapshotPersistence {
       try {
         session.headless?.write("\x1bc", () => resolve());
       } catch (err) {
-        console.error("[AnyWhere Terminal] commitClearSnapshot RIS failed:", err);
+        console.error("[Portaterm] commitClearSnapshot RIS failed:", err);
         resolve();
       }
     });
@@ -382,7 +382,7 @@ export class SnapshotPersistence {
     try {
       this.storage.commitBufferSync(id, "");
     } catch (err) {
-      console.error("[AnyWhere Terminal] commitClearSnapshot commitBufferSync failed:", err);
+      console.error("[Portaterm] commitClearSnapshot commitBufferSync failed:", err);
       return;
     }
     if (metadata) {
@@ -397,7 +397,7 @@ export class SnapshotPersistence {
     try {
       this.storage.commitIndexSync({ version: 1, entries: { ...this._snapshotIndex } });
     } catch (err) {
-      console.error("[AnyWhere Terminal] commitClearSnapshot commitIndexSync failed:", err);
+      console.error("[Portaterm] commitClearSnapshot commitIndexSync failed:", err);
     }
   }
 
@@ -435,7 +435,7 @@ export class SnapshotPersistence {
     try {
       this.storage.commitIndexSync({ version: 1, entries: { ...this._snapshotIndex } });
     } catch (err) {
-      console.error("[AnyWhere Terminal] dropSession commitIndexSync failed:", err);
+      console.error("[Portaterm] dropSession commitIndexSync failed:", err);
     }
   }
 
@@ -489,7 +489,7 @@ export class SnapshotPersistence {
       try {
         session.headless = this.headlessFactory(session.cols, session.rows);
       } catch (err) {
-        console.error("[AnyWhere Terminal] Failed to construct headless mirror:", err);
+        console.error("[Portaterm] Failed to construct headless mirror:", err);
         return;
       }
     }
@@ -504,7 +504,7 @@ export class SnapshotPersistence {
         // biome-ignore lint/style/noNonNullAssertion: just constructed above
         session.headless!.write(data, () => resolve());
       } catch (err) {
-        console.error("[AnyWhere Terminal] Headless mirror write failed:", err);
+        console.error("[Portaterm] Headless mirror write failed:", err);
         resolve();
       }
     });
@@ -560,7 +560,7 @@ export class SnapshotPersistence {
         session.headless.loadAddon(addon);
         session.serializeAddon = addon;
       } catch (err) {
-        console.error("[AnyWhere Terminal] Failed to load SerializeAddon:", err);
+        console.error("[Portaterm] Failed to load SerializeAddon:", err);
         return null;
       }
     }
@@ -569,7 +569,7 @@ export class SnapshotPersistence {
     try {
       raw = session.serializeAddon.serialize(SERIALIZE_OPTIONS);
     } catch (err) {
-      console.error("[AnyWhere Terminal] SerializeAddon.serialize failed:", err);
+      console.error("[Portaterm] SerializeAddon.serialize failed:", err);
       return null;
     }
     const buffer = truncateSnapshotBuffer(raw);
@@ -687,7 +687,7 @@ export class SnapshotPersistence {
     try {
       await storage.commitIndexAsync(kept, capturedSidecarGen);
     } catch (err) {
-      console.error("[AnyWhere Terminal] flushPending commitIndexAsync failed:", err);
+      console.error("[Portaterm] flushPending commitIndexAsync failed:", err);
     }
   }
 
@@ -728,7 +728,7 @@ export class SnapshotPersistence {
       try {
         this.storage.commitBufferSync(id, result.buffer);
       } catch (err) {
-        console.error("[AnyWhere Terminal] flushSnapshotsSync commitBufferSync failed:", err);
+        console.error("[Portaterm] flushSnapshotsSync commitBufferSync failed:", err);
         continue;
       }
       this._snapshotIndex[id] = result.metadata;
@@ -748,7 +748,7 @@ export class SnapshotPersistence {
       this._snapshotIndex = { ...kept.entries };
       this.storage.commitIndexSync(kept);
     } catch (err) {
-      console.error("[AnyWhere Terminal] flushSnapshotsSync commitIndexSync failed:", err);
+      console.error("[Portaterm] flushSnapshotsSync commitIndexSync failed:", err);
     }
   }
 
@@ -779,7 +779,7 @@ export class SnapshotPersistence {
     try {
       this.storage.commitIndexSync(kept);
     } catch (err) {
-      console.error("[AnyWhere Terminal] flushIndexAwaited commitIndexSync failed:", err);
+      console.error("[Portaterm] flushIndexAwaited commitIndexSync failed:", err);
     }
   }
 

@@ -539,7 +539,7 @@ export function __setAppRoot(appRoot: string): void {
   env.appRoot = appRoot;
 }
 
-/** Set mock configuration values for testing. Keys should be fully qualified (e.g., "anywhereTerminal.fontSize"). */
+/** Set mock configuration values for testing. Keys should be fully qualified (e.g., "portaterm.fontSize"). */
 export function __setConfigValues(values: Record<string, unknown>): void {
   _mockConfigValues = { ...values };
 }

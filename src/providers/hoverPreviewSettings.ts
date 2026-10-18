@@ -7,7 +7,7 @@
 import * as vscode from "vscode";
 import type { HoverPreviewSettings } from "../types/messages";
 
-const SECTION = "anywhereTerminal.hoverPreview";
+const SECTION = "portaterm.hoverPreview";
 
 /**
  * Defaults mirror `contributes.configuration` in `package.json`. Keep these in

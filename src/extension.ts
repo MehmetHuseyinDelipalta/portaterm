@@ -277,7 +277,7 @@ export function createWorktreeActions(deps: WorktreeActionDeps): WorktreeActions
       return;
     }
     await deps.executeCommand(
-      viewId === TerminalViewProvider.panelViewType ? "anywhereTerminal.panel.focus" : "anywhereTerminal.sidebar.focus",
+      viewId === TerminalViewProvider.panelViewType ? "portaterm.panel.focus" : "portaterm.sidebar.focus",
     );
     deps.postToView(viewId, activate);
   }
@@ -409,11 +409,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     loadNodePty();
   } catch (err) {
     if (err instanceof PtyLoadError) {
-      vscode.window.showErrorMessage(
-        `AnyWhere Terminal: Failed to load node-pty. Requires VS Code >= 1.109.0. ${err.message}`,
-      );
+      vscode.window.showErrorMessage(`Portaterm: Failed to load node-pty. Requires VS Code >= 1.109.0. ${err.message}`);
     } else {
-      console.error("[AnyWhere Terminal] Unexpected error loading node-pty:", err);
+      console.error("[Portaterm] Unexpected error loading node-pty:", err);
     }
     // Continue activation — individual createSession calls will fail gracefully
   }
@@ -428,7 +426,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const restoreEnabled = hasWorkspaceStorage && readSessionRestoreEnabled();
   if (!hasWorkspaceStorage && readSessionRestoreEnabled()) {
     console.warn(
-      "[AnyWhere Terminal] sessionRestore disabled for this window — no workspace folder open. Open a folder to enable persistence.",
+      "[Portaterm] sessionRestore disabled for this window — no workspace folder open. Open a folder to enable persistence.",
     );
   }
   const restoreStorageUri = context.storageUri ?? context.globalStorageUri;
@@ -461,7 +459,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const paneEvidence = createPaneEvidenceStore({ onChange: () => onPaneEvidenceChange?.() });
 
   // Create shared SessionManager (singleton). workspaceState backs the per-workspace
-  // custom-tab-name persistence (anywhereTerminal.tabCustomNames); see design.md D3 of add-tab-rename.
+  // custom-tab-name persistence (portaterm.tabCustomNames); see design.md D3 of add-tab-rename.
   const sessionManager = new SessionManager(context.workspaceState, {
     restoreEnabled,
     storage: sessionStorage,
@@ -506,12 +504,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     install: () =>
       new ClaudeHookInstaller({
         configuredDirectory: () =>
-          vscode.workspace.getConfiguration("anywhereTerminal").get<string>("agentHooks.claudeConfigDir"),
+          vscode.workspace.getConfiguration("portaterm").get<string>("agentHooks.claudeConfigDir"),
       }).install(),
     uninstall: () =>
       new ClaudeHookInstaller({
         configuredDirectory: () =>
-          vscode.workspace.getConfiguration("anywhereTerminal").get<string>("agentHooks.claudeConfigDir"),
+          vscode.workspace.getConfiguration("portaterm").get<string>("agentHooks.claudeConfigDir"),
       }).uninstall(),
   };
   const reportedSessions = new ReportedSessions();
@@ -587,7 +585,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
           },
           onReasonCode: (reason, sessionSuffix) => {
-            console.warn(`[AnyWhere Terminal] Agent hook ${reason}${sessionSuffix ? ` (…${sessionSuffix})` : ""}`);
+            console.warn(`[Portaterm] Agent hook ${reason}${sessionSuffix ? ` (…${sessionSuffix})` : ""}`);
           },
         },
       ),
@@ -597,12 +595,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ),
     onWarning: (agent, operation, reason) => {
       if (operation === "runtime") {
-        console.warn(
-          `[AnyWhere Terminal] Agent hook runtime unavailable — continuing without hook observability: ${reason}`,
-        );
+        console.warn(`[Portaterm] Agent hook runtime unavailable — continuing without hook observability: ${reason}`);
         return;
       }
-      console.warn(`[AnyWhere Terminal] ${agent} hook ${operation} reconciliation failed: ${reason}`);
+      console.warn(`[Portaterm] ${agent} hook ${operation} reconciliation failed: ${reason}`);
     },
   });
   _activeAgentHookController = agentHookController;
@@ -1007,7 +1003,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         addToGitExclude: async (gitDir, entry) => {
           const outcome = await addToGitExclude(gitDir, entry);
           if ("failed" in outcome) {
-            console.warn(`[AnyWhere Terminal] could not update info/exclude: ${outcome.failed}`);
+            console.warn(`[Portaterm] could not update info/exclude: ${outcome.failed}`);
             throw new Error(outcome.failed);
           }
         },
@@ -1674,7 +1670,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Editor terminal command — each invocation creates an independent editor tab terminal
   context.subscriptions.push(
-    vscode.commands.registerCommand("anywhereTerminal.newTerminalInEditor", () => {
+    vscode.commands.registerCommand("portaterm.newTerminalInEditor", () => {
       const panelDisposable = TerminalEditorProvider.createPanel(
         context,
         sessionManager,
@@ -1826,7 +1822,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       openExternal: (uri: vscode.Uri) => vscode.env.openExternal(uri),
       fs: vscode.workspace.fs,
     },
-    readmeShellIntegrationUrl: "https://github.com/huybuidac/anywhere-terminal/blob/main/README.md#shell-integration",
+    readmeShellIntegrationUrl:
+      "https://github.com/MehmetHuseyinDelipalta/portaterm/blob/main/README.md#shell-integration",
   });
 
   // ─── Action Helpers ──────────────────────────────────────────
@@ -1862,7 +1859,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         });
       }
     } catch (err) {
-      console.error("[AnyWhere Terminal] Failed to create terminal:", err);
+      console.error("[Portaterm] Failed to create terminal:", err);
       safePostMessage(view.webview, {
         type: "error",
         message: err instanceof Error ? err.message : "Failed to create new terminal",
@@ -1920,12 +1917,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("anywhereTerminal.newTerminal", () => doNewTerminal(getFocusedProvider())),
-    vscode.commands.registerCommand("anywhereTerminal.clearTerminal", () => doClearTerminal(getFocusedProvider())),
-    vscode.commands.registerCommand("anywhereTerminal.splitHorizontal", () =>
-      doSplit(getFocusedProvider(), "horizontal"),
-    ),
-    vscode.commands.registerCommand("anywhereTerminal.splitVertical", () => doSplit(getFocusedProvider(), "vertical")),
+    vscode.commands.registerCommand("portaterm.newTerminal", () => doNewTerminal(getFocusedProvider())),
+    vscode.commands.registerCommand("portaterm.clearTerminal", () => doClearTerminal(getFocusedProvider())),
+    vscode.commands.registerCommand("portaterm.splitHorizontal", () => doSplit(getFocusedProvider(), "horizontal")),
+    vscode.commands.registerCommand("portaterm.splitVertical", () => doSplit(getFocusedProvider(), "vertical")),
     // ─── Export Terminal Session ──────────────────────────────────
     // See: asimov/changes/export-terminal-session/specs/terminal-session-export/spec.md
     // The 3 commands are reachable from both Command Palette and the webview
@@ -1939,22 +1934,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // provider in that case, so the no-focus toast surfaces instead of the
     // confusing "scrollback dump failed" error from `requestScrollbackDump`.
     // See: .reviews/round-1.md [W4].
-    vscode.commands.registerCommand("anywhereTerminal.exportBuffer", (ctx?: { paneSessionId?: string }) =>
+    vscode.commands.registerCommand("portaterm.exportBuffer", (ctx?: { paneSessionId?: string }) =>
       exportBuffer(buildExportDeps(() => resolveExportSessionId(ctx), sessionManager)),
     ),
-    vscode.commands.registerCommand("anywhereTerminal.exportLastCommand", (ctx?: { paneSessionId?: string }) =>
+    vscode.commands.registerCommand("portaterm.exportLastCommand", (ctx?: { paneSessionId?: string }) =>
       exportLastCommand(buildExportDeps(() => resolveExportSessionId(ctx), sessionManager)),
     ),
-    vscode.commands.registerCommand("anywhereTerminal.exportCommand", (ctx?: { paneSessionId?: string }) =>
+    vscode.commands.registerCommand("portaterm.exportCommand", (ctx?: { paneSessionId?: string }) =>
       exportCommand(buildExportDeps(() => resolveExportSessionId(ctx), sessionManager)),
     ),
-    vscode.commands.registerCommand("anywhereTerminal.setFileTreePosition", async () => {
+    vscode.commands.registerCommand("portaterm.setFileTreePosition", async () => {
       const view = getFocusedProvider().view;
       if (!view) {
         return;
       }
       const choice = await vscode.window.showQuickPick(["Top", "Bottom", "Left", "Right"], {
-        placeHolder: "Move AnyWhere Terminal file tree to…",
+        placeHolder: "Move Portaterm file tree to…",
       });
       if (!choice) {
         return;
@@ -1967,8 +1962,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Open AI Vault — focus the sidebar terminal view, then expand the vault
     // section stacked above the file tree (the webview re-reads the agents'
     // session stores). See: add-ai-coding-vault D11.
-    vscode.commands.registerCommand("anywhereTerminal.openVault", async () => {
-      await vscode.commands.executeCommand("anywhereTerminal.sidebar.focus");
+    vscode.commands.registerCommand("portaterm.openVault", async () => {
+      await vscode.commands.executeCommand("portaterm.sidebar.focus");
       doOpenVault(sidebarProvider);
     }),
   );
@@ -1978,15 +1973,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   for (const loc of ["sidebar", "panel"] as const) {
     const provider = providers[loc];
     context.subscriptions.push(
-      vscode.commands.registerCommand(`anywhereTerminal.newTerminal.${loc}`, () => doNewTerminal(provider)),
-      vscode.commands.registerCommand(`anywhereTerminal.splitHorizontal.${loc}`, () => doSplit(provider, "horizontal")),
-      vscode.commands.registerCommand(`anywhereTerminal.splitVertical.${loc}`, () => doSplit(provider, "vertical")),
+      vscode.commands.registerCommand(`portaterm.newTerminal.${loc}`, () => doNewTerminal(provider)),
+      vscode.commands.registerCommand(`portaterm.splitHorizontal.${loc}`, () => doSplit(provider, "horizontal")),
+      vscode.commands.registerCommand(`portaterm.splitVertical.${loc}`, () => doSplit(provider, "vertical")),
       // View-title "Export…" action — opens a quickpick of the
       // three real export commands. We flash the active pane first so the user
       // visually confirms which pane will be exported (the title bar applies
       // to whichever pane is currently active in THIS view).
-      vscode.commands.registerCommand(`anywhereTerminal.exportPick.${loc}`, () => runExportPick(provider)),
-      vscode.commands.registerCommand(`anywhereTerminal.openVault.${loc}`, () => doOpenVault(provider)),
+      vscode.commands.registerCommand(`portaterm.exportPick.${loc}`, () => runExportPick(provider)),
+      vscode.commands.registerCommand(`portaterm.openVault.${loc}`, () => doOpenVault(provider)),
     );
   }
 
@@ -2013,17 +2008,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       {
         label: "$(history) Export Last Command Output…",
         description: "Most-recent completed command",
-        commandId: "anywhereTerminal.exportLastCommand",
+        commandId: "portaterm.exportLastCommand",
       },
       {
         label: "$(list-selection) Export Command…",
         description: "Pick from tracked commands",
-        commandId: "anywhereTerminal.exportCommand",
+        commandId: "portaterm.exportCommand",
       },
       {
         label: "$(file) Export Buffer to File…",
         description: "Whole visible scrollback",
-        commandId: "anywhereTerminal.exportBuffer",
+        commandId: "portaterm.exportBuffer",
       },
     ];
     void vscode.window.showQuickPick(items, { placeHolder: "Export…", matchOnDescription: true }).then((picked) => {
@@ -2106,17 +2101,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("anywhereTerminal.ctx.splitVertical", (ctx: { paneSessionId?: string }) => {
+    vscode.commands.registerCommand("portaterm.ctx.splitVertical", (ctx: { paneSessionId?: string }) => {
       if (ctx?.paneSessionId) {
         postToCtxWebview(ctx, { type: "splitPaneAt", direction: "vertical", sourcePaneId: ctx.paneSessionId });
       }
     }),
-    vscode.commands.registerCommand("anywhereTerminal.ctx.splitHorizontal", (ctx: { paneSessionId?: string }) => {
+    vscode.commands.registerCommand("portaterm.ctx.splitHorizontal", (ctx: { paneSessionId?: string }) => {
       if (ctx?.paneSessionId) {
         postToCtxWebview(ctx, { type: "splitPaneAt", direction: "horizontal", sourcePaneId: ctx.paneSessionId });
       }
     }),
-    vscode.commands.registerCommand("anywhereTerminal.ctx.clearTerminal", (ctx?: { paneSessionId?: string }) => {
+    vscode.commands.registerCommand("portaterm.ctx.clearTerminal", (ctx?: { paneSessionId?: string }) => {
       // Clear scrollback on extension side, then tell webview to clear viewport
       const provider = getCtxProvider(ctx);
       // Use the right-clicked pane's session if available, otherwise fall back to active session
@@ -2129,7 +2124,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         safePostMessage(view.webview, { type: "ctxClear", sessionId });
       }
     }),
-    vscode.commands.registerCommand("anywhereTerminal.ctx.newTerminal", (ctx?: { paneSessionId?: string }) => {
+    vscode.commands.registerCommand("portaterm.ctx.newTerminal", (ctx?: { paneSessionId?: string }) => {
       doNewTerminal(getCtxProvider(ctx));
     }),
     // Right-click → "Reveal Working Directory in File Explorer". The extension
@@ -2140,31 +2135,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // by the terminal output parser when available), then the initial cwd
     // recorded at PTY spawn. The webview falls back further to the workspace
     // root when all three are null (e.g. Windows where neither query works).
-    vscode.commands.registerCommand(
-      "anywhereTerminal.ctx.revealInFileTree",
-      async (ctx?: { paneSessionId?: string }) => {
-        // For editor sessions, `getCtxProvider` falls back to the focused
-        // sidebar/panel provider (it only knows view-typed providers). Routing
-        // the message there would deliver it to the WRONG webview. Resolve
-        // the webview directly from the session ID so sidebar/panel/editor
-        // are all handled identically.
-        const sessionId = ctx?.paneSessionId ?? getCtxProvider(ctx).getActiveSessionId();
-        if (!sessionId) {
-          return;
-        }
-        const liveCwd = await sessionManager.getLiveCwd(sessionId);
-        const cwd =
-          liveCwd ?? sessionManager.getCurrentCwd(sessionId) ?? sessionManager.getInitialCwd(sessionId) ?? null;
-        // The webview's file tree happily re-roots to any absolute path the
-        // RPC handler can read (workspace containment check was dropped on
-        // purpose — see fileTreeRpcHandler.ts). So we just relay the cwd
-        // regardless of whether it's inside the workspace folder.
-        const webview = getWebviewForSession(sessionId);
-        if (webview) {
-          safePostMessage(webview, { type: "reveal-in-file-tree", sessionId, cwd });
-        }
-      },
-    ),
+    vscode.commands.registerCommand("portaterm.ctx.revealInFileTree", async (ctx?: { paneSessionId?: string }) => {
+      // For editor sessions, `getCtxProvider` falls back to the focused
+      // sidebar/panel provider (it only knows view-typed providers). Routing
+      // the message there would deliver it to the WRONG webview. Resolve
+      // the webview directly from the session ID so sidebar/panel/editor
+      // are all handled identically.
+      const sessionId = ctx?.paneSessionId ?? getCtxProvider(ctx).getActiveSessionId();
+      if (!sessionId) {
+        return;
+      }
+      const liveCwd = await sessionManager.getLiveCwd(sessionId);
+      const cwd = liveCwd ?? sessionManager.getCurrentCwd(sessionId) ?? sessionManager.getInitialCwd(sessionId) ?? null;
+      // The webview's file tree happily re-roots to any absolute path the
+      // RPC handler can read (workspace containment check was dropped on
+      // purpose — see fileTreeRpcHandler.ts). So we just relay the cwd
+      // regardless of whether it's inside the workspace folder.
+      const webview = getWebviewForSession(sessionId);
+      if (webview) {
+        safePostMessage(webview, { type: "reveal-in-file-tree", sessionId, cwd });
+      }
+    }),
   );
 
   // ─── Rename Tab Command ───────────────────────────────────────────
@@ -2177,7 +2168,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // is passed to `SessionManager.renameSession`, which normalizes per D7.
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("anywhereTerminal.renameTab", async (arg?: { tabId?: string }) => {
+    vscode.commands.registerCommand("portaterm.renameTab", async (arg?: { tabId?: string }) => {
       const tabId = resolveRenameTargetTabId(
         arg,
         () => TerminalEditorProvider.getActiveProvider(),
@@ -2209,7 +2200,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      // sessionRestore.enabled is the only `anywhereTerminal.*` setting that
+      // sessionRestore.enabled is the only `portaterm.*` setting that
       // does NOT push a configUpdate to webviews — it owns the restore pipeline
       // lifecycle and is handled here on the extension side.
       if (affectsSessionRestoreEnabled(e)) {
@@ -2219,7 +2210,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // leak snapshots across unrelated no-folder windows. See round-2 [W2].
         const want = readSessionRestoreEnabled();
         if (want && !hasWorkspaceStorage) {
-          console.warn("[AnyWhere Terminal] sessionRestore toggle ignored — no workspace folder open.");
+          console.warn("[Portaterm] sessionRestore toggle ignored — no workspace folder open.");
         }
         sessionManager.setRestoreEnabled(hasWorkspaceStorage && want);
       }
@@ -2250,7 +2241,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
-      "anywhereTerminal.insertPath",
+      "portaterm.insertPath",
       (uri: vscode.Uri | undefined, uris: vscode.Uri[] | undefined) => {
         // Resolve file URIs: multi-select (uris) or single-select (uri) from Explorer
         const targets = uris && uris.length > 0 ? uris : uri ? [uri] : [];
@@ -2286,14 +2277,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // ─── Focus & Move Commands ──────────────────────────────────────
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("anywhereTerminal.focusSidebar", () => {
-      void vscode.commands.executeCommand("anywhereTerminal.sidebar.focus");
+    vscode.commands.registerCommand("portaterm.focusSidebar", () => {
+      void vscode.commands.executeCommand("portaterm.sidebar.focus");
     }),
-    vscode.commands.registerCommand("anywhereTerminal.focusPanel", () => {
-      void vscode.commands.executeCommand("anywhereTerminal.panel.focus");
+    vscode.commands.registerCommand("portaterm.focusPanel", () => {
+      void vscode.commands.executeCommand("portaterm.panel.focus");
     }),
-    vscode.commands.registerCommand("anywhereTerminal.moveToSecondary", async () => {
-      await vscode.commands.executeCommand("anywhereTerminal.sidebar.focus");
+    vscode.commands.registerCommand("portaterm.moveToSecondary", async () => {
+      await vscode.commands.executeCommand("portaterm.sidebar.focus");
       await vscode.commands.executeCommand("workbench.action.moveView");
     }),
   );
@@ -2333,7 +2324,7 @@ export async function deactivate(): Promise<void> {
     try {
       agentHookController.dispose();
     } catch (err) {
-      console.error("[AnyWhere Terminal] AgentHookController.dispose failed during deactivate:", err);
+      console.error("[Portaterm] AgentHookController.dispose failed during deactivate:", err);
     }
   }
 
@@ -2341,7 +2332,7 @@ export async function deactivate(): Promise<void> {
   try {
     await disposeSnapshotPool();
   } catch (err) {
-    console.error("[AnyWhere Terminal] snapshot pool dispose failed during deactivate:", err);
+    console.error("[Portaterm] snapshot pool dispose failed during deactivate:", err);
   }
 
   if (!sm) {
@@ -2353,7 +2344,7 @@ export async function deactivate(): Promise<void> {
   try {
     sm.flushSnapshotsSync();
   } catch (err) {
-    console.error("[AnyWhere Terminal] flushSnapshotsSync failed during deactivate:", err);
+    console.error("[Portaterm] flushSnapshotsSync failed during deactivate:", err);
   }
   // Step 2 — await the index + live-panels Memento updates. VS Code raises a
   // `Canceled` Thenable here when the extension host is shutting down — the
@@ -2362,12 +2353,12 @@ export async function deactivate(): Promise<void> {
   try {
     await sm.flushIndexAwaited();
   } catch (err) {
-    console.error("[AnyWhere Terminal] flushIndexAwaited failed during deactivate:", err);
+    console.error("[Portaterm] flushIndexAwaited failed during deactivate:", err);
   }
   // Step 3 — tear down PTYs (idempotent).
   try {
     sm.dispose();
   } catch (err) {
-    console.error("[AnyWhere Terminal] SessionManager.dispose failed during deactivate:", err);
+    console.error("[Portaterm] SessionManager.dispose failed during deactivate:", err);
   }
 }

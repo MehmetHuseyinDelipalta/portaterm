@@ -84,7 +84,7 @@ export function createKeyEventHandler(deps: KeyHandlerDeps): (event: KeyboardEve
           if (selection) {
             if (clipboard) {
               clipboard.writeText(selection).catch((err) => {
-                console.warn("[AnyWhere Terminal] Clipboard write failed:", err);
+                console.warn("[Portaterm] Clipboard write failed:", err);
               });
             }
             terminal.clearSelection();

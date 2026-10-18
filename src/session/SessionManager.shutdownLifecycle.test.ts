@@ -116,14 +116,14 @@ describe("SessionManager dispose vs queued destroy (round-4 [B1])", () => {
       serializeAddonFactory: fx.serialize,
       storage: storage as any,
     });
-    const a = sm.createSession("anywhereTerminal.sidebar", mockWebview());
-    const b = sm.createSession("anywhereTerminal.sidebar", mockWebview());
+    const a = sm.createSession("portaterm.sidebar", mockWebview());
+    const b = sm.createSession("portaterm.sidebar", mockWebview());
     mockPtySessions[0].onData?.("a-data");
     mockPtySessions[1].onData?.("b-data");
 
     // Queue a view-wide destroy — covers the editor grace-period destroy path
     // that fires when an editor panel closes without revival.
-    sm.destroyAllForView("anywhereTerminal.sidebar");
+    sm.destroyAllForView("portaterm.sidebar");
 
     sm.flushSnapshotsSync();
     sm.dispose();
@@ -333,9 +333,9 @@ describe("SessionManager session lifecycle state machine (R-1, D14)", () => {
       serializeAddonFactory: fx.serialize,
       storage: storage as any,
     });
-    const a = sm.createSession("anywhereTerminal.sidebar", mockWebview());
-    const b = sm.createSession("anywhereTerminal.sidebar", mockWebview());
-    sm.destroyAllForView("anywhereTerminal.sidebar");
+    const a = sm.createSession("portaterm.sidebar", mockWebview());
+    const b = sm.createSession("portaterm.sidebar", mockWebview());
+    sm.destroyAllForView("portaterm.sidebar");
     expect(sm.getSession(a)?.state).toBe("destroying");
     expect(sm.getSession(b)?.state).toBe("destroying");
     sm.dispose();
@@ -456,17 +456,17 @@ describe("R-7 invariant + fault-injection tests (D18)", () => {
       serializeAddonFactory: fx.serialize,
       storage: storage as any,
     });
-    const a = sm.createSession("anywhereTerminal.sidebar", mockWebview());
+    const a = sm.createSession("portaterm.sidebar", mockWebview());
     expect(sm.getSession(a)?.state).toBe("live");
 
     // SYNC: destroyAllForView transitions a → destroying and enqueues drain.
-    sm.destroyAllForView("anywhereTerminal.sidebar");
+    sm.destroyAllForView("portaterm.sidebar");
     expect(sm.getSession(a)?.state).toBe("destroying");
 
     // BEFORE the queue drains: create a new session in the same view.
     // The new session must NOT be auto-destroyed — destroyAllForView
     // captured the LIVE list before enqueue.
-    const b = sm.createSession("anywhereTerminal.sidebar", mockWebview());
+    const b = sm.createSession("portaterm.sidebar", mockWebview());
     expect(sm.getSession(b)?.state).toBe("live");
 
     // Drain the queue (performDestroy awaits a setTimeout(0) for onExit).

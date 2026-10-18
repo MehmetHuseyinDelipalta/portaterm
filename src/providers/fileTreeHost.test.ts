@@ -145,9 +145,7 @@ describe("FileTreeHost.handleMessage", () => {
       expect(handled).toBe(true);
       await waitFor(() => warningSpy.mock.calls.length > 0);
       expect(attachPostSpy).not.toHaveBeenCalled();
-      expect(warningSpy).toHaveBeenCalledWith(
-        "AnyWhere Terminal file tree is no longer available. Reopen it and try again.",
-      );
+      expect(warningSpy).toHaveBeenCalledWith("Portaterm file tree is no longer available. Reopen it and try again.");
     } finally {
       dialogSpy.mockRestore();
       warningSpy.mockRestore();
@@ -163,7 +161,7 @@ describe("FileTreeHost.handleMessage", () => {
       const handled = host.handleMessage({ type: "request-open-folder" }, vi.fn());
       expect(handled).toBe(true);
       await waitFor(() => errorSpy.mock.calls.length > 0);
-      expect(errorSpy).toHaveBeenCalledWith("AnyWhere Terminal could not open the folder picker.");
+      expect(errorSpy).toHaveBeenCalledWith("Portaterm could not open the folder picker.");
     } finally {
       dialogSpy.mockRestore();
       errorSpy.mockRestore();
@@ -350,8 +348,8 @@ describe("FileTreeHost — file-tree path actions", () => {
     ).toBe(true);
     await waitFor(() => errorSpy.mock.calls.length >= 2);
 
-    expect(errorSpy).toHaveBeenCalledWith("AnyWhere Terminal could not reveal the selected item.");
-    expect(errorSpy).toHaveBeenCalledWith("AnyWhere Terminal could not copy the selected path.");
+    expect(errorSpy).toHaveBeenCalledWith("Portaterm could not reveal the selected item.");
+    expect(errorSpy).toHaveBeenCalledWith("Portaterm could not copy the selected path.");
     sub.dispose();
   });
 
@@ -508,7 +506,7 @@ describe("FileTreeHost — file-tree path actions", () => {
       true,
     );
     await waitFor(() => errorSpy.mock.calls.length > 0);
-    expect(errorSpy).toHaveBeenCalledWith("AnyWhere Terminal could not delete the selected item.");
+    expect(errorSpy).toHaveBeenCalledWith("Portaterm could not delete the selected item.");
 
     errorSpy.mockClear();
     (vscode.workspace.fs as unknown as { stat: unknown; delete: unknown }).stat = async () => ({
@@ -526,7 +524,7 @@ describe("FileTreeHost — file-tree path actions", () => {
       true,
     );
     await waitFor(() => errorSpy.mock.calls.length > 0);
-    expect(errorSpy).toHaveBeenCalledWith("AnyWhere Terminal could not delete the selected item.");
+    expect(errorSpy).toHaveBeenCalledWith("Portaterm could not delete the selected item.");
     sub.dispose();
   });
 });

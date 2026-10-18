@@ -80,7 +80,7 @@ export async function addToGitExclude(
         }
       },
       { failed: "the repository-local exclude file could not be updated" },
-      (lockPath) => deps.warn?.(`[AnyWhere Terminal] could not release repository-local exclude lock: ${lockPath}`),
+      (lockPath) => deps.warn?.(`[Portaterm] could not release repository-local exclude lock: ${lockPath}`),
     );
     if (outcome.kind === "done") {
       return outcome.value;
@@ -89,9 +89,7 @@ export async function addToGitExclude(
       return { failed: "the repository-local exclude file is locked" };
     }
     if (outcome.retainedLockPath !== undefined) {
-      deps.warn?.(
-        `[AnyWhere Terminal] repository-local exclude lock retained after timeout: ${outcome.retainedLockPath}`,
-      );
+      deps.warn?.(`[Portaterm] repository-local exclude lock retained after timeout: ${outcome.retainedLockPath}`);
       return {
         failed: "the repository-local exclude update timed out while a write was still pending",
         timedOut: true,

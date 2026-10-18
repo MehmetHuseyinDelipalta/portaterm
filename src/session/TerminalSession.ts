@@ -51,7 +51,7 @@ export interface TerminalSession {
   id: string;
   /** Current lifecycle state — see SessionState union above. */
   state: SessionState;
-  /** Which view this session belongs to (e.g., 'anywhereTerminal.sidebar') */
+  /** Which view this session belongs to (e.g., 'portaterm.sidebar') */
   viewId: string;
   /** The PTY process wrapper */
   pty: PtySession;

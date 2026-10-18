@@ -27,7 +27,7 @@ import type { TrackedPathResolver } from "../utils/resolvedPathMemo";
 import type { API, GitExtension, Repository } from "./git";
 import { mapStatus, pickHigherSeverity } from "./gitStatusMapping";
 
-const LOG_PREFIX = "[AnyWhere Terminal][git-decorations]";
+const LOG_PREFIX = "[Portaterm][git-decorations]";
 
 export interface GitStatusDelta {
   revision: number;
@@ -93,7 +93,7 @@ export interface CreateGitDecorationProviderOptions {
   readonly onDidChangeExtensions?: vscode.Event<void>;
   /**
    * Inject custom warn/info loggers. Production callers should pass nothing —
-   * we'll log to `console.*` with the standard `[AnyWhere Terminal]` prefix.
+   * we'll log to `console.*` with the standard `[Portaterm]` prefix.
    */
   readonly logger?: {
     info(msg: string): void;

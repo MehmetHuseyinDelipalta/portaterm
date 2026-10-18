@@ -583,7 +583,7 @@ export async function readInlineKeys(
           );
           continue;
         }
-        if (/^(?:ANYWHERE_TERMINAL_|ASIMOV_)/i.test(name)) {
+        if (/^(?:PORTATERM_|ASIMOV_)/i.test(name)) {
           report(
             draft,
             `port \`${name}\``,

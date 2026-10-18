@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const RENAME_TAB = "anywhereTerminal.renameTab";
+const RENAME_TAB = "portaterm.renameTab";
 const manifest = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
   activationEvents: string[];
   contributes: {
@@ -14,7 +14,7 @@ const manifest = JSON.parse(readFileSync(new URL("../../package.json", import.me
 describe("rename-tab manifest contract", () => {
   it("contributes one discoverable palette command", () => {
     expect(manifest.contributes.commands.filter(({ command }) => command === RENAME_TAB)).toEqual([
-      { command: RENAME_TAB, title: "Rename Tab…", category: "AnyWhere Terminal" },
+      { command: RENAME_TAB, title: "Rename Tab…", category: "Portaterm" },
     ]);
   });
 

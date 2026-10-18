@@ -87,7 +87,7 @@ function mountView(store: PaneEvidenceStore, location: "sidebar" | "panel"): Sur
   const { webview, send } = makeWebviewSeam();
   const webviewView = {
     visible: true,
-    viewType: `anywhereTerminal.${location}`,
+    viewType: `portaterm.${location}`,
     webview,
     onDidChangeVisibility: () => ({ dispose: () => {} }),
     onDidDispose: () => ({ dispose: () => {} }),

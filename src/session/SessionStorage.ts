@@ -1,6 +1,6 @@
 // Two-tier persistence for terminal session snapshots.
-// - workspaceState: metadata index (anywhereTerminal.sessionSnapshots.index, ~8KB)
-//                   + live-panels record (anywhereTerminal.editorPanels.live).
+// - workspaceState: metadata index (portaterm.sessionSnapshots.index, ~8KB)
+//                   + live-panels record (portaterm.editorPanels.live).
 // - storageUri:    serialized buffers as files `<storageUri>/snapshots/<sessionId>.snapshot.ans`.
 //
 // Design: asimov/changes/restore-terminal-sessions/design.md D4, D5, D6, D11.
@@ -186,7 +186,7 @@ export class SessionStorage {
     try {
       this.commitIndexSync(mem);
     } catch (err) {
-      console.error("[AnyWhere Terminal] migrateMementoIndexToSidecar commitIndexSync failed:", err);
+      console.error("[Portaterm] migrateMementoIndexToSidecar commitIndexSync failed:", err);
       return;
     }
     // Best-effort drop the legacy Memento entry — even if it fails
@@ -211,13 +211,13 @@ export class SessionStorage {
    */
   private assertSafeSessionId(sessionId: string): void {
     if (typeof sessionId !== "string" || sessionId.length === 0) {
-      throw new Error("[AnyWhere Terminal] Invalid sessionId: empty");
+      throw new Error("[Portaterm] Invalid sessionId: empty");
     }
     if (path.basename(sessionId) !== sessionId) {
-      throw new Error(`[AnyWhere Terminal] Refusing path-traversal sessionId: ${sessionId}`);
+      throw new Error(`[Portaterm] Refusing path-traversal sessionId: ${sessionId}`);
     }
     if (sessionId.startsWith(".") || sessionId.includes("/") || sessionId.includes("\\")) {
-      throw new Error(`[AnyWhere Terminal] Refusing unsafe sessionId: ${sessionId}`);
+      throw new Error(`[Portaterm] Refusing unsafe sessionId: ${sessionId}`);
     }
   }
 
@@ -244,7 +244,7 @@ export class SessionStorage {
     try {
       file = this.bufferFilePath(sessionId);
     } catch (err) {
-      console.warn("[AnyWhere Terminal] readBufferFile rejected unsafe sessionId:", err);
+      console.warn("[Portaterm] readBufferFile rejected unsafe sessionId:", err);
       return null;
     }
     if (!this.fs.existsSync(file)) {
@@ -378,7 +378,7 @@ export class SessionStorage {
     try {
       canonical = this.bufferFilePath(sessionId);
     } catch (err) {
-      console.warn("[AnyWhere Terminal] dropBuffer rejected unsafe sessionId:", err);
+      console.warn("[Portaterm] dropBuffer rejected unsafe sessionId:", err);
       return;
     }
     try {

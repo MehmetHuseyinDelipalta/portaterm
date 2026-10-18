@@ -90,7 +90,7 @@ describe("LockedFile non-vacuous identity", () => {
     });
 
     await expect(locked.withLock(async () => "done", "unavailable", "failed", releaseFailed)).resolves.toBe("done");
-    expect(releaseFailed).toHaveBeenCalledWith("/repo/.env.worktree.anywhere-terminal.lock", "indeterminate");
+    expect(releaseFailed).toHaveBeenCalledWith("/repo/.env.worktree.portaterm.lock", "indeterminate");
     expect(unlink).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledOnce();
   });
@@ -323,7 +323,7 @@ describe("LockedFile deadline gate", () => {
     const temporaryClose = vi.fn(async () => undefined);
     const unlink = vi.fn(async () => undefined);
     const open = vi.fn(async (candidate: string) =>
-      candidate.endsWith(".anywhere-terminal.lock")
+      candidate.endsWith(".portaterm.lock")
         ? ({ stat: async () => fileStat(51), close: lockClose } as never)
         : stageOpen.promise,
     );
@@ -365,7 +365,7 @@ describe("LockedFile deadline gate", () => {
     const lockHandle = { stat: vi.fn(async () => fileStat(72)), close: vi.fn(async () => undefined) };
     let lockHeld = false;
     const open = vi.fn(async (candidate: string) => {
-      if (!candidate.endsWith(".anywhere-terminal.lock")) {
+      if (!candidate.endsWith(".portaterm.lock")) {
         return temporaryHandle as never;
       }
       if (lockHeld) {
@@ -491,11 +491,10 @@ describe("LockedFile deadline gate", () => {
       fs: {
         mkdir: vi.fn(async () => undefined),
         open: vi.fn(async (candidate: string) =>
-          candidate.endsWith(".anywhere-terminal.lock") ? (lockHandle as never) : (temporaryHandle as never),
+          candidate.endsWith(".portaterm.lock") ? (lockHandle as never) : (temporaryHandle as never),
         ) as never,
         lstat: vi.fn(
-          async (candidate: string) =>
-            (candidate.endsWith(".anywhere-terminal.lock") ? fileStat(92) : fileStat(91)) as never,
+          async (candidate: string) => (candidate.endsWith(".portaterm.lock") ? fileStat(92) : fileStat(91)) as never,
         ) as never,
         unlink: vi.fn(async () => undefined),
       },
@@ -535,10 +534,10 @@ describe("LockedFile deadline gate", () => {
       fs: {
         mkdir: vi.fn(async () => undefined),
         open: vi.fn(async (candidate: string) =>
-          candidate.endsWith(".anywhere-terminal.lock") ? (lockHandle as never) : (temporaryHandle as never),
+          candidate.endsWith(".portaterm.lock") ? (lockHandle as never) : (temporaryHandle as never),
         ) as never,
         lstat: vi.fn(async (candidate: string) => {
-          if (candidate.endsWith(".anywhere-terminal.lock")) {
+          if (candidate.endsWith(".portaterm.lock")) {
             return fileStat(102) as never;
           }
           observationStarted.resolve();

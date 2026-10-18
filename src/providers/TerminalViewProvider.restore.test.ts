@@ -44,7 +44,7 @@ function createMockWebviewView() {
   const postMessage = vi.fn((_msg: unknown) => Promise.resolve(true));
   const webviewView = {
     visible: true,
-    viewType: "anywhereTerminal.sidebar",
+    viewType: "portaterm.sidebar",
     webview: {
       html: "",
       options: {},

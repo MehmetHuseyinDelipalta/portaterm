@@ -101,7 +101,7 @@ function mountSurface(host: WorktreeHost, location: "sidebar" | "panel") {
   const postMessage = vi.fn((_msg: unknown) => Promise.resolve(true));
   const webviewView = {
     visible: true,
-    viewType: `anywhereTerminal.${location}`,
+    viewType: `portaterm.${location}`,
     webview: {
       html: "",
       options: {},
@@ -241,7 +241,7 @@ describe("TerminalViewProvider — worktree surface", () => {
     const handlers: Array<(msg: unknown) => void> = [];
     const webviewView = {
       visible: true,
-      viewType: "anywhereTerminal.sidebar",
+      viewType: "portaterm.sidebar",
       webview: {
         html: "",
         options: {},
@@ -529,7 +529,7 @@ describe("the row-activation setting reaches the view", () => {
   }
 
   it("carries the configured value in init", async () => {
-    __setConfigValues({ "anywhereTerminal.worktree.rowActivation": "preview" });
+    __setConfigValues({ "portaterm.worktree.rowActivation": "preview" });
     const view = await readyView();
 
     expect(view.posts("init")[0]?.worktreeRowActivation).toBe("preview");
@@ -540,7 +540,7 @@ describe("the row-activation setting reaches the view", () => {
     // A hand-edited settings.json, or a downgrade from a later enum, must not
     // travel as a mode with no renderer behind it.
     for (const stored of [undefined, "sideways", 7]) {
-      __setConfigValues(stored === undefined ? {} : { "anywhereTerminal.worktree.rowActivation": stored });
+      __setConfigValues(stored === undefined ? {} : { "portaterm.worktree.rowActivation": stored });
       const view = await readyView();
 
       expect(view.posts("init")[0]?.worktreeRowActivation, `stored: ${String(stored)}`).toBe("focus");
@@ -549,12 +549,12 @@ describe("the row-activation setting reaches the view", () => {
   });
 
   it("reaches a view that is already open when the setting changes", async () => {
-    __setConfigValues({ "anywhereTerminal.worktree.rowActivation": "focus" });
+    __setConfigValues({ "portaterm.worktree.rowActivation": "focus" });
     const view = await readyView();
     view.forget();
 
-    __setConfigValues({ "anywhereTerminal.worktree.rowActivation": "preview" });
-    __fireConfigChange(["anywhereTerminal.worktree.rowActivation"]);
+    __setConfigValues({ "portaterm.worktree.rowActivation": "preview" });
+    __fireConfigChange(["portaterm.worktree.rowActivation"]);
     await settle();
 
     // `forget()` cleared the post-init re-send, so this is the change alone.
@@ -563,11 +563,11 @@ describe("the row-activation setting reaches the view", () => {
   });
 
   it("stays quiet for a configuration change that is not this setting", async () => {
-    __setConfigValues({ "anywhereTerminal.worktree.rowActivation": "focus" });
+    __setConfigValues({ "portaterm.worktree.rowActivation": "focus" });
     const view = await readyView();
     view.forget();
 
-    __fireConfigChange(["anywhereTerminal.fontSize"]);
+    __fireConfigChange(["portaterm.fontSize"]);
     await settle();
 
     expect(view.posts("worktreeRowActivation")).toEqual([]);
@@ -578,12 +578,12 @@ describe("the row-activation setting reaches the view", () => {
     // The rollout is over and the key is retired. A user whose settings.json
     // still turns it off must meet the workbench anyway — nothing reads the
     // value, so it can neither reach the webview nor fire a listener.
-    __setConfigValues({ "anywhereTerminal.worktree.workbench": false });
+    __setConfigValues({ "portaterm.worktree.workbench": false });
     const view = await readyView();
     expect(view.posts("init")[0]).not.toHaveProperty("worktreeWorkbench");
     view.forget();
 
-    __fireConfigChange(["anywhereTerminal.worktree.workbench"]);
+    __fireConfigChange(["portaterm.worktree.workbench"]);
     await settle();
 
     expect(view.posts("worktreeWorkbench")).toEqual([]);
@@ -591,7 +591,7 @@ describe("the row-activation setting reaches the view", () => {
   });
 
   it("reaches an editor panel too, which owns its own listener", async () => {
-    __setConfigValues({ "anywhereTerminal.worktree.rowActivation": "focus" });
+    __setConfigValues({ "portaterm.worktree.rowActivation": "focus" });
     const spy = vi.spyOn(SessionManager.prototype, "getAllSessionsForView").mockReturnValue([{ id: "t1" }] as never);
     const sessions = new SessionManager();
     const { panel, handlers } = panelSeam();
@@ -602,8 +602,8 @@ describe("the row-activation setting reaches the view", () => {
     }
     await settle();
 
-    __setConfigValues({ "anywhereTerminal.worktree.rowActivation": "preview" });
-    __fireConfigChange(["anywhereTerminal.worktree.rowActivation"]);
+    __setConfigValues({ "portaterm.worktree.rowActivation": "preview" });
+    __fireConfigChange(["portaterm.worktree.rowActivation"]);
     await settle();
 
     const posted = (panel.webview.postMessage as ReturnType<typeof vi.fn>).mock.calls
@@ -619,7 +619,7 @@ describe("the row-activation setting reaches the view", () => {
     // `_ready` flips before init is delivered and the webview builds its worktree
     // controller only when init arrives, so an update posted in that window is
     // dropped and then overwritten by the value init carried (round-1 W2).
-    __setConfigValues({ "anywhereTerminal.worktree.rowActivation": "preview" });
+    __setConfigValues({ "portaterm.worktree.rowActivation": "preview" });
     const view = await readyView();
 
     const inits = view.posts("init");
@@ -631,11 +631,11 @@ describe("the row-activation setting reaches the view", () => {
 
   it("does not push to a view that never became ready", async () => {
     // Posting before `init` would land in a webview with no router attached.
-    __setConfigValues({ "anywhereTerminal.worktree.rowActivation": "focus" });
+    __setConfigValues({ "portaterm.worktree.rowActivation": "focus" });
     const view = mountSurface(recordingHost().host, "sidebar");
 
-    __setConfigValues({ "anywhereTerminal.worktree.rowActivation": "preview" });
-    __fireConfigChange(["anywhereTerminal.worktree.rowActivation"]);
+    __setConfigValues({ "portaterm.worktree.rowActivation": "preview" });
+    __fireConfigChange(["portaterm.worktree.rowActivation"]);
     await settle();
 
     expect(view.posts("worktreeRowActivation")).toEqual([]);

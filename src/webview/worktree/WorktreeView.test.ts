@@ -2615,7 +2615,7 @@ describe("row activation", () => {
 
 // ── § 7.3 + design.md D5: selection, and the treatment that marks it ──────
 
-describe("AnyWhere Terminal session projection", () => {
+describe("Portaterm session projection", () => {
   function withAtRows(rows: WorktreeAgentRow[]): { tree: WorktreeTree; presence: WorktreePresence } {
     return {
       tree: singleRepoTree(),

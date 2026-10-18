@@ -541,7 +541,7 @@ export class HoverPreviewPopup implements HoverPreviewPopupHost {
       try {
         this.onOpenFile?.(result);
       } catch (err) {
-        console.warn("[AnyWhere Terminal] onOpenFile threw:", err);
+        console.warn("[Portaterm] onOpenFile threw:", err);
       }
       this.dismissSelf();
     });
@@ -629,7 +629,7 @@ export class HoverPreviewPopup implements HoverPreviewPopupHost {
         rendered = this.renderMarkdown(content, theme, onAsyncRefresh);
         body.appendChild(rendered);
       } catch (err) {
-        console.warn("[AnyWhere Terminal] renderMarkdown threw, falling back:", err);
+        console.warn("[Portaterm] renderMarkdown threw, falling back:", err);
         rendered = null;
       }
     }
@@ -638,7 +638,7 @@ export class HoverPreviewPopup implements HoverPreviewPopupHost {
         rendered = this.renderCode(content, languageId, theme, onAsyncRefresh);
         body.appendChild(rendered);
       } catch (err) {
-        console.warn("[AnyWhere Terminal] renderCode threw, falling back:", err);
+        console.warn("[Portaterm] renderCode threw, falling back:", err);
         rendered = null;
       }
     }

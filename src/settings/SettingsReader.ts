@@ -39,17 +39,17 @@ export interface ResolvedTerminalSettings extends TerminalConfig {
 // ─── Public API ─────────────────────────────────────────────────────
 
 /**
- * Read all `anywhereTerminal.*` settings and resolve them with fallback chains.
+ * Read all `portaterm.*` settings and resolve them with fallback chains.
  *
- * Font size resolution: anywhereTerminal.fontSize (if >0) → terminal.integrated.fontSize (if >0) → editor.fontSize (if >0) → 14
- * Font family resolution: anywhereTerminal.fontFamily (if non-empty) → terminal.integrated.fontFamily (if non-empty) → editor.fontFamily (if non-empty) → 'monospace'
- * Shell resolution: anywhereTerminal.shell.<platform> (if non-empty) → auto-detect via PtyManager.detectShell()
- * CWD resolution: anywhereTerminal.defaultCwd (if non-empty and valid) → workspace root → home directory
+ * Font size resolution: portaterm.fontSize (if >0) → terminal.integrated.fontSize (if >0) → editor.fontSize (if >0) → 14
+ * Font family resolution: portaterm.fontFamily (if non-empty) → terminal.integrated.fontFamily (if non-empty) → editor.fontFamily (if non-empty) → 'monospace'
+ * Shell resolution: portaterm.shell.<platform> (if non-empty) → auto-detect via PtyManager.detectShell()
+ * CWD resolution: portaterm.defaultCwd (if non-empty and valid) → workspace root → home directory
  *
  * `platform` is injectable for cross-platform unit testing.
  */
 export function readTerminalSettings(platform: NodeJS.Platform = process.platform): ResolvedTerminalSettings {
-  const config = vscode.workspace.getConfiguration("anywhereTerminal");
+  const config = vscode.workspace.getConfiguration("portaterm");
   const terminalConfig = vscode.workspace.getConfiguration("terminal.integrated");
   const editorConfig = vscode.workspace.getConfiguration("editor");
 
@@ -99,7 +99,7 @@ export function readTerminalSettings(platform: NodeJS.Platform = process.platfor
  * Does not resolve shell/cwd — avoids unnecessary synchronous I/O from shell detection.
  */
 export function readTerminalConfig(): TerminalConfig {
-  const config = vscode.workspace.getConfiguration("anywhereTerminal");
+  const config = vscode.workspace.getConfiguration("portaterm");
   const terminalConfig = vscode.workspace.getConfiguration("terminal.integrated");
   const editorConfig = vscode.workspace.getConfiguration("editor");
 
@@ -125,7 +125,7 @@ export function readTerminalConfig(): TerminalConfig {
  */
 export function affectsTerminalConfig(e: vscode.ConfigurationChangeEvent): boolean {
   return (
-    e.affectsConfiguration("anywhereTerminal") ||
+    e.affectsConfiguration("portaterm") ||
     e.affectsConfiguration("editor.fontSize") ||
     e.affectsConfiguration("editor.fontFamily") ||
     e.affectsConfiguration("terminal.integrated.fontSize") ||
@@ -137,13 +137,13 @@ export function affectsTerminalConfig(e: vscode.ConfigurationChangeEvent): boole
  * Read the cross-restart session restore setting. Default `true`.
  */
 export function readSessionRestoreEnabled(): boolean {
-  const config = vscode.workspace.getConfiguration("anywhereTerminal");
+  const config = vscode.workspace.getConfiguration("portaterm");
   return config.get<boolean>("sessionRestore.enabled") ?? true;
 }
 
 /** Check whether a configuration change event affects the session-restore setting. */
 export function affectsSessionRestoreEnabled(e: vscode.ConfigurationChangeEvent): boolean {
-  return e.affectsConfiguration("anywhereTerminal.sessionRestore.enabled");
+  return e.affectsConfiguration("portaterm.sessionRestore.enabled");
 }
 
 /** What activating an agent row in the worktree panel does. */
@@ -158,7 +158,7 @@ export type WorktreeRowActivation = "focus" | "preview";
  * the view as a mode it cannot render.
  */
 export function readWorktreeRowActivation(): WorktreeRowActivation {
-  const config = vscode.workspace.getConfiguration("anywhereTerminal");
+  const config = vscode.workspace.getConfiguration("portaterm");
   const value = config.get<string>("worktree.rowActivation");
   return value === "preview" || value === "focus" ? value : "focus";
 }
@@ -178,7 +178,7 @@ export interface WorktreeCreateRootSetting {
  * layout detected from the repository (design.md D7).
  */
 export function readWorktreeCreateRoot(): WorktreeCreateRootSetting {
-  const config = vscode.workspace.getConfiguration("anywhereTerminal");
+  const config = vscode.workspace.getConfiguration("portaterm");
   const inspected = config.inspect<string>("worktree.createRoot");
   const stated = inspected?.workspaceFolderValue ?? inspected?.workspaceValue ?? inspected?.globalValue ?? undefined;
   const trimmed = typeof stated === "string" ? stated.trim() : undefined;
@@ -190,14 +190,14 @@ export function readWorktreeCreateRoot(): WorktreeCreateRootSetting {
 
 /** Check whether a configuration change event affects row activation. */
 export function affectsWorktreeRowActivation(e: vscode.ConfigurationChangeEvent): boolean {
-  return e.affectsConfiguration("anywhereTerminal.worktree.rowActivation");
+  return e.affectsConfiguration("portaterm.worktree.rowActivation");
 }
 
 // ─── Private: Resolution Chains ─────────────────────────────────────
 
 /**
  * Resolve font size through the fallback chain with clamping.
- * anywhereTerminal.fontSize (if >0) → terminal.integrated.fontSize (if >0) → editor.fontSize (if >0) → 14
+ * portaterm.fontSize (if >0) → terminal.integrated.fontSize (if >0) → editor.fontSize (if >0) → 14
  * Result is clamped to [6, 100].
  */
 function resolveFontSize(
@@ -220,7 +220,7 @@ function resolveFontSize(
 
 /**
  * Resolve font family through the fallback chain.
- * anywhereTerminal.fontFamily (if non-empty) → terminal.integrated.fontFamily (if non-empty) → editor.fontFamily (if non-empty) → 'monospace'
+ * portaterm.fontFamily (if non-empty) → terminal.integrated.fontFamily (if non-empty) → editor.fontFamily (if non-empty) → 'monospace'
  */
 function resolveFontFamily(
   extensionFontFamily: string | undefined,
@@ -239,7 +239,7 @@ function resolveFontFamily(
   return DEFAULT_FONT_FAMILY;
 }
 
-/** Map the running platform to its `anywhereTerminal.shell.*` setting key. */
+/** Map the running platform to its `portaterm.shell.*` setting key. */
 function getPlatformShellKey(platform: NodeJS.Platform): string {
   if (platform === "darwin") {
     return "shell.macOS";
@@ -276,7 +276,7 @@ function resolveShell(
 
 /**
  * Resolve working directory.
- * anywhereTerminal.defaultCwd (if non-empty and valid directory) → workspace root → home directory
+ * portaterm.defaultCwd (if non-empty and valid directory) → workspace root → home directory
  */
 function resolveCwd(customCwd: string | undefined): string {
   if (customCwd?.trim()) {

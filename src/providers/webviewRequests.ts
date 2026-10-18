@@ -171,7 +171,7 @@ export async function handleFilePreviewRequest(
       postOnce(webview, result);
     }
   } catch (err) {
-    console.warn(`[AnyWhere Terminal] requestFilePreview failed${logSuffix}:`, err);
+    console.warn(`[Portaterm] requestFilePreview failed${logSuffix}:`, err);
   } finally {
     tokens.end(message.sessionId, source);
     // ALWAYS dispose our own source — this finally owns `source` exclusively.
@@ -225,7 +225,7 @@ export async function handleVaultSessionsRequest(ctx: {
     // webview (review round-2 F4).
     void postWithRetry(webview, { type: "vaultSessionsResponse", result, fromCache: false }, 2, () => !isCurrent());
   } catch (err) {
-    console.error(`[AnyWhere Terminal] Failed to list vault sessions${logSuffix}:`, err);
+    console.error(`[Portaterm] Failed to list vault sessions${logSuffix}:`, err);
     // Don't clobber a successfully-rendered cache with an error notice; only
     // surface the error when there was nothing to show.
     if (!cached) {

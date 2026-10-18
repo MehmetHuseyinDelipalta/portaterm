@@ -101,7 +101,7 @@ try {
   const agent = await run("cursor-agent", ["--trust", "-p", "say the word PONG and nothing else"], {
     cwd: workspace,
     env: {
-      ANYWHERE_TERMINAL_CURSOR_URL: url,
+      PORTATERM_CURSOR_URL: url,
       BASH_ENV: startupFile,
       "BASH_FUNC_awk%%": "() { printf 'imported-awk-function\\n' >&2; return 1; }",
       "BASH_FUNC_command%%": "() { printf 'imported-command-function\\n' >&2; return 1; }",

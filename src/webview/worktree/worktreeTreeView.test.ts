@@ -100,19 +100,19 @@ describe("[1_2] an agent row outside a tree", () => {
   });
 });
 
-describe("AnyWhere Terminal attachment indicators", () => {
+describe("Portaterm attachment indicators", () => {
   it("shows the group count separately from agent activity", () => {
     const header = renderAgentsHeader(3, 2, () => undefined);
     expect(header.textContent).toContain("3 agents");
     expect(header.textContent).toContain("2 open");
     expect(header.textContent).not.toContain("in AT");
     expect(header.querySelector(".wt-at-summary svg")).not.toBeNull();
-    expect(header.dataset.tip).toContain("2 open in AnyWhere Terminal");
+    expect(header.dataset.tip).toContain("2 open in Portaterm");
   });
 
   it.each([
-    ["background" as const, false, "Open in AnyWhere Terminal"],
-    ["active" as const, true, "Focused in AnyWhere Terminal"],
+    ["background" as const, false, "Open in Portaterm"],
+    ["active" as const, true, "Focused in Portaterm"],
   ])("renders a focusable %s AT badge without activating the row", (atAttachment, active, label) => {
     let rowActivations = 0;
     let atFocuses = 0;

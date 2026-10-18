@@ -1666,7 +1666,7 @@ describe("a Claude turn reaches the pane's evidence through the real assembly", 
     runtime.setAgentEnabled("claude", true);
     store.create(paneId);
     const env = runtime.create(paneId);
-    const url = env.ANYWHERE_TERMINAL_CLAUDE_URL;
+    const url = env.PORTATERM_CLAUDE_URL;
     if (url === undefined) {
       throw new Error("no claude coordinates were minted");
     }
@@ -1755,7 +1755,7 @@ describe("the routing activate installs between a hook turn and a projected row"
     }
     runtime.setAgentEnabled("claude", true);
     store.create(paneId, { viewId: "sidebar", cwd: LINKED, ptyPid: 4242, shell: "claude", isAgentLaunch: true });
-    const url = runtime.create(paneId).ANYWHERE_TERMINAL_CLAUDE_URL;
+    const url = runtime.create(paneId).PORTATERM_CLAUDE_URL;
     if (url === undefined) {
       throw new Error("no claude coordinates were minted");
     }

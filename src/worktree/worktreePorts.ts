@@ -477,7 +477,7 @@ export async function allocateWorktreePorts(
     deadline: dependencies.deadline ?? afterDelay,
     warn: dependencies.warn ?? ((message: string) => console.warn(message)),
   };
-  const lock = deps.lockedFile(path.join(input.repoId, "anywhere-terminal-port-claims"));
+  const lock = deps.lockedFile(path.join(input.repoId, "portaterm-port-claims"));
   const warnings: ProvisionPortWarning[] = [];
   const addWarning = (warning: ProvisionPortWarning): void => {
     if (!warnings.includes(warning)) {
@@ -692,7 +692,7 @@ export async function allocateWorktreePorts(
       failure("port allocation failed unexpectedly"),
       (lockPath) => {
         addWarning("lockReleaseFailed");
-        deps.warn(`[AnyWhere Terminal] could not release port-claim lock: ${lockPath}`);
+        deps.warn(`[Portaterm] could not release port-claim lock: ${lockPath}`);
       },
     );
 
@@ -709,7 +709,7 @@ export async function allocateWorktreePorts(
       );
       if (lockedOutcome.retainedLockPath !== undefined) {
         addWarning("lockRetained");
-        deps.warn(`[AnyWhere Terminal] port-claim lock retained after timeout: ${lockedOutcome.retainedLockPath}`);
+        deps.warn(`[Portaterm] port-claim lock retained after timeout: ${lockedOutcome.retainedLockPath}`);
       }
       if (lockedOutcome.releasePending) {
         addWarning("lockReleaseFailed");

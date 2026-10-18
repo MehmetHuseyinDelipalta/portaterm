@@ -142,7 +142,7 @@ describe("the kit stamps the provider that called it", () => {
           APP_PORT: null,
           "BAD-NAME": null,
           "1PORT": null,
-          ANYWHERE_TERMINAL_WORKTREE_PATH: null,
+          PORTATERM_WORKTREE_PATH: null,
           aSiMoV_ChAnGe_Id: null,
         },
       },

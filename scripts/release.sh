@@ -82,9 +82,9 @@ fi
 git tag "v$VERSION"
 
 # 7. Package the VSIX.
-rm -f anywhere-terminal-*.vsix
+rm -f portaterm-*.vsix
 vsce package --no-dependencies
-VSIX="anywhere-terminal-$VERSION.vsix"
+VSIX="portaterm-$VERSION.vsix"
 if [[ ! -f "$VSIX" ]]; then
   echo "error: expected $VSIX but it was not produced" >&2
   exit 1

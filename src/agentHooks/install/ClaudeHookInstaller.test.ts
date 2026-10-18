@@ -239,7 +239,7 @@ describe("ClaudeHookInstaller", () => {
   // (spec: "The lock was never acquired at all").
   it("does not reclaim a live lock, mutate its document, or name it", async () => {
     const { directory, path } = await fixture();
-    const lock = `${path}.anywhere-terminal.lock`;
+    const lock = `${path}.portaterm.lock`;
     await writeFile(path, "{}\n");
     await writeFile(lock, "held");
     const installer = new ClaudeHookInstaller(
@@ -268,7 +268,7 @@ describe("ClaudeHookInstaller", () => {
       {
         fs: {
           unlink: async (file) => {
-            if (String(file).endsWith(".anywhere-terminal.lock")) {
+            if (String(file).endsWith(".portaterm.lock")) {
               throw Object.assign(new Error("held"), { code: "EACCES" });
             }
           },
@@ -297,7 +297,7 @@ describe("ClaudeHookInstaller", () => {
         fs: {
           lstat: (async (file: string, options?: { bigint?: boolean }) => {
             const real = await lstat(file, options as never);
-            if (String(file).endsWith(".anywhere-terminal.lock")) {
+            if (String(file).endsWith(".portaterm.lock")) {
               return { ...real, dev: real.dev, ino: options?.bigint ? 999999n : 999999 } as never;
             }
             return real;
@@ -410,7 +410,7 @@ async function freeLoopbackPort(): Promise<number> {
 
 describe("D7 frozen POSIX command", () => {
   it("drains stdin and emits neutral output when coordinates are absent", async () => {
-    const result = await runD7('{"event":"Stop"}', { ANYWHERE_TERMINAL_CLAUDE_URL: "" });
+    const result = await runD7('{"event":"Stop"}', { PORTATERM_CLAUDE_URL: "" });
     expect(result.stdout).toBe("{}\n");
     expect(result.code).toBe(0);
   });
@@ -419,7 +419,7 @@ describe("D7 frozen POSIX command", () => {
     const payload = '{"event":"SessionStart","transcript_path":"/tmp/x"}';
     await withHttpListener(async (port, requests) => {
       const url = loopbackUrl(port, "session déjà-vu/42 (v1)!'");
-      const result = await runD7(payload, { ANYWHERE_TERMINAL_CLAUDE_URL: url });
+      const result = await runD7(payload, { PORTATERM_CLAUDE_URL: url });
       expect(result.stdout).toBe("{}\n");
       expect(result.code).toBe(0);
       expect(requests).toHaveLength(1);
@@ -433,7 +433,7 @@ describe("D7 frozen POSIX command", () => {
     await withHttpListener(async (port, requests) => {
       const url = loopbackUrl(port, "background-job");
       const result = await runD7('{"event":"Stop"}', {
-        ANYWHERE_TERMINAL_CLAUDE_URL: url,
+        PORTATERM_CLAUDE_URL: url,
         CLAUDE_JOB_DIR: "/tmp/some-job",
       });
       expect(result.stdout).toBe("{}\n");
@@ -445,7 +445,7 @@ describe("D7 frozen POSIX command", () => {
   it("rejects a malformed percent-escape in the session segment and sends nothing", async () => {
     await withHttpListener(async (port, requests) => {
       const url = `http://127.0.0.1:${port}/bad%2gsegment/${token()}`;
-      const result = await runD7('{"event":"Stop"}', { ANYWHERE_TERMINAL_CLAUDE_URL: url });
+      const result = await runD7('{"event":"Stop"}', { PORTATERM_CLAUDE_URL: url });
       expect(result.stdout).toBe("{}\n");
       expect(result.code).toBe(0);
       expect(requests).toHaveLength(0);
@@ -455,7 +455,7 @@ describe("D7 frozen POSIX command", () => {
   it.each([0, 65536, -1])("rejects an out-of-range decimal port %i and sends nothing", async (port) => {
     await withHttpListener(async (listenerPort, requests) => {
       const url = `http://127.0.0.1:${port}/segment/${token()}`;
-      const result = await runD7('{"event":"Stop"}', { ANYWHERE_TERMINAL_CLAUDE_URL: url });
+      const result = await runD7('{"event":"Stop"}', { PORTATERM_CLAUDE_URL: url });
       expect(result.stdout).toBe("{}\n");
       expect(result.code).toBe(0);
       expect(requests).toHaveLength(0);
@@ -466,7 +466,7 @@ describe("D7 frozen POSIX command", () => {
   it("rejects a non-decimal port and sends nothing", async () => {
     await withHttpListener(async (port, requests) => {
       const url = `http://127.0.0.1:abc/segment/${token()}`;
-      const result = await runD7('{"event":"Stop"}', { ANYWHERE_TERMINAL_CLAUDE_URL: url });
+      const result = await runD7('{"event":"Stop"}', { PORTATERM_CLAUDE_URL: url });
       expect(result.stdout).toBe("{}\n");
       expect(result.code).toBe(0);
       expect(requests).toHaveLength(0);
@@ -481,7 +481,7 @@ describe("D7 frozen POSIX command", () => {
   ])("rejects a malformed runtime token %s and sends nothing", async (badToken) => {
     await withHttpListener(async (port, requests) => {
       const url = loopbackUrl(port, "segment", badToken);
-      const result = await runD7('{"event":"Stop"}', { ANYWHERE_TERMINAL_CLAUDE_URL: url });
+      const result = await runD7('{"event":"Stop"}', { PORTATERM_CLAUDE_URL: url });
       expect(result.stdout).toBe("{}\n");
       expect(result.code).toBe(0);
       expect(requests).toHaveLength(0);
@@ -491,7 +491,7 @@ describe("D7 frozen POSIX command", () => {
   it("rejects a non-HTTP scheme and sends nothing", async () => {
     await withHttpListener(async (port, requests) => {
       const url = `https://127.0.0.1:${port}/segment/${token()}`;
-      const result = await runD7('{"event":"Stop"}', { ANYWHERE_TERMINAL_CLAUDE_URL: url });
+      const result = await runD7('{"event":"Stop"}', { PORTATERM_CLAUDE_URL: url });
       expect(result.stdout).toBe("{}\n");
       expect(result.code).toBe(0);
       expect(requests).toHaveLength(0);
@@ -501,7 +501,7 @@ describe("D7 frozen POSIX command", () => {
   it("rejects a non-loopback host and sends nothing", async () => {
     await withHttpListener(async (port, requests) => {
       const url = `http://localhost:${port}/segment/${token()}`;
-      const result = await runD7('{"event":"Stop"}', { ANYWHERE_TERMINAL_CLAUDE_URL: url });
+      const result = await runD7('{"event":"Stop"}', { PORTATERM_CLAUDE_URL: url });
       expect(result.stdout).toBe("{}\n");
       expect(result.code).toBe(0);
       expect(requests).toHaveLength(0);
@@ -510,7 +510,7 @@ describe("D7 frozen POSIX command", () => {
 
   it("drains without a request when the loopback port has no listener", async () => {
     const url = loopbackUrl(await freeLoopbackPort(), "no-listener");
-    const result = await runD7('{"event":"Stop"}', { ANYWHERE_TERMINAL_CLAUDE_URL: url });
+    const result = await runD7('{"event":"Stop"}', { PORTATERM_CLAUDE_URL: url });
     expect(result.stdout).toBe("{}\n");
     expect(result.code).toBe(0);
     expect(result.ms).toBeLessThan(DRAIN_BOUND_MS);
@@ -530,7 +530,7 @@ describe("D7 frozen POSIX command", () => {
         throw new Error("expected a bound TCP address");
       }
       const url = loopbackUrl(address.port, "black-hole");
-      const result = await runD7('{"event":"Stop"}', { ANYWHERE_TERMINAL_CLAUDE_URL: url });
+      const result = await runD7('{"event":"Stop"}', { PORTATERM_CLAUDE_URL: url });
       expect(result.stdout).toBe("{}\n");
       expect(result.code).toBe(0);
       expect(result.ms).toBeGreaterThanOrEqual(1400);
@@ -553,7 +553,7 @@ describe("D7 frozen POSIX command", () => {
       const url = loopbackUrl(port, "path-hijack");
       const result = await runD7(
         payload,
-        { ANYWHERE_TERMINAL_CLAUDE_URL: url, PATH: "/nonexistent/hostile/path" },
+        { PORTATERM_CLAUDE_URL: url, PATH: "/nonexistent/hostile/path" },
         `${hostileFunctions}; ${CLAUDE_HOOK_COMMAND}`,
       );
       expect(result.stdout).toBe("{}\n");
@@ -569,7 +569,7 @@ describe("D7 frozen POSIX command", () => {
       const payload = '{"event":"Stop"}';
       const url = loopbackUrl(port, "proxy-bypass");
       const result = await runD7(payload, {
-        ANYWHERE_TERMINAL_CLAUDE_URL: url,
+        PORTATERM_CLAUDE_URL: url,
         http_proxy: "http://127.0.0.1:1/",
         https_proxy: "http://127.0.0.1:1/",
         ALL_PROXY: "http://127.0.0.1:1/",
@@ -587,7 +587,7 @@ describe("D7 frozen POSIX command", () => {
     await withHttpListener(async (port, requests) => {
       const payload = '{"event":"Stop"}';
       const url = loopbackUrl(port, "curlrc-bypass");
-      const result = await runD7(payload, { ANYWHERE_TERMINAL_CLAUDE_URL: url, HOME: directory, CURL_HOME: directory });
+      const result = await runD7(payload, { PORTATERM_CLAUDE_URL: url, HOME: directory, CURL_HOME: directory });
       expect(result.stdout).toBe("{}\n");
       expect(result.code).toBe(0);
       expect(requests).toHaveLength(1);
@@ -599,7 +599,7 @@ describe("D7 frozen POSIX command", () => {
   it("keeps no payload in stderr trace after entry despite inherited tracing", async () => {
     const payload = '{"event":"Stop","secret":"do-not-leak"}';
     const traced = `set -x; ${CLAUDE_HOOK_COMMAND}`;
-    const result = await runD7(payload, { ANYWHERE_TERMINAL_CLAUDE_URL: "" }, traced);
+    const result = await runD7(payload, { PORTATERM_CLAUDE_URL: "" }, traced);
     expect(result.stdout).toBe("{}\n");
     expect(result.code).toBe(0);
     expect(result.stderr).not.toContain("do-not-leak");
@@ -607,7 +607,7 @@ describe("D7 frozen POSIX command", () => {
 
   it("ignores a broken stdout pipe via trap PIPE and still exits 0", async () => {
     const child = spawn("/bin/sh", ["-c", CLAUDE_HOOK_COMMAND], {
-      env: { ANYWHERE_TERMINAL_CLAUDE_URL: "" },
+      env: { PORTATERM_CLAUDE_URL: "" },
       stdio: ["pipe", "pipe", "ignore"],
     });
     child.stdout.destroy();
@@ -619,7 +619,7 @@ describe("D7 frozen POSIX command", () => {
 
   it("ignores an internal EPIPE when curl exits before a large payload finishes writing", async () => {
     const url = loopbackUrl(await freeLoopbackPort(), "epipe");
-    const result = await runD7("x".repeat(2_000_000), { ANYWHERE_TERMINAL_CLAUDE_URL: url });
+    const result = await runD7("x".repeat(2_000_000), { PORTATERM_CLAUDE_URL: url });
     expect(result.stdout).toBe("{}\n");
     expect(result.code).toBe(0);
   });

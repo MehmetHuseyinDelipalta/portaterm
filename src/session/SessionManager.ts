@@ -241,7 +241,7 @@ export class SessionManager {
 
   /**
    * Flip the restore-enabled flag at runtime in response to a
-   * `anywhereTerminal.sessionRestore.enabled` setting change. See design.md D11.
+   * `portaterm.sessionRestore.enabled` setting change. See design.md D11.
    */
   setRestoreEnabled(enabled: boolean): void {
     this.snapshots.setRestoreEnabled(enabled, this.sessions.keys());
@@ -320,7 +320,7 @@ export class SessionManager {
     try {
       await this.storage.writeLivePanelsAwaited(this.editorPanels.toRecord());
     } catch (err) {
-      console.error("[AnyWhere Terminal] writeLivePanelsAwaited failed:", err);
+      console.error("[Portaterm] writeLivePanelsAwaited failed:", err);
     }
   }
 
@@ -650,7 +650,7 @@ export class SessionManager {
           this.respawnFallbackShell(session, webview);
           return;
         } catch (err) {
-          console.error(`[AnyWhere Terminal] shell-fallback respawn failed for ${id}:`, err);
+          console.error(`[Portaterm] shell-fallback respawn failed for ${id}:`, err);
           // Fall through to the normal exit path so the tab doesn't hang.
         }
       }
@@ -763,7 +763,7 @@ export class SessionManager {
     // resurrect the agent identity (clean reload is covered by the deactivate
     // flush). See review W1.
     void this.snapshots.flushSessionImmediate(id).catch((err) => {
-      console.error(`[AnyWhere Terminal] persist fallback-shell identity failed for ${id}:`, err);
+      console.error(`[Portaterm] persist fallback-shell identity failed for ${id}:`, err);
     });
   }
 
@@ -1222,7 +1222,7 @@ export class SessionManager {
     const allowed = Array.isArray(from) ? from : [from as SessionState];
     if (!allowed.includes(session.state)) {
       console.error(
-        `[AnyWhere Terminal] Invalid state transition for session ${sessionId}: ${session.state} → ${to} (expected from: ${allowed.join("|")})`,
+        `[Portaterm] Invalid state transition for session ${sessionId}: ${session.state} → ${to} (expected from: ${allowed.join("|")})`,
       );
       return false;
     }
@@ -1251,7 +1251,7 @@ export class SessionManager {
         await this.performDestroy(sessionId);
       })
       .catch((err) => {
-        console.error("[AnyWhere Terminal] Destroy operation failed:", err);
+        console.error("[Portaterm] Destroy operation failed:", err);
       });
   }
 
@@ -1274,7 +1274,7 @@ export class SessionManager {
         try {
           onFire();
         } catch (err) {
-          console.error("[AnyWhere Terminal] scheduleDestroyForView onFire callback failed:", err);
+          console.error("[Portaterm] scheduleDestroyForView onFire callback failed:", err);
         }
       }
     }, delayMs);
@@ -1340,7 +1340,7 @@ export class SessionManager {
         await Promise.all(doomedIds.map((sid) => this.performDestroy(sid)));
       })
       .catch((err) => {
-        console.error("[AnyWhere Terminal] DestroyAllForView operation failed:", err);
+        console.error("[Portaterm] DestroyAllForView operation failed:", err);
       });
   }
 
@@ -1513,7 +1513,7 @@ export class SessionManager {
       this.snapshots.releaseRuntimeOnly(sessionId);
     } else {
       console.error(
-        `[AnyWhere Terminal] cleanupSession called for ${sessionId} in unexpected state '${session.state}' — defaulting to releaseRuntimeOnly`,
+        `[Portaterm] cleanupSession called for ${sessionId} in unexpected state '${session.state}' — defaulting to releaseRuntimeOnly`,
       );
       this.snapshots.releaseRuntimeOnly(sessionId);
     }

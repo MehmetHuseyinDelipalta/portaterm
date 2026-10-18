@@ -212,8 +212,8 @@ describe("ShellIntegrationInjector: unrecognised shells", () => {
 describe("ShellIntegrationInjector: environment hygiene", () => {
   it("never overwrites TERM_PROGRAM", () => {
     const { ctx } = fakeCtx();
-    const result = injectShellIntegration("/bin/bash", [], { TERM_PROGRAM: "AnyWhereTerminal" }, ctx);
-    expect(result!.env.TERM_PROGRAM).toBe("AnyWhereTerminal");
+    const result = injectShellIntegration("/bin/bash", [], { TERM_PROGRAM: "Portaterm" }, ctx);
+    expect(result!.env.TERM_PROGRAM).toBe("Portaterm");
   });
 
   it("[B1] sets VSCODE_INJECTION=1 for bash + zsh so vendored scripts source user rc", () => {

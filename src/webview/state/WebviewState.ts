@@ -45,7 +45,7 @@ export type TerminalLocationKey = "sidebar" | "panel" | "editor";
  * this without breaking restore for users on the older shape.
  *
  * File-tree state is bucketed by location (`sidebar` / `panel` / `editor`)
- * because the same AnyWhere Terminal instance can be dragged between
+ * because the same Portaterm instance can be dragged between
  * locations and users naturally want different layouts in each — a panel
  * shape wants the tree on the right, a sidebar wants it at the bottom.
  * The legacy single `fileTree` slot is kept for back-compat reading; new

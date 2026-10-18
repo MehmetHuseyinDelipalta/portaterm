@@ -210,7 +210,7 @@ describe("createKeyEventHandler", () => {
       expect(terminal.clearSelection).toHaveBeenCalled();
       // The warn will fire asynchronously when the promise rejects
       return vi.waitFor(() => {
-        expect(warnSpy).toHaveBeenCalledWith("[AnyWhere Terminal] Clipboard write failed:", expect.any(Error));
+        expect(warnSpy).toHaveBeenCalledWith("[Portaterm] Clipboard write failed:", expect.any(Error));
       });
     });
 

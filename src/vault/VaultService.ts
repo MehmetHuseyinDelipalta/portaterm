@@ -764,7 +764,7 @@ export class VaultService {
         try {
           await this.cacheStore.save(doc);
         } catch (err) {
-          console.error("[AnyWhere Terminal] Failed to persist vault cache:", err);
+          console.error("[Portaterm] Failed to persist vault cache:", err);
         }
       }
       // Overlay AFTER persistence so the cache stays agent-derived (D1).

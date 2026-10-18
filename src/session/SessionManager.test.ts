@@ -126,7 +126,7 @@ describe("SessionManager: createSession", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
 
-    const id = sm.createSession("anywhereTerminal.sidebar", webview);
+    const id = sm.createSession("portaterm.sidebar", webview);
 
     expect(id).toBeDefined();
     expect(typeof id).toBe("string");
@@ -139,16 +139,16 @@ describe("SessionManager: createSession", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
 
-    const id = sm.createSession("anywhereTerminal.sidebar", webview);
+    const id = sm.createSession("portaterm.sidebar", webview);
 
     // Session exists
     const session = sm.getSession(id);
     expect(session).toBeDefined();
-    expect(session!.viewId).toBe("anywhereTerminal.sidebar");
+    expect(session!.viewId).toBe("portaterm.sidebar");
     expect(session!.id).toBe(id);
 
     // Tabs for view
-    const tabs = sm.getTabsForView("anywhereTerminal.sidebar");
+    const tabs = sm.getTabsForView("portaterm.sidebar");
     expect(tabs).toHaveLength(1);
     expect(tabs[0].id).toBe(id);
 
@@ -158,7 +158,7 @@ describe("SessionManager: createSession", () => {
   it("[I18] keeps a stable linked-worktree owner when cwd changes", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
-    const id = sm.createSession("anywhereTerminal.sidebar", webview, {
+    const id = sm.createSession("portaterm.sidebar", webview, {
       cwd: "/repo-wt/feat",
       worktreeId: "/repo-wt/feat",
     });
@@ -166,18 +166,18 @@ describe("SessionManager: createSession", () => {
     sm.setCurrentCwd(id, "/tmp/outside");
 
     expect(sm.getSession(id)?.worktreeId).toBe("/repo-wt/feat");
-    expect(sm.getTabsForView("anywhereTerminal.sidebar")[0]?.worktreeId).toBe("/repo-wt/feat");
-    expect(sm.getAllSessionsForView("anywhereTerminal.sidebar")[0]?.worktreeId).toBe("/repo-wt/feat");
+    expect(sm.getTabsForView("portaterm.sidebar")[0]?.worktreeId).toBe("/repo-wt/feat");
+    expect(sm.getAllSessionsForView("portaterm.sidebar")[0]?.worktreeId).toBe("/repo-wt/feat");
     sm.dispose();
   });
 
   it("falls back to main when a linked owner leaves the current tree", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
-    const linked = sm.createSession("anywhereTerminal.sidebar", webview, { worktreeId: "/repo-wt/gone" });
-    const main = sm.createSession("anywhereTerminal.sidebar", webview);
+    const linked = sm.createSession("portaterm.sidebar", webview, { worktreeId: "/repo-wt/gone" });
+    const main = sm.createSession("portaterm.sidebar", webview);
 
-    sm.reconcileWorktreeOwners("anywhereTerminal.sidebar", new Set(["/repo-wt/other"]));
+    sm.reconcileWorktreeOwners("portaterm.sidebar", new Set(["/repo-wt/other"]));
 
     expect(sm.getSession(linked)?.worktreeId).toBeUndefined();
     expect(sm.getSession(main)?.worktreeId).toBeUndefined();
@@ -188,7 +188,7 @@ describe("SessionManager: createSession", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
 
-    const id = sm.createSession("anywhereTerminal.sidebar", webview);
+    const id = sm.createSession("portaterm.sidebar", webview);
     const session = sm.getSession(id);
 
     expect(session!.isActive).toBe(true);
@@ -200,8 +200,8 @@ describe("SessionManager: createSession", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
 
-    const id1 = sm.createSession("anywhereTerminal.sidebar", webview);
-    const id2 = sm.createSession("anywhereTerminal.sidebar", webview);
+    const id1 = sm.createSession("portaterm.sidebar", webview);
+    const id2 = sm.createSession("portaterm.sidebar", webview);
 
     expect(sm.getSession(id1)!.isActive).toBe(false);
     expect(sm.getSession(id2)!.isActive).toBe(true);
@@ -213,8 +213,8 @@ describe("SessionManager: createSession", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
 
-    const id1 = sm.createSession("anywhereTerminal.sidebar", webview);
-    const id2 = sm.createSession("anywhereTerminal.sidebar", webview);
+    const id1 = sm.createSession("portaterm.sidebar", webview);
+    const id2 = sm.createSession("portaterm.sidebar", webview);
 
     expect(sm.getSession(id1)!.name).toBe("Terminal 1");
     expect(sm.getSession(id2)!.name).toBe("Terminal 2");
@@ -226,7 +226,7 @@ describe("SessionManager: createSession", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
 
-    sm.createSession("anywhereTerminal.sidebar", webview);
+    sm.createSession("portaterm.sidebar", webview);
 
     expect(mockPtySessions).toHaveLength(1);
     expect(mockPtySessions[0].spawn).toHaveBeenCalled();
@@ -238,7 +238,7 @@ describe("SessionManager: createSession", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
 
-    const id = sm.createSession("anywhereTerminal.sidebar", webview, {
+    const id = sm.createSession("portaterm.sidebar", webview, {
       shell: "/current/settings-shell",
       shellArgs: ["--current"],
       cwd: "/current/settings-cwd",
@@ -284,7 +284,7 @@ describe("SessionManager: createSession", () => {
     const webview = createMockWebview();
 
     // buildEnvironment() mock returns { PATH: "/usr/bin" }.
-    sm.createSession("anywhereTerminal.sidebar", webview, {
+    sm.createSession("portaterm.sidebar", webview, {
       env: { CLAUDE_CONFIG_DIR: "/x/config", PATH: "/override/bin" },
     });
 
@@ -304,7 +304,7 @@ describe("SessionManager: createSession", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
 
-    sm.createSession("anywhereTerminal.sidebar", webview);
+    sm.createSession("portaterm.sidebar", webview);
 
     const spawnEnv = mockPtySessions[0].spawn.mock.calls[0][3].env as Record<string, string>;
     expect(spawnEnv).toEqual({ PATH: "/usr/bin" });
@@ -321,7 +321,7 @@ describe("SessionManager: getInitialCwd", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
 
-    const id = sm.createSession("anywhereTerminal.sidebar", webview, { cwd: "/explicit/path" });
+    const id = sm.createSession("portaterm.sidebar", webview, { cwd: "/explicit/path" });
 
     expect(sm.getInitialCwd(id)).toBe("/explicit/path");
 
@@ -333,7 +333,7 @@ describe("SessionManager: getInitialCwd", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
 
-    const id = sm.createSession("anywhereTerminal.sidebar", webview);
+    const id = sm.createSession("portaterm.sidebar", webview);
 
     expect(sm.getInitialCwd(id)).toBe("/tmp");
 
@@ -463,7 +463,7 @@ describe("SessionManager: writeToSession", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
 
-    const id = sm.createSession("anywhereTerminal.sidebar", webview);
+    const id = sm.createSession("portaterm.sidebar", webview);
     sm.writeToSession(id, "ls\r");
 
     const ptyMock = mockPtySessions.find((p) => p.id === id);
@@ -488,7 +488,7 @@ describe("SessionManager: resizeSession", () => {
     const sm = new SessionManager();
     const webview = createMockWebview();
 
-    const id = sm.createSession("anywhereTerminal.sidebar", webview);
+    const id = sm.createSession("portaterm.sidebar", webview);
     sm.resizeSession(id, 120, 40);
 
     const ptyMock = mockPtySessions.find((p) => p.id === id);
@@ -1303,7 +1303,7 @@ function createFakeMemento(initial: Record<string, unknown> = {}) {
   };
 }
 
-const STORAGE_KEY = "anywhereTerminal.tabCustomNames";
+const STORAGE_KEY = "portaterm.tabCustomNames";
 
 describe("SessionManager: customName field default", () => {
   it("defaults to null on createSession for a fresh root tab", () => {

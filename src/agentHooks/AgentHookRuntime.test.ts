@@ -79,7 +79,7 @@ function fakeAgent(
   return {
     id,
     slug: id,
-    envVar: `ANYWHERE_TERMINAL_${id.toUpperCase()}_URL`,
+    envVar: `PORTATERM_${id.toUpperCase()}_URL`,
     createSession: (channel) => {
       hooks.onCreate?.(channel);
       return {
@@ -163,7 +163,7 @@ describe("AgentHookRuntime", () => {
     expect(AGENT_HOOK_DEDUP_MAX_ENTRIES).toBe(256);
   });
 
-  it("wraps ANYWHERE_TERMINAL_CURSOR_URL so the wrapper's appended /cursor authenticates", async () => {
+  it("wraps PORTATERM_CURSOR_URL so the wrapper's appended /cursor authenticates", async () => {
     const { runtime } = await fixture();
     const env = runtime.create("session-1");
     const base = env[CURSOR_HOOK_ENV_VAR];
@@ -202,7 +202,7 @@ describe("AgentHookRuntime", () => {
     const { runtime } = await fixture({ extraAgents: [fakeAgent("claude")] });
     const env = runtime.create("s");
     expect(env[CURSOR_HOOK_ENV_VAR]).toBeDefined();
-    expect(env.ANYWHERE_TERMINAL_CLAUDE_URL).toBeUndefined();
+    expect(env.PORTATERM_CLAUDE_URL).toBeUndefined();
   });
 
   describe("D7 event table", () => {
@@ -355,7 +355,7 @@ describe("AgentHookRuntime", () => {
       runtime.setAgentEnabled("claude", true);
       const env = runtime.create("s");
 
-      const response = await postRaw(`${env.ANYWHERE_TERMINAL_CLAUDE_URL}/claude`, eventBody("anything"));
+      const response = await postRaw(`${env.PORTATERM_CLAUDE_URL}/claude`, eventBody("anything"));
       expect(response.status).toBe(204);
       expect(reasons).toContainEqual({ reason: "agent-error", sessionSuffix: "s" });
       expect(status).toEqual([]);
@@ -379,7 +379,7 @@ describe("AgentHookRuntime", () => {
         env = runtime.create("s");
       }).not.toThrow();
 
-      expect(env.ANYWHERE_TERMINAL_CLAUDE_URL).toBeUndefined();
+      expect(env.PORTATERM_CLAUDE_URL).toBeUndefined();
       expect(env[CURSOR_HOOK_ENV_VAR]).toBeDefined();
       expect(reasons).toContainEqual({ reason: "agent-error", sessionSuffix: "s" });
 
@@ -426,7 +426,7 @@ describe("AgentHookRuntime", () => {
       const { runtime, reasons } = await fixture({ extraAgents: [thrower] });
       runtime.setAgentEnabled("claude", true);
       const env = runtime.create("s");
-      await postRaw(`${env.ANYWHERE_TERMINAL_CLAUDE_URL}/claude`, eventBody("anything"));
+      await postRaw(`${env.PORTATERM_CLAUDE_URL}/claude`, eventBody("anything"));
 
       await new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -455,7 +455,7 @@ describe("AgentHookRuntime", () => {
       try {
         runtime.setAgentEnabled("claude", true);
         const env = runtime.create("s");
-        await postRaw(`${env.ANYWHERE_TERMINAL_CLAUDE_URL}/claude`, eventBody("anything"));
+        await postRaw(`${env.PORTATERM_CLAUDE_URL}/claude`, eventBody("anything"));
         runtime.setAgentEnabled("claude", false);
         status.splice(0);
 
@@ -478,7 +478,7 @@ describe("AgentHookRuntime", () => {
       const { runtime, reasons } = await fixture({ extraAgents: [rejecter] });
       runtime.setAgentEnabled("claude", true);
       const env = runtime.create("s");
-      await postRaw(`${env.ANYWHERE_TERMINAL_CLAUDE_URL}/claude`, eventBody("anything"));
+      await postRaw(`${env.PORTATERM_CLAUDE_URL}/claude`, eventBody("anything"));
 
       await new Promise((resolve) => setTimeout(resolve, 40));
 
@@ -573,7 +573,7 @@ describe("AgentHookRuntime", () => {
       } as FixtureOptions & { clearTimer: (handle: unknown) => void });
       runtime.setAgentEnabled("claude", true);
       const env = runtime.create("s");
-      await postRaw(`${env.ANYWHERE_TERMINAL_CLAUDE_URL}/claude`, eventBody("anything"));
+      await postRaw(`${env.PORTATERM_CLAUDE_URL}/claude`, eventBody("anything"));
 
       runtime.release("s");
       expect(cleared.length).toBeGreaterThan(0);
@@ -586,7 +586,7 @@ describe("AgentHookRuntime", () => {
       const body = eventBody("preToolUse", { fixed: true });
 
       await postRaw(`${env[CURSOR_HOOK_ENV_VAR]}/cursor`, body);
-      await postRaw(`${env.ANYWHERE_TERMINAL_CLAUDE_URL}/claude`, body);
+      await postRaw(`${env.PORTATERM_CLAUDE_URL}/claude`, body);
 
       expect(reasons.some((r) => r.reason === "duplicate-event")).toBe(false);
       expect(status).toEqual([
@@ -672,7 +672,7 @@ describe("AgentHookRuntime", () => {
       });
       runtime.setAgentEnabled("claude", true);
       const env = runtime.create("s");
-      const url = `${env.ANYWHERE_TERMINAL_CLAUDE_URL}/claude`;
+      const url = `${env.PORTATERM_CLAUDE_URL}/claude`;
 
       await postRaw(url, eventBody("Stop", { n: 1 }));
       // A distinct body — so the transport delivers it — carrying the same turn.
@@ -691,7 +691,7 @@ describe("AgentHookRuntime", () => {
       });
       runtime.setAgentEnabled("claude", true);
       const env = runtime.create("s");
-      const url = `${env.ANYWHERE_TERMINAL_CLAUDE_URL}/claude`;
+      const url = `${env.PORTATERM_CLAUDE_URL}/claude`;
 
       await postRaw(url, eventBody("SubagentStart", { n: 1 }));
       // Same content, fresh objects: a repeat, however it was built.
@@ -838,7 +838,7 @@ describe("AgentHookRuntime", () => {
       expect(env[CURSOR_HOOK_ENV_VAR]).toBeUndefined();
 
       runtime.setAgentEnabled("cursor", true); // enabling must not reach the live session
-      const claudeUrl = `${env.ANYWHERE_TERMINAL_CLAUDE_URL}/claude`;
+      const claudeUrl = `${env.PORTATERM_CLAUDE_URL}/claude`;
       const token = new URL(claudeUrl).pathname.split("/")[2];
       await postRaw(`${runtime.url}/s/${token}/cursor`, eventBody("preToolUse"));
       expect(status).toEqual([]);
@@ -853,7 +853,7 @@ describe("AgentHookRuntime", () => {
       runtime.setAgentEnabled("claude", true);
       const env = runtime.create("s");
       const cursorUrl = `${env[CURSOR_HOOK_ENV_VAR]}/cursor`;
-      const claudeUrl = `${env.ANYWHERE_TERMINAL_CLAUDE_URL}/claude`;
+      const claudeUrl = `${env.PORTATERM_CLAUDE_URL}/claude`;
 
       runtime.setAgentEnabled("cursor", false);
       await postRaw(cursorUrl, eventBody("preToolUse"));

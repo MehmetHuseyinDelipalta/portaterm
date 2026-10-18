@@ -389,7 +389,7 @@ describe("a save that fails leaves the file as it was", () => {
   it("refuses rather than waiting forever when the lock is held", async () => {
     const original = `{ "copy": [".env"] }\n`;
     await put(original);
-    await fs.writeFile(`${target}.anywhere-terminal.lock`, "", { flag: "wx" });
+    await fs.writeFile(`${target}.portaterm.lock`, "", { flag: "wx" });
 
     const wrote = await writeNativeConfig(
       { ...realDeps, locked: { sleep: async () => undefined } },
@@ -430,7 +430,7 @@ describe("what the lock covers", () => {
     const wrote = await writeNativeConfig(deps, root, div({ exclude: ["node_modules"] }));
 
     expect(wrote).toEqual({ ok: true, wrote: true });
-    const lock = order.indexOf(`open ${path.basename(target)}.anywhere-terminal.lock`);
+    const lock = order.indexOf(`open ${path.basename(target)}.portaterm.lock`);
     const identity = order.indexOf(`lstat ${path.basename(target)}`);
     expect(lock).toBeGreaterThanOrEqual(0);
     expect(identity).toBeGreaterThan(lock);
@@ -906,7 +906,7 @@ describe("what the selection diverges to", () => {
 describe("a target that is not an ordinary file", () => {
   const posixOnly = process.platform === "win32" ? it.skip : it;
 
-  const lockOf = (at: string) => `${at}.anywhere-terminal.lock`;
+  const lockOf = (at: string) => `${at}.portaterm.lock`;
 
   async function raced<T>(work: Promise<T>): Promise<T | "waited"> {
     let timer: NodeJS.Timeout | undefined;

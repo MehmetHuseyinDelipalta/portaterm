@@ -99,7 +99,7 @@ export function createScrollbackDumpHandler(deps: ScrollbackDumpDeps): (msg: Req
         // consumed when `error` is present.
         inFlightByTab.delete(msg.tabId);
         const reason = err instanceof Error ? err.message : String(err);
-        console.error("[AnyWhere Terminal] scrollback dump failed:", err);
+        console.error("[Portaterm] scrollback dump failed:", err);
         for (const requestId of requestIds) {
           deps.postMessage({
             type: "scrollbackDump",

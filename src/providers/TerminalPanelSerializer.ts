@@ -1,5 +1,5 @@
 // WebviewPanelSerializer for editor-area terminals. Registered for view type
-// `anywhereTerminal.editor` in `extension.activate`. On window reload, VS Code
+// `portaterm.editor` in `extension.activate`. On window reload, VS Code
 // invokes `deserializeWebviewPanel(panel, state)` for every serialized panel.
 //
 // Sequence (mirrors VS Code's markdown-preview pattern + design.md D2/D3/D7):
@@ -54,7 +54,7 @@ export class TerminalPanelSerializer implements vscode.WebviewPanelSerializer<{ 
       // revive and kill the PTY. Surface a warning so the silent failure
       // is at least visible in dev logs. See .reviews/round-4.md [W2].
       console.warn(
-        "[AnyWhere Terminal] Editor panel revived without prior panelId state — " +
+        "[Portaterm] Editor panel revived without prior panelId state — " +
           "scheduled destroy from prior instance may fire and kill the new PTY; " +
           "persisted snapshot for the original panelId stays orphaned and will be " +
           "swept by the next activate's hydrate.",

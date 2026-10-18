@@ -180,13 +180,13 @@ function commandFor(
 function setupEnvironment(input: SetupRunInput, base: Record<string, string>): Record<string, string> {
   const environment: Record<string, string> = Object.assign(Object.create(null), base);
   for (const [name, port] of Object.entries(input.ports)) {
-    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && !/^(?:ANYWHERE_TERMINAL_|ASIMOV_)/i.test(name)) {
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && !/^(?:PORTATERM_|ASIMOV_)/i.test(name)) {
       environment[name] = String(port);
     }
   }
-  environment.ANYWHERE_TERMINAL_WORKTREE_PATH = input.worktreePath;
-  environment.ANYWHERE_TERMINAL_MAIN_PATH = input.mainPath;
-  environment.ANYWHERE_TERMINAL_BRANCH = input.branch;
+  environment.PORTATERM_WORKTREE_PATH = input.worktreePath;
+  environment.PORTATERM_MAIN_PATH = input.mainPath;
+  environment.PORTATERM_BRANCH = input.branch;
   if (input.asimovEnvironment) {
     environment.ASIMOV_WORKTREE_PATH = input.worktreePath;
     environment.ASIMOV_MAIN_ROOT = input.mainPath;

@@ -1,4 +1,4 @@
-// src/types/errors.ts — Custom error classes for AnyWhere Terminal
+// src/types/errors.ts — Custom error classes for Portaterm
 // See: docs/design/error-handling.md
 
 // ─── Error Codes ────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ export enum ErrorCode {
 
 // ─── Base Error ─────────────────────────────────────────────────────
 
-/** Base class for all AnyWhere Terminal errors. */
+/** Base class for all Portaterm errors. */
 export class AnyWhereTerminalError extends Error {
   constructor(
     message: string,

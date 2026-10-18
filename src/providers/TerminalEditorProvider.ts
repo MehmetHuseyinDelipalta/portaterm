@@ -68,7 +68,7 @@ const GRACE_PERIOD_MS = 5000;
 const AGENT_GRACE_PERIOD_MS = 30_000;
 
 export class TerminalEditorProvider {
-  public static readonly viewType = "anywhereTerminal.editor";
+  public static readonly viewType = "portaterm.editor";
 
   /** Track all active editor panels for config updates. */
   private static readonly _activePanels = new Set<vscode.WebviewPanel>();
@@ -607,7 +607,7 @@ export class TerminalEditorProvider {
   private handleMessage(msg: unknown): void {
     // Basic shape validation
     if (!msg || typeof msg !== "object" || !("type" in msg) || typeof (msg as { type: unknown }).type !== "string") {
-      console.warn("[AnyWhere Terminal] Invalid message from editor webview:", msg);
+      console.warn("[Portaterm] Invalid message from editor webview:", msg);
       return;
     }
 
@@ -835,7 +835,7 @@ export class TerminalEditorProvider {
               showQuickPick: vscode.window.showQuickPick,
               getFileSearchMaxResults: () =>
                 vscode.workspace
-                  .getConfiguration("anywhereTerminal.fileSearch")
+                  .getConfiguration("portaterm.fileSearch")
                   .get<number>("maxResults", DEFAULT_FIND_FILES_MAX_RESULTS),
             });
           }
@@ -876,7 +876,7 @@ export class TerminalEditorProvider {
               (message as { key: string }).key as Parameters<typeof updateHoverPreviewSetting>[0],
               (message as { value: boolean | number }).value,
             ).catch((err) => {
-              console.warn("[AnyWhere Terminal] updateHoverPreviewSetting failed (editor):", err);
+              console.warn("[Portaterm] updateHoverPreviewSetting failed (editor):", err);
             });
           }
           break;
@@ -885,7 +885,7 @@ export class TerminalEditorProvider {
           break;
       }
     } catch (err) {
-      console.error(`[AnyWhere Terminal] Error handling editor message ${message.type}:`, err);
+      console.error(`[Portaterm] Error handling editor message ${message.type}:`, err);
     }
   }
 
@@ -1012,7 +1012,7 @@ export class TerminalEditorProvider {
           this.fileTreeHost.notifyInitDelivered();
         }
         if (!initDelivered) {
-          console.error("[AnyWhere Terminal] init delivery failed during editor reload — skipping scrollback restore.");
+          console.error("[Portaterm] init delivery failed during editor reload — skipping scrollback restore.");
           this.sessionManager.resumeOutputForView(this._viewId);
           return;
         }
@@ -1060,9 +1060,7 @@ export class TerminalEditorProvider {
           this.fileTreeHost.notifyInitDelivered();
         }
         if (!initDelivered) {
-          console.error(
-            "[AnyWhere Terminal] init delivery failed during editor restore — skipping restoreFromSnapshot posts.",
-          );
+          console.error("[Portaterm] init delivery failed during editor restore — skipping restoreFromSnapshot posts.");
           this.sessionManager.resumeOutputForView(this._viewId);
           return;
         }
@@ -1120,7 +1118,7 @@ export class TerminalEditorProvider {
         }
       }
     } catch (err) {
-      console.error("[AnyWhere Terminal] Failed to initialize editor terminal:", err);
+      console.error("[Portaterm] Failed to initialize editor terminal:", err);
 
       void this.safeSendWithRetry({
         type: "error",

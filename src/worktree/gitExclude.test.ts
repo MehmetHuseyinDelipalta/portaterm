@@ -184,7 +184,7 @@ describe("addToGitExclude", () => {
 
   it("reports and logs the exact lock retained by a dirty timeout", async () => {
     const deadline = pendingDeadline();
-    const retainedLockPath = "/repo/.git/info/exclude.anywhere-terminal.lock";
+    const retainedLockPath = "/repo/.git/info/exclude.portaterm.lock";
     const warn = vi.fn();
     const withLock = vi.fn(async () => ({
       kind: "timedOut" as const,

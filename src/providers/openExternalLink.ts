@@ -5,7 +5,7 @@ import * as vscode from "vscode";
  *
  * VS Code's built-in trusted-domains prompt only appears when the user has
  * that feature enabled and hasn't already trusted the host. To give a
- * predictable Cmd+Click experience inside the AnyWhere Terminal webview, we
+ * predictable Cmd+Click experience inside the Portaterm webview, we
  * always show our own confirmation with Open / Copy / Cancel.
  */
 export async function openExternalLink(url: string): Promise<void> {

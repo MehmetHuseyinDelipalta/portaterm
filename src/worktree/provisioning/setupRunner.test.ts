@@ -68,9 +68,9 @@ describe("runSetup", () => {
     expect(spawn).toHaveBeenNthCalledWith(1, "/bin/zsh", ["--login", "-c", "echo 'one' && echo two\r\nnext"], {
       cwd: "/worktree",
       env: expect.objectContaining({
-        ANYWHERE_TERMINAL_WORKTREE_PATH: "/worktree",
-        ANYWHERE_TERMINAL_MAIN_PATH: "/main",
-        ANYWHERE_TERMINAL_BRANCH: "feature/quoted",
+        PORTATERM_WORKTREE_PATH: "/worktree",
+        PORTATERM_MAIN_PATH: "/main",
+        PORTATERM_BRANCH: "feature/quoted",
         ASIMOV_WORKTREE_PATH: "/worktree",
         ASIMOV_MAIN_ROOT: "/main",
         ASIMOV_BRANCH: "feature/quoted",
@@ -306,7 +306,7 @@ describe("runSetup", () => {
         ports: Object.fromEntries([
           ["PORT", 3210],
           ["__proto__", 4321],
-          ["ANYWHERE_TERMINAL_WORKTREE_PATH", 1],
+          ["PORTATERM_WORKTREE_PATH", 1],
           ["aSiMoV_ChAnGe_Id", 2],
         ]),
         steps: [{ id: "one", source: "source", kind: "shell", script: "true" }],
@@ -322,7 +322,7 @@ describe("runSetup", () => {
     const [, , options] = spawn.mock.calls[0] as unknown as [string, string[], { env: Record<string, string> }];
     expect(options.env).toMatchObject({
       PORT: "3210",
-      ANYWHERE_TERMINAL_WORKTREE_PATH: "/worktree",
+      PORTATERM_WORKTREE_PATH: "/worktree",
       ASIMOV_WORKTREE_PATH: "/worktree",
     });
     expect(options.env).toHaveProperty("__proto__", "4321");

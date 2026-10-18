@@ -235,7 +235,7 @@ describe("ActiveFileRevealer", () => {
 
     // Change the patterns + fire config change
     patterns = []; // no excludes
-    __fireConfigChange(["anywhereTerminal.fileTree.autoRevealExclude"]);
+    __fireConfigChange(["portaterm.fileTree.autoRevealExclude"]);
     __setActiveTab(fileTab("/work/dist/out.js"));
     vi.advanceTimersByTime(100);
     expect(posts).toHaveLength(1); // now allowed through

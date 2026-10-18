@@ -12,7 +12,7 @@ import type {
 
 /** Frozen: the wrapper script installed in a user's Claude config depends on both. */
 export const CLAUDE_HOOK_SLUG = "claude";
-export const CLAUDE_HOOK_ENV_VAR = "ANYWHERE_TERMINAL_CLAUDE_URL";
+export const CLAUDE_HOOK_ENV_VAR = "PORTATERM_CLAUDE_URL";
 
 /**
  * Canonical, ordered Claude hook event list (agent-hook-server.md § 4.4, D7).

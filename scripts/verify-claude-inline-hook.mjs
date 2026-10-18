@@ -184,7 +184,7 @@ async function main() {
     fail("installed Claude Code version differs from the pinned 2.1.250 release");
   }
 
-  const scratch = await mkdtemp(join(tmpdir(), "anywhere-terminal-claude-inline-hook-"));
+  const scratch = await mkdtemp(join(tmpdir(), "portaterm-claude-inline-hook-"));
   let recorder;
   try {
     const project = join(scratch, "project");
@@ -217,7 +217,7 @@ async function main() {
     const payloadPrivacySentinel = `payload-privacy-sentinel-${randomUUID().replaceAll("-", "")}`;
     const environment = {
       ...process.env,
-      ANYWHERE_TERMINAL_CLAUDE_URL: recorder.endpoint,
+      PORTATERM_CLAUDE_URL: recorder.endpoint,
       CLAUDE_CONFIG_DIR: join(scratchHome, ".claude"),
       HOME: scratchHome,
     };

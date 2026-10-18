@@ -16,32 +16,32 @@ describe("readFileTreeSettings — autoReveal mode normalization", () => {
   });
 
   it("returns 'reveal' for boolean true", () => {
-    __setConfigValues({ "anywhereTerminal.fileTree.autoReveal": true });
+    __setConfigValues({ "portaterm.fileTree.autoReveal": true });
     expect(readFileTreeSettings().mode).toBe("reveal");
   });
 
   it("returns 'reveal' for string 'true'", () => {
-    __setConfigValues({ "anywhereTerminal.fileTree.autoReveal": "true" });
+    __setConfigValues({ "portaterm.fileTree.autoReveal": "true" });
     expect(readFileTreeSettings().mode).toBe("reveal");
   });
 
   it("returns 'none' for boolean false", () => {
-    __setConfigValues({ "anywhereTerminal.fileTree.autoReveal": false });
+    __setConfigValues({ "portaterm.fileTree.autoReveal": false });
     expect(readFileTreeSettings().mode).toBe("none");
   });
 
   it("returns 'none' for string 'false'", () => {
-    __setConfigValues({ "anywhereTerminal.fileTree.autoReveal": "false" });
+    __setConfigValues({ "portaterm.fileTree.autoReveal": "false" });
     expect(readFileTreeSettings().mode).toBe("none");
   });
 
   it("returns 'focusNoScroll' for the named string", () => {
-    __setConfigValues({ "anywhereTerminal.fileTree.autoReveal": "focusNoScroll" });
+    __setConfigValues({ "portaterm.fileTree.autoReveal": "focusNoScroll" });
     expect(readFileTreeSettings().mode).toBe("focusNoScroll");
   });
 
   it("falls back to 'reveal' for unknown values (defensive)", () => {
-    __setConfigValues({ "anywhereTerminal.fileTree.autoReveal": "garbage" });
+    __setConfigValues({ "portaterm.fileTree.autoReveal": "garbage" });
     expect(readFileTreeSettings().mode).toBe("reveal");
   });
 });
@@ -55,7 +55,7 @@ describe("readFileTreeSettings — autoRevealExclude normalization", () => {
 
   it("keeps user-provided patterns whose value is true", () => {
     __setConfigValues({
-      "anywhereTerminal.fileTree.autoRevealExclude": {
+      "portaterm.fileTree.autoRevealExclude": {
         "**/dist": true,
         "**/.git": true,
       },
@@ -67,7 +67,7 @@ describe("readFileTreeSettings — autoRevealExclude normalization", () => {
 
   it("drops patterns explicitly set to false", () => {
     __setConfigValues({
-      "anywhereTerminal.fileTree.autoRevealExclude": {
+      "portaterm.fileTree.autoRevealExclude": {
         "**/node_modules": false,
         "**/dist": true,
       },
@@ -80,7 +80,7 @@ describe("readFileTreeSettings — autoRevealExclude normalization", () => {
   it("warns once and keeps the pattern when the value is a when-condition object", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     __setConfigValues({
-      "anywhereTerminal.fileTree.autoRevealExclude": {
+      "portaterm.fileTree.autoRevealExclude": {
         "**/foo": { when: "$(basename).js" },
         "**/bar": { when: "$(basename).ts" },
       },

@@ -57,7 +57,7 @@ function eventBody(hook_event_name: string, extra: Record<string, unknown> = {})
 describe("claude agent registration", () => {
   it("freezes the slug and environment variable the wrapper script depends on", () => {
     expect(CLAUDE_HOOK_SLUG).toBe("claude");
-    expect(CLAUDE_HOOK_ENV_VAR).toBe("ANYWHERE_TERMINAL_CLAUDE_URL");
+    expect(CLAUDE_HOOK_ENV_VAR).toBe("PORTATERM_CLAUDE_URL");
   });
 
   it("registers exactly the design D7 event set, in order", () => {

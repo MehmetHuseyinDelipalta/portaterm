@@ -46,7 +46,7 @@ export interface WorktreeHostOptions {
   /** `vscode.workspace.onDidChangeWorkspaceFolders`, injected for testability. */
   onDidChangeWorkspaceFolders?(listener: () => void): vscode.Disposable;
   clock?: RebuildGateClock;
-  /** `anywhereTerminal.worktree.createRoot`, read through `SettingsReader`. */
+  /** `portaterm.worktree.createRoot`, read through `SettingsReader`. */
   createRoot?(): { value: string | undefined; explicitlySet: boolean };
   /** Prove that one exact source can currently be migrated. */
   probeMigrationSource?(

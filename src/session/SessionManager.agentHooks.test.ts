@@ -95,7 +95,7 @@ function fakeContributor() {
   let counter = 0;
   const create = vi.fn((sessionId: string) => {
     counter += 1;
-    return { ANYWHERE_TERMINAL_CURSOR_URL: `http://127.0.0.1:9/${sessionId}/token-${counter}/cursor` };
+    return { PORTATERM_CURSOR_URL: `http://127.0.0.1:9/${sessionId}/token-${counter}/cursor` };
   });
   const release = vi.fn();
   return { create, release } satisfies SessionEnvironmentContributor;
@@ -129,7 +129,7 @@ describe("SessionManager agent-hook authority — initial spawn", () => {
     expect(contributor.create).toHaveBeenCalledTimes(1);
     expect(contributor.create).toHaveBeenCalledWith(id, expect.any(Object));
     const spawnCall = mockSpawnCalls.find((c) => c.id === id);
-    expect(spawnCall?.env.ANYWHERE_TERMINAL_CURSOR_URL).toContain(id);
+    expect(spawnCall?.env.PORTATERM_CURSOR_URL).toContain(id);
     sm.dispose();
   });
 
@@ -171,7 +171,7 @@ describe("SessionManager agent-hook authority — initial spawn", () => {
 
     const spawnCall = mockSpawnCalls.find((c) => c.id === id);
     expect(spawnCall).toBeDefined();
-    expect(spawnCall?.env.ANYWHERE_TERMINAL_CURSOR_URL).toBeUndefined();
+    expect(spawnCall?.env.PORTATERM_CURSOR_URL).toBeUndefined();
     // Best-effort release so a half-minted authority cannot outlive the failure.
     expect(contributor.release).toHaveBeenCalledWith(id);
     sm.dispose();
@@ -233,7 +233,7 @@ describe("SessionManager agent-hook authority — fallback-shell renewal", () =>
 
     const spawnsForId = mockSpawnCalls.filter((c) => c.id === id);
     expect(spawnsForId).toHaveLength(2);
-    expect(spawnsForId[1]?.env.ANYWHERE_TERMINAL_CURSOR_URL).toContain("token-2");
+    expect(spawnsForId[1]?.env.PORTATERM_CURSOR_URL).toContain("token-2");
     sm.dispose();
   });
 });

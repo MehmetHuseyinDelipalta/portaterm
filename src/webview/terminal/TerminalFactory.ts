@@ -133,12 +133,12 @@ export class TerminalFactory {
         webglAddon.onContextLoss(() => {
           webglAddon.dispose();
           this.webglFailed = true;
-          console.warn("[AnyWhere Terminal] WebGL context lost, falling back to canvas renderer");
+          console.warn("[Portaterm] WebGL context lost, falling back to canvas renderer");
         });
         instance.terminal.loadAddon(webglAddon);
       } catch {
         this.webglFailed = true;
-        console.warn("[AnyWhere Terminal] WebGL renderer failed, using canvas fallback for all future terminals");
+        console.warn("[Portaterm] WebGL renderer failed, using canvas fallback for all future terminals");
       }
     }
   }
@@ -223,7 +223,7 @@ export class TerminalFactory {
   ): TerminalInstance {
     const containerEl = document.getElementById("terminal-container");
     if (!containerEl) {
-      throw new Error("[AnyWhere Terminal] #terminal-container not found");
+      throw new Error("[Portaterm] #terminal-container not found");
     }
 
     // Create dedicated container div for this terminal
@@ -428,12 +428,12 @@ export class TerminalFactory {
           webglAddon.onContextLoss(() => {
             webglAddon.dispose();
             this.webglFailed = true;
-            console.warn("[AnyWhere Terminal] WebGL context lost, falling back to canvas renderer");
+            console.warn("[Portaterm] WebGL context lost, falling back to canvas renderer");
           });
           terminal.loadAddon(webglAddon);
         } catch {
           this.webglFailed = true;
-          console.warn("[AnyWhere Terminal] WebGL renderer failed, using canvas fallback for all future terminals");
+          console.warn("[Portaterm] WebGL renderer failed, using canvas fallback for all future terminals");
         }
       }
     }

@@ -222,13 +222,13 @@ export class FileTreeController {
     // tracks `cd` without needing shell integration). Fall back to the
     // webview-side OSC 7 cwd, then to the last-known workspace root.
     if (!msg.sessionId) {
-      console.warn("[AnyWhere Terminal] reveal-in-file-tree: missing both absPath and sessionId");
+      console.warn("[Portaterm] reveal-in-file-tree: missing both absPath and sessionId");
       return;
     }
     const instanceCwd = this.deps.getInstanceCwd(msg.sessionId);
     const target = msg.cwd ?? instanceCwd ?? this.lastWorkspaceRoot;
     if (!target) {
-      console.warn("[AnyWhere Terminal] reveal-in-file-tree: no cwd or workspace root resolvable");
+      console.warn("[Portaterm] reveal-in-file-tree: no cwd or workspace root resolvable");
       return;
     }
     void this.panel.revealPath(target, { source: msg.source });

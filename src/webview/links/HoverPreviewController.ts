@@ -270,7 +270,7 @@ export class HoverPreviewController {
     try {
       this.popup.show(this.activeAnchor, result, this.getTheme());
     } catch (err) {
-      console.warn("[AnyWhere Terminal] HoverPreviewController.popup.show threw:", err);
+      console.warn("[Portaterm] HoverPreviewController.popup.show threw:", err);
     }
   }
 
@@ -414,7 +414,7 @@ export class HoverPreviewController {
         try {
           this.postMessage(request);
         } catch (err) {
-          console.warn("[AnyWhere Terminal] postMessage(requestFilePreview) failed:", err);
+          console.warn("[Portaterm] postMessage(requestFilePreview) failed:", err);
           this.activeRequestId = null;
         }
       },
@@ -439,7 +439,7 @@ export class HoverPreviewController {
       try {
         this.popup.showImage(this.activeAnchor, image);
       } catch (err) {
-        console.warn("[AnyWhere Terminal] HoverPreviewController.popup.showImage threw:", err);
+        console.warn("[Portaterm] HoverPreviewController.popup.showImage threw:", err);
       }
     });
   }
@@ -579,7 +579,7 @@ export class HoverPreviewController {
     try {
       this.postMessage(request);
     } catch (err) {
-      console.warn("[AnyWhere Terminal] postMessage(requestFilePreview override) failed:", err);
+      console.warn("[Portaterm] postMessage(requestFilePreview override) failed:", err);
       this.activeRequestId = null;
     }
   }

@@ -59,7 +59,7 @@ export function extractPathsFromDrop(dataTransfer: DataTransfer): string[] {
       }
     }
   } catch (e) {
-    console.warn("[AnyWhere Terminal] Failed to parse ResourceURLs drag data:", e);
+    console.warn("[Portaterm] Failed to parse ResourceURLs drag data:", e);
   }
 
   // Strategy 2: VS Code internal CodeFiles (best-effort)
@@ -75,7 +75,7 @@ export function extractPathsFromDrop(dataTransfer: DataTransfer): string[] {
       }
     }
   } catch (e) {
-    console.warn("[AnyWhere Terminal] Failed to parse CodeFiles drag data:", e);
+    console.warn("[Portaterm] Failed to parse CodeFiles drag data:", e);
   }
 
   // Strategy 3: Standard text/uri-list (newline-separated file:// URIs)

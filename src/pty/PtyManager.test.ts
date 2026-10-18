@@ -228,9 +228,9 @@ describe("buildEnvironment", () => {
     expect(env.COLORTERM).toBe("truecolor");
   });
 
-  it("sets TERM_PROGRAM to AnyWhereTerminal", () => {
+  it("sets TERM_PROGRAM to Portaterm", () => {
     const env = buildEnvironment();
-    expect(env.TERM_PROGRAM).toBe("AnyWhereTerminal");
+    expect(env.TERM_PROGRAM).toBe("Portaterm");
   });
 
   it("sets LANG to en_US.UTF-8 when LANG is not set", () => {

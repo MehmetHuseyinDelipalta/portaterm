@@ -124,7 +124,7 @@ function mount(
   const postMessageSpy = vi.fn((_m: unknown) => Promise.resolve(true));
   const webviewView = {
     visible: true,
-    viewType: "anywhereTerminal.sidebar",
+    viewType: "portaterm.sidebar",
     webview: {
       html: "",
       options: {},
@@ -173,7 +173,7 @@ describe("vaultResume owner mapping", () => {
     await tick();
 
     expect(owner).toHaveBeenCalledWith("/work/proj");
-    const created = h.sessionManager.getAllSessionsForView("anywhereTerminal.sidebar").at(-1);
+    const created = h.sessionManager.getAllSessionsForView("portaterm.sidebar").at(-1);
     expect(created?.worktreeId).toBe("/repo-wt/feat");
     expect(h.postMessageSpy).toHaveBeenCalledWith(
       expect.objectContaining({ type: "tabCreated", worktreeId: "/repo-wt/feat" }),
@@ -187,7 +187,7 @@ describe("vaultResume owner mapping", () => {
     h.send({ type: "vaultResume", entryId: "claude:s1" });
     await tick();
 
-    const created = h.sessionManager.getAllSessionsForView("anywhereTerminal.sidebar").at(-1);
+    const created = h.sessionManager.getAllSessionsForView("portaterm.sidebar").at(-1);
     expect(created?.worktreeId).toBeUndefined();
     h.dispose();
   });

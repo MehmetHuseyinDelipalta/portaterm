@@ -74,7 +74,7 @@ class StoreWatchLifecycle implements Disposable {
       deps.vaultService.getStoreWatchTargets(),
       (target, uri) => this.scheduleRefresh(target, uri),
       (target, error) => {
-        console.error("[AnyWhere Terminal] Failed to watch vault store:", target.baseDir, error);
+        console.error("[Portaterm] Failed to watch vault store:", target.baseDir, error);
       },
     );
   }
@@ -181,7 +181,7 @@ class FollowWatchLifecycle implements Disposable {
       targets,
       () => this.scheduleRefresh(entryId, seq),
       (_target, error) => {
-        console.error("[AnyWhere Terminal] Failed to watch vault session:", entryId, error);
+        console.error("[Portaterm] Failed to watch vault session:", entryId, error);
       },
     );
   }
@@ -220,7 +220,7 @@ class FollowWatchLifecycle implements Disposable {
         this.postDetail(entryId, detail);
       }
     } catch (err) {
-      console.error("[AnyWhere Terminal] Vault follow re-read failed:", entryId, err);
+      console.error("[Portaterm] Vault follow re-read failed:", entryId, err);
     } finally {
       read.inFlight = false;
       const dirtyRefreshSeq = read.dirtyRefreshSeq;

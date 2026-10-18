@@ -80,7 +80,7 @@ describe("the destructive command inventory", () => {
 describe("every door asks before destroying a live agent", () => {
   it("ctx.killTerminal does — it used to destroy outright (F001)", async () => {
     const w = world({ panes: { p1: AGENT }, answer: undefined });
-    w.commands.byId["anywhereTerminal.ctx.killTerminal"]({ paneSessionId: "p1" });
+    w.commands.byId["portaterm.ctx.killTerminal"]({ paneSessionId: "p1" });
     await settle();
     expect(w.asked).toHaveLength(1);
     expect(w.destroyed).toEqual([]);
@@ -89,7 +89,7 @@ describe("every door asks before destroying a live agent", () => {
 
   it("and destroys once approved", async () => {
     const w = world({ panes: { p1: AGENT }, answer: "Kill Terminal" });
-    w.commands.byId["anywhereTerminal.ctx.killTerminal"]({ paneSessionId: "p1" });
+    w.commands.byId["portaterm.ctx.killTerminal"]({ paneSessionId: "p1" });
     await settle();
     expect(w.destroyed).toEqual(["p1"]);
     expect(w.posted[0]?.message).toEqual({ type: "tabRemoved", tabId: "p1" });
@@ -97,7 +97,7 @@ describe("every door asks before destroying a live agent", () => {
 
   it("killTerminal does, for the focused surface's session", async () => {
     const w = world({ panes: { f1: AGENT }, focused: "f1", answer: undefined });
-    w.commands.byId["anywhereTerminal.killTerminal"]();
+    w.commands.byId["portaterm.killTerminal"]();
     await settle();
     expect(w.asked).toHaveLength(1);
     expect(w.destroyed).toEqual([]);
@@ -105,7 +105,7 @@ describe("every door asks before destroying a live agent", () => {
 
   it("closeSplitPane does", async () => {
     const w = world({ panes: { f1: AGENT }, focused: "f1", answer: undefined });
-    w.commands.byId["anywhereTerminal.closeSplitPane"]();
+    w.commands.byId["portaterm.closeSplitPane"]();
     await settle();
     expect(w.asked).toHaveLength(1);
     expect(w.posted).toEqual([]);
@@ -113,7 +113,7 @@ describe("every door asks before destroying a live agent", () => {
 
   it("ctx.closePane does", async () => {
     const w = world({ panes: { p1: AGENT }, answer: undefined });
-    w.commands.byId["anywhereTerminal.ctx.closePane"]({ paneSessionId: "p1" });
+    w.commands.byId["portaterm.ctx.closePane"]({ paneSessionId: "p1" });
     await settle();
     expect(w.asked).toHaveLength(1);
     expect(w.posted).toEqual([]);
@@ -129,7 +129,7 @@ describe("the pane a door names is the pane it acts on", () => {
       ctxActive: "idle",
       answer: "Kill Terminal",
     });
-    w.commands.byId["anywhereTerminal.ctx.killTerminal"]({ paneSessionId: "agent" });
+    w.commands.byId["portaterm.ctx.killTerminal"]({ paneSessionId: "agent" });
     await settle();
     expect(w.asked[0]).toContain("claude is still running here");
     expect(w.destroyed).toEqual(["agent"]);
@@ -139,7 +139,7 @@ describe("the pane a door names is the pane it acts on", () => {
     // There is no honest fallback: the focused surface's pane is a different
     // pane than the one right-clicked.
     const w = world({ panes: { idle: SHELL }, ctxActive: "idle", focused: "idle" });
-    w.commands.byId["anywhereTerminal.ctx.closePane"]({});
+    w.commands.byId["portaterm.ctx.closePane"]({});
     await settle();
     expect(w.posted).toEqual([]);
     expect(w.destroyed).toEqual([]);
@@ -147,7 +147,7 @@ describe("the pane a door names is the pane it acts on", () => {
 
   it("ctx.killTerminal falls back to the ctx surface, not the focused one", async () => {
     const w = world({ panes: { c1: SHELL }, ctxActive: "c1", focused: "other" });
-    w.commands.byId["anywhereTerminal.ctx.killTerminal"]({});
+    w.commands.byId["portaterm.ctx.killTerminal"]({});
     await settle();
     expect(w.destroyed).toEqual(["c1"]);
   });
@@ -160,7 +160,7 @@ describe("the surface that hears about it is the one holding the session", () =>
       surfaceOf: { e1: "editor-42" },
       answer: "Close Pane",
     });
-    w.commands.byId["anywhereTerminal.ctx.closePane"]({ paneSessionId: "e1" });
+    w.commands.byId["portaterm.ctx.closePane"]({ paneSessionId: "e1" });
     await settle();
     expect(w.posted).toEqual([{ surface: "editor-42", message: { type: "closeSplitPaneById", sessionId: "e1" } }]);
   });
@@ -169,7 +169,7 @@ describe("the surface that hears about it is the one holding the session", () =>
 describe("a kill picks the protocol the target actually needs", () => {
   it("uses the pane protocol for a focused split, not the tab one (F008)", async () => {
     const w = world({ panes: { s1: SHELL }, focused: "s1", splits: ["s1"] });
-    w.commands.byId["anywhereTerminal.killTerminal"]();
+    w.commands.byId["portaterm.killTerminal"]();
     await settle();
     expect(w.posted[0]?.message).toEqual({ type: "closeSplitPaneById", sessionId: "s1" });
     expect(w.destroyed).toEqual([]);
@@ -184,7 +184,7 @@ describe("a kill picks the protocol the target actually needs", () => {
       tabs: { t1: ["t1", "p2"] },
       answer: "Kill Terminal",
     });
-    w.commands.byId["anywhereTerminal.killTerminal"]();
+    w.commands.byId["portaterm.killTerminal"]();
     await settle();
     expect(w.asked[0]).toContain("claude is still running here");
     expect(w.destroyed).toEqual(["t1"]);
@@ -197,7 +197,7 @@ describe("the per-location doors", () => {
     // `killTerminal.{sidebar,panel}` resolve their own surface rather than the
     // focused one; only resolution differs, which is why it is a seam.
     const w = world({ panes: { s1: AGENT }, focused: "elsewhere", surface: { sidebar: "s1" }, answer: undefined });
-    w.commands.byId["anywhereTerminal.killTerminal.sidebar"]();
+    w.commands.byId["portaterm.killTerminal.sidebar"]();
     await settle();
     expect(w.asked).toHaveLength(1);
     expect(w.destroyed).toEqual([]);
@@ -205,7 +205,7 @@ describe("the per-location doors", () => {
 
   it("do nothing when their surface has no session", async () => {
     const w = world({ surface: {} });
-    w.commands.byId["anywhereTerminal.killTerminal.panel"]();
+    w.commands.byId["portaterm.killTerminal.panel"]();
     await settle();
     expect(w.destroyed).toEqual([]);
     expect(w.asked).toEqual([]);

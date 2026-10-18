@@ -1,4 +1,4 @@
-// src/types/messages.ts — Shared message type definitions for AnyWhere Terminal
+// src/types/messages.ts — Shared message type definitions for Portaterm
 // Used by both Extension Host and WebView code.
 // See: docs/design/message-protocol.md
 
@@ -10,7 +10,7 @@ import type { WorktreeTree } from "../worktree/types";
 
 // ─── Shared Types ───────────────────────────────────────────────────
 
-/** Terminal configuration (maps to anywhereTerminal.* settings). */
+/** Terminal configuration (maps to portaterm.* settings). */
 export interface TerminalConfig {
   /** Font size in pixels (0 = inherit from VS Code editor) */
   fontSize: number;
@@ -2287,9 +2287,9 @@ export interface ThemeChangedMessage {
 
 /** Hover-preview user-facing settings, mirrored from `contributes.configuration`. */
 export interface HoverPreviewSettings {
-  /** Debounce in milliseconds (matches `anywhereTerminal.hoverPreview.delay`). */
+  /** Debounce in milliseconds (matches `portaterm.hoverPreview.delay`). */
   delay: number;
-  /** Trust policy on/off (matches `anywhereTerminal.hoverPreview.blockSensitive`). */
+  /** Trust policy on/off (matches `portaterm.hoverPreview.blockSensitive`). */
   blockSensitive: boolean;
 }
 
@@ -2410,7 +2410,7 @@ export interface FsRehydrateMessage {
  * Two valid shapes:
  *
  * 1. OSC 7 path (`source: 'osc7'` or omitted): set `sessionId` + `cwd`.
- *    Triggered by `anywhereTerminal.ctx.revealInFileTree` (terminal pane
+ *    Triggered by `portaterm.ctx.revealInFileTree` (terminal pane
  *    right-click). The extension resolves the pane's live cwd (querying the
  *    PTY shell process via `SessionManager.getLiveCwd` — `lsof` on macOS,
  *    `/proc/<pid>/cwd` on Linux) and posts it here. The webview then asks

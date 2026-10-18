@@ -216,8 +216,8 @@ describe("allocateWorktreePorts", () => {
 
   it("fails closed without writing when the common lock already exists", async () => {
     const { repoId, repoPath, worktrees } = await fixture(["main", "new"]);
-    const sentinel = path.join(repoId, "anywhere-terminal-port-claims");
-    await writeFile(`${sentinel}.anywhere-terminal.lock`, "held");
+    const sentinel = path.join(repoId, "portaterm-port-claims");
+    await writeFile(`${sentinel}.portaterm.lock`, "held");
 
     const result = await allocate(
       { repoId, repoPath, worktreePath: worktrees[1] as string, ports: [port("APP")] },
@@ -586,7 +586,7 @@ describe("allocateWorktreePorts", () => {
 
   it("warns when failed publication cannot remove its staged temporary", async () => {
     const { repoId, repoPath, worktrees } = await fixture(["main", "new"]);
-    const sentinel = path.join(repoId, "anywhere-terminal-port-claims");
+    const sentinel = path.join(repoId, "portaterm-port-claims");
     const target = path.join(worktrees[1] as string, ".env.worktree");
     const staged: StagedReplacement = {
       path: `${target}.tmp`,
@@ -622,7 +622,7 @@ describe("allocateWorktreePorts", () => {
   it("warns when prepublication cleanup outlives the allocation deadline", async () => {
     const { repoId, repoPath, worktrees } = await fixture(["main", "new"]);
     const { deadline, expire } = manualDeadline();
-    const sentinel = path.join(repoId, "anywhere-terminal-port-claims");
+    const sentinel = path.join(repoId, "portaterm-port-claims");
     const target = path.join(worktrees[1] as string, ".env.worktree");
     const staged: StagedReplacement = {
       path: `${target}.tmp`,
@@ -665,7 +665,7 @@ describe("allocateWorktreePorts", () => {
 
   it("preserves committed outcomes while reporting lock-release and exclude warnings", async () => {
     const { repoId, repoPath, worktrees } = await fixture(["main", "new"]);
-    const sentinel = path.join(repoId, "anywhere-terminal-port-claims");
+    const sentinel = path.join(repoId, "portaterm-port-claims");
     const warned: string[] = [];
 
     const result = await allocate(
@@ -699,7 +699,7 @@ describe("allocateWorktreePorts", () => {
   it("reports a dirty port timeout as retained serialization", async () => {
     const { repoId, repoPath, worktrees } = await fixture(["main", "new"]);
     const { deadline } = manualDeadline();
-    const retainedLockPath = `${path.join(repoId, "anywhere-terminal-port-claims")}.anywhere-terminal.lock`;
+    const retainedLockPath = `${path.join(repoId, "portaterm-port-claims")}.portaterm.lock`;
     const warn = vi.fn();
 
     const result = await allocate(
@@ -811,7 +811,7 @@ describe("allocateWorktreePorts", () => {
   it("preserves committed allocation when temporary cleanup misses the shared deadline", async () => {
     const { repoId, repoPath, worktrees } = await fixture(["main", "new"]);
     const { deadline, expire } = manualDeadline();
-    const sentinel = path.join(repoId, "anywhere-terminal-port-claims");
+    const sentinel = path.join(repoId, "portaterm-port-claims");
     const target = path.join(worktrees[1] as string, ".env.worktree");
     const discard = vi.fn(() => {
       expire();
@@ -859,7 +859,7 @@ describe("allocateWorktreePorts", () => {
   it("maps a retained exclude timeout without changing committed ports", async () => {
     const { repoId, repoPath, worktrees } = await fixture(["main", "new"]);
     const { deadline } = manualDeadline();
-    const retainedLockPath = path.join(repoId, "info", "exclude.anywhere-terminal.lock");
+    const retainedLockPath = path.join(repoId, "info", "exclude.portaterm.lock");
     const addExclude = vi.fn(async (_gitDir: string, _entry: string, given?: Deadline) => {
       expect(given).toBe(deadline);
       return {

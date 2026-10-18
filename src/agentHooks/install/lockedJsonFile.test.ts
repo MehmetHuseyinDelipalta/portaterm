@@ -15,7 +15,7 @@ async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), "locked-file-"));
   tempDirectories.push(directory);
   const target = join(directory, "record.json");
-  return { directory, target, lockPath: `${target}.anywhere-terminal.lock` };
+  return { directory, target, lockPath: `${target}.portaterm.lock` };
 }
 
 afterEach(async () => {

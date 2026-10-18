@@ -71,7 +71,7 @@ const NOOP_CLEANUP = (): void => {};
  * present would make the integration script silently no-op or behave wrong.
  *
  * `TERM_PROGRAM` is intentionally NOT touched here — it is set to
- * `AnyWhereTerminal` upstream by `PtyManager.buildEnvironment`.
+ * `Portaterm` upstream by `PtyManager.buildEnvironment`.
  */
 export function injectShellIntegration(
   shellPath: string,

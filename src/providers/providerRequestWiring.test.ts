@@ -156,7 +156,7 @@ describe("OBL-8: each provider's log strings are a wiring fact", () => {
     surface.send({ type: "requestVaultSessions" });
     await settle();
 
-    expect(spy.mock.calls.map(([m]) => m)).toContain("[AnyWhere Terminal] Failed to list vault sessions (editor):");
+    expect(spy.mock.calls.map(([m]) => m)).toContain("[Portaterm] Failed to list vault sessions (editor):");
     surface.dispose();
   });
 
@@ -172,8 +172,8 @@ describe("OBL-8: each provider's log strings are a wiring fact", () => {
     await settle();
 
     const messages = spy.mock.calls.map(([m]) => m);
-    expect(messages).toContain("[AnyWhere Terminal] Failed to list vault sessions:");
-    expect(messages).not.toContain("[AnyWhere Terminal] Failed to list vault sessions (editor):");
+    expect(messages).toContain("[Portaterm] Failed to list vault sessions:");
+    expect(messages).not.toContain("[Portaterm] Failed to list vault sessions (editor):");
     surface.dispose();
   });
 });
@@ -199,8 +199,8 @@ describe("OBL-8: the file-preview log label is a wiring fact too", () => {
     await settle();
 
     const messages = spy.mock.calls.map(([m]) => m);
-    expect(messages).toContain("[AnyWhere Terminal] requestFilePreview failed (editor):");
-    expect(messages).not.toContain("[AnyWhere Terminal] requestFilePreview failed:");
+    expect(messages).toContain("[Portaterm] requestFilePreview failed (editor):");
+    expect(messages).not.toContain("[Portaterm] requestFilePreview failed:");
     surface.dispose();
   });
 
@@ -213,8 +213,8 @@ describe("OBL-8: the file-preview log label is a wiring fact too", () => {
     await settle();
 
     const messages = spy.mock.calls.map(([m]) => m);
-    expect(messages).toContain("[AnyWhere Terminal] requestFilePreview failed:");
-    expect(messages).not.toContain("[AnyWhere Terminal] requestFilePreview failed (editor):");
+    expect(messages).toContain("[Portaterm] requestFilePreview failed:");
+    expect(messages).not.toContain("[Portaterm] requestFilePreview failed (editor):");
     surface.dispose();
   });
 });

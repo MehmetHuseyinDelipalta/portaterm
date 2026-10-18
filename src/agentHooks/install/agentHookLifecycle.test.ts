@@ -102,7 +102,7 @@ describe("AgentHookLifecycle", () => {
     };
     const lifecycle = new AgentHookLifecycle({ controller, readEnabled: (agent) => enabled[agent] });
 
-    const change = lifecycle.handleConfigurationChange((key) => key === "anywhereTerminal.agentHooks.claudeConfigDir");
+    const change = lifecycle.handleConfigurationChange((key) => key === "portaterm.agentHooks.claudeConfigDir");
     await reinstallationStarted.promise;
     expect(controller.setDesiredEnabled.mock.calls).toEqual([
       ["claude", false],
@@ -128,7 +128,7 @@ describe("AgentHookLifecycle", () => {
     };
     const lifecycle = new AgentHookLifecycle({ controller, readEnabled: (agent) => enabled[agent] });
 
-    const change = lifecycle.handleConfigurationChange((key) => key === "anywhereTerminal.agentHooks.claudeConfigDir");
+    const change = lifecycle.handleConfigurationChange((key) => key === "portaterm.agentHooks.claudeConfigDir");
     await disableStarted.promise;
     enabled.claude = true;
     disable.resolve();
@@ -145,8 +145,7 @@ describe("AgentHookLifecycle", () => {
     const { controller, lifecycle } = lifecycleDouble(enabled);
 
     await lifecycle.handleConfigurationChange(
-      (key) =>
-        key === "anywhereTerminal.agentHooks.claude.enabled" || key === "anywhereTerminal.agentHooks.claudeConfigDir",
+      (key) => key === "portaterm.agentHooks.claude.enabled" || key === "portaterm.agentHooks.claudeConfigDir",
     );
 
     expect(controller.setDesiredEnabled.mock.calls).toEqual([
@@ -172,9 +171,7 @@ describe("AgentHookLifecycle", () => {
 
     const initial = lifecycle.reconcile("claude");
     await firstStarted.promise;
-    const location = lifecycle.handleConfigurationChange(
-      (key) => key === "anywhereTerminal.agentHooks.claudeConfigDir",
-    );
+    const location = lifecycle.handleConfigurationChange((key) => key === "portaterm.agentHooks.claudeConfigDir");
     enabled.claude = false;
     first.resolve();
     await Promise.all([initial, location]);
@@ -200,9 +197,7 @@ describe("AgentHookLifecycle", () => {
     };
     const lifecycle = new AgentHookLifecycle({ controller, readEnabled: (agent) => enabled[agent] });
 
-    const failedLocation = lifecycle.handleConfigurationChange(
-      (key) => key === "anywhereTerminal.agentHooks.claudeConfigDir",
-    );
+    const failedLocation = lifecycle.handleConfigurationChange((key) => key === "portaterm.agentHooks.claudeConfigDir");
     const recovery = lifecycle.reconcile("claude");
     await expect(failedLocation).rejects.toThrow("install failed");
     await recovery;
@@ -218,7 +213,7 @@ describe("AgentHookLifecycle", () => {
     const enabled = { cursor: false, claude: true, opencode: false };
     const { controller, lifecycle } = lifecycleDouble(enabled);
 
-    await lifecycle.handleConfigurationChange((key) => key === "anywhereTerminal.cursorAgent.hooks.enabled");
+    await lifecycle.handleConfigurationChange((key) => key === "portaterm.cursorAgent.hooks.enabled");
     expect(controller.setDesiredEnabled).toHaveBeenCalledWith("cursor", false);
   });
 
@@ -226,7 +221,7 @@ describe("AgentHookLifecycle", () => {
     const enabled = { cursor: false, claude: false, opencode: true };
     const { controller, lifecycle } = lifecycleDouble(enabled);
 
-    await lifecycle.handleConfigurationChange((key) => key === "anywhereTerminal.opencode.hooks.enabled");
+    await lifecycle.handleConfigurationChange((key) => key === "portaterm.opencode.hooks.enabled");
 
     expect(controller.setDesiredEnabled).toHaveBeenCalledWith("opencode", true);
   });
@@ -280,7 +275,7 @@ describe("AgentHookLifecycle", () => {
     ).toEqual({
       success: false,
       message:
-        "AnyWhere Terminal could not remove all agent hooks: claude (ownership-conflict: /tmp/settings.json, /tmp/settings.json.lock).",
+        "Portaterm could not remove all agent hooks: claude (ownership-conflict: /tmp/settings.json, /tmp/settings.json.lock).",
     });
   });
 

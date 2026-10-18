@@ -1,15 +1,15 @@
 import { createKeyedSerialQueue } from "../../utils/keyedSerialQueue";
 import type { HookReconciliationOutcome } from "../AgentHookController";
 
-export const AGENT_HOOK_UNINSTALL_COMMAND = "anywhereTerminal.agentHooks.uninstall";
+export const AGENT_HOOK_UNINSTALL_COMMAND = "portaterm.agentHooks.uninstall";
 
 export const AGENT_HOOK_SETTINGS = {
-  cursor: { enabled: "anywhereTerminal.cursorAgent.hooks.enabled" },
+  cursor: { enabled: "portaterm.cursorAgent.hooks.enabled" },
   claude: {
-    enabled: "anywhereTerminal.agentHooks.claude.enabled",
-    configDir: "anywhereTerminal.agentHooks.claudeConfigDir",
+    enabled: "portaterm.agentHooks.claude.enabled",
+    configDir: "portaterm.agentHooks.claudeConfigDir",
   },
-  opencode: { enabled: "anywhereTerminal.opencode.hooks.enabled" },
+  opencode: { enabled: "portaterm.opencode.hooks.enabled" },
 } as const;
 
 export type AgentHookLifecycleAgent = keyof typeof AGENT_HOOK_SETTINGS;
@@ -107,7 +107,7 @@ export class AgentHookLifecycle {
 export function summarizeAgentHookRemoval(results: readonly AgentHookRemovalResult[]): AgentHookRemovalSummary {
   const failures = results.filter((result) => !result.success);
   if (failures.length === 0) {
-    return { success: true, message: "AnyWhere Terminal agent hook removal completed." };
+    return { success: true, message: "Portaterm agent hook removal completed." };
   }
 
   const details = failures.map((result) => {
@@ -117,6 +117,6 @@ export function summarizeAgentHookRemoval(results: readonly AgentHookRemovalResu
   });
   return {
     success: false,
-    message: `AnyWhere Terminal could not remove all agent hooks: ${details.join("; ")}.`,
+    message: `Portaterm could not remove all agent hooks: ${details.join("; ")}.`,
   };
 }

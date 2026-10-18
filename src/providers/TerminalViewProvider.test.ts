@@ -69,7 +69,7 @@ function createMockWebviewView(): {
 
   const webviewView = {
     visible: true,
-    viewType: "anywhereTerminal.sidebar",
+    viewType: "portaterm.sidebar",
     webview: {
       html: "",
       options: {},
@@ -1450,7 +1450,7 @@ describe("TerminalViewProvider: committed navigation", () => {
       handler({ type: "ready" });
     }
     const sidebarRoot = sm.getTabsForView(provider.getViewId())[0].id;
-    const panelRoot = sm.createSession("anywhereTerminal.panel", webviewView.webview);
+    const panelRoot = sm.createSession("portaterm.panel", webviewView.webview);
 
     for (const handler of messageHandlers) {
       handler({ type: "terminalNavigationCommitted", activeTabId: panelRoot, activePaneId: panelRoot });

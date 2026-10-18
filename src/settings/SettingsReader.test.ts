@@ -41,15 +41,15 @@ afterEach(() => {
 // ─── Font Size Resolution ───────────────────────────────────────────
 
 describe("readTerminalSettings — font size resolution", () => {
-  it("uses anywhereTerminal.fontSize when > 0", () => {
-    __setConfigValues({ "anywhereTerminal.fontSize": 18 });
+  it("uses portaterm.fontSize when > 0", () => {
+    __setConfigValues({ "portaterm.fontSize": 18 });
     const settings = readTerminalSettings();
     expect(settings.fontSize).toBe(18);
   });
 
   it("falls back to terminal.integrated.fontSize when extension fontSize is 0", () => {
     __setConfigValues({
-      "anywhereTerminal.fontSize": 0,
+      "portaterm.fontSize": 0,
       "terminal.integrated.fontSize": 16,
     });
     const settings = readTerminalSettings();
@@ -58,7 +58,7 @@ describe("readTerminalSettings — font size resolution", () => {
 
   it("falls back to editor.fontSize when both extension and terminal fontSize are 0", () => {
     __setConfigValues({
-      "anywhereTerminal.fontSize": 0,
+      "portaterm.fontSize": 0,
       "terminal.integrated.fontSize": 0,
       "editor.fontSize": 20,
     });
@@ -73,25 +73,25 @@ describe("readTerminalSettings — font size resolution", () => {
   });
 
   it("clamps font size to minimum 6", () => {
-    __setConfigValues({ "anywhereTerminal.fontSize": 2 });
+    __setConfigValues({ "portaterm.fontSize": 2 });
     const settings = readTerminalSettings();
     expect(settings.fontSize).toBe(6);
   });
 
   it("clamps font size to maximum 100", () => {
-    __setConfigValues({ "anywhereTerminal.fontSize": 200 });
+    __setConfigValues({ "portaterm.fontSize": 200 });
     const settings = readTerminalSettings();
     expect(settings.fontSize).toBe(100);
   });
 
   it("clamps font size at exactly 6", () => {
-    __setConfigValues({ "anywhereTerminal.fontSize": 6 });
+    __setConfigValues({ "portaterm.fontSize": 6 });
     const settings = readTerminalSettings();
     expect(settings.fontSize).toBe(6);
   });
 
   it("clamps font size at exactly 100", () => {
-    __setConfigValues({ "anywhereTerminal.fontSize": 100 });
+    __setConfigValues({ "portaterm.fontSize": 100 });
     const settings = readTerminalSettings();
     expect(settings.fontSize).toBe(100);
   });
@@ -100,15 +100,15 @@ describe("readTerminalSettings — font size resolution", () => {
 // ─── Font Family Resolution ─────────────────────────────────────────
 
 describe("readTerminalSettings — font family resolution", () => {
-  it("uses anywhereTerminal.fontFamily when non-empty", () => {
-    __setConfigValues({ "anywhereTerminal.fontFamily": "Fira Code" });
+  it("uses portaterm.fontFamily when non-empty", () => {
+    __setConfigValues({ "portaterm.fontFamily": "Fira Code" });
     const settings = readTerminalSettings();
     expect(settings.fontFamily).toBe("Fira Code");
   });
 
   it("falls back to terminal.integrated.fontFamily when extension fontFamily is empty", () => {
     __setConfigValues({
-      "anywhereTerminal.fontFamily": "",
+      "portaterm.fontFamily": "",
       "terminal.integrated.fontFamily": "JetBrains Mono",
     });
     const settings = readTerminalSettings();
@@ -117,7 +117,7 @@ describe("readTerminalSettings — font family resolution", () => {
 
   it("falls back to editor.fontFamily when both extension and terminal fontFamily are empty", () => {
     __setConfigValues({
-      "anywhereTerminal.fontFamily": "",
+      "portaterm.fontFamily": "",
       "terminal.integrated.fontFamily": "",
       "editor.fontFamily": "Cascadia Code",
     });
@@ -132,7 +132,7 @@ describe("readTerminalSettings — font family resolution", () => {
   });
 
   it("trims whitespace from font family", () => {
-    __setConfigValues({ "anywhereTerminal.fontFamily": "  Fira Code  " });
+    __setConfigValues({ "portaterm.fontFamily": "  Fira Code  " });
     const settings = readTerminalSettings();
     expect(settings.fontFamily).toBe("Fira Code");
   });
@@ -148,7 +148,7 @@ describe("readTerminalSettings — other settings", () => {
   });
 
   it("reads cursorBlink when set to false", () => {
-    __setConfigValues({ "anywhereTerminal.cursorBlink": false });
+    __setConfigValues({ "portaterm.cursorBlink": false });
     const settings = readTerminalSettings();
     expect(settings.cursorBlink).toBe(false);
   });
@@ -160,7 +160,7 @@ describe("readTerminalSettings — other settings", () => {
   });
 
   it("reads custom scrollback value", () => {
-    __setConfigValues({ "anywhereTerminal.scrollback": 5000 });
+    __setConfigValues({ "portaterm.scrollback": 5000 });
     const settings = readTerminalSettings();
     expect(settings.scrollback).toBe(5000);
   });
@@ -170,21 +170,21 @@ describe("readTerminalSettings — other settings", () => {
 
 describe("readTerminalSettings — shell resolution", () => {
   it("uses custom shell when configured", () => {
-    __setConfigValues({ "anywhereTerminal.shell.macOS": "/usr/local/bin/fish" });
+    __setConfigValues({ "portaterm.shell.macOS": "/usr/local/bin/fish" });
     const settings = readTerminalSettings("darwin");
     expect(settings.shell).toBe("/usr/local/bin/fish");
   });
 
   it("auto-detects shell when custom shell is empty", () => {
-    __setConfigValues({ "anywhereTerminal.shell.macOS": "" });
+    __setConfigValues({ "portaterm.shell.macOS": "" });
     const settings = readTerminalSettings("darwin");
     expect(settings.shell).toBeTruthy();
   });
 
   it("uses custom args when configured with custom shell", () => {
     __setConfigValues({
-      "anywhereTerminal.shell.macOS": "/usr/local/bin/fish",
-      "anywhereTerminal.shell.args": ["-l", "--init-command", "echo hi"],
+      "portaterm.shell.macOS": "/usr/local/bin/fish",
+      "portaterm.shell.args": ["-l", "--init-command", "echo hi"],
     });
     const settings = readTerminalSettings("darwin");
     expect(settings.shellArgs).toEqual(["-l", "--init-command", "echo hi"]);
@@ -193,8 +193,8 @@ describe("readTerminalSettings — shell resolution", () => {
   it("uses detected args when custom args are empty", () => {
     vi.stubEnv("SHELL", "/bin/zsh");
     __setConfigValues({
-      "anywhereTerminal.shell.macOS": "",
-      "anywhereTerminal.shell.args": [],
+      "portaterm.shell.macOS": "",
+      "portaterm.shell.args": [],
     });
     const settings = readTerminalSettings("darwin");
     expect(settings.shellArgs).toEqual(["--login"]);
@@ -206,29 +206,29 @@ describe("readTerminalSettings — shell resolution", () => {
 describe("readTerminalSettings — per-platform shell key", () => {
   it("reads shell.windows on win32 and ignores shell.macOS", () => {
     __setConfigValues({
-      "anywhereTerminal.shell.windows": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
-      "anywhereTerminal.shell.macOS": "/bin/zsh",
+      "portaterm.shell.windows": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      "portaterm.shell.macOS": "/bin/zsh",
     });
     const settings = readTerminalSettings("win32");
     expect(settings.shell).toBe("C:\\Program Files\\PowerShell\\7\\pwsh.exe");
   });
 
   it("reads shell.linux on linux", () => {
-    __setConfigValues({ "anywhereTerminal.shell.linux": "/usr/bin/fish" });
+    __setConfigValues({ "portaterm.shell.linux": "/usr/bin/fish" });
     const settings = readTerminalSettings("linux");
     expect(settings.shell).toBe("/usr/bin/fish");
   });
 
   it("reads shell.macOS on darwin", () => {
-    __setConfigValues({ "anywhereTerminal.shell.macOS": "/opt/homebrew/bin/fish" });
+    __setConfigValues({ "portaterm.shell.macOS": "/opt/homebrew/bin/fish" });
     const settings = readTerminalSettings("darwin");
     expect(settings.shell).toBe("/opt/homebrew/bin/fish");
   });
 
   it("uses shell.linux for other POSIX platforms", () => {
     __setConfigValues({
-      "anywhereTerminal.shell.linux": "/usr/local/bin/fish",
-      "anywhereTerminal.shell.macOS": "/bin/zsh",
+      "portaterm.shell.linux": "/usr/local/bin/fish",
+      "portaterm.shell.macOS": "/bin/zsh",
     });
     const settings = readTerminalSettings("freebsd");
     expect(settings.shell).toBe("/usr/local/bin/fish");
@@ -237,7 +237,7 @@ describe("readTerminalSettings — per-platform shell key", () => {
   it("auto-detects to cmd.exe on win32 when shell.windows is empty (no %ComSpec% in env)", () => {
     vi.stubEnv("ComSpec", "");
     vi.stubEnv("COMSPEC", "");
-    __setConfigValues({ "anywhereTerminal.shell.windows": "" });
+    __setConfigValues({ "portaterm.shell.windows": "" });
     const settings = readTerminalSettings("win32");
     expect(settings.shell).toBe("cmd.exe");
   });
@@ -258,20 +258,20 @@ describe("readTerminalSettings — CWD resolution", () => {
       }
       throw new Error("ENOENT");
     });
-    __setConfigValues({ "anywhereTerminal.defaultCwd": "/tmp/my-project" });
+    __setConfigValues({ "portaterm.defaultCwd": "/tmp/my-project" });
     const settings = readTerminalSettings();
     expect(settings.cwd).toBe("/tmp/my-project");
   });
 
   it("falls back to workspace root when CWD is empty", () => {
-    __setConfigValues({ "anywhereTerminal.defaultCwd": "" });
+    __setConfigValues({ "portaterm.defaultCwd": "" });
     __setWorkspaceFolders([{ uri: { fsPath: "/projects/my-app" } }]);
     const settings = readTerminalSettings();
     expect(settings.cwd).toBe("/projects/my-app");
   });
 
   it("falls back to home directory when no workspace and no custom CWD", () => {
-    __setConfigValues({ "anywhereTerminal.defaultCwd": "" });
+    __setConfigValues({ "portaterm.defaultCwd": "" });
     __setWorkspaceFolders(undefined);
     const settings = readTerminalSettings();
     expect(settings.cwd).toBe(os.homedir());
@@ -289,7 +289,7 @@ describe("readTerminalSettings — CWD resolution", () => {
       }
       throw new Error("ENOENT");
     });
-    __setConfigValues({ "anywhereTerminal.defaultCwd": "/nonexistent/path" });
+    __setConfigValues({ "portaterm.defaultCwd": "/nonexistent/path" });
     __setWorkspaceFolders([{ uri: { fsPath: "/projects/my-app" } }]);
     const settings = readTerminalSettings();
     expect(settings.cwd).toBe("/projects/my-app");
@@ -307,7 +307,7 @@ describe("readTerminalSettings — CWD resolution", () => {
       }
       throw new Error("ENOENT");
     });
-    __setConfigValues({ "anywhereTerminal.defaultCwd": "/tmp/some-file.txt" });
+    __setConfigValues({ "portaterm.defaultCwd": "/tmp/some-file.txt" });
     __setWorkspaceFolders(undefined);
     const settings = readTerminalSettings();
     expect(settings.cwd).toBe(os.homedir());
@@ -319,10 +319,10 @@ describe("readTerminalSettings — CWD resolution", () => {
 describe("readTerminalConfig", () => {
   it("returns only TerminalConfig fields", () => {
     __setConfigValues({
-      "anywhereTerminal.fontSize": 16,
-      "anywhereTerminal.fontFamily": "Fira Code",
-      "anywhereTerminal.cursorBlink": false,
-      "anywhereTerminal.scrollback": 5000,
+      "portaterm.fontSize": 16,
+      "portaterm.fontFamily": "Fira Code",
+      "portaterm.cursorBlink": false,
+      "portaterm.scrollback": 5000,
     });
     const config = readTerminalConfig();
     expect(config).toEqual({
@@ -344,8 +344,8 @@ describe("affectsTerminalConfig", () => {
     affectsConfiguration: (section: string) => sections.some((s) => s === section || s.startsWith(`${section}.`)),
   });
 
-  it("returns true for anywhereTerminal changes", () => {
-    expect(affectsTerminalConfig(makeEvent(["anywhereTerminal.fontSize"]))).toBe(true);
+  it("returns true for portaterm changes", () => {
+    expect(affectsTerminalConfig(makeEvent(["portaterm.fontSize"]))).toBe(true);
   });
 
   it("returns true for editor.fontSize changes", () => {

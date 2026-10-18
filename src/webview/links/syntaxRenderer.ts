@@ -174,7 +174,7 @@ export function renderHtml(content: string, languageId: string, theme: HoverPrev
   try {
     return cached.codeToHtml(content, { lang, theme: themeFor(theme) });
   } catch (err) {
-    console.warn("[AnyWhere Terminal] Shiki render failed:", err);
+    console.warn("[Portaterm] Shiki render failed:", err);
     return `<pre class="anywhere-hover-preview-plain">${escapeHtml(content)}</pre>`;
   }
 }

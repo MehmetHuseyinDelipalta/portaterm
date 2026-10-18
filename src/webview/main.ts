@@ -1,4 +1,4 @@
-// src/webview/main.ts — AnyWhere Terminal WebView Entry Point (Composition Root)
+// src/webview/main.ts — Portaterm WebView Entry Point (Composition Root)
 //
 // Wires together extracted modules and provides thin orchestration.
 // All business logic lives in dedicated modules.
@@ -93,13 +93,13 @@ import { worktreeDelegatedHandlers } from "./worktree/worktreeMessageHandlers";
 // Kick off Shiki highlighter init in the background; first hover will then
 // render synchronously. Failures fall back to plain text in the popup.
 void preloadSyntaxHighlighter().catch((err) => {
-  console.warn("[AnyWhere Terminal] preloadSyntaxHighlighter failed:", err);
+  console.warn("[Portaterm] preloadSyntaxHighlighter failed:", err);
 });
 
 // Debug helper for diagnosing wrap-aware link detection. Set true from the
 // webview devtools console: `window.__AT_DEBUG_WRAP = true`, then hover the
 // problematic path to see the rows, isWrapped flags, and parsed matches.
-console.log("[AnyWhere Terminal] To debug hover/link wrapping, run in this console: window.__AT_DEBUG_WRAP = true");
+console.log("[Portaterm] To debug hover/link wrapping, run in this console: window.__AT_DEBUG_WRAP = true");
 
 // Webview-local store for the latest theme kind from the host. `TerminalFactory`
 // reads this via the getter for each render. Default to `dark` (matches the
@@ -906,7 +906,7 @@ const routeMessage = createMessageRouter({
     }
   },
   onError(msg) {
-    console.error(`[AnyWhere Terminal] ${msg.severity}: ${msg.message}`);
+    console.error(`[Portaterm] ${msg.severity}: ${msg.message}`);
     const containerEl = document.getElementById("terminal-container");
     if (containerEl) {
       showBanner(containerEl, msg.message, msg.severity);
@@ -960,7 +960,7 @@ const routeMessage = createMessageRouter({
   },
   onRevealInFileTree(msg) {
     if (!fileTreeController) {
-      console.warn("[AnyWhere Terminal] reveal-in-file-tree: no file tree controller mounted");
+      console.warn("[Portaterm] reveal-in-file-tree: no file tree controller mounted");
       return;
     }
     fileTreeController.handleReveal(msg);
@@ -1413,7 +1413,7 @@ function showDragDropTip(): void {
   const textSpan = document.createElement("span");
   textSpan.className = "drag-drop-tip-text";
   textSpan.textContent =
-    'Drag files from Explorer while holding Shift to insert path, or right-click \u2192 "Insert Path in AnyWhere Terminal".';
+    'Drag files from Explorer while holding Shift to insert path, or right-click \u2192 "Insert Path in Portaterm".';
   tipEl.appendChild(textSpan);
 
   const dismissBtn = document.createElement("button");
@@ -1555,7 +1555,7 @@ function bootstrap(): void {
   // where xterm already delivers \x16 natively — forwarding would double-paste.
   const handleImagePasteBlob = (blob: File, targetId: string, forward = true): void => {
     if (blob.size > MAX_PASTE_IMAGE_BYTES) {
-      console.warn(`[AnyWhere Terminal] pasted image (${blob.size} bytes) exceeds the size cap — skipped`);
+      console.warn(`[Portaterm] pasted image (${blob.size} bytes) exceeds the size cap — skipped`);
       return;
     }
     factory.getPastedImageStore(targetId)?.add(blob);

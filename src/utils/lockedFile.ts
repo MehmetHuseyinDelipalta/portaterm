@@ -208,7 +208,7 @@ export class LockedFile {
   }
 
   public get lockPath(): string {
-    return `${this.path}.anywhere-terminal.lock`;
+    return `${this.path}.portaterm.lock`;
   }
 
   public async withLock<T>(

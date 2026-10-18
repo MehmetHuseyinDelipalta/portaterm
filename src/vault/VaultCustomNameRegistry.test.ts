@@ -19,7 +19,7 @@ function fakeStorage(initial?: Record<string, unknown>): {
         return Promise.resolve();
       },
     },
-    written: () => store.get("anywhereTerminal.vaultCustomNames"),
+    written: () => store.get("portaterm.vaultCustomNames"),
   };
 }
 
@@ -61,7 +61,7 @@ describe("VaultCustomNameRegistry", () => {
   });
 
   it("ignores malformed persisted data", () => {
-    const { storage } = fakeStorage({ "anywhereTerminal.vaultCustomNames": ["not", "a", "map"] });
+    const { storage } = fakeStorage({ "portaterm.vaultCustomNames": ["not", "a", "map"] });
     const reg = new VaultCustomNameRegistry(storage);
     expect(reg.all()).toEqual({});
   });

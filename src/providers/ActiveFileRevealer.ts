@@ -84,7 +84,7 @@ export class ActiveFileRevealer implements vscode.Disposable {
 
     this.subs.push(
       vscode.workspace.onDidChangeConfiguration((ev) => {
-        if (ev.affectsConfiguration("anywhereTerminal.fileTree.autoRevealExclude")) {
+        if (ev.affectsConfiguration("portaterm.fileTree.autoRevealExclude")) {
           // Force rebuild on next flush
           this.cachedPatternsKey = "";
           this.matchersCache = [];
@@ -178,7 +178,7 @@ export class ActiveFileRevealer implements vscode.Disposable {
       return;
     }
     this.invalidPatternsLogged.add(pattern);
-    console.warn(`[AnyWhere Terminal] autoRevealExclude: invalid glob '${pattern}' — ${reason}`);
+    console.warn(`[Portaterm] autoRevealExclude: invalid glob '${pattern}' — ${reason}`);
   }
 
   dispose(): void {
