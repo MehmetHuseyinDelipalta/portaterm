@@ -18,7 +18,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentHookRuntime } from "./agentHooks/AgentHookRuntime";
 import type { WorktreeHost, WorktreeSurface } from "./providers/WorktreeHost";
 import { type PaneEvidenceStore, TURN_FRESHNESS_MS } from "./session/PaneEvidenceStore";
@@ -37,6 +37,20 @@ import { type WorktreeDelegatedHandlers, worktreeDelegatedHandlers } from "./web
 import type { WorktreeAgentRow, WorktreePresence } from "./webview/worktree/worktreeViewTypes";
 import { MAX_PULL_REQUESTS } from "./worktree/repoPullRequests";
 import { MAX_REFS } from "./worktree/repoRefs";
+
+// Every test re-imports and re-activates the whole extension (`vi.resetModules()`
+// in afterEach), which already costs up to ~2s on an idle machine. Under full-suite
+// load that crossed Vitest's 5s default and failed whichever test happened to be
+// running — a timeout, not a wrong answer.
+vi.setConfig({ testTimeout: 30_000 });
+
+// The first import also transforms the whole extension module graph, which on a cold,
+// saturated run took longer than any per-test limit worth keeping. Paying it once here,
+// under its own budget, leaves the per-test limit meaningful: `vi.resetModules()` drops
+// the module registry but not the transform cache, so later imports reuse this work.
+beforeAll(async () => {
+  await import("./extension");
+}, 120_000);
 
 // A REAL directory: the create-path probe asks the filesystem, and a fake root
 // nothing could ever occupy makes that probe untestable (round-4 B12).
@@ -915,14 +929,22 @@ async function settle(): Promise<void> {
  * rendered rows, intermittently and only in a full run. Waiting on the condition drops the
  * assumption without waiting any longer than it has to, and says what it waited for when
  * the condition genuinely never arrives.
+ *
+ * Bounded by wall time, not by turns: the host also awaits real filesystem work, which
+ * finishes on the clock rather than after a number of event-loop turns, so a turn budget
+ * ran out first on a loaded machine.
  */
-async function settleUntil(ready: () => boolean, what: string): Promise<void> {
-  for (let i = 0; i < 500; i++) {
+async function settleUntil(ready: () => boolean, what: string, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     if (ready()) {
       return;
     }
     await Promise.resolve();
     await new Promise((r) => setTimeout(r, 0));
+  }
+  if (ready()) {
+    return;
   }
   throw new Error(`timed out waiting for ${what}`);
 }

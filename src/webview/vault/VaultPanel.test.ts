@@ -65,6 +65,12 @@ function hoverTooltipText(target: HTMLElement): string {
   return text;
 }
 
+/** One timestamp for every default entry. The list sorts by recency, so a per-call
+ *  `Date.now()` let two entries built back to back straddle a millisecond on a
+ *  loaded machine and swap rows — `rows[0]` then opened the other session. Tests
+ *  about ordering or relative time pass `modified` explicitly. */
+const FIXTURE_MODIFIED = Date.now();
+
 function entry(over: Partial<VaultSessionEntry> = {}): VaultSessionEntry {
   return {
     id: "claude:abc",
@@ -72,7 +78,7 @@ function entry(over: Partial<VaultSessionEntry> = {}): VaultSessionEntry {
     sessionId: "abc",
     title: "hello",
     cwd: "/work/repo",
-    modified: Date.now(),
+    modified: FIXTURE_MODIFIED,
     flags: {},
     ...over,
   };

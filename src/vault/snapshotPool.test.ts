@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -210,7 +211,23 @@ describe("SnapshotPool", () => {
   });
 
   it("keeps a shared unretained snapshot alive until its last reader is done", async () => {
-    const pool = new SnapshotPool(deps);
+    // The second reader must observe the store BEFORE the write below lands, or it is
+    // right to refuse the in-flight snapshot (D4) and take its own. Its generation read
+    // is the second one the pool makes, so the gate opens only once that read is done —
+    // releasing it straight after `borrow` raced the write on a loaded machine.
+    let reads = 0;
+    const secondRead = deferred();
+    const pool = new SnapshotPool({
+      ...deps,
+      readGeneration: async (target) => {
+        const generation = await readStoreGeneration(target);
+        reads += 1;
+        if (reads === 2) {
+          secondRead.resolve();
+        }
+        return generation;
+      },
+    });
     const gate = deferred();
     const started = deferred();
 
@@ -227,6 +244,7 @@ describe("SnapshotPool", () => {
     );
     await started.promise;
     const second = pool.borrow(dbPath, produce, RETAIN);
+    await secondRead.promise;
     gate.resolve();
 
     const [a, b] = await Promise.all([first, second]);
@@ -526,11 +544,13 @@ describe("SnapshotPool retention", () => {
     const lease = await pool.borrow(a, produce);
     await lease.release();
     expect(pool.retainedCount).toBe(0);
-    await expect(fs.access(lease.file)).resolves.toBeUndefined();
+    // Synchronous for the same reason as the test below: each sweep spends a retry,
+    // and an awaited check here could outlast them all on a loaded machine.
+    expect(existsSync(lease.file)).toBe(true);
 
     failDeletes = false;
 
-    expect(await until(() => gone(lease.file))).toBe(true);
+    expect(await until(() => gone(lease.file), 10_000)).toBe(true);
     await pool.dispose();
   });
 
@@ -556,13 +576,17 @@ describe("SnapshotPool retention", () => {
 
     // The retained entry ages out while the stuck one is still stuck, so the pool
     // holds nothing — the state that used to stop the sweeper. Nothing borrows again.
-    expect(await until(() => pool.retainedCount === 0)).toBe(true);
-    await expect(fs.access(first.file)).resolves.toBeUndefined();
+    expect(await until(() => pool.retainedCount === 0, 10_000)).toBe(true);
+    // Checked and un-failed with no await in between. Every sweep spends one of the
+    // stuck entry's few retries, so an async `fs.access` here — slow while a full run
+    // saturates the threadpool — let the sweeper spend them all before deletes were
+    // allowed again, and the entry was rightly abandoned.
+    expect(existsSync(first.file)).toBe(true);
 
     // Only a still-running sweeper can clear it now, since no admission will come.
     failDeletes = false;
 
-    expect(await until(() => gone(first.file))).toBe(true);
+    expect(await until(() => gone(first.file), 10_000)).toBe(true);
     await pool.dispose();
   });
 });
