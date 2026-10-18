@@ -83,7 +83,7 @@ git tag "v$VERSION"
 
 # 7. Package the VSIX.
 rm -f portaterm-*.vsix
-vsce package --no-dependencies
+pnpm exec vsce package --no-dependencies
 VSIX="portaterm-$VERSION.vsix"
 if [[ ! -f "$VSIX" ]]; then
   echo "error: expected $VSIX but it was not produced" >&2
@@ -93,11 +93,11 @@ fi
 # 8. Publish to the chosen target(s).
 if [[ "$TARGET" == "both" || "$TARGET" == "vsce" ]]; then
   echo "info: publishing $VSIX to VSCE marketplace"
-  vsce publish --packagePath "$VSIX"
+  pnpm exec vsce publish --packagePath "$VSIX"
 fi
 if [[ "$TARGET" == "both" || "$TARGET" == "ovsx" ]]; then
   echo "info: publishing $VSIX to Open VSX"
-  ovsx publish "$VSIX"
+  pnpm exec ovsx publish "$VSIX"
 fi
 
 # 9. Push commit + tag last, so a failed publish doesn't leave a dangling tag remote.

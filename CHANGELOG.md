@@ -1,10 +1,25 @@
 # Changelog
 
-All notable changes to **AnyWhere Terminal** are documented in this file.
+All notable changes to **Portaterm** are documented in this file. Entries up to and including 0.19.1 are
+inherited from [AnyWhere Terminal](https://github.com/huybuidac/anywhere-terminal), which Portaterm is forked from.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.20.0] — 2026-10-18
+
+First Portaterm release, forked from AnyWhere Terminal 0.19.1.
+
+### Changed
+
+- **Renamed to Portaterm.** The extension ID is now `mhd.portaterm`, and commands, views, and settings moved from `anywhereTerminal.*` to `portaterm.*`. Settings are not migrated: copy any customized `anywhereTerminal.*` values to their `portaterm.*` equivalents.
+- **Runs side by side with AnyWhere Terminal.** Agent-hook environment variables (`PORTATERM_*`), lock files, the OpenCode identity plugin, and `TERM_PROGRAM=Portaterm` no longer collide with the upstream extension when both are installed.
+- **New icon** for the Activity Bar and the extension listing.
+
+### Fixed
+
+- **`TERM_PROGRAM_VERSION` reports the real extension version.** It looked the extension up by a non-existent ID and always fell back to `0.0.0`.
 
 ## [0.19.1] — 2026-09-08
 
