@@ -98,3 +98,6 @@ asimov/changes/active
 # and deletes when it closes. They have been swept into commits and deleted
 # again several times; nothing reads them from history.
 asimov/.analytics-open/
+
+# Local-only README screenshot generator (see scripts/screenshots/README.md)
+scripts/screenshots/
