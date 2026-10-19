@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-## [0.20.0] — 2026-10-18
+## [0.20.0] — 2026-10-19
 
 First Portaterm release, forked from AnyWhere Terminal 0.19.1.
 
