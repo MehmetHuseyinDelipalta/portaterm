@@ -14,16 +14,13 @@ Sidebar, secondary sidebar, bottom panel, or an editor tab. Split it, tab it, th
 
 ## Install
 
-Portaterm is not yet published to the VS Code Marketplace or Open VSX. Build and install it from source (requires Node.js and pnpm):
+**VS Code** — search `Portaterm` in Extensions ([Marketplace](https://marketplace.visualstudio.com/items?itemName=mhd.portaterm)), or:
 
-```bash
-git clone https://github.com/MehmetHuseyinDelipalta/portaterm.git
-cd portaterm
-pnpm install
-pnpm run install:local   # packages a .vsix and installs it into Cursor
+```
+ext install mhd.portaterm
 ```
 
-For VS Code, Windsurf, VSCodium or another VS Code-compatible editor, point `EDITOR_CLI` at its command-line launcher, e.g. `EDITOR_CLI=code pnpm run install:local`. Reload the window afterwards.
+**Cursor, Windsurf, Antigravity, VSCodium & other VS Code-compatible editors** — search `Portaterm` (published to [Open VSX](https://open-vsx.org/extension/mhd/portaterm)).
 
 Portaterm uses its own extension ID (`mhd.portaterm`) and settings namespace (`portaterm.*`), so it can be installed alongside the upstream AnyWhere Terminal.
 
@@ -207,7 +204,11 @@ pnpm run watch        # rebuild on change
 pnpm run test:unit    # unit tests
 ```
 
-Press `F5` in VS Code to launch an Extension Development Host. Issues and PRs welcome at <https://github.com/MehmetHuseyinDelipalta/portaterm/issues>.
+Press `F5` in VS Code to launch an Extension Development Host.
+
+To use your local build as your everyday install, run `pnpm run install:local`. It packages a `.vsix` and installs it into Cursor; for another editor, point `EDITOR_CLI` at its command-line launcher (e.g. `EDITOR_CLI=code pnpm run install:local`), then reload the window.
+
+Issues and PRs welcome at <https://github.com/MehmetHuseyinDelipalta/portaterm/issues>.
 
 Release process: see [`docs/RELEASING.md`](docs/RELEASING.md).
 
