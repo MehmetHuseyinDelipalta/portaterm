@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-10-19
+
+### Fixed
+
+- **The listing's README points at the stores.** The Marketplace and Open VSX pages still told users Portaterm was unpublished and to build it from source; Install now links to both listings, and the local `install:local` build is documented under Contributing.
+
 ## [0.20.0] — 2026-10-19
 
 First Portaterm release, forked from AnyWhere Terminal 0.19.1.
