@@ -38,6 +38,12 @@ export interface CreateSessionOptions {
    * instead of dying. Persisted so a window reload re-arms it after auto-resume.
    */
   isAgentLaunch: boolean;
+  /**
+   * The vault entry this launch resumes, so a pinned tab can pin its session in
+   * the vault list. Resume only: a continuation starts a NEW session, and naming
+   * its source here would pin the wrong row.
+   */
+  vaultEntryId?: string;
 }
 
 export class VaultLauncher {
@@ -71,6 +77,7 @@ export class VaultLauncher {
       cwd: spec.cwd,
       env: Object.keys(spec.env).length > 0 ? spec.env : undefined,
       isAgentLaunch: true,
+      ...(mode === "resume" ? { vaultEntryId: entry.id } : {}),
     };
   }
 

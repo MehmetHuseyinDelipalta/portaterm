@@ -2126,6 +2126,17 @@ export interface TabPinnedMessage {
   pinned: boolean;
 }
 
+/**
+ * Extension → WebView: the vault entries that pinned tabs are running, in every
+ * view. The vault list lists these first and marks them pinned. The full set,
+ * sent whenever it changes and with a vault list request.
+ */
+export interface VaultPinnedSessionsMessage {
+  type: "vaultPinnedSessions";
+  /** Vault entry ids (`<agent>:<sessionId>`), sorted. Untrusted on the webview side: only matched, never parsed. */
+  entryIds: string[];
+}
+
 /** A terminal tab has been removed and its PTY destroyed. */
 export interface TabRemovedMessage {
   type: "tabRemoved";
@@ -3086,6 +3097,7 @@ export type ExtensionToWebViewMessage =
   | TabCreatedMessage
   | TabRenamedMessage
   | TabPinnedMessage
+  | VaultPinnedSessionsMessage
   | TabRemovedMessage
   | RestoreMessage
   | ConfigUpdateMessage

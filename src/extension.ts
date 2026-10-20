@@ -36,6 +36,7 @@ import {
   type WorktreeSurface,
 } from "./providers/WorktreeHost";
 import { loadNodePty } from "./pty/PtyManager";
+import { createProcessTableSnapshot } from "./pty/processTableSnapshot";
 import type { MessageSender } from "./session/OutputBuffer";
 import { createPaneEvidenceStore } from "./session/PaneEvidenceStore";
 import { SessionManager } from "./session/SessionManager";
@@ -68,8 +69,18 @@ import {
 } from "./utils/resolvedPathBoundary";
 import { createTrackedPathResolver, ResolvedPathMemo } from "./utils/resolvedPathMemo";
 import { escapePathForShell } from "./utils/shellEscape";
+import {
+  createClaudeProcessLookup,
+  createPinnedVaultPublisher,
+  resolvePinnedEntryIds,
+} from "./vault/pinnedVaultSessions";
+import { claudeSessionMtime } from "./vault/readers/claudePaths";
 import { MAX_DETAIL_LIMIT } from "./vault/readers/detail";
-import { listClaudeSessionRecords } from "./vault/readers/runningSessions";
+import {
+  sessionsDir as claudeRegistryDir,
+  listClaudeSessionRecords,
+  listRunningClaudeSessions,
+} from "./vault/readers/runningSessions";
 import { detectLaunchTargets } from "./vault/registry";
 import { disposeSnapshotPool } from "./vault/sqlite";
 import { formatEntryId, VAULT_AGENT_IDS } from "./vault/types";
@@ -456,7 +467,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // they exist, and the host needs a built tree to attribute panes to.
   // See: asimov/changes/add-host-pane-evidence/design.md D1.
   let onPaneEvidenceChange: (() => void) | undefined;
-  const paneEvidence = createPaneEvidenceStore({ onChange: () => onPaneEvidenceChange?.() });
+  // A second listener: the vault's pinned-session mirror reads the same pane
+  // facts (lifecycle, reported identity) and is built after the providers.
+  let refreshPinnedVaultSessions: (() => void) | undefined;
+  const announcePaneChange = () => {
+    onPaneEvidenceChange?.();
+    refreshPinnedVaultSessions?.();
+  };
+  const paneEvidence = createPaneEvidenceStore({ onChange: announcePaneChange });
 
   // Create shared SessionManager (singleton). workspaceState backs the per-workspace
   // custom-tab-name persistence (portaterm.tabCustomNames); see design.md D3 of add-tab-rename.
@@ -522,7 +540,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     uninstall: async () => {
       opencodeEnvironment = {};
       reportedSessions.clear();
-      onPaneEvidenceChange?.();
+      announcePaneChange();
       return { removed: true };
     },
   };
@@ -549,7 +567,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 reportedSessions.release(update.sessionId);
               }
               // A report changes identity and title without changing pane facts.
-              onPaneEvidenceChange?.();
+              announcePaneChange();
               return;
             }
             // A structured turn goes to the pane's evidence, which is what the
@@ -1667,6 +1685,81 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       webviewOptions: { retainContextWhenHidden: true },
     }),
   );
+
+  // Pinned tabs pin their session in the vault list. The tab pin is the source of
+  // truth; this only mirrors it into every vault surface. A pane's own hook
+  // report names its session first (Claude via its turn, OpenCode via its
+  // session report), then the entry its vault resume launched.
+  const claudeByProcess = createClaudeProcessLookup({
+    table: createProcessTableSnapshot(),
+    listRunning: () => listRunningClaudeSessions(),
+    sessionMtime: claudeSessionMtime,
+  });
+  // Claude writes `<pid>.json` here when it starts and removes it on exit, and
+  // neither moment is a pane event: without the watch, a `claude` typed into a
+  // pinned tab stayed unpinned until the pane next changed activity. Held only
+  // while some tab is pinned, so a window without pins watches nothing.
+  let claudeRegistryWatch: vscode.Disposable | undefined;
+  const watchClaudeRegistry = (needed: boolean) => {
+    if (needed && claudeRegistryWatch === undefined) {
+      claudeRegistryWatch = fsWatcherPool.subscribePattern(claudeRegistryDir(), "*.json", {
+        create: () => pinnedVaultPublisher.refresh(),
+        change: () => pinnedVaultPublisher.refresh(),
+        delete: () => pinnedVaultPublisher.refresh(),
+      });
+    } else if (!needed && claudeRegistryWatch !== undefined) {
+      claudeRegistryWatch.dispose();
+      claudeRegistryWatch = undefined;
+    }
+  };
+  const pinnedVaultPublisher = createPinnedVaultPublisher({
+    compute: () => {
+      const panes = sessionManager.pinnedTabPanes();
+      watchClaudeRegistry(panes.length > 0);
+      const resolution = resolvePinnedEntryIds(panes, {
+        reported: (paneId) => {
+          const opencode = reportedSessions.get(paneId);
+          if (opencode !== undefined) {
+            return formatEntryId(opencode.agent, opencode.sessionId);
+          }
+          const claudeSessionId = paneEvidence.read(paneId)?.turn?.report.agentSessionId;
+          return claudeSessionId === undefined ? undefined : formatEntryId("claude", claudeSessionId);
+        },
+        ptyPid: (paneId) => paneEvidence.read(paneId)?.ptyPid,
+        claudeByProcess,
+      });
+      return resolution.then(({ entryIds, claudeByPane }) => {
+        // The same pass tells a restore which pinned panes to resume.
+        sessionManager.setResumeClaudeSessions(claudeByPane);
+        return entryIds;
+      });
+    },
+    onError: (err) => console.warn("[Portaterm] Failed to resolve pinned vault sessions:", err),
+    post: (entryIds) => {
+      const message = { type: "vaultPinnedSessions" as const, entryIds };
+      for (const provider of [sidebarProvider, panelProvider]) {
+        const view = provider.view;
+        if (view) {
+          safePostMessage(view.webview, message);
+        }
+      }
+      for (const panel of TerminalEditorProvider.getActivePanels()) {
+        safePostMessage(panel.webview, message);
+      }
+    },
+  });
+  sidebarProvider.pinnedVaultEntryIds = () => pinnedVaultPublisher.current();
+  panelProvider.pinnedVaultEntryIds = () => pinnedVaultPublisher.current();
+  refreshPinnedVaultSessions = () => pinnedVaultPublisher.refresh();
+  sessionManager.onPinnedChange = () => pinnedVaultPublisher.refresh();
+  context.subscriptions.push({
+    dispose: () => {
+      refreshPinnedVaultSessions = undefined;
+      sessionManager.onPinnedChange = undefined;
+      pinnedVaultPublisher.dispose();
+      watchClaudeRegistry(false);
+    },
+  });
 
   // Editor terminal command — each invocation creates an independent editor tab terminal
   context.subscriptions.push(

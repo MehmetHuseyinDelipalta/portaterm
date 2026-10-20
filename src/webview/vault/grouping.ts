@@ -31,9 +31,18 @@ function byModifiedDesc(a: VaultSessionEntry, b: VaultSessionEntry): number {
  * modified desc. Agent → grouped by `agent`. Folder → grouped by `cwd` (chip
  * suppressed). Non-Recent groups are ordered by their newest entry (desc), and
  * entries within every group are ordered by modified desc.
+ *
+ * `pinned` holds the entry ids pinned tabs are running. Those rows lead their
+ * group, and a group holding one leads the groups that do not; the newest-first
+ * order still applies within each of those bands.
  */
-export function groupEntries(entries: VaultSessionEntry[], mode: GroupMode): VaultGroup[] {
-  const sorted = [...entries].sort(byModifiedDesc);
+export function groupEntries(
+  entries: VaultSessionEntry[],
+  mode: GroupMode,
+  pinned: ReadonlySet<string> = new Set(),
+): VaultGroup[] {
+  const isPinned = (entry: VaultSessionEntry) => pinned.has(entry.id);
+  const sorted = [...entries].sort((a, b) => Number(isPinned(b)) - Number(isPinned(a)) || byModifiedDesc(a, b));
 
   if (mode === "recent") {
     return [{ mode, key: "recent", label: "", hideCwd: false, entries: sorted }];
@@ -66,8 +75,22 @@ export function groupEntries(entries: VaultSessionEntry[], mode: GroupMode): Vau
     );
   }
 
-  // Order groups by their newest entry (the buckets already hold modified-desc
-  // entries, so entries[0] is each group's newest).
-  groups.sort((a, b) => (b.entries[0]?.modified ?? 0) - (a.entries[0]?.modified ?? 0));
+  // Groups holding a pinned row first, then by newest entry. A bucket's pinned
+  // rows lead it, so entries[0] says whether it holds one; the newest entry is
+  // the first modified-desc row after them.
+  const rank = new Map<VaultGroup, { pinned: number; newest: number }>();
+  for (const group of groups) {
+    const first = group.entries[0];
+    const unpinned = group.entries.find((e) => !isPinned(e));
+    rank.set(group, {
+      pinned: first !== undefined && isPinned(first) ? 1 : 0,
+      newest: Math.max(first?.modified ?? 0, unpinned?.modified ?? 0),
+    });
+  }
+  groups.sort((a, b) => {
+    const ra = rank.get(a);
+    const rb = rank.get(b);
+    return (rb?.pinned ?? 0) - (ra?.pinned ?? 0) || (rb?.newest ?? 0) - (ra?.newest ?? 0);
+  });
   return groups;
 }

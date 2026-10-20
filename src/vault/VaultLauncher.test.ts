@@ -82,6 +82,21 @@ describe("VaultLauncher.resolve", () => {
     expect(opts.env).toEqual({ ANTHROPIC_API_KEY: "sk-1" });
   });
 
+  it("names the resumed entry, so a pinned tab can pin its vault row", async () => {
+    const entry = makeEntry({ id: "codex:t1", agent: "codex", sessionId: "t1", cwd: "/c" });
+    const opts = await new VaultLauncher(stubService([entry]), {}).resolve("codex:t1", "resume");
+    expect(opts.vaultEntryId).toBe("codex:t1");
+  });
+
+  it("names no entry for a continuation, which starts a different session", async () => {
+    const launcher = new VaultLauncher(
+      stubService([cursorCliEntry()], async () => true),
+      {},
+    );
+    const opts = await launcher.resolve("cursor:chat-1", "continue", "carry on");
+    expect(opts.vaultEntryId).toBeUndefined();
+  });
+
   it("omits env for non-claude agents", async () => {
     const entry = makeEntry({ id: "codex:t1", agent: "codex", sessionId: "t1", cwd: "/c" });
     const launcher = new VaultLauncher(stubService([entry]), {});

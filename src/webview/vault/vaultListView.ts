@@ -11,7 +11,7 @@ import { setIcon } from "../shared/iconNode";
 import { getAgentAccent, getAgentIcon } from "./agentIcons";
 import { agentLabel, formatRelativeTime, leafSegment } from "./format";
 import type { GroupMode } from "./grouping";
-import { ICON_ARCHIVE, ICON_CHEVRON_DOWN, ICON_FOLDER, ICON_RESUME, ICON_SEARCH } from "./icons";
+import { ICON_ARCHIVE, ICON_CHEVRON_DOWN, ICON_FOLDER, ICON_PIN, ICON_RESUME, ICON_SEARCH } from "./icons";
 import { emptyState } from "./renderAtoms";
 
 /** Row interaction handlers — supplied by the panel so the row builder stays pure. */
@@ -45,7 +45,7 @@ export function cursorSourceLabel(entry: VaultSessionEntry): string | undefined 
  */
 export function renderRow(
   entry: VaultSessionEntry,
-  opts: { hideCwd?: boolean; fresh?: boolean },
+  opts: { hideCwd?: boolean; fresh?: boolean; pinned?: boolean },
   cb: VaultRowCallbacks,
 ): HTMLElement {
   const row = document.createElement("div");
@@ -100,6 +100,17 @@ export function renderRow(
   titleEl.textContent = shownTitle || "(untitled session)";
   if (shownTitle) {
     titleEl.dataset.tip = shownTitle;
+  }
+  // A pinned tab is running this session. A mark, not a control: the pin
+  // belongs to the tab and is changed from the tab's context menu.
+  if (opts.pinned) {
+    row.classList.add("is-pinned");
+    const pinMark = document.createElement("span");
+    pinMark.className = "vault-row-pin";
+    pinMark.dataset.tip = "Running in a pinned tab";
+    pinMark.setAttribute("aria-label", "Pinned tab");
+    setIcon(pinMark, ICON_PIN);
+    titleEl.prepend(pinMark);
   }
   const sourceLabel = cursorSourceLabel(entry);
   if (sourceLabel) {

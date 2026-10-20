@@ -513,6 +513,13 @@
   text-overflow: ellipsis;
   min-width: 0;
 }
+.vault-row-pin {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 5px;
+  opacity: 0.75;
+  vertical-align: -1px;
+}
 .vault-row-source {
   display: inline-flex;
   align-items: center;

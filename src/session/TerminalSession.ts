@@ -115,6 +115,20 @@ export interface TerminalSession {
    */
   isAgentLaunch?: boolean;
   /**
+   * The vault entry (`<agent>:<sessionId>`) this tab was launched to resume.
+   * Persisted alongside `isAgentLaunch`, since a reload re-runs the same resume,
+   * and cleared when the fallback shell takes the pane over. Read by the vault's
+   * pinned-session mirror; a hook-reported identity outranks it.
+   */
+  vaultEntryId?: string;
+  /**
+   * The Claude session this pane is running by hand, while its tab is pinned —
+   * kept current by the vault's pinned-session mirror from the process table.
+   * Persisted so a restore can resume it; absent for an agent launch, whose
+   * restore re-runs the launch itself.
+   */
+  resumeClaudeSessionId?: string;
+  /**
    * Runtime one-shot: when the current PTY exits naturally, respawn the user's
    * default shell in this same tab instead of killing it. Set from `isAgentLaunch`
    * at each agent spawn (fresh launch + cross-restart restore) and cleared once

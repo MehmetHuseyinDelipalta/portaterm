@@ -168,7 +168,7 @@ function winsDedupe(candidate: RunningClaudeSession, existing: RunningClaudeSess
 }
 
 /** `~/.claude/sessions` — sibling of the projects root (same config-dir logic). */
-function sessionsDir(options: ClaudeReaderOptions): string {
+export function sessionsDir(options: ClaudeReaderOptions = {}): string {
   const { projectsDir } = claudeRoots(options);
   return path.join(path.dirname(projectsDir), "sessions");
 }

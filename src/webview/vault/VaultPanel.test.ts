@@ -400,6 +400,81 @@ describe("VaultPanel grouping + states (redesign 4_2)", () => {
   });
 });
 
+describe("VaultPanel pinned sessions", () => {
+  const rowIds = (host: HTMLElement) =>
+    Array.from(host.querySelectorAll<HTMLElement>(".vault-row")).map((r) => r.dataset.entryId);
+
+  it("lists a session a pinned tab runs first, with a pin mark", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(
+      result([entry({ id: "claude:new", modified: 30 }), entry({ id: "codex:old", agent: "codex", modified: 1 })]),
+    );
+    expect(rowIds(host)).toEqual(["claude:new", "codex:old"]);
+
+    panel.setPinnedEntryIds(["codex:old"]);
+    expect(rowIds(host)).toEqual(["codex:old", "claude:new"]);
+    const pinnedRow = host.querySelector<HTMLElement>(".vault-row.is-pinned");
+    expect(pinnedRow?.dataset.entryId).toBe("codex:old");
+    expect(pinnedRow?.querySelector(".vault-row-pin")?.getAttribute("aria-label")).toBe("Pinned tab");
+    expect(host.querySelectorAll(".vault-row-pin")).toHaveLength(1);
+  });
+
+  it("drops the mark and the lead when the tab is unpinned", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "claude:new", modified: 30 }), entry({ id: "claude:old", modified: 1 })]));
+    panel.setPinnedEntryIds(["claude:old"]);
+    panel.setPinnedEntryIds([]);
+    expect(rowIds(host)).toEqual(["claude:new", "claude:old"]);
+    expect(host.querySelector(".vault-row-pin")).toBeNull();
+  });
+
+  it("leads its group in Agent mode", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(
+      result([
+        entry({ id: "codex:newest", agent: "codex", modified: 50 }),
+        entry({ id: "claude:new", modified: 30 }),
+        entry({ id: "claude:old", modified: 1 }),
+      ]),
+    );
+    panel.setGroupMode("agent");
+    panel.setPinnedEntryIds(["claude:old"]);
+    expect(rowIds(host)).toEqual(["claude:old", "claude:new", "codex:newest"]);
+  });
+
+  it("never hides a pinned row behind 'Show more'", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    const many = Array.from({ length: 14 }, (_, i) => entry({ id: `claude:s${i}`, modified: 1000 + i }));
+    panel.render(result(many));
+    const pinned = many.map((e) => e.id).slice(0, 12); // more pins than the cap
+    panel.setPinnedEntryIds(pinned);
+    expect(host.querySelectorAll(".vault-row.is-pinned")).toHaveLength(12);
+    expect(host.querySelector(".vault-show-more")?.textContent).toBe("Show 2 more");
+  });
+
+  it("does not repaint for the same set", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "claude:a" })]));
+    panel.setPinnedEntryIds(["claude:a"]);
+    const row = host.querySelector(".vault-row");
+    panel.setPinnedEntryIds(["claude:a"]);
+    expect(host.querySelector(".vault-row")).toBe(row);
+  });
+
+  it("keeps the pins across a list push", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.setPinnedEntryIds(["claude:old"]);
+    panel.render(result([entry({ id: "claude:new", modified: 30 }), entry({ id: "claude:old", modified: 1 })]));
+    expect(rowIds(host)).toEqual(["claude:old", "claude:new"]);
+  });
+});
+
 describe("VaultPanel header search toggle", () => {
   const searchBar = (host: HTMLElement) => host.querySelector<HTMLElement>(".vault-header__search");
   const searchBtn = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".vault-header__search-btn");

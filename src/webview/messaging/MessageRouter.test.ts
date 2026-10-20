@@ -176,6 +176,15 @@ describe("createMessageRouter", () => {
     expect(onAgentActivityStatus).toHaveBeenCalledWith(msg);
   });
 
+  it("routes vaultPinnedSessions to the vault handler, and ignores it when no vault is mounted", () => {
+    const onVaultPinnedSessions = vi.fn();
+    const msg: ExtensionToWebViewMessage = { type: "vaultPinnedSessions", entryIds: ["claude:a"] };
+    createMessageRouter({ ...createMockHandlers(), onVaultPinnedSessions })(msg);
+    expect(onVaultPinnedSessions).toHaveBeenCalledWith(msg);
+
+    expect(() => createMessageRouter(createMockHandlers())(msg)).not.toThrow();
+  });
+
   it("silently ignores agentActivityStatus when no handler is mounted", () => {
     const handlers = createMockHandlers();
     const dispatch = createMessageRouter(handlers);

@@ -6,6 +6,9 @@
 
 export const ICON_FOLDER =
   '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 4h4l1.3 1.3H14.5v8h-13z"/></svg>';
+// The tab bar's pin, at row size: a vault row is pinned while a pinned tab runs it.
+export const ICON_PIN =
+  '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 1.75 14.25 6l-2.5 1-3.5 3.5-.5 3L3.5 9.25l3-.5 3.5-3.5z"/><path d="M5.75 10.25 1.75 14.25"/></svg>';
 export const ICON_RESUME =
   '<svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M5 3.4v9.2l7-4.6z"/></svg>';
 export const ICON_SEARCH =

@@ -79,3 +79,66 @@ describe("groupEntries", () => {
     expect(groups[0].accent).toBeUndefined();
   });
 });
+
+describe("groupEntries with pinned sessions", () => {
+  it("Recent → pinned rows lead, each band newest first", () => {
+    const groups = groupEntries(
+      [
+        entry({ id: "old-pin", modified: 1 }),
+        entry({ id: "new", modified: 30 }),
+        entry({ id: "mid", modified: 20 }),
+        entry({ id: "new-pin", modified: 5 }),
+      ],
+      "recent",
+      new Set(["old-pin", "new-pin"]),
+    );
+    expect(groups[0].entries.map((e) => e.id)).toEqual(["new-pin", "old-pin", "new", "mid"]);
+  });
+
+  it("Agent → a pinned row leads its group, and its group leads a newer one", () => {
+    const groups = groupEntries(
+      [
+        entry({ id: "c-old", agent: "claude", modified: 1 }),
+        entry({ id: "c-new", agent: "claude", modified: 9 }),
+        entry({ id: "x-newest", agent: "codex", modified: 50 }),
+      ],
+      "agent",
+      new Set(["c-old"]),
+    );
+    expect(groups.map((g) => g.key)).toEqual(["claude", "codex"]);
+    expect(groups[0].entries.map((e) => e.id)).toEqual(["c-old", "c-new"]);
+  });
+
+  it("Folder → groups without a pin keep newest-first order among themselves", () => {
+    const groups = groupEntries(
+      [
+        entry({ id: "a", cwd: "/w/a", modified: 10 }),
+        entry({ id: "b", cwd: "/w/b", modified: 40 }),
+        entry({ id: "c", cwd: "/w/c", modified: 1 }),
+        entry({ id: "c2", cwd: "/w/c", modified: 2 }),
+      ],
+      "folder",
+      new Set(["c"]),
+    );
+    expect(groups.map((g) => g.key)).toEqual(["/w/c", "/w/b", "/w/a"]);
+    expect(groups[0].entries.map((e) => e.id)).toEqual(["c", "c2"]);
+  });
+
+  it("orders two pinned groups by their newest row, pinned or not", () => {
+    const groups = groupEntries(
+      [
+        entry({ id: "c-pin", agent: "claude", modified: 1 }),
+        entry({ id: "c-new", agent: "claude", modified: 60 }),
+        entry({ id: "x-pin", agent: "codex", modified: 30 }),
+      ],
+      "agent",
+      new Set(["c-pin", "x-pin"]),
+    );
+    expect(groups.map((g) => g.key)).toEqual(["claude", "codex"]);
+  });
+
+  it("ignores pinned ids that match no entry", () => {
+    const groups = groupEntries([entry({ id: "a", modified: 1 })], "recent", new Set(["gone"]));
+    expect(groups[0].entries.map((e) => e.id)).toEqual(["a"]);
+  });
+});

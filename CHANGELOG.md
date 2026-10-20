@@ -7,9 +7,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Pinned tabs pin their session in the AI Vault.** When a pinned tab is running an agent session, that session is listed first in the Vault — at the top of Recent, and at the top of its group in Agent and Folder — with a pin mark. Unpinning the tab returns it to its usual place. This works for sessions resumed from the Vault (all agents), for Claude Code started by hand in the tab (matched to its running process, no hooks needed; macOS and Linux), and for OpenCode started by hand once its hook reports the session.
+- **A pinned tab resumes its Claude conversation after a reload.** If a pinned tab was running a Claude Code session you started by hand when the window reloaded or restarted, the restored shell runs `claude --resume <session>` at its first prompt, so the conversation continues where it was. Sessions resumed from the Vault already did this. macOS and Linux.
+- **Restored tabs keep their title.** A tab comes back from a reload under the last title its process gave it (for example the one Claude sets), instead of "Terminal N", until the new process sets its own. Names you give with Rename Tab… were already kept.
+
 ### Changed
 
 - **New website.** The extension's Homepage link now points to [portaterm.mhd.dev](https://portaterm.mhd.dev/) instead of the GitHub README, and the README links to it.
+
+### Fixed
+
+- **New Claude Code sessions reach the AI Vault within a second.** A Claude transcript write used to re-read every agent's store, and had to wait behind any Cursor read already running — both take seconds with a large Cursor history — so a session started in a terminal could take around 15 seconds to appear. Claude writes now re-read only Claude's store, and each agent's refresh runs beside the others instead of queueing behind them.
 
 ## [0.21.0] — 2026-10-20
 

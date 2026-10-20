@@ -153,6 +153,13 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     this._onDidReceiveInteraction = callback;
   }
 
+  /**
+   * The vault entries pinned tabs are running now. Changes are broadcast by the
+   * extension; this answers a list request so a vault that opens later starts
+   * from the current set rather than waiting for the next change.
+   */
+  pinnedVaultEntryIds: (() => string[]) | undefined;
+
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly sessionManager: SessionManager,
@@ -398,6 +405,9 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     if (!this.vaultService) {
       return;
     }
+    if (this.pinnedVaultEntryIds) {
+      this.safePostMessage(webview, { type: "vaultPinnedSessions", entryIds: this.pinnedVaultEntryIds() });
+    }
     // Provider-owned: the rename push (`vaultRenameSession`) and the watcher
     // both drive this same counter, so it cannot move into the shared module.
     const token = ++this._vaultRefreshSeq;
@@ -464,6 +474,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       cwd: opts.cwd,
       env: opts.env,
       isAgentLaunch: opts.isAgentLaunch,
+      vaultEntryId: opts.vaultEntryId,
       worktreeId: opts.worktreeId,
     });
     const newSession = this.sessionManager.getSession(newSessionId);

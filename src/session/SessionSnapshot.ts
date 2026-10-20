@@ -47,6 +47,26 @@ export interface SessionSnapshotMetadata {
   isAgentLaunch?: boolean;
 
   /**
+   * The vault entry an agent launch resumed, so a reload that re-runs the resume
+   * keeps the tab linked to its vault row. Optional for back-compat.
+   */
+  vaultEntryId?: string;
+
+  /**
+   * The tab's last terminal title (decoration stripped, bounded), so a restored
+   * tab keeps the name its process gave it until the new process sets one.
+   * Optional for back-compat.
+   */
+  lastTitle?: string;
+
+  /**
+   * A Claude session a pinned tab was running by hand when the window went
+   * away. Restore types `claude --resume <id>` into the restored shell. Only a
+   * UUID is ever honoured: the value is written into a shell. Optional.
+   */
+  resumeClaudeSessionId?: string;
+
+  /**
    * Tracked commands captured from OSC 633 markers, persisted so the
    * "Export Last Command…" / "Export Command…" pickers survive a window
    * reload (or full IDE restart). Only completed commands are persisted —
@@ -115,6 +135,9 @@ export const KNOWN_METADATA_KEYS: ReadonlySet<string> = new Set<keyof SessionSna
   "shellExited",
   "exitCode",
   "isAgentLaunch",
+  "vaultEntryId",
+  "lastTitle",
+  "resumeClaudeSessionId",
   "trackedCommands",
 ]);
 

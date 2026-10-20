@@ -44,6 +44,7 @@ import type {
   VaultContextCwdMessage,
   VaultLaunchTargetsMessage,
   VaultMessageRecordResponseMessage,
+  VaultPinnedSessionsMessage,
   VaultSessionDetailResponseMessage,
   VaultSessionsResponseMessage,
   WorkspaceRootChangedMessage,
@@ -114,6 +115,7 @@ export interface MessageHandlers {
   // ── AI coding vault (add-ai-coding-vault) ──
   // Optional: a webview without a mounted vault panel safely ignores these.
   onVaultSessionsResponse?(msg: VaultSessionsResponseMessage): void;
+  onVaultPinnedSessions?(msg: VaultPinnedSessionsMessage): void;
   onVaultSessionDetailResponse?(msg: VaultSessionDetailResponseMessage): void;
   onVaultMessageRecordResponse?(msg: VaultMessageRecordResponseMessage): void;
   onVaultLaunchTargets?(msg: VaultLaunchTargetsMessage): void;
@@ -265,6 +267,9 @@ export function createMessageRouter(handlers: MessageHandlers): (msg: ExtensionT
         break;
       case "vaultSessionsResponse":
         handlers.onVaultSessionsResponse?.(msg);
+        break;
+      case "vaultPinnedSessions":
+        handlers.onVaultPinnedSessions?.(msg);
         break;
       case "vaultSessionDetailResponse":
         handlers.onVaultSessionDetailResponse?.(msg);

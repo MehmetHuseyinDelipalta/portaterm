@@ -23,6 +23,8 @@ export interface ShellIntegrationCoordinatorDeps {
   setCurrentCwd: (sessionId: string, cwd: string) => void;
   /** UUID factory for new TrackedCommand.id values. Injectable for tests. */
   idFactory?: () => string;
+  /** The shell drew a prompt (OSC 633;A): it is ready to read a typed command. */
+  onPromptStart?: (sessionId: string) => void;
 }
 
 /**
@@ -126,6 +128,9 @@ export class ShellIntegrationCoordinator {
     if (event.kind === "cwd") {
       this.deps.setCurrentCwd(sessionId, event.cwd);
       return;
+    }
+    if (event.kind === "promptStart") {
+      this.deps.onPromptStart?.(sessionId);
     }
     session.commandTracking.handleEvent(event, {
       now: Date.now(),

@@ -52,7 +52,7 @@ Claude Code, Codex, OpenCode, and Cursor Agent all keep local session data in di
 ![AI Vault panel](images/ai-vault.png)
 
 - **Preview first, then choose an action** — click, Enter, or Space opens every supported row preview. Resume Claude Code / Codex / OpenCode sessions; Cursor Resume is an explicit action available only for validated CLI chats. Cursor IDE and project-mirror entries are non-resumable.
-- **Group your way** — **Recent**, **Agent**, or **Folder** grouping (persisted), with Claude / Codex / OpenCode / Cursor identity and per-agent accents.
+- **Group your way** — **Recent**, **Agent**, or **Folder** grouping (persisted), with Claude / Codex / OpenCode / Cursor identity and per-agent accents. A session running in a pinned tab is pinned to the top of its group.
 - **Find it fast** — client-side search plus a **"This folder only"** filter scoped to the focused terminal's working directory.
 - **Right-click for more** — provider-supported actions such as Resume in New Tab, Reveal in Finder/Explorer, Copy File Path or Resume Command, and Open Working Directory.
 - **Cross-platform** — store locations resolve per-OS (honoring `CLAUDE_CONFIG_DIR`, `CODEX_HOME` / `CODEX_SQLITE_HOME`, `XDG_DATA_HOME`); falls back to a built-in SQLite engine when the `sqlite3` CLI is missing (typically Windows). A missing store degrades to an empty list, never an error.

@@ -374,6 +374,8 @@ let fileTreeController: FileTreeController | null = null;
 // stacked directly above the file tree inside `#aux-region`. Fed by
 // `vaultSessionsResponse`. See: webview/vault/VaultPanel.ts.
 let vaultPanel: VaultPanel | null = null;
+// Vault entries pinned tabs are running (host-pushed, `vaultPinnedSessions`).
+let pinnedVaultEntryIds: readonly string[] = [];
 let worktreeController: WorktreeController | null = null;
 // This surface's tab-bar scope — the panel, the coordinator and the bar joined.
 // Constructed on init beside the controller that feeds it, and owning the join
@@ -995,6 +997,11 @@ const routeMessage = createMessageRouter({
   onVaultSessionsResponse(msg) {
     vaultPanel?.render(msg.result);
   },
+  onVaultPinnedSessions(msg) {
+    // Held as well as applied: the set can land before the panel mounts.
+    pinnedVaultEntryIds = msg.entryIds;
+    vaultPanel?.setPinnedEntryIds(msg.entryIds);
+  },
   onVaultSessionDetailResponse(msg) {
     vaultPanel?.handleSessionDetailResponse(msg);
   },
@@ -1373,6 +1380,7 @@ function handleInit(msg: InitMessage): void {
     // tab switch / `cd`. A vault that restored expanded refreshes itself via the
     // constructor seed (setCollapsed's collapsed→expanded path).
     vaultPanel.setContextCwd(resolveVaultContextCwd());
+    vaultPanel.setPinnedEntryIds(pinnedVaultEntryIds);
     requestVaultContextCwd();
   }
 

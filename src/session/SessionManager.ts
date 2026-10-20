@@ -18,6 +18,7 @@ import * as PtyManager from "../pty/PtyManager";
 import { PtySession } from "../pty/PtySession";
 import { queryProcessCwd } from "../pty/processCwd";
 import type { InjectionContext } from "../pty/ShellIntegrationInjector";
+import { MAX_REPORTED_TITLE_CHARS } from "../shared/paneEvidence";
 import { CustomNameRegistry, type CustomNameStorage, noopCustomNameStorage } from "./CustomNameRegistry";
 import { EditorPanelRegistry } from "./EditorPanelRegistry";
 import type { MessageSender } from "./OutputBuffer";
@@ -60,6 +61,13 @@ const SCROLLBACK_MAX_SIZE = 512 * 1024;
 
 /** Default grace window between an editor panel disposing and the underlying PTY being destroyed. */
 const DEFAULT_GRACE_DESTROY_MS = 5000;
+
+/** Bound on a restored tab title: the most the webview ever reports. */
+const MAX_RESTORED_TITLE_CHARS = MAX_REPORTED_TITLE_CHARS;
+/** A Claude session id as Claude writes them. Nothing else is ever typed into a shell. */
+const CLAUDE_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** How long a restored resume waits for the shell's first prompt before typing ahead. */
+const RESUME_PROMPT_FALLBACK_MS = 3000;
 
 // ─── Options ────────────────────────────────────────────────────────
 
@@ -188,6 +196,15 @@ export class SessionManager {
    */
   onShellExited?: (sessionId: string) => void;
 
+  /**
+   * Fired after a tab is pinned or unpinned. The vault's pinned-session mirror
+   * listens; pane lifecycle reaches it through the pane evidence store instead.
+   */
+  onPinnedChange?: () => void;
+
+  /** Restored panes still owed a `claude --resume`, with their fallback timer. */
+  private readonly pendingResumes = new Map<string, { sessionId: string; fallback: ReturnType<typeof setTimeout> }>();
+
   constructor(customNameStorage: CustomNameStorage = noopCustomNameStorage, options: SessionManagerOptions = {}) {
     this.customNames = new CustomNameRegistry(customNameStorage);
     this.storage = options.storage ?? null;
@@ -198,6 +215,7 @@ export class SessionManager {
       ctx: options.shellIntegrationContext,
       getSession: (id) => this.sessions.get(id),
       setCurrentCwd: (id, cwd) => this.setCurrentCwd(id, cwd),
+      onPromptStart: (id) => this.runPendingResume(id),
     });
     this.scrollbackDumps = new ScrollbackDumpCoordinator({
       postMessage: (webview, msg) => this.safePostMessage(webview, msg),
@@ -211,6 +229,7 @@ export class SessionManager {
       this.storage.scheduleLivePanelsWrite(record);
     });
     this.snapshots = new SnapshotPersistence({
+      titleOf: (id) => this.paneEvidence?.read(id)?.title,
       restoreEnabled: options.restoreEnabled ?? false,
       storage: this.storage,
       headlessFactory: options.headlessFactory ?? defaultHeadlessFactory,
@@ -422,6 +441,8 @@ export class SessionManager {
        * from the persisted snapshot, not this option.
        */
       isAgentLaunch?: boolean;
+      /** The vault entry a resume launch names. On restore, re-derived from the snapshot. */
+      vaultEntryId?: string;
       restoreFrom?: PendingSnapshot;
       /**
        * For split-pane children, the sessionId of the owning root tab. The
@@ -438,12 +459,22 @@ export class SessionManager {
     // restore the flag is re-derived from the persisted snapshot (the option is
     // absent there).
     const isAgentLaunch = options?.isAgentLaunch ?? restoreFrom?.metadata.isAgentLaunch ?? false;
+    // Only an agent root names a vault entry; a split pane or a plain shell never does.
+    const restoredEntryId = restoreFrom?.metadata.vaultEntryId;
+    const vaultEntryId =
+      options?.vaultEntryId ?? (typeof restoredEntryId === "string" && restoredEntryId ? restoredEntryId : undefined);
     const isSplitPane = options?.isSplitPane ?? restoreFrom?.metadata.isSplitPane ?? false;
     // Preserve the persisted sessionId during restore so the webview's
     // split-layout (`vscode.setState`) keeps referencing the same tabs.
     const id = restoreFrom ? restoreFrom.metadata.sessionId : crypto.randomUUID();
     const number = restoreFrom ? this.reserveNumber(restoreFrom.metadata.terminalNumber) : this.findAvailableNumber();
-    const name = `Terminal ${number}`;
+    // A restored tab keeps the title its process last gave it, until the new
+    // process sets its own; a fresh tab starts from its number.
+    const restoredTitle = restoreFrom?.metadata.lastTitle;
+    const name =
+      typeof restoredTitle === "string" && restoredTitle.trim() !== ""
+        ? restoredTitle.slice(0, MAX_RESTORED_TITLE_CHARS)
+        : `Terminal ${number}`;
 
     // Resolve shell/args/cwd. For restore: prefer the persisted values; for a
     // fresh session: caller-provided or auto-detected.
@@ -542,6 +573,7 @@ export class SessionManager {
       shell: resolvedShell,
       shellArgs: resolvedArgs,
       isAgentLaunch: isAgentLaunch || undefined,
+      vaultEntryId: isAgentLaunch ? vaultEntryId : undefined,
       // Arm shell-fallback for a live agent root; a restored-exited session is
       // read-only so nothing to fall back from.
       shellFallbackArmed: isAgentLaunch && !restoringExited ? true : undefined,
@@ -617,7 +649,52 @@ export class SessionManager {
     // Wire PTY events (extracted so respawnFallbackShell can re-wire a fresh PTY).
     this.wirePty(session, pty, webview);
 
+    // A pinned tab was running Claude by hand when the window went away: carry
+    // the id forward and type the resume into the restored shell.
+    const resumeId = restoreFrom?.metadata.resumeClaudeSessionId;
+    if (!restoringExited && !isAgentLaunch && typeof resumeId === "string" && CLAUDE_SESSION_ID.test(resumeId)) {
+      session.resumeClaudeSessionId = resumeId;
+      this.pendingResumes.set(id, {
+        sessionId: resumeId,
+        fallback: setTimeout(() => this.runPendingResume(id), RESUME_PROMPT_FALLBACK_MS),
+      });
+    }
+
     return id;
+  }
+
+  /**
+   * Type a pending `claude --resume` into a restored shell — on its first
+   * prompt, or after the fallback delay for a shell without integration, where
+   * the line waits in the tty's typeahead. Runs once per restored pane.
+   */
+  private runPendingResume(sessionId: string): void {
+    const pending = this.pendingResumes.get(sessionId);
+    if (!pending) {
+      return;
+    }
+    this.pendingResumes.delete(sessionId);
+    clearTimeout(pending.fallback);
+    const session = this.sessions.get(sessionId);
+    if (session?.state !== "live") {
+      return;
+    }
+    session.pty.write(`claude --resume ${pending.sessionId}\r`);
+  }
+
+  /**
+   * Record which pinned panes are running Claude by hand, so a restore can
+   * resume them; every pane not named here forgets its id. Called by the
+   * vault's pinned-session mirror after each pass over the process table.
+   */
+  setResumeClaudeSessions(byPane: ReadonlyMap<string, string>): void {
+    for (const session of this.sessions.values()) {
+      const next = session.isAgentLaunch ? undefined : byPane.get(session.id);
+      if (session.resumeClaudeSessionId !== next) {
+        session.resumeClaudeSessionId = next;
+        this.snapshots.schedulePersist(session.id);
+      }
+    }
   }
 
   /**
@@ -756,6 +833,9 @@ export class SessionManager {
     session.shellArgs = args;
     session.initialCwd = cwd;
     session.isAgentLaunch = undefined;
+    // The resumed session is gone; the vault must stop pinning it. Cleared before
+    // `markProcess` announces the change the pinned-session mirror listens for.
+    session.vaultEntryId = undefined;
     // Identity rank 1 reads these, so a shell that reclaimed the pane must stop
     // it claiming the agent that used to be here (D4).
     this.paneEvidence?.markProcess(id, { ptyPid: pty.pid, shell, isAgentLaunch: false });
@@ -1049,11 +1129,36 @@ export class SessionManager {
     session.pinned = pinned;
     this.safePostMessage(session.webview, { type: "tabPinned", tabId: sessionId, pinned });
     this.snapshots.schedulePersist(sessionId);
+    this.onPinnedChange?.();
   }
 
   /** Whether this session is a pinned root tab, which the close-tab door refuses. */
   isPinned(sessionId: string): boolean {
     return this.sessions.get(sessionId)?.pinned === true;
+  }
+
+  /**
+   * Every live pane of a pinned tab — the root and its splits — with the vault
+   * entry its launch resumed. A restored read-only tab runs nothing, so it
+   * contributes no pane.
+   */
+  pinnedTabPanes(): Array<{ paneId: string; vaultEntryId?: string }> {
+    const panes: Array<{ paneId: string; vaultEntryId?: string }> = [];
+    for (const session of this.sessions.values()) {
+      if (session.state !== "live") {
+        continue;
+      }
+      const root = this.sessions.get(session.rootTabId ?? session.id);
+      if (root?.pinned !== true) {
+        continue;
+      }
+      panes.push(
+        session.vaultEntryId === undefined
+          ? { paneId: session.id }
+          : { paneId: session.id, vaultEntryId: session.vaultEntryId },
+      );
+    }
+    return panes;
   }
 
   /**
@@ -1260,6 +1365,11 @@ export class SessionManager {
 
   /** Destroy a session (queued, serialized via operation queue). */
   destroySession(sessionId: string): void {
+    const pendingResume = this.pendingResumes.get(sessionId);
+    if (pendingResume) {
+      clearTimeout(pendingResume.fallback);
+      this.pendingResumes.delete(sessionId);
+    }
     // The pane is going away, so its evidence goes with it. Here rather than in
     // `cleanupSession`, which also runs on a natural exit that leaves the tab
     // open — and unconditionally, because a naturally-exited pane has already
@@ -1389,6 +1499,10 @@ export class SessionManager {
       return;
     }
     this._disposed = true;
+    for (const pending of this.pendingResumes.values()) {
+      clearTimeout(pending.fallback);
+    }
+    this.pendingResumes.clear();
 
     // Tear down the snapshot debounce/timer; per-session mirror disposal
     // happens below in the session iteration via snapshots.detachSession.

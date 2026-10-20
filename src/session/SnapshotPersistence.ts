@@ -91,6 +91,8 @@ export interface SnapshotPersistenceOptions {
   editorPanels?: {
     findPanelForSession(sessionId: string): string | undefined;
   };
+  /** A pane's last reported terminal title (decoration stripped), for `lastTitle`. */
+  titleOf?: (sessionId: string) => string | undefined;
 }
 
 export class SnapshotPersistence {
@@ -98,6 +100,7 @@ export class SnapshotPersistence {
   private readonly serializeAddonFactory: SerializeAddonFactory;
   private readonly getSession: (id: string) => TerminalSession | undefined;
   private readonly editorPanels?: { findPanelForSession(sessionId: string): string | undefined };
+  private readonly titleOf?: (sessionId: string) => string | undefined;
   private storage: SessionStorage | null;
   private restoreEnabled: boolean;
 
@@ -143,6 +146,7 @@ export class SnapshotPersistence {
     this.serializeAddonFactory = opts.serializeAddonFactory;
     this.getSession = opts.getSession;
     this.editorPanels = opts.editorPanels;
+    this.titleOf = opts.titleOf;
   }
 
   isRestoreEnabled(): boolean {
@@ -602,6 +606,9 @@ export class SnapshotPersistence {
       // Persisted so the restore re-spawn re-arms the shell-fallback-on-exit for
       // vault agent sessions (omitted when false to keep snapshots clean).
       isAgentLaunch: session.isAgentLaunch ? true : undefined,
+      vaultEntryId: session.vaultEntryId,
+      lastTitle: this.titleOf?.(session.id) || undefined,
+      resumeClaudeSessionId: session.resumeClaudeSessionId,
       // Snapshot a shallow copy so concurrent appendOutput / close calls
       // during JSON.stringify can't mutate what we hand off to the storage
       // layer. The TrackedCommand objects themselves are pure data (no

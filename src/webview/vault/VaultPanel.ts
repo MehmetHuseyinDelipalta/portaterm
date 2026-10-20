@@ -218,6 +218,8 @@ export class VaultPanel {
   private readonly expandedGroups = new Set<string>();
   /** Active terminal pane's cwd; the folder filter scopes to this. */
   private contextCwd: string | null = null;
+  /** Entry ids pinned tabs are running (host-pushed). They lead their group. */
+  private pinnedEntryIds: ReadonlySet<string> = new Set();
   /** Entry id being inline-renamed (enhance-vault-sessions D1). While set, an
    *  incoming list push defers its DOM rebuild so it can't destroy the open
    *  editor mid-edit; the next render after the edit ends repaints. */
@@ -762,6 +764,24 @@ export class VaultPanel {
     }
   }
 
+  /**
+   * Set the entries pinned tabs are running. They lead their group and carry a
+   * pin mark. Repaints only when the set changed, and like a list push, defers
+   * the repaint while an inline rename is open.
+   */
+  setPinnedEntryIds(ids: readonly string[]): void {
+    const next = new Set(ids);
+    if (next.size === this.pinnedEntryIds.size && ids.every((id) => this.pinnedEntryIds.has(id))) {
+      return;
+    }
+    this.pinnedEntryIds = next;
+    if (this.renamingEntryId) {
+      this.lastRenderSig = null;
+      return;
+    }
+    this.renderList();
+  }
+
   /** Toggle the "This folder only" filter (the search-row toggle button). */
   toggleFolderOnly(): void {
     this.setFolderOnly(!this.folderOnly);
@@ -863,6 +883,7 @@ export class VaultPanel {
       this.folderOnly,
       liveCwd ?? null,
       this.groupMode,
+      [...this.pinnedEntryIds].sort(),
     ]);
   }
 
@@ -918,7 +939,7 @@ export class VaultPanel {
     const prevScrollTop = this.bodyEl.scrollTop;
     this.listEl.replaceChildren();
     // Recent → flat list (no group headers). Agent/Folder → grouped headers.
-    for (const group of groupEntries(visible, this.groupMode)) {
+    for (const group of groupEntries(visible, this.groupMode, this.pinnedEntryIds)) {
       if (group.mode !== "recent") {
         const collapsed = this.collapsedGroups.has(`${group.mode}:${group.key}`);
         this.listEl.appendChild(
@@ -933,12 +954,16 @@ export class VaultPanel {
       // Cap each group at MAX_VISIBLE_PER_GROUP rows; the rest hide behind a
       // "Show N more" button (per group, so one busy agent/folder can't bury
       // the others). Newest-first ordering means the cap keeps the most recent.
+      // Pinned rows lead the group and are never cut, however many there are.
+      const pinnedCount = group.entries.filter((e) => this.pinnedEntryIds.has(e.id)).length;
+      const cap = Math.max(MAX_VISIBLE_PER_GROUP, pinnedCount);
       const expanded = this.expandedGroups.has(group.key);
-      const overflow = group.entries.length - MAX_VISIBLE_PER_GROUP;
-      const shown = expanded || overflow <= 0 ? group.entries : group.entries.slice(0, MAX_VISIBLE_PER_GROUP);
+      const overflow = group.entries.length - cap;
+      const shown = expanded || overflow <= 0 ? group.entries : group.entries.slice(0, cap);
       for (const entry of shown) {
         const fresh = this.pendingFreshIds?.has(entry.id) ?? false;
-        this.listEl.appendChild(renderRow(entry, { hideCwd: group.hideCwd, fresh }, this.rowCallbacks));
+        const pinned = this.pinnedEntryIds.has(entry.id);
+        this.listEl.appendChild(renderRow(entry, { hideCwd: group.hideCwd, fresh, pinned }, this.rowCallbacks));
       }
       if (!expanded && overflow > 0) {
         const key = group.key;
