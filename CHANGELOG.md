@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-10-20
+
 ### Added
 
 - **Pin tabs.** Right-click a terminal tab and choose **Pin Tab**. Pinned tabs move to the start of the tab bar and show a pin in place of the close button, and closing them (including closing the tab's last pane) is refused until you **Unpin Tab**. Pins survive window reloads and restarts with session restore. Kill Terminal still closes a pinned tab on purpose.
