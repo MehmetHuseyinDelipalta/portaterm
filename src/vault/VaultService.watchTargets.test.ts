@@ -18,9 +18,10 @@ describe("VaultService.getStoreWatchTargets", () => {
   it("declares exactly four non-Cursor targets, by shape and not by path alone", () => {
     // A find-by-glob check passes even if a target grows a stray field, loses its
     // agent scoping, or is silently duplicated. Pin the whole set instead.
-    const other = targets.filter((target) => target.agent === undefined);
+    const other = targets.filter((target) => target.agent !== "cursor");
     expect(other).toEqual([
-      { baseDir: expect.stringContaining(path.join(".claude", "projects")), glob: "**/*.jsonl" },
+      // Routed to the Claude reader, so a Claude write never re-reads every store.
+      { baseDir: expect.stringContaining(path.join(".claude", "projects")), glob: "**/*.jsonl", agent: "claude" },
       { baseDir: expect.any(String), glob: "state_5.sqlite*" },
       { baseDir: expect.stringMatching(/sessions$/), glob: "**/*.jsonl" },
       { baseDir: expect.stringMatching(/opencode$/), glob: "opencode.db*" },

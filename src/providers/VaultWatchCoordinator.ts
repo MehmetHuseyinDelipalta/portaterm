@@ -6,6 +6,13 @@ import type { WatcherPool } from "./fsWatcherPool";
 
 const STORE_REFRESH_DEBOUNCE_MS = 300;
 const STORE_REFRESH_MAX_WAIT_MS = 1000;
+/**
+ * A file CREATED in an agent-routed store is a new session: nothing is gained by
+ * waiting for a burst to settle, and the routed read it triggers is cheap. Short
+ * rather than zero so the creates of one action (a transcript and its sidecar)
+ * still land in one read.
+ */
+const STORE_CREATE_REFRESH_DEBOUNCE_MS = 40;
 const FOLLOW_REFRESH_DEBOUNCE_MS = 400;
 const MAX_TARGETED_REFRESH_PATHS = 128;
 
@@ -35,7 +42,7 @@ const NOOP_CLIENT: VaultWatchClient = {
 function subscribeTargets(
   watcherPool: PatternWatcherPool,
   targets: VaultWatchTarget[],
-  onEvent: (target: VaultWatchTarget, uri: vscode.Uri) => void,
+  onEvent: (target: VaultWatchTarget, uri: vscode.Uri, kind: "create" | "change" | "delete") => void,
   onError: (target: VaultWatchTarget, error: unknown) => void,
 ): Disposable[] {
   const watchers: Disposable[] = [];
@@ -44,9 +51,9 @@ function subscribeTargets(
       const events = target.events ?? ["create", "change", "delete"];
       watchers.push(
         watcherPool.subscribePattern(target.baseDir, target.glob, {
-          ...(events.includes("create") ? { create: (uri: vscode.Uri) => onEvent(target, uri) } : {}),
-          ...(events.includes("change") ? { change: (uri: vscode.Uri) => onEvent(target, uri) } : {}),
-          ...(events.includes("delete") ? { delete: (uri: vscode.Uri) => onEvent(target, uri) } : {}),
+          ...(events.includes("create") ? { create: (uri: vscode.Uri) => onEvent(target, uri, "create") } : {}),
+          ...(events.includes("change") ? { change: (uri: vscode.Uri) => onEvent(target, uri, "change") } : {}),
+          ...(events.includes("delete") ? { delete: (uri: vscode.Uri) => onEvent(target, uri, "delete") } : {}),
         }),
       );
     } catch (error) {
@@ -63,6 +70,8 @@ class StoreWatchLifecycle implements Disposable {
   private pendingAgent: VaultRefreshHint["agent"] | undefined;
   private readonly pendingPaths = new Set<string>();
   private fullRefreshPending = false;
+  /** A new-session flush is armed; later events join it rather than push it back. */
+  private createFlushArmed = false;
   private disposed = false;
 
   constructor(
@@ -72,14 +81,18 @@ class StoreWatchLifecycle implements Disposable {
     this.watchers = subscribeTargets(
       deps.watcherPool,
       deps.vaultService.getStoreWatchTargets(),
-      (target, uri) => this.scheduleRefresh(target, uri),
+      (target, uri, kind) => this.scheduleRefresh(target, uri, kind),
       (target, error) => {
         console.error("[Portaterm] Failed to watch vault store:", target.baseDir, error);
       },
     );
   }
 
-  private scheduleRefresh(target: VaultWatchTarget, uri: vscode.Uri | undefined): void {
+  private scheduleRefresh(
+    target: VaultWatchTarget,
+    uri: vscode.Uri | undefined,
+    kind: "create" | "change" | "delete" = "change",
+  ): void {
     if (this.disposed) {
       return;
     }
@@ -96,14 +109,25 @@ class StoreWatchLifecycle implements Disposable {
         this.pendingPaths.clear();
       }
     }
+    if (this.createFlushArmed) {
+      return; // already flushing soon; this event rides along
+    }
+    // Only a routed read is cheap enough to run at once: an unrouted create still
+    // waits out the burst, since it re-reads every store.
+    const fast = kind === "create" && target.agent !== undefined && !this.fullRefreshPending;
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
     }
-    this.refreshTimer = setTimeout(() => this.flushRefresh(), STORE_REFRESH_DEBOUNCE_MS);
+    this.createFlushArmed = fast;
+    this.refreshTimer = setTimeout(
+      () => this.flushRefresh(),
+      fast ? STORE_CREATE_REFRESH_DEBOUNCE_MS : STORE_REFRESH_DEBOUNCE_MS,
+    );
     this.maxWaitTimer ??= setTimeout(() => this.flushRefresh(), STORE_REFRESH_MAX_WAIT_MS);
   }
 
   private flushRefresh(): void {
+    this.createFlushArmed = false;
     if (!this.refreshTimer && !this.maxWaitTimer) {
       return;
     }

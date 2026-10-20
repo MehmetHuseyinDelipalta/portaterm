@@ -198,7 +198,11 @@ const defaultAdapters = {
     detail: (sessionId, limit) => readClaudeDetail(sessionId, {}, limit),
     entry: (sessionId) => lookupClaudeEntry(sessionId),
     record: (sessionId, msgRef) => readClaudeMessageRecord(sessionId, msgRef),
-    storeWatchTargets: () => [{ baseDir: claudeRoots({}).projectsDir, glob: "**/*.jsonl" }],
+    // Routed to the Claude reader alone: an unrouted event re-reads every agent's
+    // store, and with a large Cursor history that full pass took seconds per
+    // write — a new Claude session reached the list ~15 s after its first prompt.
+    // The reader's per-file stamp cache keeps the routed re-read cheap.
+    storeWatchTargets: () => [{ baseDir: claudeRoots({}).projectsDir, glob: "**/*.jsonl", agent: "claude" }],
     sessionWatchTargets: async (sessionId) => {
       if (!isGlobSafeId(sessionId)) {
         return [];
@@ -317,6 +321,16 @@ export class VaultService {
   private postForceHint: { agent: VaultAgentId; paths: Set<string> } | null = null;
   private postForceCompleteRefresh = false;
   private postForceRefresh: Promise<VaultListResult> | null = null;
+  /**
+   * Hinted reads of OTHER agents, run beside the in-flight hinted read rather
+   * than queued behind it. One per agent; a hint for an agent whose lane is busy
+   * waits for that lane, never for a different agent's store. Complete and force
+   * reads wait for every lane before they read.
+   */
+  private readonly lanes = new Map<VaultAgentId, Promise<VaultListResult>>();
+  private readonly laneFollowUps = new Map<VaultAgentId, { paths: Set<string>; run: Promise<VaultListResult> }>();
+  /** Cache writes in order: lanes finish independently, and two saves must never interleave. */
+  private persistChain: Promise<void> = Promise.resolve();
 
   constructor(deps: VaultServiceDeps = {}) {
     this.cursorReaderOptions = deps.cursorReaderOptions ?? {};
@@ -544,9 +558,11 @@ export class VaultService {
   /**
    * Re-read the stores incrementally (only changed sources), persist the result,
    * and return the fresh list (cache-vault-load D1/D2). Complete reads remain
-   * single-flight. Hinted reads replace one cached agent segment; hints arriving
-   * during hinted I/O merge into one bounded follow-up, with cross-agent overlap
-   * promoted to a complete refresh. Writes are awaited before later work starts.
+   * single-flight. Hinted reads replace one cached agent segment; same-agent
+   * hints arriving during hinted I/O merge into one bounded follow-up, while a
+   * hint for a different agent reads in its own lane at once — a slow store
+   * (a large Cursor history takes seconds) never delays another agent's new
+   * session. Writes are serialized and awaited before later work starts.
    */
   async refresh(opts?: { force?: boolean; hint?: VaultRefreshHint }): Promise<VaultListResult> {
     if (opts?.force) {
@@ -575,6 +591,9 @@ export class VaultService {
       return this.ensurePendingRefresh();
     }
 
+    if (this.lanes.has(hint.agent) || this.canRunLane(hint)) {
+      return this.runLane(hint);
+    }
     if (this.pendingRefresh) {
       this.queueHint(hint);
       return this.pendingRefresh;
@@ -588,6 +607,78 @@ export class VaultService {
 
     this.queueHint(hint);
     return this.ensurePendingRefresh();
+  }
+
+  /**
+   * A hint may read beside the current work only when all of that work is
+   * hinted at OTHER agents: a complete read (in flight or owed) re-reads this
+   * agent anyway, and a same-agent read is joined or followed up as before.
+   */
+  private canRunLane(hint: VaultRefreshHint): boolean {
+    if (this.mem === null || this.inflightRefreshKind !== "hinted" || this.inflightHintAgent === hint.agent) {
+      return false;
+    }
+    if (this.pendingCompleteRefresh) {
+      return false;
+    }
+    return this.pendingHint === null || this.pendingHint.agent !== hint.agent;
+  }
+
+  /** Read one agent beside the in-flight work; a busy lane gets one merged follow-up. */
+  private runLane(hint: VaultRefreshHint): Promise<VaultListResult> {
+    const busy = this.lanes.get(hint.agent);
+    if (busy) {
+      const queued = this.laneFollowUps.get(hint.agent);
+      if (queued) {
+        for (const changedPath of hint.paths) {
+          queued.paths.add(changedPath);
+        }
+        return queued.run;
+      }
+      const paths = new Set(hint.paths);
+      const run = busy
+        .catch(() => undefined)
+        .then(() => {
+          this.laneFollowUps.delete(hint.agent);
+          // Re-routed rather than re-laned: the work it ran beside may be over.
+          return this.refresh({ hint: { agent: hint.agent, paths: [...paths] } });
+        });
+      this.laneFollowUps.set(hint.agent, { paths, run });
+      return run;
+    }
+
+    const run = (async (): Promise<VaultListResult> => {
+      const { doc } = await this.readAll(this.mem, hint);
+      this.mem = this.mem ? withAgentSegment(this.mem, doc, hint.agent) : doc;
+      this.memLoaded = true;
+      await this.persist(this.mem);
+      return this.overlayCustomNames({ entries: this.mem.entries, unreadable: this.mem.unreadable });
+    })();
+    this.lanes.set(hint.agent, run);
+    const clear = () => {
+      if (this.lanes.get(hint.agent) === run) {
+        this.lanes.delete(hint.agent);
+      }
+    };
+    void run.then(clear, clear);
+    return run;
+  }
+
+  /** Save after every earlier save, so lanes finishing out of order never interleave writes. */
+  private persist(doc: VaultListCacheFileV1): Promise<void> {
+    const store = this.cacheStore;
+    if (!store) {
+      return Promise.resolve();
+    }
+    const next = this.persistChain.then(async () => {
+      try {
+        await store.save(doc);
+      } catch (err) {
+        console.error("[Portaterm] Failed to persist vault cache:", err);
+      }
+    });
+    this.persistChain = next;
+    return next;
   }
 
   private inflightCoversHint(hint: VaultRefreshHint): boolean {
@@ -753,22 +844,28 @@ export class VaultService {
     this.inflightHintPaths = hint ? new Set(hint.paths) : null;
     this.inflightHintReadStarted = false;
     const run = (async (): Promise<VaultListResult> => {
+      if (!effectiveHint) {
+        // A complete read replaces every segment, so a lane still writing one
+        // would be overwritten with what this read saw before the lane's write.
+        while (this.lanes.size > 0) {
+          await Promise.allSettled([...this.lanes.values()]);
+        }
+      }
       const { result, doc } = await this.readAll(this.mem, effectiveHint, (id) => {
         if (id === hint?.agent) {
           this.inflightHintReadStarted = true;
         }
       });
-      this.mem = doc;
+      // A hinted read owns only its agent's segment: the others may have moved
+      // in a lane while it ran, and its own snapshot of them is older.
+      const merged = effectiveHint && this.mem ? withAgentSegment(this.mem, doc, effectiveHint.agent) : doc;
+      this.mem = merged;
       this.memLoaded = true;
-      if (this.cacheStore) {
-        try {
-          await this.cacheStore.save(doc);
-        } catch (err) {
-          console.error("[Portaterm] Failed to persist vault cache:", err);
-        }
-      }
+      await this.persist(merged);
       // Overlay AFTER persistence so the cache stays agent-derived (D1).
-      return this.overlayCustomNames(result);
+      return this.overlayCustomNames(
+        merged === doc ? result : { entries: merged.entries, unreadable: merged.unreadable },
+      );
     })();
     this.inflightRefresh = run;
     try {
@@ -974,6 +1071,44 @@ export class VaultService {
 
 function dedupe(items: string[]): string[] {
   return [...new Set(items)];
+}
+
+/**
+ * `current` with one agent's segment — entries, reader cache, unreadable
+ * reasons — taken from `fresh`, and every other segment left as it is.
+ */
+function withAgentSegment(
+  current: VaultListCacheFileV1,
+  fresh: VaultListCacheFileV1,
+  agent: VaultAgentId,
+): VaultListCacheFileV1 {
+  const prefix = `${agentLabel(agent)}: `;
+  const entries = [
+    ...current.entries.filter((entry) => entry.agent !== agent),
+    ...fresh.entries.filter((entry) => entry.agent === agent),
+  ].sort((a, b) => b.modified - a.modified);
+  const agents = { ...current.agents };
+  const freshCache = fresh.agents[agent];
+  if (freshCache) {
+    agents[agent] = freshCache;
+  } else {
+    delete agents[agent];
+  }
+  const keptReasons = current.unreadable.reasons.filter((reason) => !reason.startsWith(prefix));
+  const droppedReasons = current.unreadable.reasons.filter((reason) => reason.startsWith(prefix));
+  const freshReasons = fresh.unreadable.reasons.filter((reason) => reason.startsWith(prefix));
+  const count = Math.max(
+    0,
+    current.unreadable.count -
+      droppedReasons.reduce(priorUnreadableContribution, 0) +
+      freshReasons.reduce(priorUnreadableContribution, 0),
+  );
+  return {
+    ...fresh,
+    agents,
+    entries,
+    unreadable: { count, reasons: dedupe([...keptReasons, ...freshReasons]) },
+  };
 }
 
 function priorUnreadableContribution(total: number, reason: string): number {

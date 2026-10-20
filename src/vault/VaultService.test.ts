@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   type ReaderListCache,
+  type ReaderRefreshHint,
   type ReaderResultWithState,
   VAULT_CACHE_VERSION,
   type VaultListCacheFileV1,
@@ -617,17 +618,19 @@ describe("VaultService cache: listCached + refresh", () => {
     expect(maxActiveReaders).toBe(1);
   });
 
-  it("promotes overlapping hints for different agents to one complete refresh", async () => {
+  it("reads a different agent's hint in its own lane, without waiting for the in-flight read", async () => {
+    // A slow Cursor read (seconds, with a large history) used to hold a new Claude
+    // session back until it finished, and then a complete read on top of it.
     const activeRead = deferred<ReaderResultWithState>();
     const cursor = vi
       .fn()
       .mockResolvedValueOnce(result([entry("cursor", "seed", 1)]))
-      .mockImplementationOnce(() => activeRead.promise)
-      .mockResolvedValueOnce(result([entry("cursor", "complete", 4)]));
-    const readers = makeReaders({
-      cursor,
-      claude: vi.fn(async () => result([entry("claude", "complete", 3)])),
-    });
+      .mockImplementationOnce(() => activeRead.promise);
+    const claude = vi
+      .fn()
+      .mockResolvedValueOnce(result([]))
+      .mockResolvedValueOnce(result([entry("claude", "new", 3)]));
+    const readers = makeReaders({ cursor, claude });
     const svc = new VaultService({ readers });
     await svc.refresh();
     for (const reader of Object.values(readers)) {
@@ -636,17 +639,133 @@ describe("VaultService cache: listCached + refresh", () => {
 
     const active = svc.refresh({ hint: { agent: "cursor", paths: ["/cursor/a/meta.json"] } });
     await Promise.resolve();
-    const overlapping = svc.refresh({ hint: { agent: "claude", paths: ["/claude/a.jsonl"] } });
-    activeRead.resolve(result([entry("cursor", "active", 2)]));
+    const lane = await svc.refresh({ hint: { agent: "claude", paths: ["/claude/a.jsonl"] } });
 
+    // Answered while the Cursor read is still blocked, from Cursor's last segment.
+    expect(lane.entries.map((e) => e.id)).toEqual(["claude:new", "cursor:seed"]);
+    expect(claude.mock.calls[0][1]).toEqual({ paths: ["/claude/a.jsonl"] });
+    expect(readers.codex).not.toHaveBeenCalled();
+    expect(readers.opencode).not.toHaveBeenCalled();
+
+    // The in-flight read lands its own segment and keeps the lane's.
+    activeRead.resolve(result([entry("cursor", "active", 2)]));
+    expect((await active).entries.map((e) => e.id)).toEqual(["claude:new", "cursor:active"]);
+    expect(cursor).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives a busy lane one merged follow-up, never a second concurrent read of the same agent", async () => {
+    const activeRead = deferred<ReaderResultWithState>();
+    const laneRead = deferred<ReaderResultWithState>();
+    const cursor = vi
+      .fn()
+      .mockResolvedValueOnce(result([]))
+      .mockImplementationOnce(() => activeRead.promise);
+    let claudeReads = 0;
+    const claude = vi.fn(async (_prev?: ReaderListCache, _hint?: ReaderRefreshHint) => {
+      claudeReads++;
+      if (claudeReads === 2) {
+        return laneRead.promise;
+      }
+      return result([entry("claude", `read-${claudeReads}`, claudeReads)]);
+    });
+    const svc = new VaultService({ readers: makeReaders({ cursor, claude }) });
+    await svc.refresh();
+
+    const active = svc.refresh({ hint: { agent: "cursor", paths: ["/cursor/a/meta.json"] } });
+    await Promise.resolve();
+    const first = svc.refresh({ hint: { agent: "claude", paths: ["/claude/a.jsonl"] } });
+    const second = svc.refresh({ hint: { agent: "claude", paths: ["/claude/b.jsonl"] } });
+    const third = svc.refresh({ hint: { agent: "claude", paths: ["/claude/c.jsonl"] } });
+    await Promise.resolve();
+    expect(claudeReads).toBe(2); // the lane, and not yet its follow-up
+
+    laneRead.resolve(result([entry("claude", "lane", 5)]));
+    expect((await first).entries[0].id).toBe("claude:lane");
+    const [secondResult, thirdResult] = await Promise.all([second, third]);
+    expect(secondResult).toEqual(thirdResult);
+    expect(claudeReads).toBe(3);
+    expect(claude.mock.calls[2][1]).toEqual({ paths: ["/claude/b.jsonl", "/claude/c.jsonl"] });
+
+    activeRead.resolve(result([]));
     await active;
-    const completed = await overlapping;
-    expect(completed.entries.map((e) => e.id)).toEqual(["cursor:complete", "claude:complete"]);
-    expect(readers.claude).toHaveBeenCalledTimes(1);
-    expect(readers.codex).toHaveBeenCalledTimes(1);
-    expect(readers.opencode).toHaveBeenCalledTimes(1);
-    expect(cursor).toHaveBeenCalledTimes(2);
-    expect(cursor.mock.calls[1][1]).toBeUndefined();
+  });
+
+  it("starts a complete read only after every lane has written its segment", async () => {
+    const activeRead = deferred<ReaderResultWithState>();
+    const laneRead = deferred<ReaderResultWithState>();
+    const cursor = vi
+      .fn()
+      .mockResolvedValueOnce(result([]))
+      .mockImplementationOnce(() => activeRead.promise)
+      .mockResolvedValueOnce(result([entry("cursor", "complete", 1)]));
+    const claude = vi
+      .fn()
+      .mockResolvedValueOnce(result([]))
+      .mockImplementationOnce(() => laneRead.promise)
+      .mockResolvedValueOnce(result([entry("claude", "complete", 2)]));
+    const { store } = makeCacheStore(null);
+    const svc = new VaultService({
+      readers: makeReaders({ cursor, claude }),
+      cacheStore: store as unknown as VaultCacheStore,
+    });
+    await svc.refresh();
+
+    const active = svc.refresh({ hint: { agent: "cursor", paths: ["/cursor/a/meta.json"] } });
+    await Promise.resolve();
+    const lane = svc.refresh({ hint: { agent: "claude", paths: ["/claude/a.jsonl"] } });
+    const complete = svc.refresh();
+    activeRead.resolve(result([entry("cursor", "active", 3)]));
+    await active;
+    await Promise.resolve();
+    expect(claude).toHaveBeenCalledTimes(2); // the complete read is waiting on the lane
+
+    laneRead.resolve(result([entry("claude", "lane", 4)]));
+    await lane;
+    expect((await complete).entries.map((e) => e.id)).toEqual(["claude:complete", "cursor:complete"]);
+    expect(claude).toHaveBeenCalledTimes(3);
+  });
+
+  it("serializes cache writes from lanes that finish out of order", async () => {
+    const activeRead = deferred<ReaderResultWithState>();
+    const firstSave = deferred<void>();
+    const cursor = vi
+      .fn()
+      .mockResolvedValueOnce(result([]))
+      .mockImplementationOnce(() => activeRead.promise);
+    const claude = vi
+      .fn()
+      .mockResolvedValueOnce(result([]))
+      .mockResolvedValueOnce(result([entry("claude", "lane", 2)]));
+    const { store } = makeCacheStore(null);
+    const svc = new VaultService({
+      readers: makeReaders({ cursor, claude }),
+      cacheStore: store as unknown as VaultCacheStore,
+    });
+    await svc.refresh();
+    let saving = 0;
+    let maxSaving = 0;
+    vi.mocked(store.save)
+      .mockImplementationOnce(async () => {
+        saving++;
+        maxSaving = Math.max(maxSaving, saving);
+        await firstSave.promise;
+        saving--;
+      })
+      .mockImplementation(async () => {
+        saving++;
+        maxSaving = Math.max(maxSaving, saving);
+        saving--;
+      });
+
+    const active = svc.refresh({ hint: { agent: "cursor", paths: ["/cursor/a/meta.json"] } });
+    await Promise.resolve();
+    const lane = svc.refresh({ hint: { agent: "claude", paths: ["/claude/a.jsonl"] } });
+    await vi.waitFor(() => expect(store.save).toHaveBeenCalledTimes(2));
+    activeRead.resolve(result([entry("cursor", "active", 1)]));
+    await Promise.resolve();
+    firstSave.resolve();
+    await Promise.all([active, lane]);
+    expect(maxSaving).toBe(1);
   });
 
   it("a complete caller drains an in-flight hinted refresh instead of joining it", async () => {

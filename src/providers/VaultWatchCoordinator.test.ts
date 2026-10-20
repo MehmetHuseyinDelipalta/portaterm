@@ -81,6 +81,32 @@ describe("VaultWatchCoordinator", () => {
     coordinator.dispose();
   });
 
+  it("flushes a routed create — a new session — almost at once, with the writes that follow it", () => {
+    vi.useFakeTimers();
+    const { coordinator, subscriptions } = createHarness();
+    const refreshList = vi.fn();
+    coordinator.attach({ refreshList, postFollowDetail: vi.fn() });
+    const projects = subscriptions.find((sub) => sub.baseDir === "/cursor-projects");
+
+    projects?.handlers.create?.(uri("/cursor-projects/p/new.jsonl"));
+    vi.advanceTimersByTime(20);
+    projects?.handlers.change?.(uri("/cursor-projects/p/new.jsonl"));
+    vi.advanceTimersByTime(19);
+    expect(refreshList).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(refreshList).toHaveBeenCalledTimes(1);
+    expect(refreshList).toHaveBeenCalledWith({ agent: "cursor", paths: ["/cursor-projects/p/new.jsonl"] });
+
+    // The flush is spent: the next routed write debounces normally again.
+    projects?.handlers.change?.(uri("/cursor-projects/p/new.jsonl"));
+    vi.advanceTimersByTime(299);
+    expect(refreshList).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(refreshList).toHaveBeenCalledTimes(2);
+
+    coordinator.dispose();
+  });
+
   it("subscribes Cursor databases only to eligibility events, ignoring active writes", () => {
     vi.useFakeTimers();
     const { coordinator, subscriptions } = createHarness();
@@ -143,18 +169,19 @@ describe("VaultWatchCoordinator", () => {
     const refreshList = vi.fn();
     coordinator.attach({ refreshList, postFollowDetail: vi.fn() });
 
+    // Writes, not creates: a routed create is a new session and flushes at once.
     for (let i = 0; i < 5; i++) {
-      subscriptions[2].handlers.create?.(uri(`/cursor/a/chat-${i}/store.db`));
+      subscriptions[3].handlers.change?.(uri(`/cursor-projects/a/chat-${i}.jsonl`));
       vi.advanceTimersByTime(200);
     }
     expect(refreshList).toHaveBeenCalledWith({
       agent: "cursor",
       paths: [
-        "/cursor/a/chat-0/store.db",
-        "/cursor/a/chat-1/store.db",
-        "/cursor/a/chat-2/store.db",
-        "/cursor/a/chat-3/store.db",
-        "/cursor/a/chat-4/store.db",
+        "/cursor-projects/a/chat-0.jsonl",
+        "/cursor-projects/a/chat-1.jsonl",
+        "/cursor-projects/a/chat-2.jsonl",
+        "/cursor-projects/a/chat-3.jsonl",
+        "/cursor-projects/a/chat-4.jsonl",
       ],
     });
 
