@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-10-20
+
 ### Added
 
 - **Pinned tabs pin their session in the AI Vault.** When a pinned tab is running an agent session, that session is listed first in the Vault — at the top of Recent, and at the top of its group in Agent and Folder — with a pin mark. Unpinning the tab returns it to its usual place. This works for sessions resumed from the Vault (all agents), for Claude Code started by hand in the tab (matched to its running process, no hooks needed; macOS and Linux), and for OpenCode started by hand once its hook reports the session.
