@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-10-20
+
 ### Added
 
 - **Drag tabs to reorder them.** Drag a terminal tab onto another one to move it there; a line marks where it will land. Pinned tabs stay ahead of unpinned ones, so a tab can only be moved within its own group. The new order is kept across reloads and restarts.
