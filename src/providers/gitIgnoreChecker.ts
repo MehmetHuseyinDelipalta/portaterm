@@ -65,6 +65,10 @@ export async function getIgnoredPaths(workspaceRoot: string, absolutePaths: read
       stdout += chunk.toString("utf8");
     });
     proc.on("error", () => finish(new Set()));
+    // git can exit before reading stdin (not a repository: it exits 128 at
+    // once), and the write below then fails with EPIPE. Without a listener that
+    // is an uncaught exception; the `close` handler already decides the answer.
+    proc.stdin.on("error", () => {});
     proc.on("close", (code) => {
       // Exit code 0 = some paths matched ignore rules.
       // Exit code 1 = no paths matched (NOT an error).

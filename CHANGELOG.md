@@ -17,6 +17,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **The tab bar is always shown.** A single terminal now opens as a "Terminal 1" tab with the `+` button and the tab's rename/close actions, instead of a bare terminal whose tab strip only appeared once a second tab existed.
 
+### Fixed
+
+- **No crash when the file tree checks ignored files outside a git repository.** `git check-ignore` exits before reading its input there, and the resulting broken-pipe error was uncaught in the extension host.
+
 ## [0.20.1] — 2026-10-19
 
 ### Fixed
