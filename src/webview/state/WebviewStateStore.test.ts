@@ -71,6 +71,29 @@ describe("WebviewStateStore", () => {
     expect(store.getActivePaneId("tab-1")).toBe("tab-1");
   });
 
+  it("moveTab reorders tabLayouts and persists the new order", () => {
+    for (const id of ["a", "b", "c"]) {
+      store.setLayout(id, createLeaf(id));
+    }
+    expect(store.moveTab("c", "a", "before")).toBe(true);
+    expect([...store.tabLayouts.keys()]).toEqual(["c", "a", "b"]);
+    expect(store.moveTab("c", "b", "after")).toBe(true);
+    expect([...store.tabLayouts.keys()]).toEqual(["a", "b", "c"]);
+
+    store.persist();
+    const saved = api.setState.mock.calls.at(-1)?.[0] as { tabLayouts: Record<string, unknown> };
+    expect(Object.keys(saved.tabLayouts)).toEqual(["a", "b", "c"]);
+  });
+
+  it("moveTab ignores a self-drop and unknown ids", () => {
+    store.setLayout("a", createLeaf("a"));
+    store.setLayout("b", createLeaf("b"));
+    expect(store.moveTab("a", "a", "after")).toBe(false);
+    expect(store.moveTab("missing", "a", "before")).toBe(false);
+    expect(store.moveTab("a", "missing", "before")).toBe(false);
+    expect([...store.tabLayouts.keys()]).toEqual(["a", "b"]);
+  });
+
   it("persist serializes tabLayouts and tabActivePaneIds to vscode state", () => {
     const layout = createBranch("vertical", createLeaf("s1"), createLeaf("s2"));
     store.setLayout("tab-1", layout);

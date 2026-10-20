@@ -166,6 +166,16 @@ export function getTerminalHtml(
       background: var(--vscode-tab-activeBackground, var(--vscode-editor-background));
       border-bottom: 1px solid var(--vscode-focusBorder, #007acc);
     }
+    .tab-item.tab-dragging {
+      opacity: 0.5;
+    }
+    /* Drop position while a tab is dragged over another: an edge, not a border, so the tab does not change size. */
+    .tab-item.tab-drop-before {
+      box-shadow: inset 2px 0 0 var(--vscode-focusBorder, #007acc);
+    }
+    .tab-item.tab-drop-after {
+      box-shadow: inset -2px 0 0 var(--vscode-focusBorder, #007acc);
+    }
     .tab-status {
       width: 7px;
       height: 7px;

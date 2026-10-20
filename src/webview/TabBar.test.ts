@@ -982,3 +982,94 @@ describe("a scope is named wherever it is in force", () => {
     expect([...deps.tabBarEl.querySelectorAll(".tab-name")].map((el) => el.textContent)).toEqual(["main"]);
   });
 });
+
+// ─── Drag to reorder ────────────────────────────────────────────────
+
+describe("renderTabBar: drag to reorder", () => {
+  /** jsdom has no DragEvent; a plain Event carrying a DataTransfer stand-in is enough. */
+  function fireDrag(target: HTMLElement, type: string, clientX = 0, types: string[] = []): Event {
+    const data = new Map<string, string>();
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.assign(event, {
+      clientX,
+      dataTransfer: {
+        types,
+        effectAllowed: "none",
+        dropEffect: "none",
+        setData: (mime: string, value: string) => data.set(mime, value),
+        getData: (mime: string) => data.get(mime) ?? "",
+      },
+    });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  function tabEl(deps: RenderTabBarDeps, id: string): HTMLElement {
+    const el = deps.tabBarEl.querySelector<HTMLElement>(`[data-tab-id="${id}"]`)!;
+    // 100px wide at x=0: the left half drops before, the right half after.
+    el.getBoundingClientRect = () => ({ left: 0, width: 100 }) as DOMRect;
+    return el;
+  }
+
+  function render(onTabReorder?: RenderTabBarDeps["onTabReorder"]) {
+    const deps = createMockDeps({
+      terminals: new Map([
+        ["p", { name: "Pinned", pinned: true }],
+        ["a", { name: "A" }],
+        ["b", { name: "B" }],
+      ]),
+      activeTabId: "a",
+      onTabReorder,
+    });
+    renderTabBar(deps);
+    return deps;
+  }
+
+  it("makes tabs draggable only when a reorder handler is given", () => {
+    expect(tabEl(render(), "a").draggable).toBe(false);
+    expect(tabEl(render(vi.fn()), "a").draggable).toBe(true);
+  });
+
+  it("reports the drop position from the half of the target tab", () => {
+    const onTabReorder = vi.fn();
+    const deps = render(onTabReorder);
+    fireDrag(tabEl(deps, "b"), "dragstart");
+    expect(tabEl(deps, "b").classList.contains("tab-dragging")).toBe(true);
+
+    const over = fireDrag(tabEl(deps, "a"), "dragover", 20);
+    expect(over.defaultPrevented).toBe(true);
+    expect(tabEl(deps, "a").classList.contains("tab-drop-before")).toBe(true);
+
+    fireDrag(tabEl(deps, "a"), "drop", 20);
+    expect(onTabReorder).toHaveBeenCalledWith("b", "a", "before");
+    expect(tabEl(deps, "a").classList.contains("tab-drop-before")).toBe(false);
+
+    fireDrag(tabEl(deps, "b"), "dragend");
+    fireDrag(tabEl(deps, "a"), "dragstart");
+    fireDrag(tabEl(deps, "b"), "drop", 80);
+    expect(onTabReorder).toHaveBeenLastCalledWith("a", "b", "after");
+    fireDrag(tabEl(deps, "a"), "dragend");
+    expect(tabEl(deps, "a").classList.contains("tab-dragging")).toBe(false);
+  });
+
+  it("refuses a drop across the pinned boundary", () => {
+    const onTabReorder = vi.fn();
+    const deps = render(onTabReorder);
+    fireDrag(tabEl(deps, "a"), "dragstart");
+    const over = fireDrag(tabEl(deps, "p"), "dragover", 20);
+    expect(over.defaultPrevented).toBe(false);
+    fireDrag(tabEl(deps, "p"), "drop", 20);
+    expect(onTabReorder).not.toHaveBeenCalled();
+    fireDrag(tabEl(deps, "a"), "dragend");
+  });
+
+  it("keeps the drag marks across a re-render mid-drag", () => {
+    const deps = render(vi.fn());
+    fireDrag(tabEl(deps, "b"), "dragstart");
+    fireDrag(tabEl(deps, "a"), "dragover", 80);
+    renderTabBar(deps);
+    expect(tabEl(deps, "b").classList.contains("tab-dragging")).toBe(true);
+    expect(tabEl(deps, "a").classList.contains("tab-drop-after")).toBe(true);
+    fireDrag(tabEl(deps, "b"), "dragend");
+  });
+});

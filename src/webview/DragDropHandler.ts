@@ -11,6 +11,11 @@
 
 import { escapePathForShell } from "../utils/shellEscape";
 import { FILE_TREE_DRAG_MIME } from "./fileTree/ReadOnlyFileRenderer";
+import { TAB_DRAG_MIME } from "./TabBarUtils";
+
+function isTabDrag(e: DragEvent): boolean {
+  return e.dataTransfer?.types.includes(TAB_DRAG_MIME) ?? false;
+}
 
 // ─── Path Extraction ────────────────────────────────────────────────
 
@@ -220,6 +225,10 @@ export class DragDropHandler {
   // ─── Event Handlers (arrow functions for stable `this`) ─────────
 
   private onDragEnter = (e: DragEvent): void => {
+    // A tab being reordered carries no path; it is not a drop onto the terminal.
+    if (isTabDrag(e)) {
+      return;
+    }
     // Sticky-mark in-webview file-tree drags so the rest of the gesture takes
     // the no-Shift branch + skips the "Hold Shift" hint.
     this.fileTreeDragActive = e.dataTransfer?.types.includes(FILE_TREE_DRAG_MIME) ?? false;
@@ -227,6 +236,9 @@ export class DragDropHandler {
   };
 
   private onDragOver = (e: DragEvent): void => {
+    if (isTabDrag(e)) {
+      return;
+    }
     // Must preventDefault on dragover to allow the drop
     e.preventDefault();
     // Update overlay hint based on Shift key state (user may press/release Shift mid-drag)
@@ -245,6 +257,9 @@ export class DragDropHandler {
   };
 
   private onDrop = (e: DragEvent): void => {
+    if (isTabDrag(e)) {
+      return;
+    }
     e.preventDefault();
     this.removeOverlay();
     const wasFileTreeDrag = this.fileTreeDragActive;

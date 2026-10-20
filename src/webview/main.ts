@@ -556,6 +556,14 @@ function updateTabBar(): void {
     onTabClose: (tabId) => vscode.postMessage({ type: "closeTab", tabId }),
     onAddClick: (worktreeId) => requestNewTerminal(worktreeId),
     onTabRename: (tabId, tabEl) => startInlineRename(tabId, tabEl, tabBarEl),
+    onTabReorder: (tabId, targetTabId, placement) => {
+      // The order lives in the webview's persisted layout state, which survives
+      // reloads and restarts, so the host needs no message.
+      if (store.moveTab(tabId, targetTabId, placement)) {
+        store.persist();
+        updateTabBar();
+      }
+    },
     onAfterRender: () => {
       // If an inline rename is in progress, re-anchor the overlay to the
       // (possibly re-created) tab DOM. See add-tab-rename design.md D4.

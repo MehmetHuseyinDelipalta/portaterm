@@ -158,6 +158,27 @@ export class WebviewStateStore {
     this.tabLayouts.delete(tabId);
   }
 
+  /**
+   * Move `tabId` next to `targetTabId` in tab order. The order IS `tabLayouts`'
+   * insertion order — the tab bar iterates it and `persist()` writes it in that
+   * order — so the map is rebuilt rather than a parallel order list kept beside
+   * it. Returns false (and changes nothing) for unknown ids or a self-drop.
+   */
+  moveTab(tabId: string, targetTabId: string, placement: "before" | "after"): boolean {
+    const moved = this.tabLayouts.get(tabId);
+    if (!moved || tabId === targetTabId || !this.tabLayouts.has(targetTabId)) {
+      return false;
+    }
+    const entries = [...this.tabLayouts].filter(([id]) => id !== tabId);
+    const targetIndex = entries.findIndex(([id]) => id === targetTabId);
+    entries.splice(placement === "before" ? targetIndex : targetIndex + 1, 0, [tabId, moved]);
+    this.tabLayouts.clear();
+    for (const [id, layout] of entries) {
+      this.tabLayouts.set(id, layout);
+    }
+    return true;
+  }
+
   /** Set the active pane ID for a tab. */
   setActivePaneId(tabId: string, paneId: string): void {
     this.tabActivePaneIds.set(tabId, paneId);

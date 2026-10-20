@@ -233,12 +233,94 @@ function pinnedFirst(tabs: Map<string, TabInfo>): Map<string, TabInfo> {
 
 interface TabHandlers {
   id: string;
+  pinned: boolean;
   onTabClick: (tabId: string) => void;
   onTabClose: (tabId: string) => void;
   onTabRename?: (tabId: string, tabEl: HTMLElement) => void;
+  onTabReorder?: (tabId: string, targetTabId: string, placement: "before" | "after") => void;
 }
 
 const tabHandlers = new WeakMap<HTMLElement, TabHandlers>();
+
+/** Marks a drag as a Portaterm tab, so a file or text drag is never taken for one. */
+export const TAB_DRAG_MIME = "application/x-portaterm-tab";
+
+/**
+ * The tab being dragged. `dataTransfer` is unreadable during `dragover`, and the
+ * drop target has to know the source's pin group to accept or refuse the drop.
+ */
+let draggedTab: { el: HTMLElement; id: string; pinned: boolean } | null = null;
+
+function clearDropMarks(tabBarEl: Element | null): void {
+  for (const el of tabBarEl?.querySelectorAll(".tab-drop-before, .tab-drop-after") ?? []) {
+    el.classList.remove("tab-drop-before", "tab-drop-after");
+  }
+}
+
+/**
+ * A drop target for `draggedTab`, or null. Pinned tabs always render first, so a
+ * drop is only accepted inside the source's own pin group: anything else would
+ * be undone by the next render's pinned-first partition.
+ */
+function dropTargetFor(tab: HTMLElement): TabHandlers | null {
+  const target = tabHandlers.get(tab);
+  if (!draggedTab || !target?.onTabReorder || target.id === draggedTab.id || target.pinned !== draggedTab.pinned) {
+    return null;
+  }
+  return target;
+}
+
+function placementFor(tab: HTMLElement, clientX: number): "before" | "after" {
+  const rect = tab.getBoundingClientRect();
+  return clientX < rect.left + rect.width / 2 ? "before" : "after";
+}
+
+function attachTabDragHandlers(tab: HTMLElement): void {
+  tab.addEventListener("dragstart", (event) => {
+    const handlers = tabHandlers.get(tab);
+    if (!handlers?.onTabReorder || !event.dataTransfer) {
+      event.preventDefault();
+      return;
+    }
+    draggedTab = { el: tab, id: handlers.id, pinned: handlers.pinned };
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(TAB_DRAG_MIME, handlers.id);
+    tab.classList.add("tab-dragging");
+  });
+  tab.addEventListener("dragend", () => {
+    tab.classList.remove("tab-dragging");
+    clearDropMarks(tab.parentElement);
+    draggedTab = null;
+  });
+  tab.addEventListener("dragover", (event) => {
+    if (!dropTargetFor(tab)) {
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+    const placement = placementFor(tab, event.clientX);
+    clearDropMarks(tab.parentElement);
+    tab.classList.add(placement === "before" ? "tab-drop-before" : "tab-drop-after");
+  });
+  tab.addEventListener("dragleave", (event) => {
+    if (!(event.relatedTarget instanceof Node && tab.contains(event.relatedTarget))) {
+      tab.classList.remove("tab-drop-before", "tab-drop-after");
+    }
+  });
+  tab.addEventListener("drop", (event) => {
+    const target = dropTargetFor(tab);
+    const source = draggedTab;
+    clearDropMarks(tab.parentElement);
+    if (!target || !source) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    target.onTabReorder?.(source.id, target.id, placementFor(tab, event.clientX));
+  });
+}
 
 /** Dependencies for renderTabBar — injected for testability. */
 export interface RenderTabBarDeps {
@@ -255,6 +337,11 @@ export interface RenderTabBarDeps {
    * Optional so tests not exercising rename can omit it.
    */
   onTabRename?: (tabId: string, tabEl: HTMLElement) => void;
+  /**
+   * A tab was dragged onto another tab of its pin group. Tabs are draggable only
+   * while this is set; the caller owns the order and re-renders.
+   */
+  onTabReorder?: (tabId: string, targetTabId: string, placement: "before" | "after") => void;
   /**
    * Hook called at the tail of renderTabBar — used by callers to reposition
    * an active inline-rename overlay over the (possibly re-rendered) tab DOM.
@@ -288,8 +375,18 @@ export interface RenderTabBarDeps {
  * - Always shows the tab bar, whatever the tab count or scope
  */
 export function renderTabBar(deps: RenderTabBarDeps): void {
-  const { tabBarEl, terminals, activeTabId, onTabClick, onTabClose, onAddClick, onTabRename, onAfterRender, scope } =
-    deps;
+  const {
+    tabBarEl,
+    terminals,
+    activeTabId,
+    onTabClick,
+    onTabClose,
+    onAddClick,
+    onTabRename,
+    onTabReorder,
+    onAfterRender,
+    scope,
+  } = deps;
 
   if (scope) {
     tabBarEl.dataset.worktreeScope = "active";
@@ -419,13 +516,19 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
         const handlers = tabHandlers.get(tab!);
         handlers?.onTabRename?.(handlers.id, tab!);
       });
+      attachTabDragHandlers(tab);
     }
     existingTabs.delete(id);
     orderedTabs.push(tab);
-    tabHandlers.set(tab, { id, onTabClick, onTabClose, onTabRename });
-
-    tab.className = `tab-item${id === activeTabId ? " active" : ""}${instance.exited ? " tab-exited" : ""}${instance.pinned ? " tab-pinned" : ""}`;
     const pinned = instance.pinned === true;
+    tabHandlers.set(tab, { id, pinned, onTabClick, onTabClose, onTabRename, onTabReorder });
+    tab.draggable = onTabReorder !== undefined;
+
+    // Rebuilt from scratch each render, so the drag marks are carried over: a
+    // re-render mid-drag (PTY activity, a title change) must not drop them.
+    const dragMarks = ["tab-dragging", "tab-drop-before", "tab-drop-after"].filter((c) => tab!.classList.contains(c));
+    tab.className = `tab-item${id === activeTabId ? " active" : ""}${instance.exited ? " tab-exited" : ""}${pinned ? " tab-pinned" : ""}`;
+    tab.classList.add(...dragMarks);
     tab.querySelector<HTMLElement>(".tab-close")!.hidden = pinned;
     tab.querySelector<HTMLElement>(".tab-pin")!.hidden = !pinned;
     tab.dataset.tabId = id;

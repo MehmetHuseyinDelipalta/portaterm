@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DragDropHandler, extractPathsFromDrop } from "./DragDropHandler";
 import { FILE_TREE_DRAG_MIME } from "./fileTree/ReadOnlyFileRenderer";
+import { TAB_DRAG_MIME } from "./TabBarUtils";
 
 // ─── Path Extraction ─────────────────────────────────────────────
 // Multi-strategy extraction from DataTransfer, matching VS Code priority order
@@ -211,6 +212,17 @@ describe("DragDropHandler", () => {
       tabId: "session-1",
       data: "'/Users/me/file.txt' ",
     });
+  });
+
+  it("ignores a tab being dragged to reorder: no overlay, no input", () => {
+    const dt = mockDataTransfer({ [TAB_DRAG_MIME]: "tab-1" });
+    container.dispatchEvent(makeDragEvent("dragenter", { dataTransfer: dt }));
+    expect(container.querySelector(".terminal-drop-overlay")).toBeNull();
+    const over = makeDragEvent("dragover", { dataTransfer: dt });
+    container.dispatchEvent(over);
+    expect(over.defaultPrevented).toBe(false);
+    container.dispatchEvent(makeDragEvent("drop", { dataTransfer: dt, shiftKey: true }));
+    expect(postMessage).not.toHaveBeenCalled();
   });
 
   it("does not post message on drop without Shift key", () => {
