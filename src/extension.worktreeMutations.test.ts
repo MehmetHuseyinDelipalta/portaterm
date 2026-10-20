@@ -8,11 +8,21 @@
 // why none of them could see it. This one asserts against what `activate`
 // actually hands the host.
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorktreeActions, WorktreeHostOptions, WorktreeSurface } from "./providers/WorktreeHost";
 import type { BranchDeleteRequest } from "./types/messages";
 import type { RemovalAssessment } from "./worktree/worktreeBlockers";
 import type { MutationOutcome, MutationServiceDeps } from "./worktree/worktreeMutationService";
+
+// Same cost as extension.worktreeAssembly.test.ts: each test re-imports and
+// re-activates the whole extension (`vi.resetModules()` in beforeEach), which
+// crossed Vitest's 5s default under full-suite load. A 30s per-test limit, and
+// the cold module transform paid once in a warm-up with its own budget.
+vi.setConfig({ testTimeout: 30_000 });
+
+beforeAll(async () => {
+  await import("./extension");
+}, 120_000);
 
 const setupAssembly = vi.hoisted(() => ({
   runs: [] as unknown[],
