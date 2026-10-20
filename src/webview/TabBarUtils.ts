@@ -266,8 +266,7 @@ export interface RenderTabBarDeps {
  * - Reconciles tab elements by ID so in-flight pointer events survive updates
  * - Updates tab name, status, active state, and close button in place
  * - Appends "+" add button
- * - Hides tab bar when <= 1 tab and the surface is unscoped (clean single-tab UX)
- * - Shows tab bar when 2+ tabs, or whatever the count while the surface is scoped
+ * - Always shows the tab bar, whatever the tab count or scope
  */
 export function renderTabBar(deps: RenderTabBarDeps): void {
   const { tabBarEl, terminals, activeTabId, onTabClick, onTabClose, onAddClick, onTabRename, onAfterRender, scope } =
@@ -468,12 +467,10 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     cursor = next;
   }
 
-  // Toggle visibility: hide when <= 1 tab and unscoped, show when 2+ OR scoped.
-  if (terminals.size >= 2 || scope !== undefined) {
-    tabBarEl.classList.add("visible");
-  } else {
-    tabBarEl.classList.remove("visible");
-  }
+  // Always visible (Portaterm): a lone terminal still shows its "Terminal 1" tab, the
+  // "+" button and the rename/close affordances, exactly as a scoped surface does.
+  // Upstream hid the bar below two tabs on unscoped surfaces.
+  tabBarEl.classList.add("visible");
   syncScopeDensity(tabBarEl);
   observeScopeDensity(tabBarEl);
 

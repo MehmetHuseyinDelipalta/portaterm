@@ -54,20 +54,21 @@ afterEach(() => {
 // ─── renderTabBar ───────────────────────────────────────────────────
 
 describe("renderTabBar", () => {
-  it("hides tab bar when 0 terminals exist", () => {
+  it("shows tab bar when 0 terminals exist", () => {
     const deps = createMockDeps();
     renderTabBar(deps);
-    expect(deps.tabBarEl.classList.contains("visible")).toBe(false);
+    expect(deps.tabBarEl.classList.contains("visible")).toBe(true);
     expect(deps.tabBarEl.querySelectorAll(".tab-item")).toHaveLength(0);
     // Should still have the "+" button
     expect(deps.tabBarEl.querySelector(".tab-add")).toBeTruthy();
   });
 
-  it("hides tab bar when only 1 terminal exists", () => {
+  it("shows tab bar with the lone tab when only 1 terminal exists", () => {
     const terminals = new Map<string, { name: string }>([["tab-1", { name: "Terminal 1" }]]);
     const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-1" });
     renderTabBar(deps);
-    expect(deps.tabBarEl.classList.contains("visible")).toBe(false);
+    expect(deps.tabBarEl.classList.contains("visible")).toBe(true);
+    expect(deps.tabBarEl.querySelector(".tab-item .tab-name")?.textContent).toBe("Terminal 1");
   });
 
   it("shows tab bar when 2 terminals exist", () => {
@@ -653,13 +654,13 @@ describe("the tab bar filters by stable terminal owner", () => {
     expect(tab?.worktreeId).toBe(HERE);
   });
 
-  it("presents the bar whatever the tab count while linked, and hides it below two in main", () => {
+  it("presents the bar whatever the tab count, linked or in main", () => {
     const one = new Map([["a", { name: "a" }]]);
     for (const [size, linked, visible] of [
       [0, true, true],
       [1, true, true],
-      [0, false, false],
-      [1, false, false],
+      [0, false, true],
+      [1, false, true],
     ] as const) {
       const deps = createMockDeps({
         terminals: size === 0 ? new Map() : one,

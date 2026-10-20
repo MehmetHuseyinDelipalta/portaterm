@@ -40,7 +40,7 @@ const PREVIEW_LIMIT_DEFAULT = 400;
 const PREVIEW_LIMIT_STEP = 400;
 
 /** Lowest viewport y the floating preview may occupy: the bottom of the terminal
- *  tab bar when it's shown (2+ terminals), else 0 (its rect is empty when hidden).
+ *  tab bar when it's shown, else 0 (its rect is empty when hidden).
  *  Keeps the card from covering the tab strip; re-read live so it tracks toggles. */
 function terminalTabBarBottom(): number {
   const tabBar = document.getElementById("tab-bar");

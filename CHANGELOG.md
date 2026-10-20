@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **The tab bar is always shown.** A single terminal now opens as a "Terminal 1" tab with the `+` button and the tab's rename/close actions, instead of a bare terminal whose tab strip only appeared once a second tab existed.
+
 ## [0.20.1] — 2026-10-19
 
 ### Fixed
