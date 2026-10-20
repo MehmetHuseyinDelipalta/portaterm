@@ -6,6 +6,8 @@
 
 Sidebar, secondary sidebar, bottom panel, or an editor tab. Split it, tab it, theme it. Then preview and continue **Claude Code · Codex · OpenCode · Cursor Agent CLI · Cursor IDE** history, resume compatible CLI chats, open file paths straight from agent output, and keep your shell alive across reloads.
 
+🌐 **Website:** [portaterm.mhd.dev](https://portaterm.mhd.dev/)
+
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![VS Code](https://img.shields.io/badge/VS%20Code-1.105%2B-007ACC.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)

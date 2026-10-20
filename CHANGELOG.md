@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **New website.** The extension's Homepage link now points to [portaterm.mhd.dev](https://portaterm.mhd.dev/) instead of the GitHub README, and the README links to it.
+
 ## [0.21.0] — 2026-10-20
 
 ### Added
