@@ -17,6 +17,7 @@ vi.mock("./openFileLink", () => ({
   openFileLink: vi.fn(async () => {}),
 }));
 
+import { PINNED_TAB_CLOSE_REFUSED } from "../session/closeGates";
 import { SessionManager } from "../session/SessionManager";
 import { mockExtensionContext } from "../test/providerTestUtils";
 import { FileTreeHost } from "./fileTreeHost";
@@ -168,6 +169,46 @@ describe("TerminalEditorProvider.createPanel", () => {
 
     // Dispose the panel — should not throw
     expect(() => panel.dispose()).not.toThrow();
+
+    sm.dispose();
+  });
+
+  it("refuses closeTab on a pinned tab, telling the user to unpin it, and closes it once unpinned", async () => {
+    const ctx = createMockContext();
+    const sm = new SessionManager();
+    const vscode = await import("vscode");
+    const createSpy = vi.spyOn(vscode.window, "createWebviewPanel");
+    const told = vi.spyOn(vscode.window, "showInformationMessage");
+    TerminalEditorProvider.createPanel(ctx, sm);
+    const panel = createSpy.mock.results[0].value;
+    const postMessageSpy = vi.spyOn(panel.webview, "postMessage");
+    for (const handler of panel.__messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const init = postMessageSpy.mock.calls
+      .map(([m]) => m as { type: string; tabs?: Array<{ id: string }> })
+      .find((m) => m.type === "init");
+    const tabId = init!.tabs![0].id;
+    const destroy = vi.spyOn(sm, "destroySession");
+    const close = async () => {
+      for (const handler of panel.__messageHandlers) {
+        handler({ type: "closeTab", tabId });
+      }
+      await new Promise((r) => setTimeout(r, 5));
+    };
+
+    sm.setPinned(tabId, true);
+    await close();
+    expect(told).toHaveBeenCalledWith(PINNED_TAB_CLOSE_REFUSED);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(sm.getSession(tabId)).toBeDefined();
+
+    // Non-vacuous: the same message on the unpinned tab closes it, silently.
+    told.mockClear();
+    sm.setPinned(tabId, false);
+    await close();
+    expect(told).not.toHaveBeenCalled();
+    expect(destroy).toHaveBeenCalledWith(tabId);
 
     sm.dispose();
   });
