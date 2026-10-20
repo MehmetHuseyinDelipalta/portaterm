@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { PINNED_TAB_CLOSE_REFUSED } from "../session/closeGates";
 import { confirmKill } from "../session/killConfirmation";
 import type { PaneEvidenceStore } from "../session/PaneEvidenceStore";
 import type { SessionManager } from "../session/SessionManager";
@@ -1104,6 +1105,10 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         case "closeTab":
           if (typeof message.tabId === "string") {
             const tabId = message.tabId;
+            if (this.sessionManager.isPinned(tabId)) {
+              void vscode.window.showInformationMessage(PINNED_TAB_CLOSE_REFUSED);
+              break;
+            }
             // Asked BEFORE anything is destroyed, and before the webview is told
             // to tear the tab down — the teardown is driven by `tabRemoved`, so
             // declining here leaves the tab exactly as it was.

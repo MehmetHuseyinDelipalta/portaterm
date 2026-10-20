@@ -262,6 +262,14 @@
         "title": "Rename Tab…"
       },
       {
+        "command": "portaterm.pinTab",
+        "title": "Pin Tab"
+      },
+      {
+        "command": "portaterm.unpinTab",
+        "title": "Unpin Tab"
+      },
+      {
         "command": "portaterm.newTerminalInEditor",
         "title": "Portaterm: New Terminal in Editor"
       },
@@ -484,6 +492,16 @@
           "group": "tab@1"
         },
         {
+          "command": "portaterm.pinTab",
+          "when": "webviewSection == 'terminalTab' && !tabPinned",
+          "group": "tab@2"
+        },
+        {
+          "command": "portaterm.unpinTab",
+          "when": "webviewSection == 'terminalTab' && tabPinned",
+          "group": "tab@2"
+        },
+        {
           "command": "portaterm.ctx.clearTerminal",
           "when": "webviewSection == 'splitPane'",
           "group": "terminal@1"
@@ -615,6 +633,14 @@
         },
         {
           "command": "portaterm.openVault.panel",
+          "when": "false"
+        },
+        {
+          "command": "portaterm.pinTab",
+          "when": "false"
+        },
+        {
+          "command": "portaterm.unpinTab",
           "when": "false"
         }
       ]

@@ -218,6 +218,16 @@ export function getTerminalHtml(
       opacity: 1 !important;
       background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1));
     }
+    /* Pinned tab: always-visible pin mark in the close button's 16px slot. */
+    .tab-pin {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      opacity: 0.7;
+    }
     /* Outline never participates in sizing, so switching owner cannot contract the terminal. */
     body:has(#tab-bar[data-worktree-scope]) .terminal-area {
       outline: 1px solid var(--vscode-focusBorder, #007acc);

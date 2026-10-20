@@ -63,6 +63,12 @@ export interface TerminalSession {
    * workspaceState on create for non-split-pane sessions (see add-tab-rename design.md D3).
    */
   customName: string | null;
+  /**
+   * Pinned root tab: listed first in the tab bar and refused by the close-tab
+   * door until unpinned. Persisted in the session snapshot; absent means not
+   * pinned (and always absent on split panes).
+   */
+  pinned?: boolean;
   /** Whether this is the active tab in its view */
   isActive: boolean;
   /** Assigned terminal number (for name and recycling) */

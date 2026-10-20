@@ -434,11 +434,78 @@ describe("renderTabBar: tab DOM carries data-vscode-context for rename menu", ()
     expect(JSON.parse(tabs[0].dataset.vscodeContext!)).toEqual({
       webviewSection: "terminalTab",
       tabId: "tab-abc",
+      tabPinned: false,
     });
     expect(JSON.parse(tabs[1].dataset.vscodeContext!)).toEqual({
       webviewSection: "terminalTab",
       tabId: "tab-def",
+      tabPinned: false,
     });
+  });
+
+  it("carries tabPinned so the menu offers Unpin on a pinned tab", () => {
+    const terminals = new Map<string, { name: string; pinned?: boolean }>([
+      ["tab-abc", { name: "Terminal 1", pinned: true }],
+    ]);
+    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-abc" });
+    renderTabBar(deps);
+    const tab = deps.tabBarEl.querySelector<HTMLElement>(".tab-item")!;
+    expect(JSON.parse(tab.dataset.vscodeContext!).tabPinned).toBe(true);
+  });
+});
+
+// ─── Pinned tabs ─────────────────────────────────────────────────────
+
+describe("pinned tabs", () => {
+  it("swaps the close button for a pin mark, and back when unpinned", () => {
+    const terminals = new Map<string, { name: string; pinned?: boolean }>([
+      ["tab-1", { name: "Terminal 1", pinned: true }],
+    ]);
+    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-1" });
+    renderTabBar(deps);
+    const tab = deps.tabBarEl.querySelector<HTMLElement>(".tab-item")!;
+    expect(tab.classList.contains("tab-pinned")).toBe(true);
+    expect(tab.querySelector<HTMLElement>(".tab-close")!.hidden).toBe(true);
+    expect(tab.querySelector<HTMLElement>(".tab-pin")!.hidden).toBe(false);
+
+    terminals.get("tab-1")!.pinned = false;
+    renderTabBar(deps);
+    // Same element, reconciled in place.
+    expect(deps.tabBarEl.querySelector(".tab-item")).toBe(tab);
+    expect(tab.classList.contains("tab-pinned")).toBe(false);
+    expect(tab.querySelector<HTMLElement>(".tab-close")!.hidden).toBe(false);
+    expect(tab.querySelector<HTMLElement>(".tab-pin")!.hidden).toBe(true);
+  });
+
+  it("lists pinned tabs first, each group keeping its order", () => {
+    const store = {
+      tabLayouts: new Map([
+        ["a", createLeaf("a")],
+        ["b", createLeaf("b")],
+        ["c", createLeaf("c")],
+        ["d", createLeaf("d")],
+      ]),
+      tabActivePaneIds: new Map<string, string>(),
+      terminals: new Map([
+        ["a", { name: "a" }],
+        ["b", { name: "b", pinned: true }],
+        ["c", { name: "c" }],
+        ["d", { name: "d", pinned: true }],
+      ]) as never,
+    };
+    expect([...buildTabBarData(store).tabs.keys()]).toEqual(["b", "d", "a", "c"]);
+  });
+
+  it("takes a split tab's pin from its root pane", () => {
+    const store = {
+      tabLayouts: new Map([["root", createBranch("horizontal", createLeaf("root"), createLeaf("child"))]]),
+      tabActivePaneIds: new Map([["root", "child"]]),
+      terminals: new Map([
+        ["root", { name: "root", pinned: true }],
+        ["child", { name: "child" }],
+      ]) as never,
+    };
+    expect(buildTabBarData(store).tabs.get("root")?.pinned).toBe(true);
   });
 });
 

@@ -21,6 +21,7 @@ vi.mock("./previewFileLink", () => ({
 }));
 
 import type * as vscode from "vscode";
+import { PINNED_TAB_CLOSE_REFUSED } from "../session/closeGates";
 import { createPaneEvidenceStore } from "../session/PaneEvidenceStore";
 import { SessionManager } from "../session/SessionManager";
 import {
@@ -441,6 +442,44 @@ describe("TerminalViewProvider: requestFilePreview dispatch", () => {
     }
     expect(previewFileLink).not.toHaveBeenCalled();
 
+    sm.dispose();
+  });
+
+  it("refuses closeTab on a pinned tab, telling the user to unpin it, and closes it once unpinned", async () => {
+    const sm = new SessionManager();
+    const destroy = vi.spyOn(sm, "destroySession").mockImplementation(() => {});
+    vi.spyOn(sm, "panesOfTab").mockReturnValue(["target"]);
+    let pinned = true;
+    vi.spyOn(sm, "isPinned").mockImplementation(() => pinned);
+    const told: string[] = [];
+    const realInfo = vscodeMockWindow.showInformationMessage;
+    vscodeMockWindow.showInformationMessage = ((message: string) => {
+      told.push(message);
+      return Promise.resolve(undefined);
+    }) as never;
+
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    const close = async () => {
+      for (const handler of messageHandlers) {
+        handler({ type: "closeTab", tabId: "target" });
+      }
+      await new Promise((r) => setTimeout(r, 5));
+    };
+
+    await close();
+    expect(told).toEqual([PINNED_TAB_CLOSE_REFUSED]);
+    expect(destroy).not.toHaveBeenCalled();
+
+    // Non-vacuous: the same message on the unpinned tab closes it, silently.
+    told.length = 0;
+    pinned = false;
+    await close();
+    expect(told).toEqual([]);
+    expect(destroy).toHaveBeenCalledWith("target");
+
+    vscodeMockWindow.showInformationMessage = realInfo;
     sm.dispose();
   });
 

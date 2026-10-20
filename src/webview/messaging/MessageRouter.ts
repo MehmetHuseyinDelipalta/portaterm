@@ -37,6 +37,7 @@ import type {
   SplitPaneMessage,
   SubagentPreviewResponseMessage,
   TabCreatedMessage,
+  TabPinnedMessage,
   TabRemovedMessage,
   TabRenamedMessage,
   ThemeChangedMessage,
@@ -78,6 +79,7 @@ export interface MessageHandlers {
   onTabCreated(msg: TabCreatedMessage): void;
   onTabRemoved(msg: TabRemovedMessage): void;
   onTabRenamed(msg: TabRenamedMessage): void;
+  onTabPinned(msg: TabPinnedMessage): void;
   onRestore(msg: RestoreMessage): void;
   onConfigUpdate(msg: ConfigUpdateMessage): void;
   onViewShow(): void;
@@ -182,6 +184,9 @@ export function createMessageRouter(handlers: MessageHandlers): (msg: ExtensionT
         break;
       case "tabRenamed":
         handlers.onTabRenamed(msg);
+        break;
+      case "tabPinned":
+        handlers.onTabPinned(msg);
         break;
       case "restore":
         handlers.onRestore(msg);

@@ -64,11 +64,19 @@ function observeScopeDensity(tabBarEl: HTMLElement): void {
   scopeResizeObservers.set(tabBarEl, observer);
 }
 
+/** Pin glyph for a pinned tab — stroked with `currentColor` to follow the tab's text color. */
+const PIN_ICON =
+  '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M10 1.75 14.25 6l-2.5 1-3.5 3.5-.5 3L3.5 9.25l3-.5 3.5-3.5z"/><path d="M5.75 10.25 1.75 14.25"/></svg>';
+
 export interface TabInfo {
   /** Auto-derived name (default "Terminal N"; mutated by OSC title events). */
   name: string;
   /** User-supplied name; when non-null wins over `name` in the rendered label. */
   customName?: string | null;
+  /** Pinned tabs render first, with a pin mark in place of the close button. */
+  pinned?: boolean;
   /** Stable linked-worktree owner. Absent means main. */
   worktreeId?: string;
   /** Whether the terminal process has exited. */
@@ -180,6 +188,7 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
       tabTerminals.set(tabId, {
         name: labelFor(activeInstance) ?? labelFor(rootInstance) ?? tabId,
         customName: rootInstance?.customName ?? null,
+        pinned: rootInstance?.pinned === true,
         exited: (activeInstance ?? rootInstance)?.exited,
         activityStatus: anyWaiting ? "waiting" : anyRunning ? "running" : "idle",
         worktreeId: activeInstance?.worktreeId ?? rootInstance?.worktreeId,
@@ -197,6 +206,7 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
         tabTerminals.set(tabId, {
           name: labelFor(instance) ?? tabId,
           customName: instance.customName,
+          pinned: instance.pinned === true,
           exited: instance.exited,
           activityStatus: instance.activityStatus,
           worktreeId: instance.worktreeId,
@@ -209,7 +219,16 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
       }
     }
   }
-  return { tabs: tabTerminals, hiddenWaiting };
+  return { tabs: pinnedFirst(tabTerminals), hiddenWaiting };
+}
+
+/** Pinned tabs first, each group keeping its own order (a stable partition). */
+function pinnedFirst(tabs: Map<string, TabInfo>): Map<string, TabInfo> {
+  const entries = [...tabs];
+  if (!entries.some(([, tab]) => tab.pinned)) {
+    return tabs;
+  }
+  return new Map([...entries.filter(([, tab]) => tab.pinned), ...entries.filter(([, tab]) => !tab.pinned)]);
 }
 
 interface TabHandlers {
@@ -374,6 +393,15 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
       closeBtn.addEventListener("dblclick", (event) => event.stopPropagation());
       tab.appendChild(closeBtn);
 
+      // Shown in the close button's place while pinned. A mark, not a control:
+      // pinning and unpinning go through the tab's context menu.
+      const pinMark = document.createElement("span");
+      pinMark.className = "tab-pin";
+      pinMark.innerHTML = PIN_ICON;
+      pinMark.title = "Pinned — right-click to unpin";
+      pinMark.hidden = true;
+      tab.appendChild(pinMark);
+
       tab.addEventListener("click", (event) => {
         // The second click of a native double-click is followed by `dblclick`.
         // Skip only that click; unlike the old timestamp heuristic, this cannot
@@ -396,11 +424,15 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     orderedTabs.push(tab);
     tabHandlers.set(tab, { id, onTabClick, onTabClose, onTabRename });
 
-    tab.className = `tab-item${id === activeTabId ? " active" : ""}${instance.exited ? " tab-exited" : ""}`;
+    tab.className = `tab-item${id === activeTabId ? " active" : ""}${instance.exited ? " tab-exited" : ""}${instance.pinned ? " tab-pinned" : ""}`;
+    const pinned = instance.pinned === true;
+    tab.querySelector<HTMLElement>(".tab-close")!.hidden = pinned;
+    tab.querySelector<HTMLElement>(".tab-pin")!.hidden = !pinned;
     tab.dataset.tabId = id;
     // VS Code native context menu support — `webviewSection == 'terminalTab'`
     // gates the `Rename Tab…` entry. The tabId is read by the command handler.
-    tab.dataset.vscodeContext = JSON.stringify({ webviewSection: "terminalTab", tabId: id });
+    // `tabPinned` picks Pin Tab or Unpin Tab in the context menu.
+    tab.dataset.vscodeContext = JSON.stringify({ webviewSection: "terminalTab", tabId: id, tabPinned: pinned });
 
     // Custom name takes priority over the auto-derived (OSC-mutated) `name`.
     // See add-tab-rename design.md D1.

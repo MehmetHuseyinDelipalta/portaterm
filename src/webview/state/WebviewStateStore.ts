@@ -38,6 +38,8 @@ export interface TerminalInstance {
    * via `tabRenamed` / `init` / `tabCreated` messages. See add-tab-rename design.md D1.
    */
   customName: string | null;
+  /** Pinned root tab, mirrored from the host via `init` / `tabPinned`. Absent means unpinned. */
+  pinned?: boolean;
   terminal: Terminal;
   container: HTMLDivElement;
   /** Stable linked-worktree owner. Absent means the main terminal bucket. */

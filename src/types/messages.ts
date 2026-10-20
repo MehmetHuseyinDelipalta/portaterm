@@ -1980,6 +1980,8 @@ export interface InitMessage {
     name: string;
     /** Persisted custom name for this tab (null when none). See add-tab-rename design.md D2. */
     customName: string | null;
+    /** Pinned root tab (absent from older hosts means unpinned). */
+    pinned?: boolean;
     /** Whether this tab is currently active */
     isActive: boolean;
     /** Stable linked-worktree owner. Absent means main. */
@@ -2110,6 +2112,18 @@ export interface TabRenamedMessage {
    * name. Always the host-normalized value (trimmed, possibly truncated).
    */
   customName: string | null;
+}
+
+/**
+ * Extension → WebView: a root tab was pinned or unpinned. The webview mirrors it
+ * into `TerminalInstance.pinned`; pinned tabs render first, with a pin mark in
+ * place of the close button.
+ */
+export interface TabPinnedMessage {
+  type: "tabPinned";
+  /** Target tab (root tab) session id */
+  tabId: string;
+  pinned: boolean;
 }
 
 /** A terminal tab has been removed and its PTY destroyed. */
@@ -3071,6 +3085,7 @@ export type ExtensionToWebViewMessage =
   | ExitMessage
   | TabCreatedMessage
   | TabRenamedMessage
+  | TabPinnedMessage
   | TabRemovedMessage
   | RestoreMessage
   | ConfigUpdateMessage

@@ -2194,6 +2194,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
 
+  // ─── Pin / Unpin Tab Commands ─────────────────────────────────────
+  // Offered on the tab's context menu only (hidden from the palette); the menu
+  // picks Pin or Unpin from the `tabPinned` key the tab element carries. Target
+  // resolution is the rename chain: the right-clicked tab, else the focused one.
+
+  const registerPinCommand = (command: string, pinned: boolean) =>
+    vscode.commands.registerCommand(command, (arg?: { tabId?: string }) => {
+      const tabId = resolveRenameTargetTabId(
+        arg,
+        () => TerminalEditorProvider.getActiveProvider(),
+        () => TerminalViewProvider.getLastFocusedProvider(),
+      );
+      if (tabId) {
+        sessionManager.setPinned(tabId, pinned);
+      }
+    });
+  context.subscriptions.push(registerPinCommand("portaterm.pinTab", true));
+  context.subscriptions.push(registerPinCommand("portaterm.unpinTab", false));
+
   // ─── Configuration Change Listener ────────────────────────────────
   // Push updated config to all active webviews when relevant settings change.
   // See: specs/extension-settings/spec.md#settings-change-listener

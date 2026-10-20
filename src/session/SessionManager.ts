@@ -516,6 +516,8 @@ export class SessionManager {
       pty,
       name,
       customName: hydratedCustomName,
+      // Pins live only in the snapshot: a fresh session is never pinned.
+      pinned: !isSplitPane && restoreFrom?.metadata.pinned === true,
       // Restored exited sessions surface read-only — keep them inactive so the
       // active-tab indicator doesn't move to a dead shell.
       isActive: !isSplitPane && !restoringExited && restoreFrom === undefined,
@@ -834,6 +836,7 @@ export class SessionManager {
     id: string;
     name: string;
     customName: string | null;
+    pinned: boolean;
     isActive: boolean;
     isSplitPane: false;
     worktreeId?: string;
@@ -847,6 +850,7 @@ export class SessionManager {
       id: string;
       name: string;
       customName: string | null;
+      pinned: boolean;
       isActive: boolean;
       isSplitPane: false;
       worktreeId?: string;
@@ -861,6 +865,7 @@ export class SessionManager {
           id: s.id,
           name: s.name,
           customName: s.customName,
+          pinned: s.pinned === true,
           isActive: s.isActive,
           isSplitPane: false,
           worktreeId: s.worktreeId,
@@ -879,6 +884,7 @@ export class SessionManager {
     id: string;
     name: string;
     customName: string | null;
+    pinned: boolean;
     isActive: boolean;
     isSplitPane: boolean;
     worktreeId?: string;
@@ -892,6 +898,7 @@ export class SessionManager {
       id: string;
       name: string;
       customName: string | null;
+      pinned: boolean;
       isActive: boolean;
       isSplitPane: boolean;
       worktreeId?: string;
@@ -906,6 +913,7 @@ export class SessionManager {
           id: s.id,
           name: s.name,
           customName: s.customName,
+          pinned: s.pinned === true,
           isActive: s.isActive,
           isSplitPane: s.isSplitPane,
           worktreeId: s.worktreeId,
@@ -1026,6 +1034,26 @@ export class SessionManager {
 
     this.customNames.setForNumber(session.number, normalized);
     this.snapshots.schedulePersist(sessionId);
+  }
+
+  /**
+   * Pin or unpin a root tab. Same shape as {@link renameSession}: a silent no-op
+   * for unknown ids and split panes (a pin belongs to the tab, not a leaf), then
+   * broadcast `tabPinned` to the owning webview and persist with the snapshot.
+   */
+  setPinned(sessionId: string, pinned: boolean): void {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.isSplitPane) {
+      return;
+    }
+    session.pinned = pinned;
+    this.safePostMessage(session.webview, { type: "tabPinned", tabId: sessionId, pinned });
+    this.snapshots.schedulePersist(sessionId);
+  }
+
+  /** Whether this session is a pinned root tab, which the close-tab door refuses. */
+  isPinned(sessionId: string): boolean {
+    return this.sessions.get(sessionId)?.pinned === true;
   }
 
   /**

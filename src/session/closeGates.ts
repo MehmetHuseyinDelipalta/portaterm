@@ -20,6 +20,13 @@ import {
   runningAgentPanes,
 } from "./killConfirmation";
 
+/**
+ * Shown when the close-tab door meets a pinned tab. The door refuses rather than
+ * asks: a pin exists to stop the accidental close (×, closing a tab's last pane),
+ * while the deliberate Kill Terminal commands do not pass through this door.
+ */
+export const PINNED_TAB_CLOSE_REFUSED = "Portaterm: this tab is pinned — unpin it to close.";
+
 export interface CloseGateDeps {
   evidence: KillEvidenceReader | null;
   ui: KillConfirmationUi;

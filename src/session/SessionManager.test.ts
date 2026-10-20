@@ -1399,6 +1399,56 @@ describe("SessionManager.renameSession: side effects", () => {
   });
 });
 
+describe("SessionManager.setPinned", () => {
+  const pinnedMessage = (webview: ReturnType<typeof createMockWebview>) =>
+    webview.messages.find((m) => (m as { type?: string }).type === "tabPinned") as
+      | { type: "tabPinned"; tabId: string; pinned: boolean }
+      | undefined;
+
+  it("pins and unpins a root tab, broadcasting tabPinned each time", () => {
+    const sm = new SessionManager();
+    const webview = createMockWebview();
+    const id = sm.createSession("sidebar", webview);
+    expect(sm.isPinned(id)).toBe(false);
+    webview.messages.length = 0;
+
+    sm.setPinned(id, true);
+    expect(sm.isPinned(id)).toBe(true);
+    expect(pinnedMessage(webview)).toEqual({ type: "tabPinned", tabId: id, pinned: true });
+
+    webview.messages.length = 0;
+    sm.setPinned(id, false);
+    expect(sm.isPinned(id)).toBe(false);
+    expect(pinnedMessage(webview)).toEqual({ type: "tabPinned", tabId: id, pinned: false });
+    sm.dispose();
+  });
+
+  it("reports the pin in the view's tab list", () => {
+    const sm = new SessionManager();
+    const webview = createMockWebview();
+    const pinned = sm.createSession("sidebar", webview);
+    const plain = sm.createSession("sidebar", webview);
+    sm.setPinned(pinned, true);
+    const tabs = sm.getTabsForView("sidebar");
+    expect(tabs.find((t) => t.id === pinned)?.pinned).toBe(true);
+    expect(tabs.find((t) => t.id === plain)?.pinned).toBe(false);
+    sm.dispose();
+  });
+
+  it("is a silent no-op on an unknown sessionId and on a split pane", () => {
+    const sm = new SessionManager();
+    const webview = createMockWebview();
+    sm.createSession("sidebar", webview);
+    const paneId = sm.createSession("sidebar", webview, { isSplitPane: true });
+    webview.messages.length = 0;
+    expect(() => sm.setPinned("never-existed", true)).not.toThrow();
+    sm.setPinned(paneId, true);
+    expect(sm.isPinned(paneId)).toBe(false);
+    expect(pinnedMessage(webview)).toBeUndefined();
+    sm.dispose();
+  });
+});
+
 describe("SessionManager.renameSession: persistence", () => {
   it("upserts the normalized value into workspaceState keyed by terminal number", () => {
     const memento = createFakeMemento();

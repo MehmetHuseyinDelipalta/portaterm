@@ -582,6 +582,7 @@ export class SnapshotPersistence {
       viewLocation,
       terminalNumber: session.number,
       customName: session.customName,
+      ...(session.pinned ? { pinned: true } : {}),
       shell: session.shell ?? "",
       shellArgs: session.shellArgs ?? [],
       cwd: session.initialCwd ?? "",

@@ -779,6 +779,13 @@ const routeMessage = createMessageRouter({
     }
     updateTabBar();
   },
+  onTabPinned(msg) {
+    const instance = store.terminals.get(msg.tabId);
+    if (instance) {
+      instance.pinned = msg.pinned;
+    }
+    updateTabBar();
+  },
   onRestore(msg) {
     const instance = store.terminals.get(msg.tabId);
     if (instance) {
@@ -1198,6 +1205,7 @@ function handleInit(msg: InitMessage): void {
       isSplitPane: tab.isSplitPane,
       worktreeId: tab.worktreeId,
     });
+    instance.pinned = tab.pinned === true;
     instance.terminal.onTitleChange((title) => clearWaitingOnCursorTitleLoss(tab.id, title));
     instance.terminal.onResize(() => activityTracker.setWaiting(tab.id, false));
   }

@@ -14,6 +14,8 @@ export interface SessionSnapshotMetadata {
   viewLocation: ViewLocation;
   terminalNumber: number;
   customName: string | null;
+  /** Pinned root tab. Optional for back-compat: older indexes lack it and read as unpinned. */
+  pinned?: boolean;
 
   shell: string;
   shellArgs: string[];
@@ -97,6 +99,7 @@ export const KNOWN_METADATA_KEYS: ReadonlySet<string> = new Set<keyof SessionSna
   "viewLocation",
   "terminalNumber",
   "customName",
+  "pinned",
   "shell",
   "shellArgs",
   "cwd",

@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetAll, __setAppRoot, __setWorkspaceFolders } from "../test/__mocks__/vscode";
-import { sessionStorageMock } from "../test/sessionMocks";
+import { mockWebview, sessionStorageMock } from "../test/sessionMocks";
 import type { LiveEditorPanelsRecord, SessionSnapshotMetadata, SessionSnapshotsIndex } from "./SessionSnapshot";
 
 vi.mock("../pty/processCwd", async () => (await import("../test/sessionMocks")).processCwdMock());
@@ -159,6 +159,23 @@ describe("SessionManager.hydrateFromSnapshots", () => {
     });
     expect(sm.consumeSnapshotsForPanel("P1").map((s) => s.metadata.sessionId)).toEqual(["E1"]);
     expect(sm.consumeSnapshotsForPanel("P2").map((s) => s.metadata.sessionId)).toEqual(["E2"]);
+    sm.dispose();
+  });
+});
+
+describe("SessionManager restore: pinned tabs", () => {
+  it("restores a pinned tab as pinned, and an older entry without the field as unpinned", () => {
+    const storage = makeStorageMock({ buffers: { PIN: "BUF", OLD: "BUF" } });
+    const sm = new SessionManager(undefined, { restoreEnabled: true, storage: storage as any });
+    sm.hydrateFromSnapshots({
+      version: 1,
+      entries: { PIN: meta("PIN", { pinned: true }), OLD: meta("OLD", { terminalNumber: 2 }) },
+    });
+    const ids = sm
+      .consumeSnapshotsForLocation("sidebar")
+      .map((restoreFrom) => sm.createSession("sidebar", mockWebview(), { restoreFrom }));
+
+    expect(ids.map((id) => sm.isPinned(id))).toEqual([true, false]);
     sm.dispose();
   });
 });

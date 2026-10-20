@@ -11,6 +11,7 @@ vi.mock("../pty/PtySession", async () => (await import("../test/sessionMocks")).
 vi.mock("./OutputBuffer", async () => (await import("../test/sessionMocks")).outputBufferMock());
 
 import { SessionManager } from "./SessionManager";
+import type { SessionSnapshotsIndex } from "./SessionSnapshot";
 
 const makeStorageMock = () => sessionStorageMock();
 // The addon index is fixed per addon, so `BUF#n` is captured per addon exactly
@@ -76,6 +77,35 @@ describe("SessionManager debounced persistence", () => {
 
     expect(storage.commitBufferAsync).toHaveBeenCalledTimes(1);
     expect(storage.commitIndexAsync).toHaveBeenCalledTimes(1);
+    sm.dispose();
+  });
+
+  it("a pin change schedules a persist, and the index carries the pin until it is removed", async () => {
+    const fx = makeFactories();
+    const storage = makeStorageMock();
+    const sm = new SessionManager(undefined, {
+      restoreEnabled: true,
+      headlessFactory: fx.headless,
+      serializeAddonFactory: fx.serialize,
+      storage: storage as any,
+    });
+    const id = sm.createSession("sidebar", mockWebview());
+    mockPtySessions[0].onData?.("seed");
+    await vi.advanceTimersByTimeAsync(1000);
+    storage.commitIndexAsync.mockClear();
+    const lastEntry = () =>
+      (storage.commitIndexAsync.mock.calls.at(-1)?.[0] as SessionSnapshotsIndex | undefined)?.entries[id];
+
+    sm.setPinned(id, true);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(storage.commitIndexAsync).toHaveBeenCalledTimes(1);
+    expect(lastEntry()?.pinned).toBe(true);
+
+    sm.setPinned(id, false);
+    await vi.advanceTimersByTimeAsync(1000);
+    // Written only while pinned, so an unpinned entry looks like an older one.
+    expect(lastEntry()).toBeDefined();
+    expect(lastEntry()?.pinned).toBeUndefined();
     sm.dispose();
   });
 

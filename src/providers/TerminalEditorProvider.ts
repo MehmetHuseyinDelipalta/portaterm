@@ -1,6 +1,6 @@
 import * as crypto from "node:crypto";
 import * as vscode from "vscode";
-import { disposalGrace } from "../session/closeGates";
+import { disposalGrace, PINNED_TAB_CLOSE_REFUSED } from "../session/closeGates";
 import { confirmKill, type RunningAgentPane } from "../session/killConfirmation";
 import type { PaneEvidenceStore } from "../session/PaneEvidenceStore";
 import type { SessionManager } from "../session/SessionManager";
@@ -749,6 +749,10 @@ export class TerminalEditorProvider {
         case "closeTab":
           if (typeof message.tabId === "string") {
             const tabId = message.tabId;
+            if (this.sessionManager.isPinned(tabId)) {
+              void vscode.window.showInformationMessage(PINNED_TAB_CLOSE_REFUSED);
+              break;
+            }
             // Same gate as the sidebar provider: the webview tears the tab down
             // only when `tabRemoved` comes back, so declining costs nothing.
             void confirmKill(this.sessionManager.panesOfTab(tabId), "tab", this.paneEvidence, vscode.window).then(
