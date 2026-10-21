@@ -1370,8 +1370,8 @@ function handleInit(msg: InitMessage): void {
       // Absent persisted value → expanded (default).
       getInitialCollapsed: () => store.getState().vaultCollapsed === true,
       persistCollapsed: (collapsed) => store.updateState({ vaultCollapsed: collapsed }),
-      // "This folder only" scope — default off (show all).
-      getInitialFolderOnly: () => store.getState().vaultFolderOnly === true,
+      // "This folder only" scope — default on; only an explicit opt-out shows all.
+      getInitialFolderOnly: () => store.getState().vaultFolderOnly !== false,
       persistFolderOnly: (folderOnly) => store.updateState({ vaultFolderOnly: folderOnly }),
       // Grouping mode — default "recent". Persisted across reloads.
       getInitialGroupMode: () => store.getState().vaultGroupMode ?? "recent",

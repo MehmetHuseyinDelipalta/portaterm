@@ -85,7 +85,7 @@ export interface WebviewState {
   /**
    * Vault "This folder only" filter — when true, the vault shows only sessions
    * whose cwd is within the active terminal pane's working directory. Persisted
-   * so the scope choice survives reloads. Absent → off (show all).
+   * so the scope choice survives reloads. Absent → on (scoped).
    */
   vaultFolderOnly?: boolean;
   /**

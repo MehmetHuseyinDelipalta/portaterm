@@ -3602,9 +3602,58 @@ describe("VaultPanel session preview (redesign 5_2)", () => {
 describe("VaultPanel 'This folder only' filter", () => {
   it("shows all entries when the filter is off", () => {
     const host = createHost();
-    const panel = new VaultPanel({ host, postMessage: () => {} });
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialFolderOnly: () => false });
+    panel.setContextCwd("/work/repo");
     panel.render(result([entry({ id: "a", cwd: "/work/repo" }), entry({ id: "b", cwd: "/other/proj" })]));
     expect(host.querySelectorAll(".vault-row")).toHaveLength(2);
+  });
+
+  it("is on by default when no initial state is supplied", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {} });
+    panel.setContextCwd("/work/repo");
+    panel.render(result([entry({ id: "a", cwd: "/work/repo" }), entry({ id: "b", cwd: "/other/proj" })]));
+    expect(panel.isFolderOnly()).toBe(true);
+    expect(host.querySelector<HTMLInputElement>(".vault-folder-toggle-cb")?.checked).toBe(true);
+    expect(host.querySelectorAll(".vault-row")).toHaveLength(1);
+  });
+
+  it("counts the sessions in other folders and offers to show them when the filter hides all", () => {
+    const host = createHost();
+    const persisted: boolean[] = [];
+    const panel = new VaultPanel({ host, postMessage: () => {}, persistFolderOnly: (v) => persisted.push(v) });
+    panel.setContextCwd("/fresh/proj");
+    panel.render(result([entry({ id: "a", cwd: "/work/repo" }), entry({ id: "b", cwd: "/other/proj" })]));
+
+    expect(host.querySelector(".vault-empty-title")?.textContent).toBe("No sessions in this folder");
+    expect(host.querySelector(".vault-empty-body")?.textContent).toBe("2 sessions in other folders.");
+    host.querySelector<HTMLButtonElement>(".vault-empty-action")?.click();
+
+    expect(panel.isFolderOnly()).toBe(false);
+    expect(persisted).toEqual([false]);
+    expect(host.querySelectorAll(".vault-row")).toHaveLength(2);
+    expect(host.querySelector(".vault-empty")).toBeNull();
+  });
+
+  it("uses the singular for one session in another folder", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {} });
+    panel.setContextCwd("/fresh/proj");
+    panel.render(result([entry({ id: "a", cwd: "/work/repo" })]));
+    expect(host.querySelector(".vault-empty-body")?.textContent).toBe("1 session in other folders.");
+  });
+
+  it("offers no show-all action when a query is what hides everything", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialFolderOnly: () => false });
+    panel.render(result([entry({ id: "a", cwd: "/work/repo", title: "alpha" })]));
+    const input = host.querySelector<HTMLInputElement>(".vault-search-input");
+    if (input) {
+      input.value = "zzz";
+      input.dispatchEvent(new Event("input"));
+    }
+    expect(host.querySelector(".vault-empty-title")?.textContent).toBe("No matching sessions");
+    expect(host.querySelector(".vault-empty-action")).toBeNull();
   });
 
   it("scopes to the active pane's folder subtree when on", () => {
@@ -3732,7 +3781,12 @@ describe("VaultPanel 'This folder only' filter", () => {
 
   it("no-op render guard: a local UI render updates the key so a later identical host response no-ops", () => {
     const host = createHost();
-    const panel = new VaultPanel({ host, postMessage: () => {}, getContextCwd: () => "/work" });
+    const panel = new VaultPanel({
+      host,
+      postMessage: () => {},
+      getInitialFolderOnly: () => false,
+      getContextCwd: () => "/work",
+    });
     const data = result([entry({ id: "a", cwd: "/work" }), entry({ id: "b", cwd: "/other" })]);
     panel.render(data);
     // Local UI change (folder filter) renders directly; DOM now scoped to 1 row.
@@ -3748,11 +3802,11 @@ describe("VaultPanel 'This folder only' filter", () => {
   it("exposes the filter state via isFolderOnly (gates the host cwd re-probe)", () => {
     const host = createHost();
     const panel = new VaultPanel({ host, postMessage: () => {} });
-    expect(panel.isFolderOnly()).toBe(false);
-    panel.setFolderOnly(true);
     expect(panel.isFolderOnly()).toBe(true);
     panel.setFolderOnly(false);
     expect(panel.isFolderOnly()).toBe(false);
+    panel.setFolderOnly(true);
+    expect(panel.isFolderOnly()).toBe(true);
   });
 });
 

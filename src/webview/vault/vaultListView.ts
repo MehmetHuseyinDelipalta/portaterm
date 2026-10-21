@@ -338,6 +338,8 @@ export function buildListStatus(args: {
   folderOnly: boolean;
   contextCwd: string | null;
   query: string;
+  /** Turns the folder filter off — offered when the filter alone hides everything. */
+  onShowAll?: () => void;
 }): HTMLElement | null {
   if (args.totalCount === 0) {
     return emptyState(
@@ -347,12 +349,19 @@ export function buildListStatus(args: {
     );
   }
   if (args.visibleCount === 0) {
-    // Distinct no-match state (NOT the empty state) — actionable hint.
-    const body =
-      args.folderOnly && args.contextCwd && !args.query
-        ? "No sessions in this folder. Turn off the This folder filter to see all."
-        : "Try a shorter query or clear the This folder filter.";
-    return emptyState(ICON_SEARCH, "No matching sessions", body);
+    // Distinct no-match state (NOT the empty state) — actionable hint. With no
+    // query, the folder filter alone hides every entry, so all of them live in
+    // other folders: say how many and offer the way back to them.
+    if (args.folderOnly && args.contextCwd && !args.query) {
+      const n = args.totalCount;
+      return emptyState(
+        ICON_SEARCH,
+        "No sessions in this folder",
+        `${n} ${n === 1 ? "session" : "sessions"} in other folders.`,
+        args.onShowAll ? { label: "Show all sessions", onClick: args.onShowAll } : undefined,
+      );
+    }
+    return emptyState(ICON_SEARCH, "No matching sessions", "Try a shorter query or clear the This folder filter.");
   }
   return null;
 }

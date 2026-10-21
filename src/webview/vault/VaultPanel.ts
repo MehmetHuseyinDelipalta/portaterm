@@ -91,7 +91,7 @@ export interface VaultPanelDeps {
   getInitialCollapsed?: () => boolean;
   /** Persist the collapsed state whenever it changes. */
   persistCollapsed?: (collapsed: boolean) => void;
-  /** Initial "This folder only" filter state (default false). Read once. */
+  /** Initial "This folder only" filter state (default true). Read once. */
   getInitialFolderOnly?: () => boolean;
   /** Persist the "This folder only" filter state whenever it changes. */
   persistFolderOnly?: (folderOnly: boolean) => void;
@@ -419,7 +419,7 @@ export class VaultPanel {
     // Seed collapsed state (default collapsed) — reconciles the HTML's
     // `vault-collapsed` default with any persisted preference.
     this.setCollapsed(deps.getInitialCollapsed?.() ?? true, { persist: false });
-    this.setFolderOnly(deps.getInitialFolderOnly?.() ?? false, { persist: false });
+    this.setFolderOnly(deps.getInitialFolderOnly?.() ?? true, { persist: false });
     this.onWorktreeQuery = deps.onWorktreeQuery;
     this.persistView = deps.persistView;
     this.view = this.worktreeBodyEl ? (deps.getInitialView?.() ?? "sessions") : "sessions";
@@ -935,6 +935,7 @@ export class VaultPanel {
       folderOnly: this.folderOnly,
       contextCwd: this.contextCwd,
       query: this.query,
+      onShowAll: () => this.setFolderOnly(false),
     });
     this.statusEl.replaceChildren(...(status ? [status] : []));
   }
