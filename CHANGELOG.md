@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.26.1] — 2026-10-21
+
+### Fixed
+
+- **AI Vault rows line up.** The time at the end of a row took a different width depending on its text — "2m ago" was narrower than "13h ago" — so the folder name beside it shifted from row to row. Times now share one width, and the folder names and times form straight columns down the list.
+
 ## [0.26.0] — 2026-10-21
 
 ### Added
