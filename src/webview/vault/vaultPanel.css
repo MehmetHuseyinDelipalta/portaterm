@@ -609,14 +609,16 @@
   color: inherit;
 }
 
-/* Time — tabular, right-aligned. */
+/* Time — tabular, right-aligned, one width on every row. Each row is its own
+   grid, so an `auto` column sized to its text ("2m ago" vs "13h ago") moved the
+   folder chip beside it row by row. 8ch fits the longest form, "just now". */
 .vault-row-time {
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   flex-shrink: 0;
-  min-width: 32px;
+  min-width: 8ch;
   text-align: right;
 }
 .vault-row[aria-selected="true"] .vault-row-time {
