@@ -10,6 +10,10 @@
 #   - Working tree is clean (no uncommitted changes)
 #   - CHANGELOG.md contains a "## [<version>]" entry for the version being released
 #   - Version is a valid semver in the form X.Y.Z
+#
+# Credentials: OVSX_PAT / VSCE_PAT from the environment. When OVSX_PAT is unset,
+# it is read from $OVSX_TOKEN_FILE (default ~/.config/portaterm/ovsx-token), so
+# a plain `pnpm release X.Y.Z ovsx` works without exporting the token.
 
 set -euo pipefail
 
@@ -30,6 +34,14 @@ fi
 if [[ "$TARGET" != "both" && "$TARGET" != "vsce" && "$TARGET" != "ovsx" ]]; then
   echo "error: target must be 'both', 'vsce', or 'ovsx' (got: $TARGET)" >&2
   exit 1
+fi
+
+if [[ "$TARGET" != "vsce" && -z "${OVSX_PAT:-}" ]]; then
+  OVSX_TOKEN_FILE="${OVSX_TOKEN_FILE:-$HOME/.config/portaterm/ovsx-token}"
+  if [[ -r "$OVSX_TOKEN_FILE" ]]; then
+    OVSX_PAT="$(<"$OVSX_TOKEN_FILE")"
+    export OVSX_PAT
+  fi
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

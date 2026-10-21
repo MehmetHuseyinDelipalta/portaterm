@@ -30,6 +30,9 @@ Single atomic command — `scripts/release.sh` bumps, verifies, commits, tags, p
    pnpm release 0.9.0 ovsx         # publish only to Open VSX
    ```
 
+   Open VSX needs `OVSX_PAT`. If it is not exported, the script reads it from
+   `~/.config/portaterm/ovsx-token` (override the path with `OVSX_TOKEN_FILE`).
+
    The script will, in order:
    1. Validate the version format and refuse if tag `v0.9.0` already exists.
    2. Verify the CHANGELOG section is present.

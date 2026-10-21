@@ -31,6 +31,11 @@ sessions, that is what makes the machine hot.
 - **Scoped runs skip the invariant-coverage gate.** `src/test/invariants/coverageReporter.ts`
   declines to report on a filtered run by design, so invariant-tag coverage is only checked under
   `pnpm run test:unit`.
+- **Green means exit code 0, not "all tests passed".** Vitest exits 1 when a test leaves an
+  unhandled error or rejection, even with every test passing; the summary then carries an
+  `Errors  N error` line. `scripts/release.sh` stops on that exit code, so a run you read as green
+  from its `Tests` line alone can still block a release. Check `$?` (or the `Errors` line) before
+  calling a run clean — a common cause is a test double missing a method the code path calls.
 - **Don't start a full run while another one is in flight.** Two concurrent full runs saturate the
   machine. Check first: `pgrep -f "vitest run" || true` — if that prints a PID, scope your run down
   or wait.
