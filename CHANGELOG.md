@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.26.0] — 2026-10-21
+
+### Added
+
+- **Start an agent from its group in the AI Vault.** With the Vault grouped by **Agent**, each agent's header shows a **+** button when you hover or focus it. It starts a new session of that agent in the workspace root, in a new tab, with the agent's default permission mode. The button appears only for agents installed on this machine, and not when no folder is open.
+
+### Fixed
+
+- **The Tab mark appears for agents started by Portaterm.** A Claude Code session started from the Vault's **+** button or from the Worktree view never got the **Tab** mark, because the running Claude process was not matched to its pane. It is now, so the mark appears and **Resume** brings that tab forward. macOS and Linux.
+
 ## [0.25.1] — 2026-10-21
 
 ### Fixed
