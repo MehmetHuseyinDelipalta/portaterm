@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.24.0] — 2026-10-21
+
+### Added
+
+- **The AI Vault shows which sessions are open in a tab.** A session that a terminal pane is running — in the sidebar, the panel or an editor tab — carries a **Tab** mark before its title. The mark appears when the session is resumed or reported by its agent's hook, and goes away when the agent exits or the tab is closed.
+
+### Changed
+
+- **Resume goes to the tab that is already running the session.** Resuming a session from the Vault used to open a new tab every time, starting a second agent on the same conversation. If a pane is already running that session, Resume now brings it forward — revealing the sidebar, panel or editor tab it lives in — and only opens a new tab when none is. The Vault's right-click item is now called **Resume** instead of **Resume in New Tab**.
+
 ## [0.23.0] — 2026-10-20
 
 ### Added
