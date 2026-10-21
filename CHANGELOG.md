@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.25.0] — 2026-10-21
+
 ### Changed
 
 - **The AI Vault starts scoped to the active terminal's folder.** **This folder only** is now on by default, so the Vault lists the sessions started in the focused terminal's folder (and its subfolders) instead of every project's. If you never changed the checkbox, it is turned on after this update; if you turned it off, it stays off. When the folder has no sessions, the Vault says how many are in other folders and offers **Show all sessions**, which turns the filter off.
