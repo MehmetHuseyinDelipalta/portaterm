@@ -196,7 +196,12 @@ describe("vaultResume owner mapping", () => {
 
 describe("vault list request", () => {
   it("sends the open-session set along with the list", async () => {
-    const h = mount(makeVault());
+    // The list request also reads the vault's cache and refreshes it.
+    const vault = Object.assign(makeVault(), {
+      listCached: vi.fn(() => undefined),
+      refresh: vi.fn(async () => ({ entries: [], errors: [] })),
+    });
+    const h = mount(vault);
     h.provider.openVaultEntryIds = () => ["claude:s1"];
 
     h.send({ type: "requestVaultSessions" });
