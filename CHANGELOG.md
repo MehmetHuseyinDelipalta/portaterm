@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.26.2] — 2026-10-21
+
+### Changed
+
+- **The README's AI Vault section is up to date.** It now describes the **+** button that starts an agent from its group, the **Tab** mark and Resume going to the open tab, and **This folder only** being on by default, and calls the right-click item **Resume** instead of **Resume in New Tab**. No change to the extension itself.
+
 ## [0.26.1] — 2026-10-21
 
 ### Fixed
