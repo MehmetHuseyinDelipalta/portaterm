@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.25.1] — 2026-10-21
+
+### Fixed
+
+- **The Tab mark appears for Claude Code started by hand.** A `claude` typed into a terminal with the Claude hooks off got a pin mark in a pinned tab but never the **Tab** mark, and **Resume** on it started a second agent instead of going to that tab. The Vault now matches the running Claude process to its pane for the Tab mark too, so the mark appears and Resume brings the tab forward. macOS and Linux.
+
 ## [0.25.0] — 2026-10-21
 
 ### Changed
