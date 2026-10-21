@@ -141,6 +141,16 @@ describe("createClaudeProcessLookup", () => {
     await expect(lookup([{ paneId: "p1", ptyPid: 100 }])).resolves.toEqual(new Map([["p1", "mine"]]));
   });
 
+  it("finds a claude launched as the pane's pty process itself", async () => {
+    // A vault or worktree launch spawns `claude` with no shell above it.
+    const lookup = createClaudeProcessLookup({
+      table: table({ 100: { kind: "ok", pids: [] } }),
+      listRunning: async () => ({ kind: "ok", sessions: [session({ sessionId: "launched", pid: 100 })] }),
+      sessionMtime: async () => undefined,
+    });
+    await expect(lookup([{ paneId: "p1", ptyPid: 100 }])).resolves.toEqual(new Map([["p1", "launched"]]));
+  });
+
   it("does not guess from the directory: a claude in the same folder but another pty is not this pane's", async () => {
     const lookup = createClaudeProcessLookup({
       table: table({ 100: { kind: "ok", pids: [101] } }),

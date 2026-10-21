@@ -50,6 +50,22 @@ describe("resolveClaudeSession — step 1 (process subtree ∩ registry)", () =>
     });
     expect(await resolveClaudeSession(TID, deps)).toEqual({ sessionId: "new", cwd: "/b", evidence: "process" });
   });
+
+  it("matches a claude that IS the pty process, as an agent launch spawns it", async () => {
+    // No shell above it: the pty pid is claude's own, and its subtree is empty.
+    const deps = makeDeps({
+      paneSubtree: vi.fn(async () => ({ kind: "known" as const, pids: [] })),
+      runningIndex: vi.fn(async () =>
+        indexRunningSessions([run("launched", 1000, "/work/proj"), run("other", 5000, "/work/proj")]),
+      ),
+    });
+    expect(await resolveClaudeSession(TID, deps)).toEqual({
+      sessionId: "launched",
+      cwd: "/work/proj",
+      evidence: "process",
+    });
+    expect(deps.getCwd).not.toHaveBeenCalled();
+  });
 });
 
 describe("resolveClaudeSession — step 2 (running by cwd)", () => {

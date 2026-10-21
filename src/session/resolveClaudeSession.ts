@@ -1,7 +1,7 @@
 // src/session/resolveClaudeSession.ts — Map a terminal pane to the Claude
 // `sessionId` it is showing. Resolution order (design.md D4 / spec "Map a
 // terminal to its Claude session"):
-//   1. process subtree of the pane's pty ∩ running PID registry (exact pid;
+//   1. the pane's pty and its process subtree ∩ running PID registry (exact pid;
 //      tie-break newest <sessionId>.jsonl mtime when >1);
 //   2. running registry entries whose cwd equals the pane's live cwd (newest
 //      mtime) — ONLY when step 1 could not be asked. A process table that
@@ -123,14 +123,17 @@ export async function resolveClaudeSession(
   // tie-break. Step 3 reads from disk where no entrypoint exists — design.md D3.
   const running = await deps.runningIndex();
 
-  // Step 1 — exact: the claude node pid is a descendant of the pane's pty shell.
+  // Step 1 — exact: the claude node pid is the pane's pty process or one of its
+  // descendants. The pty itself counts because an agent launch spawns `claude`
+  // AS the pty process — there is no shell above it — and the subtree, which
+  // names descendants only, would otherwise never hold it.
   // `refuted` records that the table ANSWERED and placed no running session here.
   let refuted = false;
   const ptyPid = deps.getPtyPid(terminalId);
   if (ptyPid !== undefined) {
     const subtree = await deps.paneSubtree(ptyPid);
     if (subtree.kind === "known") {
-      const inTree = running.byPid(new Set(subtree.pids));
+      const inTree = running.byPid(new Set([ptyPid, ...subtree.pids]));
       if (inTree.length === 1) {
         return { sessionId: inTree[0].sessionId, cwd: inTree[0].cwd, evidence: "process" };
       }
