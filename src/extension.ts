@@ -73,7 +73,6 @@ import {
   createClaudeProcessLookup,
   createPinnedVaultPublisher,
   livePaneForEntry,
-  pinnedEntryIds,
   resolvePinnedEntryIds,
 } from "./vault/pinnedVaultSessions";
 import { claudeSessionMtime } from "./vault/readers/claudePaths";
@@ -1700,15 +1699,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
   // Claude writes `<pid>.json` here when it starts and removes it on exit, and
   // neither moment is a pane event: without the watch, a `claude` typed into a
-  // pinned tab stayed unpinned until the pane next changed activity. Held only
-  // while some tab is pinned, so a window without pins watches nothing.
+  // tab stayed unmarked until the pane next changed activity. Held only while
+  // some pane is live, so a window without terminals watches nothing.
   let claudeRegistryWatch: vscode.Disposable | undefined;
+  const refreshFromRegistry = () => {
+    pinnedVaultPublisher.refresh();
+    openVaultPublisher.refresh();
+  };
   const watchClaudeRegistry = (needed: boolean) => {
     if (needed && claudeRegistryWatch === undefined) {
       claudeRegistryWatch = fsWatcherPool.subscribePattern(claudeRegistryDir(), "*.json", {
-        create: () => pinnedVaultPublisher.refresh(),
-        change: () => pinnedVaultPublisher.refresh(),
-        delete: () => pinnedVaultPublisher.refresh(),
+        create: refreshFromRegistry,
+        change: refreshFromRegistry,
+        delete: refreshFromRegistry,
       });
     } else if (!needed && claudeRegistryWatch !== undefined) {
       claudeRegistryWatch.dispose();
@@ -1735,15 +1738,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const claudeSessionId = paneEvidence.read(paneId)?.turn?.report.agentSessionId;
     return claudeSessionId === undefined ? undefined : formatEntryId("claude", claudeSessionId);
   };
+  const identitySources = {
+    reported: reportedEntryId,
+    ptyPid: (paneId: string) => paneEvidence.read(paneId)?.ptyPid,
+    claudeByProcess,
+  };
   const pinnedVaultPublisher = createPinnedVaultPublisher({
     compute: () => {
-      const panes = sessionManager.pinnedTabPanes();
-      watchClaudeRegistry(panes.length > 0);
-      const resolution = resolvePinnedEntryIds(panes, {
-        reported: reportedEntryId,
-        ptyPid: (paneId) => paneEvidence.read(paneId)?.ptyPid,
-        claudeByProcess,
-      });
+      const resolution = resolvePinnedEntryIds(sessionManager.pinnedTabPanes(), identitySources);
       return resolution.then(({ entryIds, claudeByPane }) => {
         // The same pass tells a restore which pinned panes to resume.
         sessionManager.setResumeClaudeSessions(claudeByPane);
@@ -1757,11 +1759,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
   sidebarProvider.pinnedVaultEntryIds = () => pinnedVaultPublisher.current();
   panelProvider.pinnedVaultEntryIds = () => pinnedVaultPublisher.current();
+  // The Claude sessions the last open-set pass found running under each live
+  // pane's pty, so a `claude` typed by hand with the hooks off still counts.
+  let openClaudeByPane: ReadonlyMap<string, string> = new Map();
+  const runningEntryId = (paneId: string): string | undefined => {
+    const reported = reportedEntryId(paneId);
+    if (reported !== undefined) {
+      return reported;
+    }
+    const claudeSessionId = openClaudeByPane.get(paneId);
+    return claudeSessionId === undefined ? undefined : formatEntryId("claude", claudeSessionId);
+  };
   // A resume of a session some pane already runs focuses that pane instead of
-  // opening a second agent on the same transcript. Read from hook reports and
-  // vault launches only — no process-table pass on a click.
+  // opening a second agent on the same transcript. Read from hook reports, the
+  // last open-set pass, and vault launches — no process-table pass on a click.
   const focusLiveVaultSession = async (entryId: string): Promise<boolean> => {
-    const pane = livePaneForEntry(sessionManager.livePanes(), reportedEntryId, entryId);
+    const pane = livePaneForEntry(sessionManager.livePanes(), runningEntryId, entryId);
     if (pane === undefined) {
       return false;
     }
@@ -1773,7 +1786,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Which entries those live panes run, by the same rule, so the vault marks
   // exactly the rows a resume would focus rather than relaunch.
   const openVaultPublisher = createPinnedVaultPublisher({
-    compute: () => pinnedEntryIds(sessionManager.livePanes(), reportedEntryId),
+    compute: async () => {
+      const panes = sessionManager.livePanes();
+      watchClaudeRegistry(panes.length > 0);
+      const { entryIds, claudeByPane } = await resolvePinnedEntryIds(panes, identitySources);
+      openClaudeByPane = claudeByPane;
+      return entryIds;
+    },
     onError: (err) => console.warn("[Portaterm] Failed to resolve open vault sessions:", err),
     post: (entryIds) => {
       postToVaultSurfaces({ type: "vaultOpenSessions", entryIds });
