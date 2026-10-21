@@ -11,6 +11,9 @@ export const ICON_PIN =
   '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 1.75 14.25 6l-2.5 1-3.5 3.5-.5 3L3.5 9.25l3-.5 3.5-3.5z"/><path d="M5.75 10.25 1.75 14.25"/></svg>';
 export const ICON_RESUME =
   '<svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M5 3.4v9.2l7-4.6z"/></svg>';
+// Quick launch on an Agent group header: a fresh session, not a resume.
+export const ICON_PLUS =
+  '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3.5" x2="8" y2="12.5"/><line x1="3.5" y1="8" x2="12.5" y2="8"/></svg>';
 export const ICON_SEARCH =
   '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>';
 export const ICON_RECENT =

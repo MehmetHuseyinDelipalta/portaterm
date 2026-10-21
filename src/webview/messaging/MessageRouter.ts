@@ -48,6 +48,7 @@ import type {
   VaultPinnedSessionsMessage,
   VaultSessionDetailResponseMessage,
   VaultSessionsResponseMessage,
+  VaultStartTargetsMessage,
   WorkspaceRootChangedMessage,
   WorktreeActivatePaneMessage,
   WorktreeCreateDefaultsMessage,
@@ -121,6 +122,7 @@ export interface MessageHandlers {
   onVaultSessionDetailResponse?(msg: VaultSessionDetailResponseMessage): void;
   onVaultMessageRecordResponse?(msg: VaultMessageRecordResponseMessage): void;
   onVaultLaunchTargets?(msg: VaultLaunchTargetsMessage): void;
+  onVaultStartTargets?(msg: VaultStartTargetsMessage): void;
   onVaultContextCwd?(msg: VaultContextCwdMessage): void;
   onOpenVault?(msg: OpenVaultMessage): void;
 
@@ -284,6 +286,9 @@ export function createMessageRouter(handlers: MessageHandlers): (msg: ExtensionT
         break;
       case "vaultLaunchTargets":
         handlers.onVaultLaunchTargets?.(msg);
+        break;
+      case "vaultStartTargets":
+        handlers.onVaultStartTargets?.(msg);
         break;
       case "vaultContextCwd":
         handlers.onVaultContextCwd?.(msg);

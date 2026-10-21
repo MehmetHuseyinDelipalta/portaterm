@@ -11,7 +11,7 @@ import { setIcon } from "../shared/iconNode";
 import { getAgentAccent, getAgentIcon } from "./agentIcons";
 import { agentLabel, formatRelativeTime, leafSegment } from "./format";
 import type { GroupMode } from "./grouping";
-import { ICON_ARCHIVE, ICON_CHEVRON_DOWN, ICON_FOLDER, ICON_PIN, ICON_RESUME, ICON_SEARCH } from "./icons";
+import { ICON_ARCHIVE, ICON_CHEVRON_DOWN, ICON_FOLDER, ICON_PIN, ICON_PLUS, ICON_RESUME, ICON_SEARCH } from "./icons";
 import { emptyState } from "./renderAtoms";
 
 /** Row interaction handlers — supplied by the panel so the row builder stays pure. */
@@ -268,7 +268,13 @@ export function renderShowMore(hidden: number, onExpand: () => void): HTMLElemen
   return btn;
 }
 
-/** A collapsible Agent/Folder group header (chevron + brand/folder icon + count). */
+/**
+ * A collapsible Agent/Folder group header (chevron + brand/folder icon + count).
+ *
+ * `onStart` adds a quick-launch button at the trailing edge — a fresh session of
+ * this group's agent. Absent → no button at all, rather than one the host would
+ * refuse.
+ */
 export function renderGroupHeader(
   mode: GroupMode,
   key: string,
@@ -276,6 +282,7 @@ export function renderGroupHeader(
   count: number,
   collapsed: boolean,
   onToggle: () => void,
+  onStart?: () => void,
 ): HTMLElement {
   const header = document.createElement("div");
   header.className = "vault-group-header";
@@ -316,6 +323,12 @@ export function renderGroupHeader(
   countEl.className = "vault-group-count";
   countEl.textContent = `· ${count}`;
   header.append(labelEl, countEl);
+  if (onStart) {
+    header.appendChild(renderStartButton(label, onStart));
+    // A button with no name takes one from its contents, so the start control's
+    // label would otherwise be read out as part of the header's.
+    header.setAttribute("aria-label", `${label}, ${count} session${count === 1 ? "" : "s"}`);
+  }
   // Interactive toggle: clickable + keyboard-operable, state announced.
   header.setAttribute("role", "button");
   header.tabIndex = 0;
@@ -329,6 +342,32 @@ export function renderGroupHeader(
     }
   });
   return header;
+}
+
+/**
+ * The group header's quick-launch control. Its click and keys stop at the button:
+ * the header behind it toggles the group, and a launch must not also fold it.
+ */
+function renderStartButton(label: string, onStart: () => void): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "vault-group-action";
+  setIcon(btn, ICON_PLUS);
+  const tip = `Start a new ${label} session in the workspace root`;
+  btn.setAttribute("aria-label", tip);
+  btn.dataset.tip = tip;
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onStart();
+  });
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      // Stopped, not prevented: the button still turns the key into its own
+      // click, which the listener above stops.
+      e.stopPropagation();
+    }
+  });
+  return btn;
 }
 
 /** Build the empty / no-match status element, or null when the list has rows. */

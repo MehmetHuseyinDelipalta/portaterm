@@ -606,6 +606,52 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     void this.safeSendWithRetry(webview, { type: "vaultLaunchTargets", capability, targets });
   }
 
+  /**
+   * Which agents the vault's quick launch can start. Empty without a workspace
+   * folder: the launch has nowhere to run, and an offer of one would be refused.
+   */
+  private async handleRequestVaultStartTargets(webview: vscode.Webview): Promise<void> {
+    const agents =
+      this.vaultLauncher && this.workspaceRoot !== null
+        ? (await detectLaunchTargets("start")).map((target) => target.agent)
+        : [];
+    void this.safeSendWithRetry(webview, { type: "vaultStartTargets", agents });
+  }
+
+  /**
+   * Start a fresh session of `agent` in the workspace root — the vault's quick
+   * launch. The webview names only the agent; the folder is resolved here, and
+   * no posture is passed, so the agent runs under its own default.
+   *
+   * Admitted against a fresh probe rather than the list the panel was given:
+   * that list is not quoted back, and a request for an agent this host would not
+   * advertise is not run just because the launcher knows its name.
+   */
+  private async handleVaultStartAgent(agent: string, webview: vscode.Webview): Promise<void> {
+    const cwd = this.workspaceRoot;
+    if (!this.vaultLauncher || cwd === null) {
+      return;
+    }
+    try {
+      const targets = await detectLaunchTargets("start");
+      if (!targets.some((target) => target.agent === agent)) {
+        return;
+      }
+      const options = await this.vaultLauncher.startAgent(agent, cwd, {});
+      this.openSessionTab(
+        { ...options, worktreeId: await this.worktreeHost?.terminalOwnerForCwd?.(options.cwd) },
+        webview,
+      );
+    } catch (err) {
+      console.error("[Portaterm] Failed to start agent:", err);
+      void this.safeSendWithRetry(webview, {
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to start the agent",
+        severity: "error",
+      });
+    }
+  }
+
   private async handleRequestVaultMessageRecord(
     entryId: string,
     msgRef: string,
@@ -1064,6 +1110,16 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
             break;
           }
           void this.handleRequestVaultLaunchTargets(webviewView.webview, "continue");
+          break;
+
+        case "requestVaultStartTargets":
+          void this.handleRequestVaultStartTargets(webviewView.webview);
+          break;
+
+        case "vaultStartAgent":
+          if (typeof message.agent === "string") {
+            void this.handleVaultStartAgent(message.agent, webviewView.webview);
+          }
           break;
 
         case "requestVaultMessageRecord":

@@ -367,6 +367,35 @@
   width: 11px;
   height: 11px;
 }
+/* Quick launch — pushed to the trailing edge, revealed with the header's hover
+   or focus so the band stays quiet while scanning. */
+.vault-group-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--vscode-icon-foreground, currentColor);
+  cursor: pointer;
+  opacity: 0;
+}
+.vault-group-header:hover .vault-group-action,
+.vault-group-header:focus-within .vault-group-action {
+  opacity: 1;
+}
+.vault-group-action:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
+.vault-group-action:focus-visible {
+  opacity: 1;
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
 .vault-group-header--folder {
   text-transform: none;
   letter-spacing: 0;

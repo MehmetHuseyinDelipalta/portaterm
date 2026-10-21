@@ -1033,6 +1033,9 @@ const routeMessage = createMessageRouter({
     }
     vaultPanel?.handleLaunchTargets(msg);
   },
+  onVaultStartTargets(msg) {
+    vaultPanel?.setStartableAgents(msg.agents);
+  },
   onSubagentPreviewResponse(msg) {
     // Fill the (factory-owned) subagent popup. An `entryId` marks a nested
     // drill-down reply (routed to that block); else top-level, matched by requestId.

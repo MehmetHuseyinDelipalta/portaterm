@@ -400,6 +400,75 @@ describe("VaultPanel grouping + states (redesign 4_2)", () => {
   });
 });
 
+describe("VaultPanel agent quick launch", () => {
+  function mountAgentMode(posted: { type: string; agent?: string }[] = [], actionsAvailable?: boolean) {
+    const host = createHost();
+    const panel = new VaultPanel({
+      host,
+      postMessage: (m) => posted.push(m),
+      getInitialCollapsed: () => false,
+      ...(actionsAvailable === undefined ? {} : { actionsAvailable }),
+    });
+    panel.render(result([entry({ id: "claude:a", agent: "claude" }), entry({ id: "codex:b", agent: "codex" })]));
+    panel.setGroupMode("agent");
+    return { host, panel };
+  }
+
+  const startButton = (host: HTMLElement, agent: string): HTMLButtonElement | null =>
+    host.querySelector<HTMLButtonElement>(`.vault-group-action[aria-label*="${agent}" i]`);
+
+  it("asks which agents can start each time the panel opens", () => {
+    const posted: { type: string }[] = [];
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: (m) => posted.push(m) });
+    const asks = () => posted.filter((m) => m.type === "requestVaultStartTargets").length;
+    expect(asks()).toBe(0);
+    panel.toggleCollapsed();
+    expect(asks()).toBe(1);
+    panel.toggleCollapsed();
+    panel.toggleCollapsed();
+    expect(asks()).toBe(2);
+  });
+
+  it("does not ask on a surface that answers no actions", () => {
+    const posted: { type: string }[] = [];
+    mountAgentMode(posted, false);
+    expect(posted.filter((m) => m.type === "requestVaultStartTargets")).toHaveLength(0);
+  });
+
+  it("puts a start button only on the headers of agents the host can start", () => {
+    const { host, panel } = mountAgentMode();
+    expect(host.querySelectorAll(".vault-group-action")).toHaveLength(0);
+    panel.setStartableAgents(["claude"]);
+    expect(host.querySelectorAll(".vault-group-action")).toHaveLength(1);
+    expect(startButton(host, "claude")).not.toBeNull();
+    expect(startButton(host, "codex")).toBeNull();
+  });
+
+  it("offers no start button outside Agent mode", () => {
+    const { host, panel } = mountAgentMode();
+    panel.setStartableAgents(["claude", "codex"]);
+    panel.setGroupMode("folder");
+    expect(host.querySelectorAll(".vault-group-action")).toHaveLength(0);
+  });
+
+  it("posts a start for that agent without folding its group", () => {
+    const posted: { type: string; agent?: string }[] = [];
+    const { host, panel } = mountAgentMode(posted);
+    panel.setStartableAgents(["claude"]);
+    startButton(host, "claude")?.click();
+    expect(posted.filter((m) => m.type === "vaultStartAgent")).toEqual([{ type: "vaultStartAgent", agent: "claude" }]);
+    expect(host.querySelector(".vault-group-header.is-collapsed")).toBeNull();
+  });
+
+  it("keeps Enter on the button from toggling the header", () => {
+    const { host, panel } = mountAgentMode();
+    panel.setStartableAgents(["claude"]);
+    startButton(host, "claude")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(host.querySelector(".vault-group-header.is-collapsed")).toBeNull();
+  });
+});
+
 describe("VaultPanel open sessions", () => {
   const tabMarked = (host: HTMLElement) =>
     Array.from(host.querySelectorAll<HTMLElement>(".vault-row"))

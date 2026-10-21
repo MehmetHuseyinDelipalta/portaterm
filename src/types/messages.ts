@@ -3,7 +3,7 @@
 // See: docs/design/message-protocol.md
 
 import type { WorktreeRowActivation } from "../settings/SettingsReader";
-import type { VaultLaunchTarget, VaultListResult, VaultSessionDetail } from "../vault/types";
+import type { VaultAgentId, VaultLaunchTarget, VaultListResult, VaultSessionDetail } from "../vault/types";
 import type { WorktreePresence } from "../worktree/presenceTypes";
 import type { WorktreeRef } from "../worktree/repoRefs";
 import type { WorktreeTree } from "../worktree/types";
@@ -479,6 +479,28 @@ export interface RequestVaultLaunchTargetsMessage {
 
 /** The two launches a target list can describe. */
 export type VaultLaunchCapability = "continue" | "start";
+
+/**
+ * Webview → Extension: which agents the vault's quick launch can start in the
+ * workspace root. Asked when the panel opens; answered by `vaultStartTargets`.
+ *
+ * Separate from `requestVaultLaunchTargets` with `capability: "start"`: that
+ * answer belongs to the worktree host, which admits a launch against the offer
+ * it published for one worktree. A quick launch names no worktree.
+ */
+export interface RequestVaultStartTargetsMessage {
+  type: "requestVaultStartTargets";
+}
+
+/**
+ * Webview → Extension: start a fresh session of `agent` in the workspace root,
+ * under the agent's own default posture. The webview names only WHICH agent —
+ * where it runs and on what terms are the host's to decide.
+ */
+export interface VaultStartAgentMessage {
+  type: "vaultStartAgent";
+  agent: string;
+}
 
 /** Webview → Extension: reveal the session's file in the OS file manager. */
 export interface VaultRevealInOSMessage {
@@ -1833,6 +1855,8 @@ export type WebViewToExtensionMessage =
   | RequestVaultSessionDetailMessage
   | RequestVaultMessageRecordMessage
   | RequestVaultLaunchTargetsMessage
+  | RequestVaultStartTargetsMessage
+  | VaultStartAgentMessage
   | VaultContinueSessionMessage
   | VaultRevealInOSMessage
   | VaultOpenSessionFileMessage
@@ -2549,6 +2573,16 @@ export interface VaultLaunchTargetsMessage {
 }
 
 /**
+ * Extension → Webview: reply to `requestVaultStartTargets`. Empty when there is
+ * no workspace folder to start in, so the panel offers no quick launch rather
+ * than one the host would refuse.
+ */
+export interface VaultStartTargetsMessage {
+  type: "vaultStartTargets";
+  agents: VaultAgentId[];
+}
+
+/**
  * Extension → Webview: reply to `requestVaultContextCwd`. Echoes `sessionId` so
  * the webview can drop a reply for a pane that is no longer active (stale-guard,
  * mirroring the detail `entryId` echo). `cwd` is null only when the OS query
@@ -3141,6 +3175,7 @@ export type ExtensionToWebViewMessage =
   | VaultSessionDetailResponseMessage
   | VaultMessageRecordResponseMessage
   | VaultLaunchTargetsMessage
+  | VaultStartTargetsMessage
   | VaultContextCwdMessage
   | SubagentPreviewResponseMessage
   | ClipboardImagePreviewMessage

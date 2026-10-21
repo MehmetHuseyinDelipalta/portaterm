@@ -12,6 +12,7 @@ import type {
   RequestVaultMessageRecordMessage,
   RequestVaultSessionDetailMessage,
   RequestVaultSessionsMessage,
+  RequestVaultStartTargetsMessage,
   VaultContinueSessionMessage,
   VaultCopyFilePathMessage,
   VaultCopyResumeCommandMessage,
@@ -23,6 +24,7 @@ import type {
   VaultResumeMessage,
   VaultRevealInOSMessage,
   VaultSessionDetailResponseMessage,
+  VaultStartAgentMessage,
   VaultWatchSessionMessage,
 } from "../../types/messages";
 import type { VaultListResult, VaultSessionEntry } from "../../vault/types";
@@ -52,6 +54,8 @@ export type VaultPanelPostMessage = (
     | RequestVaultSessionDetailMessage
     | RequestVaultMessageRecordMessage
     | RequestVaultLaunchTargetsMessage
+    | RequestVaultStartTargetsMessage
+    | VaultStartAgentMessage
     | VaultContinueSessionMessage
     | VaultRevealInOSMessage
     | VaultOpenSessionFileMessage
@@ -222,6 +226,11 @@ export class VaultPanel {
   private pinnedEntryIds: ReadonlySet<string> = new Set();
   /** Entry ids some live pane is running (host-pushed); a resume focuses them. */
   private openEntryIds: ReadonlySet<string> = new Set();
+  /**
+   * Agents the host said a quick launch can start in the workspace root. Empty
+   * until it answers, and empty means no header carries a start button.
+   */
+  private startableAgents: ReadonlySet<string> = new Set();
   /** Entry id being inline-renamed (enhance-vault-sessions D1). While set, an
    *  incoming list push defers its DOM rebuild so it can't destroy the open
    *  editor mid-edit; the next render after the edit ends repaints. */
@@ -686,6 +695,7 @@ export class VaultPanel {
       // signature (the list DOM may have been cleared/altered while hidden).
       this.lastRenderSig = null;
       this.requestRefresh();
+      this.requestStartTargets();
     }
   }
 
@@ -826,6 +836,31 @@ export class VaultPanel {
         : "Show only sessions in the active terminal's folder";
   }
 
+  /**
+   * Ask which agents a quick launch can start. On every open rather than once:
+   * an agent installed or a folder opened since is picked up the next time the
+   * panel is looked at. Not on an editor surface, which answers no actions.
+   */
+  private requestStartTargets(): void {
+    if (this.actionsAvailable) {
+      this.postMessage({ type: "requestVaultStartTargets" });
+    }
+  }
+
+  /** Set the agents a group header may quick-launch. Repaints only on a change. */
+  setStartableAgents(agents: readonly string[]): void {
+    const next = new Set(agents);
+    if (next.size === this.startableAgents.size && agents.every((a) => this.startableAgents.has(a))) {
+      return;
+    }
+    this.startableAgents = next;
+    if (this.renamingEntryId) {
+      this.lastRenderSig = null;
+      return;
+    }
+    this.renderList();
+  }
+
   /** Ask the host to (re-)read the agents' session stores. */
   requestRefresh(): void {
     this.postMessage({ type: "requestVaultSessions" });
@@ -905,6 +940,7 @@ export class VaultPanel {
       this.groupMode,
       [...this.pinnedEntryIds].sort(),
       [...this.openEntryIds].sort(),
+      [...this.startableAgents].sort(),
     ]);
   }
 
@@ -964,9 +1000,20 @@ export class VaultPanel {
     for (const group of groupEntries(visible, this.groupMode, this.pinnedEntryIds)) {
       if (group.mode !== "recent") {
         const collapsed = this.collapsedGroups.has(`${group.mode}:${group.key}`);
+        const agent = group.key;
+        const onStart =
+          group.mode === "agent" && this.startableAgents.has(agent)
+            ? () => this.postMessage({ type: "vaultStartAgent", agent })
+            : undefined;
         this.listEl.appendChild(
-          renderGroupHeader(group.mode, group.key, group.label, group.entries.length, collapsed, () =>
-            this.toggleGroup(group.mode, group.key),
+          renderGroupHeader(
+            group.mode,
+            group.key,
+            group.label,
+            group.entries.length,
+            collapsed,
+            () => this.toggleGroup(group.mode, group.key),
+            onStart,
           ),
         );
         if (collapsed) {

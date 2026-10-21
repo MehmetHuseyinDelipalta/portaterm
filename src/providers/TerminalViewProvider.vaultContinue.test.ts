@@ -92,6 +92,12 @@ function mount(
   vault: FakeVault,
   resolve: ReturnType<typeof okResolve> | ReturnType<typeof vi.fn> = okResolve(),
   terminalOwnerForCwd = vi.fn(async (_cwd: string) => undefined as string | undefined),
+  startAgent = vi.fn(async (_agent: string, cwd: string, _opts: object) => ({
+    shell: "claude",
+    shellArgs: [] as string[],
+    cwd,
+    isAgentLaunch: true,
+  })),
 ) {
   const sm = new SessionManager();
   // Only the two members this file exercises: the start capability is answered
@@ -116,7 +122,7 @@ function mount(
     null,
     null,
     vault as unknown as VaultService,
-    { resolve } as unknown as VaultLauncher,
+    { resolve, startAgent } as unknown as VaultLauncher,
     null,
     worktreeHost,
   );
@@ -148,6 +154,7 @@ function mount(
     },
     provider,
     resolve,
+    startAgent,
     publishLaunchTargets,
     postMessageSpy,
     terminalOwnerForCwd,
@@ -395,6 +402,74 @@ describe("requestVaultLaunchTargets", () => {
     await tick();
     expect(replies(h.postMessageSpy)).toEqual([{ capability: "continue", targets: STUB_TARGETS.continue }]);
     expect(h.publishLaunchTargets).not.toHaveBeenCalled();
+    h.dispose();
+  });
+});
+
+describe("vault quick launch", () => {
+  function startReplies(spy: ReturnType<typeof vi.fn>): string[][] {
+    return spy.mock.calls
+      .map(([m]) => m as { type?: string; agents?: string[] })
+      .filter((m) => m.type === "vaultStartTargets")
+      .map((m) => m.agents ?? []);
+  }
+
+  it("answers with the start-capable agents itself, leaving the worktree host's offer alone", async () => {
+    const h = mount(makeVault());
+    h.send({ type: "requestVaultStartTargets" });
+    await tick();
+    expect(startReplies(h.postMessageSpy)).toEqual([["claude"]]);
+    expect(h.publishLaunchTargets).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it("offers nothing without a workspace folder to start in", async () => {
+    __setWorkspaceFolders(undefined);
+    const h = mount(makeVault());
+    h.send({ type: "requestVaultStartTargets" });
+    await tick();
+    expect(startReplies(h.postMessageSpy)).toEqual([[]]);
+    h.dispose();
+  });
+
+  it("starts the agent in the workspace root under its default posture, as a new tab", async () => {
+    const h = mount(makeVault());
+    h.send({ type: "vaultStartAgent", agent: "claude" });
+    await tick();
+    expect(h.startAgent).toHaveBeenCalledWith("claude", "/mock/workspace", {});
+    expect(h.terminalOwnerForCwd).toHaveBeenCalledWith("/mock/workspace");
+    expect(h.postMessageSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "tabCreated" }));
+    h.dispose();
+  });
+
+  it("refuses an agent the host would not advertise for a fresh start", async () => {
+    // `codex` is in the continue set only: the launcher knowing its name is not
+    // an offer to start it.
+    const h = mount(makeVault());
+    h.send({ type: "vaultStartAgent", agent: "codex" });
+    await tick();
+    expect(h.startAgent).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it("starts nothing without a workspace folder", async () => {
+    __setWorkspaceFolders(undefined);
+    const h = mount(makeVault());
+    h.send({ type: "vaultStartAgent", agent: "claude" });
+    await tick();
+    expect(h.startAgent).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it("surfaces a launch failure as an error notice, not a broken tab", async () => {
+    const failing = vi.fn(async () => {
+      throw new Error("agent executable not found");
+    });
+    const h = mount(makeVault(), okResolve(), undefined, failing);
+    h.send({ type: "vaultStartAgent", agent: "claude" });
+    await tick();
+    expect(errors(h.postMessageSpy)).toEqual(["agent executable not found"]);
+    expect(h.postMessageSpy).not.toHaveBeenCalledWith(expect.objectContaining({ type: "tabCreated" }));
     h.dispose();
   });
 });
