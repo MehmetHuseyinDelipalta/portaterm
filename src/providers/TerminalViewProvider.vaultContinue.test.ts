@@ -146,6 +146,7 @@ function mount(
         h(msg);
       }
     },
+    provider,
     resolve,
     publishLaunchTargets,
     postMessageSpy,
@@ -189,6 +190,48 @@ describe("vaultResume owner mapping", () => {
 
     const created = h.sessionManager.getAllSessionsForView("portaterm.sidebar").at(-1);
     expect(created?.worktreeId).toBeUndefined();
+    h.dispose();
+  });
+});
+
+describe("vault list request", () => {
+  it("sends the open-session set along with the list", async () => {
+    const h = mount(makeVault());
+    h.provider.openVaultEntryIds = () => ["claude:s1"];
+
+    h.send({ type: "requestVaultSessions" });
+    await tick();
+
+    expect(h.postMessageSpy).toHaveBeenCalledWith({ type: "vaultOpenSessions", entryIds: ["claude:s1"] });
+    h.dispose();
+  });
+});
+
+describe("vaultResume of a session a pane already runs", () => {
+  it("focuses that pane and launches nothing", async () => {
+    const h = mount(makeVault());
+    const focus = vi.fn(async (_entryId: string) => true);
+    h.provider.focusLiveVaultSession = focus;
+
+    h.send({ type: "vaultResume", entryId: "claude:s1" });
+    await tick();
+
+    expect(focus).toHaveBeenCalledWith("claude:s1");
+    expect(h.resolve).not.toHaveBeenCalled();
+    expect(h.sessionManager.getAllSessionsForView("portaterm.sidebar")).toEqual([]);
+    expect(h.postMessageSpy).not.toHaveBeenCalledWith(expect.objectContaining({ type: "tabCreated" }));
+    h.dispose();
+  });
+
+  it("opens a new tab when no pane runs the entry", async () => {
+    const h = mount(makeVault());
+    h.provider.focusLiveVaultSession = vi.fn(async () => false);
+
+    h.send({ type: "vaultResume", entryId: "claude:s1" });
+    await tick();
+
+    expect(h.resolve).toHaveBeenCalledWith("claude:s1", "resume", undefined, undefined);
+    expect(h.postMessageSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "tabCreated" }));
     h.dispose();
   });
 });

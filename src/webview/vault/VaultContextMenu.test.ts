@@ -72,7 +72,7 @@ describe("vault context menu items", () => {
     const { menu, host, row } = setup();
     menu.open(entry(), EVENT, row);
     expect(labels(host)).toEqual([
-      "Resume in New Tab",
+      "Resume",
       "Rename",
       "Open",
       "Reveal in Finder",
@@ -95,16 +95,16 @@ describe("vault context menu items", () => {
   it("omits both resume items for an entry the reader could not prove resumable", () => {
     const { menu, host, row } = setup();
     menu.open(entry({ canResume: false }), EVENT, row);
-    expect(labels(host)).not.toContain("Resume in New Tab");
+    expect(labels(host)).not.toContain("Resume");
     expect(labels(host)).not.toContain("Copy Resume Command");
   });
 
   it("offers resume for a Cursor CLI session and not for an IDE one", () => {
     const { menu, host, row } = setup();
     menu.open(entry({ agent: "cursor", source: "cli", canResume: true }), EVENT, row);
-    expect(labels(host)).toContain("Resume in New Tab");
+    expect(labels(host)).toContain("Resume");
     menu.open(entry({ agent: "cursor", source: "ide", canResume: true }), EVENT, row);
-    expect(labels(host)).not.toContain("Resume in New Tab");
+    expect(labels(host)).not.toContain("Resume");
   });
 
   it("posts entryId-only messages — the webview never sends a path", () => {

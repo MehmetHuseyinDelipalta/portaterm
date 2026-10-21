@@ -400,6 +400,59 @@ describe("VaultPanel grouping + states (redesign 4_2)", () => {
   });
 });
 
+describe("VaultPanel open sessions", () => {
+  const tabMarked = (host: HTMLElement) =>
+    Array.from(host.querySelectorAll<HTMLElement>(".vault-row"))
+      .filter((r) => r.querySelector(".vault-row-tab"))
+      .map((r) => r.dataset.entryId);
+
+  it("marks a session some pane runs with a Tab mark, without reordering", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "claude:new", modified: 30 }), entry({ id: "claude:old", modified: 1 })]));
+
+    panel.setOpenEntryIds(["claude:old"]);
+    expect(tabMarked(host)).toEqual(["claude:old"]);
+    const rows = Array.from(host.querySelectorAll<HTMLElement>(".vault-row")).map((r) => r.dataset.entryId);
+    expect(rows).toEqual(["claude:new", "claude:old"]);
+    const mark = host.querySelector(".vault-row-tab");
+    expect(mark?.textContent).toBe("Tab");
+    expect(mark?.getAttribute("aria-label")).toBe("Open in a tab");
+  });
+
+  it("puts the mark ahead of the title, after a pin mark", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "claude:a", title: "the title" })]));
+    panel.setPinnedEntryIds(["claude:a"]);
+    panel.setOpenEntryIds(["claude:a"]);
+    const title = host.querySelector(".vault-row-title");
+    expect(title?.children[0]?.className).toBe("vault-row-pin");
+    expect(title?.children[1]?.className).toBe("vault-row-tab");
+    expect(title?.lastChild?.textContent).toBe("the title");
+  });
+
+  it("drops the mark once no pane runs the session", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "claude:a" })]));
+    panel.setOpenEntryIds(["claude:a"]);
+    panel.setOpenEntryIds([]);
+    expect(host.querySelector(".vault-row-tab")).toBeNull();
+  });
+
+  it("does not repaint for the same set, and keeps it across a list push", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.setOpenEntryIds(["claude:a"]);
+    panel.render(result([entry({ id: "claude:a" })]));
+    const row = host.querySelector(".vault-row");
+    panel.setOpenEntryIds(["claude:a"]);
+    expect(host.querySelector(".vault-row")).toBe(row);
+    expect(tabMarked(host)).toEqual(["claude:a"]);
+  });
+});
+
 describe("VaultPanel pinned sessions", () => {
   const rowIds = (host: HTMLElement) =>
     Array.from(host.querySelectorAll<HTMLElement>(".vault-row")).map((r) => r.dataset.entryId);
@@ -562,7 +615,7 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
     panel.render(result([entry({ id: "opencode:a", agent: "opencode", sessionPath: undefined })]));
     const menu = openMenu(host);
     const labels = Array.from(menu?.querySelectorAll("button") ?? []).map((b) => b.textContent);
-    expect(labels).toEqual(["Resume in New Tab", "Rename", "Copy Resume Command", "Open Working Directory"]);
+    expect(labels).toEqual(["Resume", "Rename", "Copy Resume Command", "Open Working Directory"]);
     expect(labels).not.toContain("Open");
     expect(labels).not.toContain("Copy File Path");
   });
@@ -574,7 +627,7 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
     panel.render(result([entry({ id: "cursor:a", agent: "cursor", canResume: false })]));
     const labels = Array.from(openMenu(host)?.querySelectorAll("button") ?? []).map((b) => b.textContent);
     expect(labels).toEqual(["Rename", "Open Working Directory"]);
-    expect(labels).not.toContain("Resume in New Tab");
+    expect(labels).not.toContain("Resume");
     expect(labels).not.toContain("Copy Resume Command");
     Array.from(host.querySelectorAll<HTMLButtonElement>(".vault-context-menu button"))
       .find((b) => b.textContent === "Open Working Directory")
@@ -2347,7 +2400,7 @@ describe("VaultPanel session preview (redesign 5_2)", () => {
     const row = host.querySelector<HTMLElement>(".vault-row");
     row?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
     const labels = Array.from(host.querySelectorAll(".vault-context-menu button")).map((button) => button.textContent);
-    expect(labels).not.toContain("Resume in New Tab");
+    expect(labels).not.toContain("Resume");
     expect(labels).not.toContain("Copy Resume Command");
     expect(posted.some((message) => message.type === "vaultResume" || message.type === "vaultCopyResumeCommand")).toBe(
       false,

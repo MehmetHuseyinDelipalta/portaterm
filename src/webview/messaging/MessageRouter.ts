@@ -44,6 +44,7 @@ import type {
   VaultContextCwdMessage,
   VaultLaunchTargetsMessage,
   VaultMessageRecordResponseMessage,
+  VaultOpenSessionsMessage,
   VaultPinnedSessionsMessage,
   VaultSessionDetailResponseMessage,
   VaultSessionsResponseMessage,
@@ -116,6 +117,7 @@ export interface MessageHandlers {
   // Optional: a webview without a mounted vault panel safely ignores these.
   onVaultSessionsResponse?(msg: VaultSessionsResponseMessage): void;
   onVaultPinnedSessions?(msg: VaultPinnedSessionsMessage): void;
+  onVaultOpenSessions?(msg: VaultOpenSessionsMessage): void;
   onVaultSessionDetailResponse?(msg: VaultSessionDetailResponseMessage): void;
   onVaultMessageRecordResponse?(msg: VaultMessageRecordResponseMessage): void;
   onVaultLaunchTargets?(msg: VaultLaunchTargetsMessage): void;
@@ -270,6 +272,9 @@ export function createMessageRouter(handlers: MessageHandlers): (msg: ExtensionT
         break;
       case "vaultPinnedSessions":
         handlers.onVaultPinnedSessions?.(msg);
+        break;
+      case "vaultOpenSessions":
+        handlers.onVaultOpenSessions?.(msg);
         break;
       case "vaultSessionDetailResponse":
         handlers.onVaultSessionDetailResponse?.(msg);

@@ -5,6 +5,22 @@
 
 The system SHALL present the aggregated session list in a webview panel. Each row SHALL show, on a single line: the agent badge rendering the agent's **real brand icon** (inline SVG themed via the agent's accent color), the title preview, a `cwd` chip (folder icon + leaf segment), a relative timestamp, and an **icon-only Resume action revealed on row hover/focus**.
 
+### Requirement: Resume focuses a running session
+
+Resuming an entry — from the row action, the context menu, or the preview header — SHALL first look for a live pane already running that entry, judged by the pane's hook-reported session and otherwise by the entry its vault launch resumed. When one exists, the host SHALL reveal the surface holding it and activate that pane instead of launching a second agent on the same session. Only when no live pane runs the entry SHALL a new tab be opened.
+
+#### Scenario: Resuming a session that is already open
+
+- **WHEN** a pane in any terminal surface is running entry `claude:s1` and the user clicks Resume on that entry's row
+- **THEN** that pane's surface is revealed and the pane is activated, and no new tab or agent process is started
+
+Every row whose entry a live pane runs, by the same rule, SHALL carry a "Tab" mark ahead of its title (after any pin mark), so the list shows which rows a resume would focus. The host SHALL push the full set to every vault surface whenever it changes and with each list request; the mark SHALL NOT change the row order.
+
+#### Scenario: The Tab mark follows the pane
+
+- **WHEN** the user resumes entry `claude:s1` into a new tab
+- **THEN** its row shows the Tab mark, and the mark disappears once the agent exits to the fallback shell or the tab is closed
+
 ### Requirement: In-panel client-side search
 
 The panel SHALL provide a search box that filters the body currently shown. In the sessions body it SHALL match the typed query against the entry's title, cwd, and agent. Filtering SHALL be client-side over the already-loaded data (no per-keystroke host round-trip), and the placeholder SHALL name what is being searched.
@@ -49,12 +65,12 @@ The panel SHALL offer exactly three grouping modes — **Recent**, **Agent**, **
 
 ### Requirement: Row context menu
 
-Right-clicking a row SHALL open a context menu offering: Resume in New Tab, Open, Reveal in Finder, Copy File Path, Copy Resume Command, Open Working Directory. The file-targeting items (Open, Reveal in Finder, Copy File Path) SHALL be shown only when the session is backed by an on-disk file; for sessions stored only in a database they SHALL be omitted. Each item SHALL act by sending the entry `id` to the host (which derives any path itself); the webview SHALL NOT send a file path as the action target. There SHALL be no separate "⋯" trigger — the menu is reached only by right-click.
+Right-clicking a row SHALL open a context menu offering: Resume, Open, Reveal in Finder, Copy File Path, Copy Resume Command, Open Working Directory. The file-targeting items (Open, Reveal in Finder, Copy File Path) SHALL be shown only when the session is backed by an on-disk file; for sessions stored only in a database they SHALL be omitted. Each item SHALL act by sending the entry `id` to the host (which derives any path itself); the webview SHALL NOT send a file path as the action target. There SHALL be no separate "⋯" trigger — the menu is reached only by right-click.
 
 #### Scenario: Database-backed session hides file actions
 
 - **WHEN** the user right-clicks a row whose agent stores sessions in a database (no session file path)
-- **THEN** the context menu omits Open, Reveal in Finder, and Copy File Path, while Resume in New Tab, Copy Resume Command, and Open Working Directory remain
+- **THEN** the context menu omits Open, Reveal in Finder, and Copy File Path, while Resume, Copy Resume Command, and Open Working Directory remain
 
 ### Requirement: Folder-scope filter ("This folder only")
 

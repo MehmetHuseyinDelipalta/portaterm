@@ -60,7 +60,7 @@ export class VaultContextMenu {
       ...(canResume
         ? [
             {
-              label: "Resume in New Tab",
+              label: "Resume",
               icon: ICON_RESUME,
               act: () => {
                 if (canResume) {

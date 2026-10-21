@@ -45,7 +45,7 @@ export function cursorSourceLabel(entry: VaultSessionEntry): string | undefined 
  */
 export function renderRow(
   entry: VaultSessionEntry,
-  opts: { hideCwd?: boolean; fresh?: boolean; pinned?: boolean },
+  opts: { hideCwd?: boolean; fresh?: boolean; pinned?: boolean; open?: boolean },
   cb: VaultRowCallbacks,
 ): HTMLElement {
   const row = document.createElement("div");
@@ -111,6 +111,18 @@ export function renderRow(
     pinMark.setAttribute("aria-label", "Pinned tab");
     setIcon(pinMark, ICON_PIN);
     titleEl.prepend(pinMark);
+  }
+  // Some live pane runs this session, so Resume focuses it instead of
+  // launching a second agent on the same transcript. Leads the title, after
+  // any pin mark, so a long title's ellipsis cannot cut it off.
+  if (opts.open) {
+    const tabMark = document.createElement("span");
+    tabMark.className = "vault-row-tab";
+    tabMark.textContent = "Tab";
+    tabMark.dataset.tip = "Open in a tab — Resume focuses it";
+    tabMark.setAttribute("aria-label", "Open in a tab");
+    const pinMark = titleEl.querySelector(".vault-row-pin");
+    titleEl.insertBefore(tabMark, pinMark ? pinMark.nextSibling : titleEl.firstChild);
   }
   const sourceLabel = cursorSourceLabel(entry);
   if (sourceLabel) {

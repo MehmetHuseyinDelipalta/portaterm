@@ -5,6 +5,7 @@ import type { DescendantsOutcome, ProcessTableSnapshot } from "../pty/processTab
 import {
   createClaudeProcessLookup,
   createPinnedVaultPublisher,
+  livePaneForEntry,
   type PinnedIdentitySources,
   pinnedEntryIds,
   resolvePinnedEntryIds,
@@ -32,6 +33,27 @@ describe("pinnedEntryIds", () => {
       { paneId: "other", vaultEntryId: "codex:b" },
     ];
     expect(pinnedEntryIds(panes, () => undefined)).toEqual(["claude:a", "codex:b"]);
+  });
+});
+
+describe("livePaneForEntry", () => {
+  it("finds the pane a vault launch resumed the entry in", () => {
+    const panes = [{ paneId: "p1" }, { paneId: "p2", vaultEntryId: "claude:s1" }];
+    expect(livePaneForEntry(panes, () => undefined, "claude:s1")).toEqual({ paneId: "p2", vaultEntryId: "claude:s1" });
+  });
+
+  it("finds a pane whose agent reports the entry, though no vault launch started it", () => {
+    const running = (paneId: string) => (paneId === "p1" ? "claude:s1" : undefined);
+    expect(livePaneForEntry([{ paneId: "p1" }], running, "claude:s1")).toEqual({ paneId: "p1" });
+  });
+
+  it("does not claim the entry for a pane whose agent has moved to another session", () => {
+    const running = (paneId: string) => (paneId === "p1" ? "claude:new" : undefined);
+    expect(livePaneForEntry([{ paneId: "p1", vaultEntryId: "claude:s1" }], running, "claude:s1")).toBeUndefined();
+  });
+
+  it("answers nothing when no pane runs the entry", () => {
+    expect(livePaneForEntry([{ paneId: "p1", vaultEntryId: "codex:x" }], () => undefined, "claude:s1")).toBeUndefined();
   });
 });
 

@@ -220,6 +220,8 @@ export class VaultPanel {
   private contextCwd: string | null = null;
   /** Entry ids pinned tabs are running (host-pushed). They lead their group. */
   private pinnedEntryIds: ReadonlySet<string> = new Set();
+  /** Entry ids some live pane is running (host-pushed); a resume focuses them. */
+  private openEntryIds: ReadonlySet<string> = new Set();
   /** Entry id being inline-renamed (enhance-vault-sessions D1). While set, an
    *  incoming list push defers its DOM rebuild so it can't destroy the open
    *  editor mid-edit; the next render after the edit ends repaints. */
@@ -782,6 +784,24 @@ export class VaultPanel {
     this.renderList();
   }
 
+  /**
+   * Set the entries some live pane is running. They carry a Tab mark; order is
+   * unchanged. Repaints only when the set changed, and defers the repaint while
+   * an inline rename is open.
+   */
+  setOpenEntryIds(ids: readonly string[]): void {
+    const next = new Set(ids);
+    if (next.size === this.openEntryIds.size && ids.every((id) => this.openEntryIds.has(id))) {
+      return;
+    }
+    this.openEntryIds = next;
+    if (this.renamingEntryId) {
+      this.lastRenderSig = null;
+      return;
+    }
+    this.renderList();
+  }
+
   /** Toggle the "This folder only" filter (the search-row toggle button). */
   toggleFolderOnly(): void {
     this.setFolderOnly(!this.folderOnly);
@@ -884,6 +904,7 @@ export class VaultPanel {
       liveCwd ?? null,
       this.groupMode,
       [...this.pinnedEntryIds].sort(),
+      [...this.openEntryIds].sort(),
     ]);
   }
 
@@ -963,7 +984,8 @@ export class VaultPanel {
       for (const entry of shown) {
         const fresh = this.pendingFreshIds?.has(entry.id) ?? false;
         const pinned = this.pinnedEntryIds.has(entry.id);
-        this.listEl.appendChild(renderRow(entry, { hideCwd: group.hideCwd, fresh, pinned }, this.rowCallbacks));
+        const open = this.openEntryIds.has(entry.id);
+        this.listEl.appendChild(renderRow(entry, { hideCwd: group.hideCwd, fresh, pinned, open }, this.rowCallbacks));
       }
       if (!expanded && overflow > 0) {
         const key = group.key;

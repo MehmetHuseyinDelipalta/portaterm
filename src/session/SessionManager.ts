@@ -1162,6 +1162,27 @@ export class SessionManager {
   }
 
   /**
+   * Every live pane in every view, with the view it lives in and the vault
+   * entry its launch resumed — what a vault resume checks before opening a
+   * second tab on a session one already runs. A restored read-only tab runs
+   * nothing, so it contributes no pane.
+   */
+  livePanes(): Array<{ paneId: string; viewId: string; vaultEntryId?: string }> {
+    const panes: Array<{ paneId: string; viewId: string; vaultEntryId?: string }> = [];
+    for (const session of this.sessions.values()) {
+      if (session.state !== "live") {
+        continue;
+      }
+      panes.push(
+        session.vaultEntryId === undefined
+          ? { paneId: session.id, viewId: session.viewId }
+          : { paneId: session.id, viewId: session.viewId, vaultEntryId: session.vaultEntryId },
+      );
+    }
+    return panes;
+  }
+
+  /**
    * Clear scrollback cache for a session. Silent no-op for unknown session IDs.
    *
    * Also resets the headless mirror (`\x1bc` RIS), wipes the tracked-commands

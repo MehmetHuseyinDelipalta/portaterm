@@ -160,6 +160,16 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
    */
   pinnedVaultEntryIds: (() => string[]) | undefined;
 
+  /** The vault entries some live pane is running now; answered like `pinnedVaultEntryIds`. */
+  openVaultEntryIds: (() => string[]) | undefined;
+
+  /**
+   * Focus the live pane already running a vault entry, wherever it lives;
+   * resolves `false` when none does. Wired by the extension, which owns both
+   * the pane identities and the reveal of another surface.
+   */
+  focusLiveVaultSession: ((entryId: string) => Promise<boolean>) | undefined;
+
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly sessionManager: SessionManager,
@@ -408,6 +418,9 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     if (this.pinnedVaultEntryIds) {
       this.safePostMessage(webview, { type: "vaultPinnedSessions", entryIds: this.pinnedVaultEntryIds() });
     }
+    if (this.openVaultEntryIds) {
+      this.safePostMessage(webview, { type: "vaultOpenSessions", entryIds: this.openVaultEntryIds() });
+    }
     // Provider-owned: the rename push (`vaultRenameSession`) and the watcher
     // both drive this same counter, so it cannot move into the shared module.
     const token = ++this._vaultRefreshSeq;
@@ -431,6 +444,11 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     try {
+      // A second resume of a session a pane already runs would start another
+      // agent on the same transcript; the user wanted the one they have.
+      if (mode === "resume" && (await this.focusLiveVaultSession?.(entryId)) === true) {
+        return;
+      }
       await this.launchVaultSession(entryId, mode, webview);
     } catch (err) {
       console.error("[Portaterm] Failed to launch vault session:", err);

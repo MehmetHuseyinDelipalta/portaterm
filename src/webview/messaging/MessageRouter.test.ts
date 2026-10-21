@@ -185,6 +185,15 @@ describe("createMessageRouter", () => {
     expect(() => createMessageRouter(createMockHandlers())(msg)).not.toThrow();
   });
 
+  it("routes vaultOpenSessions to the vault handler, and ignores it when no vault is mounted", () => {
+    const onVaultOpenSessions = vi.fn();
+    const msg: ExtensionToWebViewMessage = { type: "vaultOpenSessions", entryIds: ["claude:a"] };
+    createMessageRouter({ ...createMockHandlers(), onVaultOpenSessions })(msg);
+    expect(onVaultOpenSessions).toHaveBeenCalledWith(msg);
+
+    expect(() => createMessageRouter(createMockHandlers())(msg)).not.toThrow();
+  });
+
   it("silently ignores agentActivityStatus when no handler is mounted", () => {
     const handlers = createMockHandlers();
     const dispatch = createMessageRouter(handlers);

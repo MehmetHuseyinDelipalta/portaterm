@@ -45,6 +45,20 @@ export function pinnedEntryIds(
   return [...ids].sort();
 }
 
+/**
+ * The first live pane running `entryId`, read with the same precedence as
+ * `pinnedEntryIds`: what the pane reports running now outranks what its vault
+ * launch resumed, so a pane whose agent moved to another session no longer
+ * claims the one it started as.
+ */
+export function livePaneForEntry<P extends PinnedTabPane>(
+  panes: readonly P[],
+  runningEntryId: (paneId: string) => string | undefined,
+  entryId: string,
+): P | undefined {
+  return panes.find((pane) => (runningEntryId(pane.paneId) ?? pane.vaultEntryId) === entryId);
+}
+
 export interface PinnedIdentitySources {
   /** A pane's hook-reported session, in entry form. */
   reported(paneId: string): string | undefined;

@@ -2137,6 +2137,18 @@ export interface VaultPinnedSessionsMessage {
   entryIds: string[];
 }
 
+/**
+ * Extension → WebView: the vault entries some live pane is running, in every
+ * view — exactly the entries a resume would focus rather than relaunch. The
+ * vault list marks these as open in a tab. The full set, sent whenever it
+ * changes and with a vault list request.
+ */
+export interface VaultOpenSessionsMessage {
+  type: "vaultOpenSessions";
+  /** Vault entry ids (`<agent>:<sessionId>`), sorted. Untrusted on the webview side: only matched, never parsed. */
+  entryIds: string[];
+}
+
 /** A terminal tab has been removed and its PTY destroyed. */
 export interface TabRemovedMessage {
   type: "tabRemoved";
@@ -3098,6 +3110,7 @@ export type ExtensionToWebViewMessage =
   | TabRenamedMessage
   | TabPinnedMessage
   | VaultPinnedSessionsMessage
+  | VaultOpenSessionsMessage
   | TabRemovedMessage
   | RestoreMessage
   | ConfigUpdateMessage

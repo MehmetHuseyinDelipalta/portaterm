@@ -122,6 +122,32 @@ describe("SessionManager.pinnedTabPanes", () => {
   });
 });
 
+describe("SessionManager.livePanes", () => {
+  it("lists every live pane, pinned or not, with its view and the entry its launch resumed", () => {
+    const sm = newSM();
+    const webview = mockWebview();
+    const root = sm.createSession("sidebar", webview, resume);
+    const split = sm.createSession("sidebar", webview, { isSplitPane: true, rootTabId: root });
+    const other = sm.createSession("panel", webview);
+
+    expect(sm.livePanes()).toEqual([
+      { paneId: root, viewId: "sidebar", vaultEntryId: "claude:s1" },
+      { paneId: split, viewId: "sidebar" },
+      { paneId: other, viewId: "panel" },
+    ]);
+    sm.dispose();
+  });
+
+  it("stops naming the entry once the fallback shell takes the pane", () => {
+    const sm = newSM();
+    const id = sm.createSession("sidebar", mockWebview(), resume);
+    mockPtySessions[0].onData?.("seed");
+    mockPtySessions[0].onExit?.(0);
+    expect(sm.livePanes()).toEqual([{ paneId: id, viewId: "sidebar" }]);
+    sm.dispose();
+  });
+});
+
 describe("SessionManager restore of a pinned tab's title and hand-started Claude", () => {
   const CLAUDE_ID = "0f7af73f-7dba-4817-9b6e-e3bb63d0ecb0";
 

@@ -536,6 +536,24 @@
   vertical-align: 1px;
 }
 
+/* Open-in-a-tab mark — theme-neutral, not an agent accent: it says where the
+   session runs, not which agent it is. Leads the title, so it spaces rightward. */
+.vault-row-tab {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--vscode-descriptionForeground) 55%, transparent);
+  border-radius: 999px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
 /* cwd chip — folder icon + leaf segment, mono, dim. Single-line. */
 .vault-row-cwd {
   display: inline-flex;
