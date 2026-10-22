@@ -3,6 +3,7 @@
 // Extracted for testability. Pure DOM rendering function with dependency injection.
 // See: docs/design/flow-multi-tab.md#Data-Routing-Architecture
 
+import { stripDecorations } from "../shared/titleDecorations";
 import { getAllSessionIds, type SplitNode } from "./SplitModel";
 import type { TerminalInstance } from "./state/WebviewStateStore";
 import { attachTooltip } from "./ui/Tooltip";
@@ -532,14 +533,23 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     tab.querySelector<HTMLElement>(".tab-close")!.hidden = pinned;
     tab.querySelector<HTMLElement>(".tab-pin")!.hidden = !pinned;
     tab.dataset.tabId = id;
-    // VS Code native context menu support — `webviewSection == 'terminalTab'`
-    // gates the `Rename Tab…` entry. The tabId is read by the command handler.
-    // `tabPinned` picks Pin Tab or Unpin Tab in the context menu.
-    tab.dataset.vscodeContext = JSON.stringify({ webviewSection: "terminalTab", tabId: id, tabPinned: pinned });
 
     // Custom name takes priority over the auto-derived (OSC-mutated) `name`.
     // See add-tab-rename design.md D1.
     const displayName = instance.customName ?? instance.name;
+
+    // VS Code native context menu support — `webviewSection == 'terminalTab'`
+    // gates the `Rename Tab…` entry. The tabId is read by the command handler.
+    // `tabPinned` picks Pin Tab or Unpin Tab in the context menu. `tabLabel` is
+    // what the tab shows, frame glyphs stripped: only the webview knows the OSC
+    // title (and, for a split, which pane's), so the rename InputBox is seeded
+    // from here rather than from the host's creation-time "Terminal N".
+    tab.dataset.vscodeContext = JSON.stringify({
+      webviewSection: "terminalTab",
+      tabId: id,
+      tabPinned: pinned,
+      tabLabel: stripDecorations(displayName),
+    });
     const nameSpan = tab.querySelector<HTMLElement>(".tab-name")!;
     const renderedName = instance.exited ? `${displayName} (exited)` : displayName;
     if (nameSpan.textContent !== renderedName) {

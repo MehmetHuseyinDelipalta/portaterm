@@ -14,6 +14,8 @@ import type { ExtensionToWebViewMessage, WebViewToExtensionMessage } from "../ty
 import { claudeSessionMtime, readClaudeSessions } from "../vault/readers/claudeReader";
 import { indexRunningSessionsOrEmpty, listRunningClaudeSessions } from "../vault/readers/runningSessions";
 import { resolveSubagentDetail, resolveSubagentDetailByEntryId } from "../vault/readers/subagentLookup";
+import { parseEntryId } from "../vault/types";
+import { normalizeVaultCustomName } from "../vault/VaultCustomNameRegistry";
 import type { VaultService } from "../vault/VaultService";
 import { readHoverPreviewSettings } from "./hoverPreviewSettings";
 import { previewFileLink } from "./previewFileLink";
@@ -235,6 +237,111 @@ export async function handleVaultSessionsRequest(ctx: {
         severity: "error",
       });
     }
+  }
+}
+
+/** A surface showing the vault list, refreshed after a rename made elsewhere. */
+export interface VaultRenameSurface {
+  refreshVaultAfterRename(native: boolean): void;
+}
+
+/**
+ * Told after a surface renamed a vault session: the normalized name (`null` =
+ * cleared), whether the agent's own store took it, and the surface that made it
+ * — which has already pushed its own list.
+ */
+export type VaultRenameListener = (
+  entryId: string,
+  name: string | null,
+  native: boolean,
+  origin: VaultRenameSurface,
+) => void;
+
+/**
+ * Apply a vault rename (write-vault-rename-to-store D1/D3/D4). The name is
+ * normalized once (trim + cap) and routed by agent:
+ * - opencode/codex + non-empty name → write the real title into the agent's own
+ *   SQLite store. On success the agent title is authoritative, so any sidecar
+ *   overlay for this entry is cleared.
+ * - native write failure, an empty (clearing) name, or claude/unknown agents →
+ *   the sidecar overlay.
+ *
+ * Kept apart from the list push because a rename has more than one origin: the
+ * vault row a surface edited, and a tab rename the extension mirrors into the
+ * vault — which writes once and then refreshes every surface.
+ */
+export async function applyVaultRename(
+  vaultService: VaultService,
+  entryId: string,
+  name: string,
+): Promise<{ name: string | null; native: boolean }> {
+  const normalized = normalizeVaultCustomName(name);
+  const agent = parseEntryId(entryId)?.agent;
+  if ((agent === "opencode" || agent === "codex") && normalized !== null) {
+    let wrote = false;
+    try {
+      wrote = await vaultService.writeNativeTitle(entryId, normalized);
+    } catch (err) {
+      console.error("[Portaterm] Native vault rename failed:", err);
+    }
+    if (wrote) {
+      // Agent-owned title is now the single source of truth — drop any overlay.
+      vaultService.setCustomName(entryId, "");
+      return { name: normalized, native: true };
+    }
+    // Native write did not stick → fall through to the overlay so the user still
+    // sees their name.
+  }
+  vaultService.setCustomName(entryId, normalized ?? "");
+  return { name: normalized, native: false };
+}
+
+/**
+ * Push the vault list after {@link applyVaultRename}.
+ * - native → re-read the store fresh (force: skip a possibly pre-write in-flight
+ *   refresh so the new title actually surfaces); on failure serve the cache so
+ *   the panel isn't left spinning — the title lands on the next watcher refresh.
+ * - overlay → served from `listCached()` instantly, falling back to `refresh()`
+ *   when there is no cache yet.
+ *
+ * Takes `isCurrent()` for the same reason {@link handleVaultSessionsRequest}
+ * does: the provider's sequence counter makes the rename push win over an
+ * older refresh.
+ */
+export async function pushVaultListAfterRename(ctx: {
+  webview: vscode.Webview;
+  vaultService: VaultService;
+  native: boolean;
+  isCurrent: () => boolean;
+}): Promise<void> {
+  const { webview, vaultService, native, isCurrent } = ctx;
+  if (native) {
+    try {
+      const result = await vaultService.refresh({ force: true });
+      if (isCurrent()) {
+        postOnce(webview, { type: "vaultSessionsResponse", result, fromCache: false });
+      }
+    } catch (err) {
+      console.error("[Portaterm] Failed to refresh vault after native rename:", err);
+      const cached = vaultService.listCached();
+      if (cached && isCurrent()) {
+        postOnce(webview, { type: "vaultSessionsResponse", result: cached, fromCache: true });
+      }
+    }
+    return;
+  }
+  const cached = vaultService.listCached();
+  if (cached) {
+    postOnce(webview, { type: "vaultSessionsResponse", result: cached, fromCache: true });
+    return;
+  }
+  try {
+    const result = await vaultService.refresh();
+    if (isCurrent()) {
+      postOnce(webview, { type: "vaultSessionsResponse", result, fromCache: false });
+    }
+  } catch (err) {
+    console.error("[Portaterm] Failed to refresh vault after rename:", err);
   }
 }
 

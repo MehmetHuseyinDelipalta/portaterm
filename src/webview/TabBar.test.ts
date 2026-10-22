@@ -435,12 +435,26 @@ describe("renderTabBar: tab DOM carries data-vscode-context for rename menu", ()
       webviewSection: "terminalTab",
       tabId: "tab-abc",
       tabPinned: false,
+      tabLabel: "Terminal 1",
     });
     expect(JSON.parse(tabs[1].dataset.vscodeContext!)).toEqual({
       webviewSection: "terminalTab",
       tabId: "tab-def",
       tabPinned: false,
+      tabLabel: "Terminal 2",
     });
+  });
+
+  it("carries the shown label, frame glyphs stripped, so the rename box is seeded with it", () => {
+    const terminals = new Map<string, { name: string; customName?: string | null }>([
+      ["tab-osc", { name: "✳ Last commit history" }],
+      ["tab-custom", { name: "✳ Agent title", customName: "build" }],
+    ]);
+    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-osc" });
+    renderTabBar(deps);
+    const tabs = deps.tabBarEl.querySelectorAll<HTMLElement>(".tab-item");
+    expect(JSON.parse(tabs[0].dataset.vscodeContext!).tabLabel).toBe("Last commit history");
+    expect(JSON.parse(tabs[1].dataset.vscodeContext!).tabLabel).toBe("build");
   });
 
   it("carries tabPinned so the menu offers Unpin on a pinned tab", () => {

@@ -59,6 +59,41 @@ export function livePaneForEntry<P extends PinnedTabPane>(
   return panes.find((pane) => (runningEntryId(pane.paneId) ?? pane.vaultEntryId) === entryId);
 }
 
+/**
+ * The vault entry a tab runs, for mirroring its rename into the vault: the
+ * first of its panes, root first, that runs one — same precedence as above.
+ */
+export function entryForTab(
+  panes: readonly PinnedTabPane[],
+  runningEntryId: (paneId: string) => string | undefined,
+): string | undefined {
+  for (const pane of panes) {
+    const entryId = runningEntryId(pane.paneId) ?? pane.vaultEntryId;
+    if (entryId) {
+      return entryId;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Every tab with a live pane running `entryId`, each once — the tabs a vault
+ * rename renames. Split panes answer for their root tab, the rename unit.
+ */
+export function tabsRunningEntry(
+  panes: ReadonlyArray<PinnedTabPane & { tabId: string }>,
+  runningEntryId: (paneId: string) => string | undefined,
+  entryId: string,
+): string[] {
+  const tabs = new Set<string>();
+  for (const pane of panes) {
+    if ((runningEntryId(pane.paneId) ?? pane.vaultEntryId) === entryId) {
+      tabs.add(pane.tabId);
+    }
+  }
+  return [...tabs];
+}
+
 export interface PinnedIdentitySources {
   /** A pane's hook-reported session, in entry form. */
   reported(paneId: string): string | undefined;

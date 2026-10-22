@@ -91,6 +91,7 @@ vi.mock("../pty/PtySession", () => {
 
 vi.mock("./OutputBuffer", async () => (await import("../test/sessionMocks")).outputBufferMock());
 
+import { createPaneEvidenceStore } from "./PaneEvidenceStore";
 import { SessionManager } from "./SessionManager";
 
 // ─── Test Setup ─────────────────────────────────────────────────────
@@ -1862,6 +1863,60 @@ describe("SessionManager: commitNavigation", () => {
     expect(sm.commitNavigation("sidebar", "wrong-root", pane)).toBe(false);
     expect(sm.commitNavigation("panel", sidebar, pane)).toBe(false);
     expect(sm.getSession(panel)?.isActive).toBe(true);
+    sm.dispose();
+  });
+});
+
+describe("SessionManager.renameSession: vault sync hook", () => {
+  it("tells onTabRenamed the normalized name once per rename, null on reset", () => {
+    const sm = new SessionManager();
+    const id = sm.createSession("sidebar", createMockWebview());
+    const seen: Array<[string, string | null]> = [];
+    sm.onTabRenamed = (tabId, name) => seen.push([tabId, name]);
+    sm.renameSession(id, "  build  ");
+    sm.renameSession(id, "");
+    expect(seen).toEqual([
+      [id, "build"],
+      [id, null],
+    ]);
+    sm.dispose();
+  });
+
+  it("stays silent for a rename the vault pushed in, so it cannot echo back", () => {
+    const sm = new SessionManager();
+    const id = sm.createSession("sidebar", createMockWebview());
+    const hook = vi.fn();
+    sm.onTabRenamed = hook;
+    sm.renameSession(id, "from vault", { fromVault: true });
+    expect(sm.getSession(id)!.customName).toBe("from vault");
+    expect(hook).not.toHaveBeenCalled();
+    sm.dispose();
+  });
+});
+
+describe("SessionManager.displayedName", () => {
+  it("prefers the custom name, then the reported title (frames stripped), then Terminal N", () => {
+    const paneEvidence = createPaneEvidenceStore();
+    const sm = new SessionManager(undefined, { paneEvidence });
+    const id = sm.createSession("sidebar", createMockWebview());
+    const fallback = sm.getSession(id)!.name;
+    expect(sm.displayedName(id)).toBe(fallback);
+
+    paneEvidence.report({ type: "paneEvidence", paneId: id, title: "✳ Last commit history", decorated: false });
+    expect(sm.displayedName(id)).toBe("Last commit history");
+
+    sm.renameSession(id, "build");
+    expect(sm.displayedName(id)).toBe("build");
+    sm.dispose();
+  });
+
+  it("falls back to Terminal N when the pane cleared its title", () => {
+    const paneEvidence = createPaneEvidenceStore();
+    const sm = new SessionManager(undefined, { paneEvidence });
+    const id = sm.createSession("sidebar", createMockWebview());
+    paneEvidence.report({ type: "paneEvidence", paneId: id, title: "", decorated: false });
+    expect(sm.displayedName(id)).toBe(sm.getSession(id)!.name);
+    expect(sm.displayedName("never-existed")).toBeUndefined();
     sm.dispose();
   });
 });

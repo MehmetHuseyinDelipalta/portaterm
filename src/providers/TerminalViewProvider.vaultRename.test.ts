@@ -56,6 +56,7 @@ function makeFakeVault(over: Partial<FakeVault> = {}): FakeVault {
 }
 
 function mountProvider(vault: FakeVault): {
+  provider: TerminalViewProvider;
   send: (msg: unknown) => void;
   postMessageSpy: ReturnType<typeof vi.fn>;
   dispose: () => void;
@@ -90,6 +91,7 @@ function mountProvider(vault: FakeVault): {
   } as unknown as vscode.WebviewView;
   provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
   return {
+    provider,
     send: (msg) => {
       for (const h of messageHandlers) {
         h(msg);
@@ -170,6 +172,42 @@ describe("handleVaultRenameSession routing", () => {
 
     const [, writtenName] = vault.writeNativeTitle.mock.calls[0];
     expect(writtenName).toHaveLength(80);
+    dispose();
+  });
+});
+
+describe("vault rename → the rest of the window", () => {
+  it("tells onVaultRenamed the normalized name, the route taken and itself as origin", async () => {
+    const vault = makeFakeVault();
+    const { provider, send, dispose } = mountProvider(vault);
+    const heard = vi.fn();
+    provider.onVaultRenamed = heard;
+
+    send({ type: "vaultRenameSession", entryId: "opencode:o1", name: "  Release prep  " });
+    await tick();
+    send({ type: "vaultRenameSession", entryId: "claude:c1", name: "   " });
+    await tick();
+
+    expect(heard.mock.calls).toEqual([
+      ["opencode:o1", "Release prep", true, provider],
+      ["claude:c1", null, false, provider],
+    ]);
+    dispose();
+  });
+
+  it("refreshVaultAfterRename pushes this surface's list without writing anything", async () => {
+    const vault = makeFakeVault({ listCached: vi.fn(() => freshResult("cached")) });
+    const { provider, postMessageSpy, dispose } = mountProvider(vault);
+    postMessageSpy.mockClear();
+
+    provider.refreshVaultAfterRename(false);
+    await tick();
+
+    expect(vault.setCustomName).not.toHaveBeenCalled();
+    expect(vault.writeNativeTitle).not.toHaveBeenCalled();
+    const posts = postMessageSpy.mock.calls.filter(([m]) => (m as { type?: string }).type === "vaultSessionsResponse");
+    expect(posts).toHaveLength(1);
+    expect((posts[0][0] as { fromCache: boolean }).fromCache).toBe(true);
     dispose();
   });
 });

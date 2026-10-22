@@ -35,6 +35,7 @@ import {
   type WorktreeActions,
   type WorktreeSurface,
 } from "./providers/WorktreeHost";
+import { applyVaultRename, type VaultRenameListener, type VaultRenameSurface } from "./providers/webviewRequests";
 import { loadNodePty } from "./pty/PtyManager";
 import { createProcessTableSnapshot } from "./pty/processTableSnapshot";
 import type { MessageSender } from "./session/OutputBuffer";
@@ -72,8 +73,10 @@ import { escapePathForShell } from "./utils/shellEscape";
 import {
   createClaudeProcessLookup,
   createPinnedVaultPublisher,
+  entryForTab,
   livePaneForEntry,
   resolvePinnedEntryIds,
+  tabsRunningEntry,
 } from "./vault/pinnedVaultSessions";
 import { claudeSessionMtime } from "./vault/readers/claudePaths";
 import { MAX_DETAIL_LIMIT } from "./vault/readers/detail";
@@ -1805,10 +1808,60 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openVaultPublisher.refresh();
   };
   sessionManager.onPinnedChange = () => pinnedVaultPublisher.refresh();
+
+  // ─── Tab ↔ vault name sync ────────────────────────────────────────
+  // A tab running an agent session and that session's vault row are one thing
+  // to the user, so a rename on either side lands on both. Which session a tab
+  // runs is read by the same rule the open-set and resume-focus use. Neither
+  // direction echoes: a vault-driven tab rename passes `fromVault`, and a tab
+  // rename writes the vault directly rather than through a surface.
+  const vaultSurfaces = (): VaultRenameSurface[] => [
+    sidebarProvider,
+    panelProvider,
+    ...TerminalEditorProvider.getProviders(),
+  ];
+  const onVaultRenamed: VaultRenameListener = (entryId, name, native, origin) => {
+    const panes = sessionManager
+      .livePanes()
+      .map((pane) => ({ ...pane, tabId: sessionManager.getSession(pane.paneId)?.rootTabId ?? pane.paneId }));
+    for (const tabId of tabsRunningEntry(panes, runningEntryId, entryId)) {
+      sessionManager.renameSession(tabId, name, { fromVault: true });
+    }
+    for (const surface of vaultSurfaces()) {
+      if (surface !== origin) {
+        surface.refreshVaultAfterRename(native);
+      }
+    }
+  };
+  sidebarProvider.onVaultRenamed = onVaultRenamed;
+  panelProvider.onVaultRenamed = onVaultRenamed;
+  TerminalEditorProvider.setVaultRenameNotifier(onVaultRenamed);
+  sessionManager.onTabRenamed = (tabId, customName) => {
+    const panes = sessionManager
+      .panesOfTab(tabId)
+      .map((paneId) => ({ paneId, vaultEntryId: sessionManager.getSession(paneId)?.vaultEntryId }));
+    const entryId = entryForTab(panes, runningEntryId);
+    if (entryId === undefined) {
+      return; // a plain shell tab — nothing in the vault to name
+    }
+    void applyVaultRename(vaultService, entryId, customName ?? "").then(
+      ({ native }) => {
+        for (const surface of vaultSurfaces()) {
+          surface.refreshVaultAfterRename(native);
+        }
+      },
+      (err) => console.error("[Portaterm] Failed to mirror tab rename into the vault:", err),
+    );
+  };
+
   context.subscriptions.push({
     dispose: () => {
       sidebarProvider.focusLiveVaultSession = undefined;
       panelProvider.focusLiveVaultSession = undefined;
+      sidebarProvider.onVaultRenamed = undefined;
+      panelProvider.onVaultRenamed = undefined;
+      TerminalEditorProvider.setVaultRenameNotifier(null);
+      sessionManager.onTabRenamed = undefined;
       refreshPinnedVaultSessions = undefined;
       sessionManager.onPinnedChange = undefined;
       pinnedVaultPublisher.dispose();
@@ -2315,9 +2368,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Once a tabId is resolved, open an InputBox seeded with the current displayed
   // name. Dismissal (`undefined`) is no-op; any other value (incl. empty string)
   // is passed to `SessionManager.renameSession`, which normalizes per D7.
+  //
+  // The displayed name is the tab's, not the host's `session.name`: that one is
+  // the creation-time `Terminal N`, while the tab shows the agent's OSC title.
+  // The context menu carries the label the tab drew (`tabLabel`); the palette
+  // falls back to the title the pane last reported.
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("portaterm.renameTab", async (arg?: { tabId?: string }) => {
+    vscode.commands.registerCommand("portaterm.renameTab", async (arg?: { tabId?: string; tabLabel?: string }) => {
       const tabId = resolveRenameTargetTabId(
         arg,
         () => TerminalEditorProvider.getActiveProvider(),
@@ -2330,7 +2388,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!session) {
         return;
       }
-      const currentDisplayed = session.customName ?? session.name;
+      const label = typeof arg?.tabLabel === "string" && arg.tabLabel.length > 0 ? arg.tabLabel : undefined;
+      const currentDisplayed = session.customName ?? label ?? sessionManager.displayedName(tabId) ?? session.name;
       const input = await vscode.window.showInputBox({
         prompt: "Rename Tab (leave empty to reset to auto-name)",
         value: currentDisplayed,

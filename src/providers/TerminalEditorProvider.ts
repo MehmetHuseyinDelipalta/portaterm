@@ -33,6 +33,7 @@ import { themeKindFor } from "./TerminalViewProvider";
 import type { WorktreeAttachment, WorktreeHost, WorktreeSurface } from "./WorktreeHost";
 import { getTerminalHtml } from "./webviewHtml";
 import {
+  applyVaultRename,
   handleFilePreviewRequest,
   handleSubagentPreviewRequest,
   handleVaultSessionDetailRequest,
@@ -40,6 +41,8 @@ import {
   PreviewTokenRegistry,
   postOnce,
   postWithRetry,
+  pushVaultListAfterRename,
+  type VaultRenameListener,
 } from "./webviewRequests";
 
 /**
@@ -315,6 +318,22 @@ export class TerminalEditorProvider {
       | null,
   ): void {
     TerminalEditorProvider._onDisposedWithAgents = fn;
+  }
+
+  /**
+   * Told after an editor panel renamed a vault session — the same window-wide
+   * policy as the view providers' `onVaultRenamed`, static for the same reason
+   * as the disposal notifier. Unset in tests → the rename stays local.
+   */
+  private static _onVaultRenamed: VaultRenameListener | null = null;
+
+  static setVaultRenameNotifier(fn: VaultRenameListener | null): void {
+    TerminalEditorProvider._onVaultRenamed = fn;
+  }
+
+  /** Every open editor provider, for refreshing their vault lists after a rename. */
+  static getProviders(): Iterable<TerminalEditorProvider> {
+    return TerminalEditorProvider._instances.values();
   }
 
   /**
@@ -855,6 +874,12 @@ export class TerminalEditorProvider {
           void this.handleRequestVaultSessions();
           break;
 
+        case "vaultRenameSession":
+          if (typeof message.entryId === "string" && typeof message.name === "string") {
+            void this.handleVaultRenameSession(message.entryId, message.name);
+          }
+          break;
+
         case "requestVaultSessionDetail":
           if (typeof message.entryId === "string") {
             void this.handleRequestVaultSessionDetail(
@@ -899,6 +924,30 @@ export class TerminalEditorProvider {
    * refresh a newer request has already superseded, including across the retry
    * sleep, so a stale list can never overwrite a newer one.
    */
+  /** Mirrors `TerminalViewProvider.handleVaultRenameSession`. */
+  private async handleVaultRenameSession(entryId: string, name: string): Promise<void> {
+    if (!this.vaultService) {
+      return;
+    }
+    const applied = await applyVaultRename(this.vaultService, entryId, name);
+    TerminalEditorProvider._onVaultRenamed?.(entryId, applied.name, applied.native, this);
+    this.refreshVaultAfterRename(applied.native);
+  }
+
+  /** Push this panel's vault list after a rename; the counter makes it win over an older refresh. */
+  refreshVaultAfterRename(native: boolean): void {
+    if (!this.vaultService) {
+      return;
+    }
+    const token = ++this._vaultRefreshSeq;
+    void pushVaultListAfterRename({
+      webview: this._panel.webview,
+      vaultService: this.vaultService,
+      native,
+      isCurrent: () => token === this._vaultRefreshSeq,
+    });
+  }
+
   private async handleRequestVaultSessions(): Promise<void> {
     if (!this.vaultService) {
       return;

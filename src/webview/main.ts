@@ -13,6 +13,7 @@ declare function acquireVsCodeApi(): {
 
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { MAX_PASTE_IMAGE_BYTES } from "../shared/imagePasteTrigger";
+import { stripDecorations } from "../shared/titleDecorations";
 import type {
   ExtensionToWebViewMessage,
   HoverPreviewSettings,
@@ -583,7 +584,9 @@ function startInlineRename(tabId: string, tabEl: HTMLElement, tabBarEl: HTMLElem
   if (!tabInfo) {
     return;
   }
-  const displayed = tabInfo.customName ?? tabInfo.name;
+  // Frame glyphs stripped: an agent's `✳` / spinner prefix is not part of the
+  // name, and committing the raw title would freeze it into the custom name.
+  const displayed = stripDecorations(tabInfo.customName ?? tabInfo.name);
   // IMPORTANT: showRenameOverlay first, THEN beginRename. If a prior overlay is
   // open, showRenameOverlay commits it — that commit's onCommit closure calls
   // store.endRename() and would clear the new tabId's marker we'd just set.

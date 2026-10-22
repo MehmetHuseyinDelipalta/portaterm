@@ -19,6 +19,7 @@ import { PtySession } from "../pty/PtySession";
 import { queryProcessCwd } from "../pty/processCwd";
 import type { InjectionContext } from "../pty/ShellIntegrationInjector";
 import { MAX_REPORTED_TITLE_CHARS } from "../shared/paneEvidence";
+import { stripDecorations } from "../shared/titleDecorations";
 import { CustomNameRegistry, type CustomNameStorage, noopCustomNameStorage } from "./CustomNameRegistry";
 import { EditorPanelRegistry } from "./EditorPanelRegistry";
 import type { MessageSender } from "./OutputBuffer";
@@ -201,6 +202,13 @@ export class SessionManager {
    * listens; pane lifecycle reaches it through the pane evidence store instead.
    */
   onPinnedChange?: () => void;
+
+  /**
+   * Fired after a root tab is renamed from the tab itself (inline edit, menu or
+   * palette) with the normalized name, `null` when reset. The vault name sync
+   * listens; a rename the vault pushed in does not fire it.
+   */
+  onTabRenamed?: (tabId: string, customName: string | null) => void;
 
   /** Restored panes still owed a `claude --resume`, with their fallback timer. */
   private readonly pendingResumes = new Map<string, { sessionId: string; fallback: ReturnType<typeof setTimeout> }>();
@@ -1096,8 +1104,11 @@ export class SessionManager {
    * - `input` is normalized via CustomNameRegistry.
    * - On success: updates `session.customName`, broadcasts `tabRenamed` to the
    *   owning webview, and persists fire-and-forget (see design.md D9).
+   * - Then tells {@link onTabRenamed}, so the vault entry the tab runs takes the
+   *   same name — unless the rename came FROM the vault (`fromVault`), which
+   *   would only echo the name back to where it started.
    */
-  renameSession(sessionId: string, input: string | null): void {
+  renameSession(sessionId: string, input: string | null, options: { fromVault?: boolean } = {}): void {
     const session = this.sessions.get(sessionId);
     if (!session || session.isSplitPane) {
       return;
@@ -1114,6 +1125,26 @@ export class SessionManager {
 
     this.customNames.setForNumber(session.number, normalized);
     this.snapshots.schedulePersist(sessionId);
+    if (!options.fromVault) {
+      this.onTabRenamed?.(sessionId, normalized);
+    }
+  }
+
+  /**
+   * The name a root tab shows, for seeding a rename the host opens itself (the
+   * command palette, where no tab label rides along): the custom name, else the
+   * title the pane last reported, else the creation-time `Terminal N`.
+   *
+   * The reported title is a signature (spinner frames already gone); the
+   * leading `✳`-style marks are stripped here too, so no frame lands in the seed. An empty one is skipped — a program that
+   * cleared its title leaves the tab on its fallback, and so does this.
+   */
+  displayedName(tabId: string): string | undefined {
+    const session = this.sessions.get(tabId);
+    if (!session) {
+      return undefined;
+    }
+    return session.customName ?? (stripDecorations(this.paneEvidence?.read(tabId)?.title) || session.name);
   }
 
   /**

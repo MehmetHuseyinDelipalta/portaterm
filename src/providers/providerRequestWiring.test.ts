@@ -255,3 +255,27 @@ describe("OBL-6: one _vaultRefreshSeq, shared with the rename push", () => {
     surface.dispose();
   });
 });
+
+describe("vault rename reaches the host from an editor panel too", () => {
+  it("writes the overlay, notifies the window and pushes the panel's list", async () => {
+    const setCustomName = vi.fn();
+    const surface = mountEditor({
+      listCached: () => listResult("claude:renamed"),
+      refresh: vi.fn(async () => listResult("claude:renamed")),
+      setCustomName,
+    } as unknown as Partial<VaultService>);
+    const heard = vi.fn();
+    TerminalEditorProvider.setVaultRenameNotifier(heard);
+    try {
+      surface.send({ type: "vaultRenameSession", entryId: "claude:x", name: " renamed " });
+      await settle();
+
+      expect(setCustomName).toHaveBeenCalledWith("claude:x", "renamed");
+      expect(heard).toHaveBeenCalledWith("claude:x", "renamed", false, expect.any(TerminalEditorProvider));
+      expect(surface.postsOf("vaultSessionsResponse").length).toBeGreaterThan(0);
+    } finally {
+      TerminalEditorProvider.setVaultRenameNotifier(null);
+      surface.dispose();
+    }
+  });
+});

@@ -7,6 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Tab and AI Vault names stay in sync.** Renaming a tab that runs an agent session also renames that session in the AI Vault, and renaming a session in the Vault renames the open tab running it. Clearing the name on either side clears it on both. For OpenCode and Codex the name is written to the agent's own store, as a Vault rename already was.
+
+### Fixed
+
+- **Rename Tab… starts from the name the tab shows.** The box opened with "Terminal 1" even when the tab showed the agent's title, such as the session's topic. It now opens with the title on the tab. Double-click rename also drops the leading `✳` or spinner mark, so it no longer ends up in the new name.
+- **Renaming a session in the AI Vault works in editor-area terminals.** The Vault inside a terminal opened in the editor area ignored a rename; it now applies it like the sidebar and panel do.
+
 ## [0.26.2] — 2026-10-21
 
 ### Changed

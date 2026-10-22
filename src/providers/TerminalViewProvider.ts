@@ -24,8 +24,7 @@ import { MAX_CONTINUATION_INSTRUCTION } from "../vault/continuationLimits";
 import type { ContinuationTarget, LaunchMode } from "../vault/LaunchBuilder";
 import { resolveAssistantMessageRef } from "../vault/messageText";
 import { agentKindForExecutable, detectLaunchTargets } from "../vault/registry";
-import { parseEntryId, type VaultSessionEntry } from "../vault/types";
-import { normalizeVaultCustomName } from "../vault/VaultCustomNameRegistry";
+import type { VaultSessionEntry } from "../vault/types";
 import type { CreateSessionOptions, VaultLauncher } from "../vault/VaultLauncher";
 import type { VaultService } from "../vault/VaultService";
 import { handlePasteClipboardImage, handlePasteOsClipboardImage, readImageFromOsClipboard } from "./clipboardImageSync";
@@ -40,6 +39,7 @@ import type { VaultWatchClient, VaultWatchCoordinator } from "./VaultWatchCoordi
 import type { WorktreeHost, WorktreeSurface } from "./WorktreeHost";
 import { getTerminalHtml } from "./webviewHtml";
 import {
+  applyVaultRename,
   handleFilePreviewRequest,
   handleSubagentPreviewRequest,
   handleVaultSessionDetailRequest,
@@ -47,6 +47,8 @@ import {
   PreviewTokenRegistry,
   postOnce,
   postWithRetry,
+  pushVaultListAfterRename,
+  type VaultRenameListener,
 } from "./webviewRequests";
 
 /**
@@ -169,6 +171,13 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
    * the pane identities and the reveal of another surface.
    */
   focusLiveVaultSession: ((entryId: string) => Promise<boolean>) | undefined;
+
+  /**
+   * Told after this surface renamed a vault session, with the normalized name
+   * (`null` = cleared) and whether the agent's own store took it. Wired by the
+   * extension, which owns the tabs running the session and the other surfaces.
+   */
+  onVaultRenamed: VaultRenameListener | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -681,74 +690,43 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Rename a vault session (write-vault-rename-to-store D1/D3/D4). The name is
-   * normalized once (trim + cap) and routed by agent:
-   * - opencode/codex + non-empty name → write the real title into the agent's own
-   *   SQLite store. On success the agent title is authoritative, so any sidecar
-   *   overlay for this entry is cleared and the list is force-refreshed (a fresh
-   *   read strictly after the write, never a pre-write in-flight one).
-   * - native write failure, an empty (clearing) name, or claude/unknown agents →
-   *   the sidecar overlay path (unchanged): served from `listCached()` instantly,
-   *   falling back to `refresh()` when there is no cache yet.
-   * Routes through `_vaultRefreshSeq` so the rename push wins over an older refresh.
+   * Rename a vault session from this surface's list or preview header. The
+   * write itself is {@link applyVaultRename}; this surface then pushes its own
+   * list, and tells the extension (`onVaultRenamed`) so the tabs running the
+   * session take the name and the other surfaces refresh.
    */
   private async handleVaultRenameSession(entryId: string, name: string, webview: vscode.Webview): Promise<void> {
     if (!this.vaultService) {
       return;
     }
-    const normalized = normalizeVaultCustomName(name);
-    const agent = parseEntryId(entryId)?.agent;
-    const isSqliteAgent = agent === "opencode" || agent === "codex";
+    const applied = await applyVaultRename(this.vaultService, entryId, name);
+    this.onVaultRenamed?.(entryId, applied.name, applied.native, this);
+    await this.pushVaultListAfterRename(webview, applied.native);
+  }
 
-    if (isSqliteAgent && normalized !== null) {
-      let wrote = false;
-      try {
-        wrote = await this.vaultService.writeNativeTitle(entryId, normalized);
-      } catch (err) {
-        console.error("[Portaterm] Native vault rename failed:", err);
-      }
-      if (wrote) {
-        // Agent-owned title is now the single source of truth — drop any overlay
-        // for this entry and re-read the store fresh (force: skip a possibly
-        // pre-write in-flight refresh so the new title actually surfaces).
-        this.vaultService.setCustomName(entryId, "");
-        const token = ++this._vaultRefreshSeq;
-        try {
-          const result = await this.vaultService.refresh({ force: true });
-          if (token === this._vaultRefreshSeq) {
-            this.safePostMessage(webview, { type: "vaultSessionsResponse", result, fromCache: false });
-          }
-        } catch (err) {
-          console.error("[Portaterm] Failed to refresh vault after native rename:", err);
-          // Best-effort: serve the cached list so the panel isn't left spinning —
-          // the native title lands on the next store-watcher refresh (review S2).
-          const cached = this.vaultService.listCached();
-          if (cached && token === this._vaultRefreshSeq) {
-            this.safePostMessage(webview, { type: "vaultSessionsResponse", result: cached, fromCache: true });
-          }
-        }
-        return;
-      }
-      // Native write did not stick → fall through to the overlay so the user still
-      // sees their name.
+  /**
+   * Push this surface's vault list after a rename made elsewhere — a tab rename
+   * mirrored into the vault, or another surface's row edit. No view, nothing to
+   * draw: the next open reads the store anyway.
+   */
+  refreshVaultAfterRename(native: boolean): void {
+    if (this._view) {
+      void this.pushVaultListAfterRename(this._view.webview, native);
     }
+  }
 
-    // Overlay path: claude/unknown agent, an empty (clearing) name, or native fallback.
-    this.vaultService.setCustomName(entryId, normalized ?? "");
-    const token = ++this._vaultRefreshSeq;
-    const cached = this.vaultService.listCached();
-    if (cached) {
-      this.safePostMessage(webview, { type: "vaultSessionsResponse", result: cached, fromCache: true });
+  /** Routes through `_vaultRefreshSeq` so the rename push wins over an older refresh. */
+  private async pushVaultListAfterRename(webview: vscode.Webview, native: boolean): Promise<void> {
+    if (!this.vaultService) {
       return;
     }
-    try {
-      const result = await this.vaultService.refresh();
-      if (token === this._vaultRefreshSeq) {
-        this.safePostMessage(webview, { type: "vaultSessionsResponse", result, fromCache: false });
-      }
-    } catch (err) {
-      console.error("[Portaterm] Failed to refresh vault after rename:", err);
-    }
+    const token = ++this._vaultRefreshSeq;
+    await pushVaultListAfterRename({
+      webview,
+      vaultService: this.vaultService,
+      native,
+      isCurrent: () => token === this._vaultRefreshSeq,
+    });
   }
 
   /** Refresh the list from disk and push it, dropping the result if a newer

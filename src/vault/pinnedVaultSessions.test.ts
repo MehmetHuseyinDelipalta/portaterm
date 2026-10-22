@@ -5,10 +5,12 @@ import type { DescendantsOutcome, ProcessTableSnapshot } from "../pty/processTab
 import {
   createClaudeProcessLookup,
   createPinnedVaultPublisher,
+  entryForTab,
   livePaneForEntry,
   type PinnedIdentitySources,
   pinnedEntryIds,
   resolvePinnedEntryIds,
+  tabsRunningEntry,
 } from "./pinnedVaultSessions";
 import type { RunningClaudeSession } from "./readers/runningSessions";
 
@@ -54,6 +56,36 @@ describe("livePaneForEntry", () => {
 
   it("answers nothing when no pane runs the entry", () => {
     expect(livePaneForEntry([{ paneId: "p1", vaultEntryId: "codex:x" }], () => undefined, "claude:s1")).toBeUndefined();
+  });
+});
+
+describe("entryForTab", () => {
+  it("takes the first pane, root first, that runs a session", () => {
+    const running = (paneId: string) => (paneId === "split" ? "claude:b" : undefined);
+    expect(entryForTab([{ paneId: "root" }, { paneId: "split" }], running)).toBe("claude:b");
+    expect(entryForTab([{ paneId: "root", vaultEntryId: "claude:a" }, { paneId: "split" }], running)).toBe("claude:a");
+  });
+
+  it("lets what a pane runs now outrank the entry its launch resumed", () => {
+    expect(entryForTab([{ paneId: "root", vaultEntryId: "claude:old" }], () => "claude:new")).toBe("claude:new");
+  });
+
+  it("answers nothing for a plain shell tab", () => {
+    expect(entryForTab([{ paneId: "root" }], () => undefined)).toBeUndefined();
+  });
+});
+
+describe("tabsRunningEntry", () => {
+  it("names each tab once, a split answering for its root", () => {
+    const panes = [
+      { paneId: "t1", tabId: "t1", vaultEntryId: "opencode:x" },
+      { paneId: "t1-split", tabId: "t1" },
+      { paneId: "t2", tabId: "t2" },
+      { paneId: "t3", tabId: "t3", vaultEntryId: "opencode:x" },
+    ];
+    const running = (paneId: string) => (paneId === "t1-split" ? "opencode:x" : undefined);
+    expect(tabsRunningEntry(panes, running, "opencode:x")).toEqual(["t1", "t3"]);
+    expect(tabsRunningEntry(panes, running, "claude:none")).toEqual([]);
   });
 });
 
