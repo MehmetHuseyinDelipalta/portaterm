@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.27.1] — 2026-10-22
+
+### Fixed
+
+- **Starting an agent no longer leaves an empty terminal behind.** With an empty Terminal 1 open, starting an agent from the AI Vault's **+** opened Terminal 2 beside it. When the active tab is a fresh shell nobody has typed into, the agent now starts in that tab. Any other tab still gets a new one. Resume, Continue and **Start an Agent Here…** behave the same way.
+- **New terminals no longer come up with an old session's name.** A tab opened with **+** in the tab bar could take the name of an agent session that had run under the same tab number earlier. A new tab now starts as **Terminal N**. Tab names still come back with their tabs after a reload. With session restore turned off, a name you gave a tab still comes back on the next tab with that number, as before, but agent session names no longer do.
+
 ## [0.27.0] — 2026-10-22
 
 ### Added
