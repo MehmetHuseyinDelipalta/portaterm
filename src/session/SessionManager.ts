@@ -1243,7 +1243,13 @@ export class SessionManager {
       customName: normalized,
     });
 
-    this.customNames.setForNumber(session.number, normalized);
+    // A name given to an agent tab, or handed down from the vault, names the
+    // session running there, not the tab slot: kept per number, it would come
+    // back on the next plain shell that recycles the number. The snapshot still
+    // carries it for this tab's own restore.
+    if (!options.fromVault && !session.isAgentLaunch) {
+      this.customNames.setForNumber(session.number, normalized);
+    }
     this.snapshots.schedulePersist(sessionId);
     if (!options.fromVault) {
       this.onTabRenamed?.(sessionId, normalized);

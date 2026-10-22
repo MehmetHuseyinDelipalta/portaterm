@@ -1569,6 +1569,24 @@ describe("SessionManager.createSession: hydration", () => {
     expect(sm.getSession(id2)!.customName).toBe("build");
     sm.dispose();
   });
+
+  it("does not keep an agent tab's or a vault-given name for the number", async () => {
+    const memento = createFakeMemento();
+    const sm = new SessionManager(memento);
+    const webview = createMockWebview();
+    const agent = sm.createSession("sidebar", webview, { shell: "claude", isAgentLaunch: true }); // number = 1
+    const shell = sm.createSession("sidebar", webview); // number = 2
+    sm.renameSession(agent, "fix the build");
+    sm.renameSession(shell, "pinned session", { fromVault: true });
+    expect(sm.getSession(agent)!.customName).toBe("fix the build");
+    expect(sm.getSession(shell)!.customName).toBe("pinned session");
+    sm.destroySession(agent);
+    sm.destroySession(shell);
+    await vi.runAllTimersAsync();
+    expect(sm.getSession(sm.createSession("sidebar", webview))!.customName).toBeNull();
+    expect(sm.getSession(sm.createSession("sidebar", webview))!.customName).toBeNull();
+    sm.dispose();
+  });
 });
 
 describe("SessionManager.getTabsForView: customName field", () => {
