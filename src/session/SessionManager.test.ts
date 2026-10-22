@@ -1544,6 +1544,15 @@ describe("SessionManager.createSession: hydration", () => {
     sm.dispose();
   });
 
+  it("does not hand a recorded name to a brand-new tab while snapshot restore is on", () => {
+    const memento = createFakeMemento({ [STORAGE_KEY]: { "1": "old agent session" } });
+    const sm = new SessionManager(memento, { restoreEnabled: true });
+    expect(sm.isRestoreEnabled()).toBe(true);
+    const id = sm.createSession("sidebar", createMockWebview()); // number = 1
+    expect(sm.getSession(id)!.customName).toBeNull();
+    sm.dispose();
+  });
+
   it("does NOT hydrate for a split-pane session, even if its number has a persisted entry", () => {
     const memento = createFakeMemento({ [STORAGE_KEY]: { "1": "deploy" } });
     const sm = new SessionManager(memento);

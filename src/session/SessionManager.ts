@@ -546,8 +546,13 @@ export class SessionManager {
 
     // Hydrate custom name: restore wins (persisted metadata), then the
     // per-number custom-names record (root tabs only; see add-tab-rename D3).
+    // The record is only consulted while snapshot restore is off: with it on,
+    // each tab's snapshot already carries its own name across a reload, and the
+    // record would hand a long-closed tab's name to a brand-new terminal that
+    // merely recycled its number.
     const restoredCustomName = restoreFrom?.metadata.customName ?? null;
-    const hydratedCustomName = isSplitPane ? null : (restoredCustomName ?? this.customNames.getForNumber(number));
+    const recordedCustomName = this.isRestoreEnabled() ? null : this.customNames.getForNumber(number);
+    const hydratedCustomName = isSplitPane ? null : (restoredCustomName ?? recordedCustomName);
 
     const session: TerminalSession = {
       id,
