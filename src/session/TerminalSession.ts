@@ -136,6 +136,14 @@ export interface TerminalSession {
    * terminal close. Not persisted — re-derived from `isAgentLaunch` on restore.
    */
   shellFallbackArmed?: boolean;
+  /**
+   * Runtime: true while this is a fresh shell tab nobody has typed into. An
+   * agent launch from this view runs IN such a tab instead of opening a second
+   * one beside it (see SessionManager.relaunchInPlace). Set only on a fresh,
+   * non-agent root; cleared by the first input. Not persisted — a restored tab
+   * carries history and is never untouched.
+   */
+  untouched?: boolean;
   /** For editor sessions, the panelId of the owning webview panel. Derived from viewId on session create. */
   panelId?: string;
   /**

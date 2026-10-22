@@ -69,6 +69,9 @@ const MAX_RESTORED_TITLE_CHARS = MAX_REPORTED_TITLE_CHARS;
 const CLAUDE_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** How long a restored resume waits for the shell's first prompt before typing ahead. */
 const RESUME_PROMPT_FALLBACK_MS = 3000;
+/** CSI, OSC/DCS-style strings, and two-byte escapes — the input a terminal sends on its own. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching terminal escape sequences is the point
+const ESCAPE_SEQUENCE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|[\]PX^_][^\x07\x1b]*(?:\x07|\x1b\\)|O.|[@-Z\\-_])/g;
 
 // ─── Options ────────────────────────────────────────────────────────
 
@@ -585,6 +588,7 @@ export class SessionManager {
       // Arm shell-fallback for a live agent root; a restored-exited session is
       // read-only so nothing to fall back from.
       shellFallbackArmed: isAgentLaunch && !restoringExited ? true : undefined,
+      untouched: !isSplitPane && !isAgentLaunch && restoreFrom === undefined ? true : undefined,
       panelId: viewId.startsWith("editor-") ? viewId.slice("editor-".length) : undefined,
       shellExited: restoringExited || undefined,
       exitCode: restoringExited ? (restoreFrom?.metadata.exitCode ?? null) : undefined,
@@ -786,55 +790,9 @@ export class SessionManager {
     const args = detected.args;
     const cwd = session.currentCwd || session.initialCwd || PtyManager.resolveWorkingDirectory();
 
-    const nodePty = PtyManager.loadNodePty();
     // Base env only: the fallback is a plain shell, so the vault's per-session
     // env (CLAUDE_CONFIG_DIR / auth allowlist) must not leak into it.
-    const baseEnv = PtyManager.buildEnvironment();
-    // Reclaim the exited agent's shell-integration cleanup before re-registering
-    // the same id; injectAtSpawn would otherwise drop its cleanup callback unrun.
-    this.shellIntegration.cleanupSession(id);
-    // Fallback replacement invalidates the old hook token BEFORE a fresh one
-    // is issued for the replacement PTY (design D6 / hook-session-isolation).
-    this.releaseAgentHookAuthority(id);
-    const pty = new PtySession(id);
-    let spawnArgs: readonly string[] = args;
-    let spawnEnv: Record<string, string> = baseEnv;
-    const injection = this.shellIntegration.injectAtSpawn(id, shell, args, baseEnv);
-    if (injection) {
-      spawnArgs = injection.args;
-      spawnEnv = injection.env;
-      pty.setShellIntegrationNonce(injection.nonce);
-    }
-    spawnEnv = { ...spawnEnv, ...this.mintAgentHookEnv(id, spawnEnv) };
-    // Do all fallible spawn work BEFORE mutating `session`, so a throw leaves the
-    // old PTY/buffer intact for the caller's fall-through exit path. Tear down the
-    // half-spawned shell on failure so it isn't orphaned.
-    try {
-      pty.spawn(nodePty, shell, [...spawnArgs], { cwd, env: spawnEnv });
-      pty.setShellIntegrationSink(this.shellIntegration.makeSink(id));
-      pty.resize(session.cols, session.rows);
-    } catch (err) {
-      this.releaseAgentHookAuthority(id);
-      pty.dispose();
-      throw err;
-    }
-
-    // Atomic swap: the dead agent PTY + its buffer for the fresh shell, keeping
-    // the tab. If a restore replay hasn't resumed output yet, inherit the paused
-    // state (dropping the old paused chunks) so shell output can't beat the
-    // snapshot replay.
-    const wasOutputPaused = session.outputBuffer.isOutputPaused;
-    session.outputBuffer.dispose(wasOutputPaused ? { flush: false } : undefined);
-    session.pty = pty;
-    const nextBuffer = new OutputBuffer(id, webview, pty, (tabId, at) => this.paneEvidence?.markOutput(tabId, at));
-    if (wasOutputPaused) {
-      nextBuffer.pauseOutput();
-    }
-    session.outputBuffer = nextBuffer;
-    // A live process is back in this pane. Cleared here, at the swap, rather
-    // than in `wirePty`: that runs for a restored read-only tab too, where
-    // clearing it would resurrect a pane whose process is genuinely gone.
-    this.paneEvidence?.markExited(id, false);
+    const pty = this.swapPty(session, webview, { shell, args, cwd });
     // Flip the persisted identity (+ cwd) so a reload restores THIS shell, not
     // the agent the user already quit.
     session.shell = shell;
@@ -848,7 +806,6 @@ export class SessionManager {
     // it claiming the agent that used to be here (D4).
     this.paneEvidence?.markProcess(id, { ptyPid: pty.pid, shell, isAgentLaunch: false });
     this.paneEvidence?.markCwd(id, cwd);
-    this.wirePty(session, pty, webview);
     // Persist the flip now so a crash/quit before the next debounced flush can't
     // resurrect the agent identity (clean reload is covered by the deactivate
     // flush). See review W1.
@@ -857,11 +814,174 @@ export class SessionManager {
     });
   }
 
+  /**
+   * The active root tab of `viewId` when it is a fresh shell nobody has typed
+   * into, has no split panes, and belongs to `worktreeId` — the tab a launch
+   * into this view should take over rather than open a second one beside.
+   */
+  untouchedActiveTab(viewId: string, worktreeId: string | undefined): string | undefined {
+    for (const id of this.viewSessions.get(viewId) ?? []) {
+      const session = this.sessions.get(id);
+      if (!session || session.isSplitPane || !session.isActive) {
+        continue;
+      }
+      const reusable =
+        session.untouched === true &&
+        session.state === "live" &&
+        !this.terminalBeingKilled.has(id) &&
+        session.worktreeId === worktreeId &&
+        session.commandTracking.commands.length === 0 &&
+        this.panesOfTab(id).length === 1;
+      return reusable ? id : undefined;
+    }
+    return undefined;
+  }
+
+  /**
+   * Run a launch in an untouched shell tab instead of a new one: the idle shell
+   * is replaced by the launched process in the same pane, under the same tab
+   * number, as if the tab had been opened for it. Returns false — and opens
+   * nothing — when the tab no longer qualifies or the spawn fails, so the caller
+   * falls back to a new tab.
+   */
+  relaunchInPlace(
+    sessionId: string,
+    options: {
+      shell?: string;
+      shellArgs?: string[];
+      cwd?: string;
+      env?: Record<string, string>;
+      isAgentLaunch?: boolean;
+      vaultEntryId?: string;
+    },
+  ): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session?.untouched || session.state !== "live" || this.terminalBeingKilled.has(sessionId)) {
+      return false;
+    }
+    // Resolved the way createSession resolves a fresh tab's process.
+    let shell: string;
+    let args: string[];
+    if (options.shell) {
+      shell = options.shell;
+      args = options.shellArgs ?? [];
+    } else {
+      const detected = PtyManager.detectShell();
+      shell = detected.shell;
+      args = options.shellArgs && options.shellArgs.length > 0 ? options.shellArgs : detected.args;
+    }
+    const cwd = options.cwd || PtyManager.resolveWorkingDirectory();
+    // Whatever happens below, the shell has been offered up once; a failed
+    // swap leaves it running, but no longer a candidate for the next launch.
+    session.untouched = undefined;
+    let pty: PtySession;
+    try {
+      pty = this.swapPty(session, session.webview, { shell, args, cwd, env: options.env });
+    } catch (err) {
+      console.error(`[Portaterm] in-place launch failed for ${sessionId}:`, err);
+      return false;
+    }
+    // The idle prompt is not history worth keeping above the launched process.
+    this.clearScrollback(sessionId);
+    session.outputBuffer.append("\x1b[H\x1b[2J\x1b[3J");
+
+    const isAgentLaunch = options.isAgentLaunch === true;
+    session.shell = shell;
+    session.shellArgs = args;
+    session.initialCwd = cwd;
+    session.currentCwd = undefined;
+    session.isAgentLaunch = isAgentLaunch || undefined;
+    session.vaultEntryId = isAgentLaunch ? options.vaultEntryId : undefined;
+    session.shellFallbackArmed = isAgentLaunch || undefined;
+    session.resumeClaudeSessionId = undefined;
+    this.paneEvidence?.markProcess(sessionId, { ptyPid: pty.pid, shell, isAgentLaunch });
+    this.paneEvidence?.markCwd(sessionId, cwd);
+    void this.snapshots.flushSessionImmediate(sessionId).catch((err) => {
+      console.error(`[Portaterm] persist in-place launch identity failed for ${sessionId}:`, err);
+    });
+    return true;
+  }
+
+  /**
+   * Spawn `spec` and swap it into `session` in place of its current PTY, keeping
+   * the tab: a fresh OutputBuffer, re-wired events, and fresh shell-integration
+   * and agent-hook registrations under the same id. The previous PTY is disposed
+   * — killed if it is still running, without its exit reaching the session.
+   *
+   * All fallible spawn work happens BEFORE `session` is touched, so a throw
+   * leaves the old PTY and buffer in place for the caller.
+   */
+  private swapPty(
+    session: TerminalSession,
+    webview: MessageSender,
+    spec: { shell: string; args: string[]; cwd: string; env?: Record<string, string> },
+  ): PtySession {
+    const id = session.id;
+    const nodePty = PtyManager.loadNodePty();
+    const baseEnv = PtyManager.buildEnvironment();
+    // Reclaim the previous process's shell-integration cleanup before re-registering
+    // the same id; injectAtSpawn would otherwise drop its cleanup callback unrun.
+    this.shellIntegration.cleanupSession(id);
+    // Replacement invalidates the old hook token BEFORE a fresh one is issued
+    // for the replacement PTY (design D6 / hook-session-isolation).
+    this.releaseAgentHookAuthority(id);
+    const pty = new PtySession(id);
+    let spawnArgs: readonly string[] = spec.args;
+    let spawnEnv: Record<string, string> = baseEnv;
+    const injection = this.shellIntegration.injectAtSpawn(id, spec.shell, spec.args, baseEnv);
+    if (injection) {
+      spawnArgs = injection.args;
+      spawnEnv = injection.env;
+      pty.setShellIntegrationNonce(injection.nonce);
+    }
+    if (spec.env) {
+      spawnEnv = { ...spawnEnv, ...spec.env };
+    }
+    spawnEnv = { ...spawnEnv, ...this.mintAgentHookEnv(id, spawnEnv) };
+    // Tear down the half-spawned process on failure so it isn't orphaned.
+    try {
+      pty.spawn(nodePty, spec.shell, [...spawnArgs], { cwd: spec.cwd, env: spawnEnv });
+      pty.setShellIntegrationSink(this.shellIntegration.makeSink(id));
+      pty.resize(session.cols, session.rows);
+    } catch (err) {
+      this.releaseAgentHookAuthority(id);
+      pty.dispose();
+      throw err;
+    }
+
+    // Atomic swap: the old PTY + its buffer for the fresh one, keeping the tab.
+    // `dispose` drops the old PTY's callbacks before killing it, so a still-live
+    // process going away is not seen as this pane exiting. If a restore replay
+    // hasn't resumed output yet, inherit the paused state (dropping the old
+    // paused chunks) so new output can't beat the snapshot replay.
+    session.pty.dispose();
+    const wasOutputPaused = session.outputBuffer.isOutputPaused;
+    session.outputBuffer.dispose(wasOutputPaused ? { flush: false } : undefined);
+    session.pty = pty;
+    const nextBuffer = new OutputBuffer(id, webview, pty, (tabId, at) => this.paneEvidence?.markOutput(tabId, at));
+    if (wasOutputPaused) {
+      nextBuffer.pauseOutput();
+    }
+    session.outputBuffer = nextBuffer;
+    // A live process is back in this pane. Cleared here, at the swap, rather
+    // than in `wirePty`: that runs for a restored read-only tab too, where
+    // clearing it would resurrect a pane whose process is genuinely gone.
+    this.paneEvidence?.markExited(id, false);
+    this.wirePty(session, pty, webview);
+    return pty;
+  }
+
   /** Write input data to a session's PTY. Silent no-op for unknown session IDs. */
   writeToSession(sessionId: string, data: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) {
       return;
+    }
+    // A terminal's replies to the shell's own queries (DA, cursor position) and
+    // bare navigation keys are escape sequences; anything left once they are
+    // stripped is something the user typed.
+    if (session.untouched && data.replace(ESCAPE_SEQUENCE, "") !== "") {
+      session.untouched = undefined;
     }
     session.pty.write(data);
   }

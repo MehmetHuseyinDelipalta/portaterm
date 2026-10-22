@@ -493,8 +493,16 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
    * Shared by every launch this provider performs — a continuation, and the
    * worktree surface's own launches — so a fresh agent lands in a pane the same
    * way a resumed one does rather than in a second, similar-looking one.
+   *
+   * When the active tab is a fresh shell nobody has typed into, the launch
+   * takes that tab over instead of opening another beside it.
    */
   private openSessionTab(opts: CreateSessionOptions, webview: vscode.Webview): void {
+    const idleTabId = this.sessionManager.untouchedActiveTab(this.getViewId(), opts.worktreeId);
+    if (idleTabId !== undefined && this.sessionManager.relaunchInPlace(idleTabId, opts)) {
+      void this.safeSendWithRetry(webview, { type: "worktreeActivatePane", paneId: idleTabId });
+      return;
+    }
     const newSessionId = this.sessionManager.createSession(this.getViewId(), webview, {
       shell: opts.shell,
       shellArgs: opts.shellArgs,
