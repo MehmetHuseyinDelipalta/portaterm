@@ -55,6 +55,7 @@ Claude Code, Codex, OpenCode, and Cursor Agent all keep local session data in di
 - **Group your way** — **Recent**, **Agent**, or **Folder** grouping (persisted), with Claude / Codex / OpenCode / Cursor identity and per-agent accents. A session running in a pinned tab is pinned to the top of its group.
 - **Start an agent from its group** — in **Agent** grouping, hover an agent's header and click **+** to start a new session of that agent in the workspace root, in a new tab, with its default permission mode. Shown only for agents installed on this machine.
 - **See what's already open** — a session that a terminal pane is running carries a **Tab** mark, and **Resume** brings that tab forward instead of starting a second agent on the same conversation.
+- **Rename once** — renaming a session in the Vault renames the open tab running it, and renaming the tab renames the session. OpenCode and Codex keep the name in their own store.
 - **Find it fast** — client-side search plus a **"This folder only"** filter, on by default, scoped to the focused terminal's working directory. When that folder has no sessions, **Show all sessions** turns the filter off.
 - **Right-click for more** — provider-supported actions such as Resume, Reveal in Finder/Explorer, Copy File Path or Resume Command, and Open Working Directory.
 - **Cross-platform** — store locations resolve per-OS (honoring `CLAUDE_CONFIG_DIR`, `CODEX_HOME` / `CODEX_SQLITE_HOME`, `XDG_DATA_HOME`); falls back to a built-in SQLite engine when the `sqlite3` CLI is missing (typically Windows). A missing store degrades to an empty list, never an error.
@@ -116,7 +117,7 @@ The built-in terminal is awkward to reposition and can't live in the sidebar. Po
 | `Cmd+Backspace` | Kill input line |
 | `Shift+Enter` | Insert newline |
 
-Rename a root tab by double-clicking its label, choosing **Rename Tab…** from the tab context menu, or running **Portaterm: Rename Tab…** from the Command Palette. No default rename keybinding is shipped.
+Rename a root tab by double-clicking its label, choosing **Rename Tab…** from the tab context menu, or running **Portaterm: Rename Tab…** from the Command Palette. The box opens with the name the tab shows. Renaming a tab that runs an agent session also renames that session in the AI Vault. No default rename keybinding is shipped.
 
 > Replace `Cmd` with `Ctrl` on non-macOS (Windows/Linux support in progress).
 

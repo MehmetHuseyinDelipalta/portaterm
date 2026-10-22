@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-10-22
+
 ### Added
 
 - **Tab and AI Vault names stay in sync.** Renaming a tab that runs an agent session also renames that session in the AI Vault, and renaming a session in the Vault renames the open tab running it. Clearing the name on either side clears it on both. For OpenCode and Codex the name is written to the agent's own store, as a Vault rename already was.
