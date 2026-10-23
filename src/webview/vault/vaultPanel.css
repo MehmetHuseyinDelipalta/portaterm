@@ -197,6 +197,15 @@
   flex: 0 0 auto;
   min-width: 0;
   padding: 4px 8px 6px;
+  /* Scroll, not clip: in a narrow sidebar the grouping buttons plus "This folder
+     only" outgrow the strip, and the panel's `overflow: hidden` would otherwise
+     cut the checkbox off entirely until the sidebar is widened. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.vault-groupbar > .vault-segmented {
+  flex: 0 0 auto;
 }
 .vault-groupbar[hidden] {
   display: none;

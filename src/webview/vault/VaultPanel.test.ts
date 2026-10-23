@@ -4641,6 +4641,15 @@ describe("round-1 review fixes", () => {
     expect(css).toMatch(/@container vault-header \(max-width: 140px\)/);
   });
 
+  it("scrolls a narrow grouping strip instead of clipping 'This folder only'", () => {
+    // The panel clips its overflow, so a strip wider than the sidebar would hide
+    // the checkbox outright; the strip scrolls sideways instead.
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const css = fs.readFileSync(path.join(here, "vaultPanel.css"), "utf8");
+    expect(block(css, ".vault-groupbar")).toContain("overflow-x: auto");
+    expect(block(css, ".vault-groupbar > .vault-segmented")).toContain("flex: 0 0 auto");
+  });
+
   it("[2_1] withdraws the grouping strip in the body that has nothing to group", () => {
     const { host, panel } = build();
     panel.setGroupMode("folder", { persist: false });
