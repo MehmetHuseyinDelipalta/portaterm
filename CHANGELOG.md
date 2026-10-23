@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.28.0] — 2026-10-23
+
+### Added
+
+- **The active tab stays in view.** With more tabs than fit in the tab bar, switching to a tab at the far end, or resuming a session into it, left it off-screen behind the right edge. The tab bar now scrolls the active tab into view whenever it changes, and also when Resume brings forward a session that is already open.
+- **A +N mark counts the tabs past the right edge.** When tabs run off the right side of the tab bar, a muted **+N** mark at the right edge shows how many. It takes the waiting colour when one of those tabs needs your approval, and clicking it brings the next hidden tab into view.
+
 ## [0.27.3] — 2026-10-23
 
 ### Fixed

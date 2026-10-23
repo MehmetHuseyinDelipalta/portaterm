@@ -100,7 +100,7 @@ Running an agent in the terminal floods it with file paths, diffs, and image att
 The built-in terminal is awkward to reposition and can't live in the sidebar. Portaterm lets you put a full terminal **anywhere** — without losing PTY semantics, WebGL rendering, theming, or clickable links.
 
 - **Place it anywhere** — Primary Sidebar, Secondary Sidebar, Bottom Panel, or Editor Tab; each location remembers its own state.
-- **Tabs + split panes** — horizontal/vertical splits with drag-to-resize, recursive.
+- **Tabs + split panes** — horizontal/vertical splits with drag-to-resize, recursive. With more tabs than fit, the active tab is always scrolled into view and a **+N** mark counts the tabs past the right edge.
 - **Real terminal** — `node-pty` backed, full shell support, adaptive flow control.
 - **GPU rendering** — WebGL, smooth on Retina.
 - **Theme aware** — follows your VS Code theme (dark / light / high contrast).
