@@ -261,8 +261,10 @@ export async function readOpenCodeSessions(
   if (result.status === "query-error" || result.status === "db-unreachable") {
     // Cache EMPTY sources so a query-error is retried next refresh, not reused as
     // an empty success (oracle review). A store this process could not reach is the
-    // same case: unreadable, never an empty store (D6).
-    return { entries: [], unreadable: 1, cache: { kind: "store", sources: {}, entries: [], unreadable: 1 } };
+    // same case: unreadable, never an empty store (D6) — so the prior entries
+    // stay listed rather than blanking every row until the retry.
+    const kept = prev?.kind === "store" ? prev.entries : [];
+    return { entries: kept, unreadable: 1, cache: { kind: "store", sources: {}, entries: kept, unreadable: 1 } };
   }
   if (result.status !== "ok") {
     // no-db / no-sqlite3 → zero entries; empty sources so the next refresh re-reads.

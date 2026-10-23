@@ -533,8 +533,11 @@ export async function readCodexSessions(
     // EMPTY sources so the error is NOT reused as an empty success on the next
     // refresh — it is retried until the query succeeds (oracle review). This is
     // the `ok` gate the status ladder used to leave implicit: `db-unreachable`
-    // fell through it and became a successful EMPTY listing (round-1 B3).
-    return { entries: [], unreadable: 1, cache: { kind: "store", sources: {}, entries: [], unreadable: 1 } };
+    // fell through it and became a successful EMPTY listing (round-1 B3). The
+    // prior entries ride along: a failed read is not a store that emptied, and
+    // dropping them blanked every Codex row until the retry brought them back.
+    const kept = prev?.kind === "store" ? prev.entries : [];
+    return { entries: kept, unreadable: 1, cache: { kind: "store", sources: {}, entries: kept, unreadable: 1 } };
   }
 
   // status === "ok"

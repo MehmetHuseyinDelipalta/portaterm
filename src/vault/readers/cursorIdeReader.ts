@@ -27,9 +27,15 @@ const MAX_CONTEXT_CHARS = 512;
 const SAFE_COMPOSER_ID_RE = /^[A-Za-z0-9._-]{1,200}$/;
 const LIMITED_REASON = "Cursor IDE transcript is unavailable for this session.";
 
+// `lastUpdatedAt IS NOT NULL` drops composers that were opened and never sent a
+// message: Cursor writes a header for every new chat pane, and only the first
+// message stamps `lastUpdatedAt` (measured: 268 of 268 such headers carried no
+// conversation). Listed, each became an untitled row that came and went as
+// Cursor created and discarded empty panes. Lookup by id still resolves them.
 const COMPOSER_LIST_SQL = `SELECT composerId, workspaceId, createdAt, lastUpdatedAt, isArchived, isSubagent, value
 FROM composerHeaders
-WHERE isArchived = 0 AND isSubagent = 0 AND length(CAST(value AS BLOB)) <= ${MAX_JSON_CHARS}
+WHERE isArchived = 0 AND isSubagent = 0 AND lastUpdatedAt IS NOT NULL
+  AND length(CAST(value AS BLOB)) <= ${MAX_JSON_CHARS}
 ORDER BY COALESCE(lastUpdatedAt, createdAt) DESC
 LIMIT ${MAX_COMPOSERS}`;
 
@@ -221,10 +227,11 @@ function mapEntry(composer: ParsedComposer): VaultSessionEntry {
   };
 }
 
-async function listFromSnapshot(snapshot: SqliteSnapshot): Promise<Omit<CursorIdeListResult, "sources">> {
+/** `undefined` when the list query itself did not run — a failed read, not an empty store. */
+async function listFromSnapshot(snapshot: SqliteSnapshot): Promise<Omit<CursorIdeListResult, "sources"> | undefined> {
   const result = await snapshot.query(COMPOSER_LIST_SQL);
   if (result.status !== "ok") {
-    return { entries: [], unreadable: 1 };
+    return undefined;
   }
   const byId = new Map<string, VaultSessionEntry[]>();
   let unreadable = 0;
@@ -260,13 +267,26 @@ function sourceStamps(dbPath: string): Promise<Record<string, FileStamp>> {
   return stampStoreFiles(storeFilePaths(dbPath));
 }
 
-export async function readCursorIdeSessions(options: CursorIdeReaderOptions = {}): Promise<CursorIdeListResult> {
+/**
+ * List the IDE composers. A read that could not happen keeps `prevEntries`: the
+ * store is Cursor's multi-GB global state, written while Cursor runs, so a
+ * snapshot that misses its budget is routine — and answering it with no entries
+ * blanked every IDE row until the next read brought them back, flashed as new.
+ * Only a store confirmed absent (`no-db`) lists nothing.
+ */
+export async function readCursorIdeSessions(
+  options: CursorIdeReaderOptions = {},
+  prevEntries: readonly VaultSessionEntry[] = [],
+): Promise<CursorIdeListResult> {
   const dbPath = cursorIdeDbPath(options);
   const result = await (options.withSqliteSnapshotFn ?? readSnapshot)(dbPath, listFromSnapshot);
   const sources = await sourceStamps(dbPath);
-  return result.status === "ok"
-    ? { ...result.value, sources }
-    : { entries: [], unreadable: result.status === "no-db" ? 0 : 1, sources };
+  if (result.status === "ok" && result.value !== undefined) {
+    return { ...result.value, sources };
+  }
+  return result.status === "no-db"
+    ? { entries: [], unreadable: 0, sources }
+    : { entries: [...prevEntries], unreadable: 1, sources };
 }
 
 function sqlText(value: string): string {

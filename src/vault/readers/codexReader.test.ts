@@ -453,6 +453,27 @@ describe("readCodexSessions: incremental store stamp", () => {
     expect(fn).toHaveBeenCalledTimes(4);
     expect(second.unreadable).toBe(1);
   });
+
+  it("keeps the prior entries listed when a refresh query fails", async () => {
+    // A failed read is not a store that emptied: blanking the rows made every
+    // Codex session vanish and reappear, flashed as new, on the retry.
+    const dir = await makeDb();
+    const entry = {
+      id: "codex:kept",
+      agent: "codex" as const,
+      sessionId: "kept",
+      title: "kept",
+      cwd: "/repo",
+      modified: 1,
+      flags: {},
+    };
+    const prev = { kind: "store" as const, sources: {}, entries: [entry], unreadable: 0 };
+    const fn = stubSqlite({ status: "query-error", rows: [], error: "busy" });
+    const failed = await readCodexSessions({ codexDir: dir, readSqliteFn: fn }, prev);
+    expect(failed.entries).toEqual([entry]);
+    expect(failed.unreadable).toBe(1);
+    expect(failed.cache).toMatchObject({ kind: "store", sources: {}, entries: [entry] });
+  });
 });
 
 describe("pickRolloutPath containment", () => {

@@ -36,6 +36,8 @@ interface ComposerFixture {
   composerData?: boolean;
   headers?: Array<{ bubbleId: string; type: number }>;
   bubbles?: Record<string, Record<string, unknown>>;
+  /** A composer opened and never sent a message carries no `lastUpdatedAt`. */
+  neverStarted?: boolean;
 }
 
 async function writeIdeStore(fixtures: ComposerFixture[]): Promise<void> {
@@ -72,7 +74,15 @@ async function writeIdeStore(fixtures: ComposerFixture[]): Promise<void> {
           uri: { fsPath: fixture.cwd ?? "/Users/me/project" },
         },
       };
-      insertHeader.run(fixture.id, workspaceId, 1000, 2000, fixture.archived ? 1 : 0, 0, JSON.stringify(header));
+      insertHeader.run(
+        fixture.id,
+        workspaceId,
+        1000,
+        fixture.neverStarted ? null : 2000,
+        fixture.archived ? 1 : 0,
+        0,
+        JSON.stringify(header),
+      );
       if (fixture.composerData !== false) {
         insert.run(
           `composerData:${fixture.id}`,
@@ -194,6 +204,47 @@ describe("Cursor IDE Composer list", () => {
     const result = await readCursorIdeSessions({ ideDbPath: dbPath });
     expect(result.entries.map((entry) => entry.sessionId)).toEqual(["ide:d29ya3NwYWNlLTE:valid"]);
     expect(result.unreadable).toBe(1);
+  });
+
+  it("does not list a composer that was opened and never sent a message", async () => {
+    // Cursor writes a header for every new chat pane; listed, each was an
+    // untitled row that appeared and vanished as Cursor discarded empty panes.
+    await writeIdeStore([{ id: "empty", neverStarted: true, composerData: false }, { id: "valid" }]);
+
+    const result = await readCursorIdeSessions({ ideDbPath: dbPath });
+    expect(result.entries.map((entry) => entry.sessionId)).toEqual(["ide:d29ya3NwYWNlLTE:valid"]);
+    expect(result.unreadable).toBe(0);
+  });
+
+  it("keeps the prior entries listed when a snapshot fails", async () => {
+    // The IDE store is Cursor's multi-GB global state; a snapshot missing its
+    // budget used to blank every IDE row until the next read restored them.
+    await writeIdeStore([{ id: "composer-1" }]);
+    const first = await readCursorIdeSessions({ ideDbPath: dbPath });
+    expect(first.entries).toHaveLength(1);
+
+    const failedSnapshot = (async () => ({
+      status: "query-error" as const,
+      error: "snapshot exceeded 30000ms",
+    })) as typeof withSqliteSnapshot;
+    const failed = await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: failedSnapshot },
+      first.entries,
+    );
+    expect(failed.entries).toEqual(first.entries);
+    expect(failed.unreadable).toBe(1);
+
+    // The list query failing inside a good snapshot is the same failed read.
+    const failedQuery = (async (_path: string, callback: (snapshot: SqliteSnapshot) => Promise<unknown>) => ({
+      status: "ok",
+      value: await callback({ query: async () => ({ status: "query-error", rows: [], error: "busy" }) }),
+    })) as typeof withSqliteSnapshot;
+    const failedInside = await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: failedQuery },
+      first.entries,
+    );
+    expect(failedInside.entries).toEqual(first.entries);
+    expect(failedInside.unreadable).toBe(1);
   });
 
   it("returns an empty result for a missing store and degrades query failure", async () => {

@@ -136,6 +136,27 @@ describe("readOpenCodeSessions", () => {
     expect(entries).toEqual([]);
     expect(unreadable).toBe(1);
   });
+
+  it.each([
+    "db-unreachable",
+    "query-error",
+  ] as const)("keeps the prior entries listed when a refresh hits %s", async (status) => {
+    // A failed read is not a store that emptied: blanking the rows made every
+    // OpenCode session vanish and reappear, flashed as new, on the retry.
+    const first = await readOpenCodeSessions({
+      dataDir: "/x/oc",
+      readSqliteFn: stubSqlite({ status: "ok", rows: ROWS }),
+    });
+    expect(first.entries.length).toBeGreaterThan(0);
+    const failed = await readOpenCodeSessions(
+      { dataDir: "/x/oc", readSqliteFn: stubSqlite({ status, rows: [], error: "busy" }) },
+      first.cache,
+    );
+    expect(failed.entries).toEqual(first.entries);
+    expect(failed.unreadable).toBe(1);
+    // Still retried next time, and still carrying the entries if it fails again.
+    expect(failed.cache).toMatchObject({ kind: "store", sources: {}, entries: first.entries });
+  });
 });
 
 describe("lookupOpenCodeEntry: single-entry resolve", () => {

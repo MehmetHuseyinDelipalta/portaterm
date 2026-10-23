@@ -361,7 +361,7 @@ export async function readCursorSessions(
         prevCursor.locations,
         prevCursor.unreadableById ?? {},
         prevCursor.rejected ?? 0,
-        await readCursorIdeSessions(options),
+        await readCursorIdeSessions(options, cachedIde(prevCursor).entries),
       );
     }
     const { groups, locations, metaChanged, requiresFullScan } = await resolveChangedCursorChatCandidates(
@@ -409,7 +409,7 @@ export async function readCursorSessions(
       unreadableById[candidate.chatId] = next.unreadable;
     }
   }
-  const ide = await readCursorIdeSessions(options);
+  const ide = await readCursorIdeSessions(options, cachedIde(prevCursor).entries);
   return cursorResult(chats, locations, unreadableById, rejected, ide);
 }
 
