@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.27.2] — 2026-10-23
+
+### Fixed
+
+- **This folder only stays reachable in a narrow sidebar.** When the sidebar was too narrow for the AI Vault's Recent / Agent / Folder buttons and the **This folder only** checkbox, the checkbox was cut off and could only be reached by widening the sidebar. The strip now scrolls sideways instead.
+
 ## [0.27.1] — 2026-10-22
 
 ### Fixed
