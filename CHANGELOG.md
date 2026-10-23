@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.27.3] — 2026-10-23
+
+### Fixed
+
+- **AI Vault rows no longer vanish and flash back.** Reading Cursor IDE history can time out while Cursor is busy writing its large state database. When that happened, every Cursor IDE row disappeared from the Vault and came back on the next read, flashing as if new. Codex and OpenCode had the same problem. A failed read now keeps the rows already shown and counts it under the unreadable note.
+- **Empty Cursor chats are no longer listed.** Cursor records a chat for every new chat pane, even one you never typed into. These showed up in the Vault as **(untitled session)** rows. Only chats with at least one message are listed now.
+
 ## [0.27.2] — 2026-10-23
 
 ### Fixed
