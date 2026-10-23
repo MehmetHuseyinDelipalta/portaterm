@@ -9,9 +9,11 @@ import { createBranch, createLeaf } from "./SplitModel";
 import {
   buildTabBarData,
   chooseScopeDensity,
+  countTabsPastRightEdge,
   handleTabKeyboardShortcut,
   type RenderTabBarDeps,
   renderTabBar,
+  revealActiveTab,
   type TabBarDataSource,
   type TabBarScope,
   type TabKeyboardDeps,
@@ -1085,5 +1087,102 @@ describe("renderTabBar: drag to reorder", () => {
     expect(tabEl(deps, "b").classList.contains("tab-dragging")).toBe(true);
     expect(tabEl(deps, "a").classList.contains("tab-drop-after")).toBe(true);
     fireDrag(tabEl(deps, "b"), "dragend");
+  });
+});
+
+describe("tab overflow: active tab reveal and the +N mark", () => {
+  const TAB_WIDTH = 100;
+  const MARK_WIDTH = 30;
+
+  /**
+   * A fake layout: every tab is TAB_WIDTH wide, laid out from the bar's left edge
+   * and shifted by its scrollLeft; the bar shows `barWidth` px. JSDOM has none.
+   */
+  function fakeLayout(barWidth: number): void {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.id === "tab-bar" ? barWidth : 0;
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("tab-overflow") ? MARK_WIDTH : 0;
+    });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const bar = this.closest<HTMLElement>("#tab-bar");
+      if (!bar || bar === this || !this.classList.contains("tab-item")) {
+        return DOMRect.fromRect({ x: 0, y: 0, width: barWidth, height: 30 });
+      }
+      const index = Array.from(bar.querySelectorAll(".tab-item")).indexOf(this);
+      return DOMRect.fromRect({ x: index * TAB_WIDTH - bar.scrollLeft, y: 0, width: TAB_WIDTH, height: 30 });
+    });
+  }
+
+  type FakeTab = { name: string; activityStatus?: "idle" | "running" | "waiting" };
+
+  function tabs(count: number): Map<string, FakeTab> {
+    return new Map(Array.from({ length: count }, (_, i) => [`t${i}`, { name: `Terminal ${i}` }]));
+  }
+
+  it("counts a tab cut off part-way as past the edge", () => {
+    expect(countTabsPastRightEdge([100, 200, 300], 250, 0)).toBe(1);
+    expect(countTabsPastRightEdge([100, 200, 300], 250, 60)).toBe(2);
+    expect(countTabsPastRightEdge([100, 200], 250, 0)).toBe(0);
+  });
+
+  it("draws no mark when the tabs fit, and none without layout", () => {
+    const deps = createMockDeps({ terminals: tabs(5) as never, activeTabId: "t0" });
+    renderTabBar(deps);
+    expect(deps.tabBarEl.querySelector(".tab-overflow")).toBeNull();
+    fakeLayout(1000);
+    renderTabBar(deps);
+    expect(deps.tabBarEl.querySelector(".tab-overflow")).toBeNull();
+  });
+
+  it("shows how many tabs are past the right edge, the mark's own width included", () => {
+    fakeLayout(250);
+    const deps = createMockDeps({ terminals: tabs(5) as never, activeTabId: "t0" });
+    renderTabBar(deps);
+    const mark = deps.tabBarEl.querySelector<HTMLElement>(".tab-overflow");
+    // Visible strip is 250 - 30 = 220: t0 and t1 fit, t2..t4 do not.
+    expect(mark?.textContent).toBe("+3");
+    expect(mark?.getAttribute("aria-label")).toBe("3 more tabs to the right");
+    // Sits between "+" and the end, so the reconciled order still reads tabs, "+".
+    expect(mark?.previousElementSibling?.classList.contains("tab-add")).toBe(true);
+  });
+
+  it("tints the mark when a hidden tab is waiting", () => {
+    fakeLayout(250);
+    const terminals = tabs(4);
+    terminals.set("t3", { name: "Agent", activityStatus: "waiting" });
+    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "t0" });
+    renderTabBar(deps);
+    expect(deps.tabBarEl.querySelector(".tab-overflow")?.classList.contains("tab-overflow-waiting")).toBe(true);
+  });
+
+  it("scrolls a newly active tab at the end into view beside the mark", () => {
+    fakeLayout(250);
+    const deps = createMockDeps({ terminals: tabs(5) as never, activeTabId: "t0" });
+    renderTabBar(deps);
+    renderTabBar({ ...deps, activeTabId: "t4" });
+    // t4 ends at 500; the visible strip is 220 wide with the mark in place.
+    expect(deps.tabBarEl.scrollLeft).toBe(280);
+  });
+
+  it("does not yank back a bar the user scrolled while the active tab is unchanged", () => {
+    fakeLayout(250);
+    const deps = createMockDeps({ terminals: tabs(5) as never, activeTabId: "t0" });
+    renderTabBar(deps);
+    deps.tabBarEl.scrollLeft = 200;
+    renderTabBar(deps);
+    expect(deps.tabBarEl.scrollLeft).toBe(200);
+    revealActiveTab(deps.tabBarEl);
+    expect(deps.tabBarEl.scrollLeft).toBe(0);
+  });
+
+  it("reveals the next hidden tab when the mark is clicked", () => {
+    fakeLayout(250);
+    const deps = createMockDeps({ terminals: tabs(5) as never, activeTabId: "t0" });
+    renderTabBar(deps);
+    deps.tabBarEl.querySelector<HTMLElement>(".tab-overflow")?.click();
+    // t2 ends at 300; visible strip 220.
+    expect(deps.tabBarEl.scrollLeft).toBe(80);
   });
 });

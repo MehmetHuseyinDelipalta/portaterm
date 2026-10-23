@@ -60,9 +60,145 @@ function observeScopeDensity(tabBarEl: HTMLElement): void {
   if (scopeResizeObservers.has(tabBarEl) || typeof ResizeObserver === "undefined") {
     return;
   }
-  const observer = new ResizeObserver(() => syncScopeDensity(tabBarEl));
+  const observer = new ResizeObserver(() => {
+    syncScopeDensity(tabBarEl);
+    syncTabOverflow(tabBarEl);
+  });
   observer.observe(tabBarEl);
   scopeResizeObservers.set(tabBarEl, observer);
+}
+
+// ─── Overflow: keep the active tab on screen, count what is past the edge ───
+
+/** The active tab id the bar last scrolled into view, per bar. */
+const revealedActiveTab = new WeakMap<HTMLElement, string | null>();
+const overflowScrollListeners = new WeakSet<HTMLElement>();
+
+/**
+ * How many tabs end past the visible right edge, `reserve` px of which is
+ * covered by the sticky controls. A tab cut off part-way counts: its name is
+ * what the user cannot read.
+ */
+export function countTabsPastRightEdge(tabRights: readonly number[], visibleWidth: number, reserve: number): number {
+  const edge = visibleWidth - reserve;
+  return tabRights.filter((right) => right > edge + 1).length;
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** Width the sticky right-edge controls (overflow count, scope chip) cover over the tabs. */
+function stickyReserve(tabBarEl: HTMLElement): number {
+  const chip = tabBarEl.querySelector<HTMLElement>(":scope > .tab-scope");
+  const overflow = tabBarEl.querySelector<HTMLElement>(":scope > .tab-overflow");
+  return (chip?.offsetWidth ?? 0) + (overflow && !overflow.hidden ? overflow.offsetWidth : 0);
+}
+
+/**
+ * Scroll the bar just enough that `tab` is fully visible beside the sticky
+ * controls. Done by hand rather than `scrollIntoView`, which would also scroll
+ * the `overflow: hidden` ancestors and shove the whole layout sideways.
+ */
+function scrollTabIntoView(tabBarEl: HTMLElement, tab: HTMLElement): void {
+  if (tabBarEl.clientWidth <= 0) {
+    return;
+  }
+  const barLeft = tabBarEl.getBoundingClientRect().left;
+  const rect = tab.getBoundingClientRect();
+  const left = rect.left - barLeft;
+  const right = rect.right - barLeft;
+  const visibleWidth = tabBarEl.clientWidth - stickyReserve(tabBarEl);
+  let delta = 0;
+  if (left < 0) {
+    delta = left;
+  } else if (right > visibleWidth) {
+    // A tab wider than the visible strip keeps its start (status + name) in view.
+    delta = Math.min(right - visibleWidth, left);
+  }
+  if (delta === 0) {
+    return;
+  }
+  const target = tabBarEl.scrollLeft + delta;
+  if (typeof tabBarEl.scrollTo === "function") {
+    tabBarEl.scrollTo({ left: target, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+  } else {
+    tabBarEl.scrollLeft = target;
+  }
+}
+
+/**
+ * Bring the active tab into view. `renderTabBar` does this on its own whenever
+ * the active tab changes; callers use it when a pane was brought forward on
+ * purpose (a vault resume, a worktree row) and the tab may already have been the
+ * active one, scrolled out of sight.
+ */
+export function revealActiveTab(tabBarEl: HTMLElement): void {
+  const active = tabBarEl.querySelector<HTMLElement>(":scope > .tab-item.active");
+  if (active) {
+    scrollTabIntoView(tabBarEl, active);
+  }
+}
+
+/**
+ * Draw the `+N` mark for tabs past the right edge, or remove it when there are
+ * none. Absent rather than hidden when unused, so the bar's child list is only
+ * tabs, `+` and the scope chip on a surface that fits.
+ */
+function syncTabOverflow(tabBarEl: HTMLElement): void {
+  let mark = tabBarEl.querySelector<HTMLButtonElement>(":scope > .tab-overflow") ?? undefined;
+  // JSDOM and detached callers have no layout, so nothing can be past an edge.
+  if (tabBarEl.clientWidth <= 0) {
+    mark?.remove();
+    return;
+  }
+  const chip = tabBarEl.querySelector<HTMLElement>(":scope > .tab-scope");
+  const chipWidth = chip?.offsetWidth ?? 0;
+  const barLeft = tabBarEl.getBoundingClientRect().left;
+  const tabs = Array.from(tabBarEl.querySelectorAll<HTMLElement>(":scope > .tab-item"));
+  const rights = tabs.map((tab) => tab.getBoundingClientRect().right - barLeft);
+  if (countTabsPastRightEdge(rights, tabBarEl.clientWidth, chipWidth) === 0) {
+    mark?.remove();
+    return;
+  }
+  if (!mark) {
+    mark = document.createElement("button");
+    mark.type = "button";
+    mark.className = "tab-overflow";
+    mark.addEventListener("click", () => {
+      // Reveal the first tab past the edge; the next click reveals the one after.
+      const reserve = stickyReserve(tabBarEl);
+      const left = tabBarEl.getBoundingClientRect().left;
+      const next = Array.from(tabBarEl.querySelectorAll<HTMLElement>(":scope > .tab-item")).find(
+        (tab) => tab.getBoundingClientRect().right - left > tabBarEl.clientWidth - reserve + 1,
+      );
+      if (next) {
+        scrollTabIntoView(tabBarEl, next);
+      }
+    });
+    tabBarEl.insertBefore(mark, chip);
+  }
+  mark.style.right = `${chipWidth}px`;
+  // Measured with the mark in place: it covers tabs too, and its own width
+  // depends on the digits it shows.
+  mark.textContent = `+${countTabsPastRightEdge(rights, tabBarEl.clientWidth, chipWidth)}`;
+  const edge = tabBarEl.clientWidth - chipWidth - mark.offsetWidth;
+  const hidden = tabs.filter((_tab, i) => (rights[i] ?? 0) > edge + 1);
+  mark.textContent = `+${hidden.length}`;
+  const waiting = hidden.some((tab) => tab.dataset.status === "waiting");
+  mark.classList.toggle("tab-overflow-waiting", waiting);
+  const noun = hidden.length === 1 ? "tab" : "tabs";
+  const label = `${hidden.length} more ${noun} to the right${waiting ? ", one needs you" : ""}`;
+  mark.title = label;
+  mark.setAttribute("aria-label", label);
+}
+
+function observeTabOverflow(tabBarEl: HTMLElement): void {
+  if (overflowScrollListeners.has(tabBarEl)) {
+    return;
+  }
+  tabBarEl.addEventListener("scroll", () => syncTabOverflow(tabBarEl), { passive: true });
+  overflowScrollListeners.add(tabBarEl);
 }
 
 /** Pin glyph for a pinned tab — stroked with `currentColor` to follow the tab's text color. */
@@ -600,6 +736,15 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     tabBarEl.insertBefore(addBtn, cursor);
   }
   cursor = addBtn.nextElementSibling;
+  // Kept across renders (created and dropped by syncTabOverflow), so PTY-driven
+  // re-renders do not flicker it.
+  const overflow = tabBarEl.querySelector<HTMLElement>(":scope > .tab-overflow");
+  if (overflow) {
+    if (overflow !== cursor) {
+      tabBarEl.insertBefore(overflow, cursor);
+    }
+    cursor = overflow.nextElementSibling;
+  }
   if (chip) {
     if (chip !== cursor) {
       tabBarEl.insertBefore(chip, cursor);
@@ -618,6 +763,14 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
   tabBarEl.classList.add("visible");
   syncScopeDensity(tabBarEl);
   observeScopeDensity(tabBarEl);
+  syncTabOverflow(tabBarEl);
+  observeTabOverflow(tabBarEl);
+  // Only on a CHANGE of active tab: renders also come from PTY activity, and
+  // re-revealing on each would yank back a bar the user scrolled by hand.
+  if (revealedActiveTab.get(tabBarEl) !== activeTabId) {
+    revealedActiveTab.set(tabBarEl, activeTabId);
+    revealActiveTab(tabBarEl);
+  }
 
   // After-render hook (e.g. reposition the inline-rename overlay so it stays
   // anchored to the target tab across re-renders). See add-tab-rename D4.

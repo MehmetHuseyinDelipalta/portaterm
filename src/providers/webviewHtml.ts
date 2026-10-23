@@ -341,6 +341,35 @@ export function getTerminalHtml(
       background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1));
       color: var(--vscode-tab-activeForeground, #fff);
     }
+    /* Tabs past the right edge. Pinned beside the scope chip (or the edge) and
+       muted like an inactive tab: a count to glance at, not an alert — unless a
+       hidden tab is waiting, which borrows the waiting tab's colour. */
+    .tab-overflow {
+      position: sticky;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      height: 100%;
+      flex-shrink: 0;
+      padding: 0 8px 0 14px;
+      border: none;
+      cursor: pointer;
+      font: inherit;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      color: var(--vscode-tab-inactiveForeground, #999);
+      background: linear-gradient(
+        to right,
+        transparent,
+        var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background)) 8px
+      );
+    }
+    .tab-overflow:hover {
+      color: var(--vscode-tab-activeForeground, #fff);
+    }
+    .tab-overflow.tab-overflow-waiting {
+      color: var(--vscode-editorWarning-foreground, #cca700);
+    }
     .tab-exited .tab-name {
       opacity: 0.5;
       font-style: italic;

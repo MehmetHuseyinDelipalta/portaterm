@@ -64,7 +64,7 @@ import { ResizeCoordinator } from "./resize/ResizeCoordinator";
 import { SplitTreeRenderer } from "./split/SplitTreeRenderer";
 import { resolveTabDisplayPane } from "./split/tabDisplay";
 import { WebviewStateStore } from "./state/WebviewStateStore";
-import { buildTabBarData, handleTabKeyboardShortcut, renderTabBar } from "./TabBarUtils";
+import { buildTabBarData, handleTabKeyboardShortcut, renderTabBar, revealActiveTab } from "./TabBarUtils";
 import { type TabBarScopeWiring, wireTabBarScope } from "./tabBarScopeWiring";
 import { hideRenameOverlay, repositionRenameOverlay, showRenameOverlay } from "./tabRenameOverlay";
 import { hasCurrentCursorApproval, hasStrictCursorTitle } from "./terminal/CursorApprovalDetector";
@@ -657,7 +657,7 @@ function showEmptyScope(projection: { owner: TerminalOwner; label: string } | nu
 
 /** Bring a pane forward through the surface navigation controller. */
 function activatePaneById(paneId: string): boolean {
-  return activatePane(paneId, {
+  const activated = activatePane(paneId, {
     tabLayouts: store.tabLayouts,
     canDisplayTab: (tabId) =>
       resolveTabDisplayPane(tabId, {
@@ -668,6 +668,13 @@ function activatePaneById(paneId: string): boolean {
       navigationController.dispatch((catalog, state) => focusNavigationPane(catalog, state, id));
     },
   });
+  // The bar reveals a newly active tab itself; this covers a pane whose tab was
+  // already active but scrolled out of sight (a resume of a running session).
+  const tabBarEl = document.getElementById("tab-bar");
+  if (activated && tabBarEl) {
+    revealActiveTab(tabBarEl);
+  }
+  return activated;
 }
 
 function removeTerminal(id: string): void {
