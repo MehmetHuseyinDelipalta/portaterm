@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.30.1] — 2026-10-25
+
+### Fixed
+
+- **A pinned tab stays in view.** Pinning a tab at the far right of a crowded tab bar moved it to the front, but the bar stayed scrolled to the end, so the tab you had just pinned was off-screen. The tab bar now follows a tab you pin or unpin to its new place.
+
 ## [0.30.0] — 2026-10-25
 
 ### Changed
