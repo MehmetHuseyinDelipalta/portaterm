@@ -32,17 +32,20 @@ function byModifiedDesc(a: VaultSessionEntry, b: VaultSessionEntry): number {
  * suppressed). Non-Recent groups are ordered by their newest entry (desc), and
  * entries within every group are ordered by modified desc.
  *
- * `pinned` holds the entry ids pinned tabs are running. Those rows lead their
- * group, and a group holding one leads the groups that do not; the newest-first
- * order still applies within each of those bands.
+ * `pinned` holds the entry ids pinned tabs are running, `open` the ids any live
+ * pane is running. Pinned rows lead their group, open rows follow them, and a
+ * group is ranked by the highest band it holds; the newest-first order still
+ * applies within each band.
  */
 export function groupEntries(
   entries: VaultSessionEntry[],
   mode: GroupMode,
   pinned: ReadonlySet<string> = new Set(),
+  open: ReadonlySet<string> = new Set(),
 ): VaultGroup[] {
-  const isPinned = (entry: VaultSessionEntry) => pinned.has(entry.id);
-  const sorted = [...entries].sort((a, b) => Number(isPinned(b)) - Number(isPinned(a)) || byModifiedDesc(a, b));
+  // 2 = pinned, 1 = open in a live pane, 0 = neither.
+  const band = (entry: VaultSessionEntry) => (pinned.has(entry.id) ? 2 : open.has(entry.id) ? 1 : 0);
+  const sorted = [...entries].sort((a, b) => band(b) - band(a) || byModifiedDesc(a, b));
 
   if (mode === "recent") {
     return [{ mode, key: "recent", label: "", hideCwd: false, entries: sorted }];
@@ -75,22 +78,20 @@ export function groupEntries(
     );
   }
 
-  // Groups holding a pinned row first, then by newest entry. A bucket's pinned
-  // rows lead it, so entries[0] says whether it holds one; the newest entry is
-  // the first modified-desc row after them.
-  const rank = new Map<VaultGroup, { pinned: number; newest: number }>();
+  // Groups ranked by the highest band they hold, then by newest entry. A
+  // bucket's highest-band rows lead it, so entries[0] carries its band.
+  const rank = new Map<VaultGroup, { band: number; newest: number }>();
   for (const group of groups) {
     const first = group.entries[0];
-    const unpinned = group.entries.find((e) => !isPinned(e));
     rank.set(group, {
-      pinned: first !== undefined && isPinned(first) ? 1 : 0,
-      newest: Math.max(first?.modified ?? 0, unpinned?.modified ?? 0),
+      band: first === undefined ? 0 : band(first),
+      newest: Math.max(0, ...group.entries.map((e) => e.modified)),
     });
   }
   groups.sort((a, b) => {
     const ra = rank.get(a);
     const rb = rank.get(b);
-    return (rb?.pinned ?? 0) - (ra?.pinned ?? 0) || (rb?.newest ?? 0) - (ra?.newest ?? 0);
+    return (rb?.band ?? 0) - (ra?.band ?? 0) || (rb?.newest ?? 0) - (ra?.newest ?? 0);
   });
   return groups;
 }

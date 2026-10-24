@@ -14,7 +14,7 @@ Resuming an entry — from the row action, the context menu, or the preview head
 - **WHEN** a pane in any terminal surface is running entry `claude:s1` and the user clicks Resume on that entry's row
 - **THEN** that pane's surface is revealed and the pane is activated, and no new tab or agent process is started
 
-Every row whose entry a live pane runs, by the same rule, SHALL carry a "Tab" mark ahead of its title (after any pin mark), so the list shows which rows a resume would focus. The host SHALL push the full set to every vault surface whenever it changes and with each list request; the mark SHALL NOT change the row order.
+Every row whose entry a live pane runs, by the same rule, SHALL carry a "Tab" mark ahead of its title (after any pin mark), so the list shows which rows a resume would focus. The host SHALL push the full set to every vault surface whenever it changes and with each list request. Marked rows SHALL lead their group, after any pinned rows, newest first among themselves.
 
 #### Scenario: The Tab mark follows the pane
 
@@ -46,6 +46,11 @@ The vault SHALL provide a "This folder only" toggle that, when enabled, scopes t
 
 - **WHEN** "This folder only" is enabled and the user focuses a terminal pane whose cwd is `/work/repo`
 - **THEN** the vault lists only sessions whose cwd is `/work/repo` or a subdirectory of it, and re-scopes when a pane with a different cwd is focused
+
+#### Scenario: Folder scope ignores Unicode normal form
+
+- **WHEN** the active pane's cwd is reported decomposed (`/work/Geçişi` as `c` + U+0327) and a session recorded the same folder composed
+- **THEN** that session is within scope and stays listed
 
 ### Requirement: Refresh on open
 

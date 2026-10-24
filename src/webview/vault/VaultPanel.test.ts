@@ -475,7 +475,7 @@ describe("VaultPanel open sessions", () => {
       .filter((r) => r.querySelector(".vault-row-tab"))
       .map((r) => r.dataset.entryId);
 
-  it("marks a session some pane runs with a Tab mark, without reordering", () => {
+  it("marks a session some pane runs with a Tab mark and moves it to the top", () => {
     const host = createHost();
     const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
     panel.render(result([entry({ id: "claude:new", modified: 30 }), entry({ id: "claude:old", modified: 1 })]));
@@ -483,7 +483,7 @@ describe("VaultPanel open sessions", () => {
     panel.setOpenEntryIds(["claude:old"]);
     expect(tabMarked(host)).toEqual(["claude:old"]);
     const rows = Array.from(host.querySelectorAll<HTMLElement>(".vault-row")).map((r) => r.dataset.entryId);
-    expect(rows).toEqual(["claude:new", "claude:old"]);
+    expect(rows).toEqual(["claude:old", "claude:new"]);
     const mark = host.querySelector(".vault-row-tab");
     expect(mark?.textContent).toBe("Tab");
     expect(mark?.getAttribute("aria-label")).toBe("Open in a tab");

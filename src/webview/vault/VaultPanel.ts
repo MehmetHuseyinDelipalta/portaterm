@@ -795,9 +795,9 @@ export class VaultPanel {
   }
 
   /**
-   * Set the entries some live pane is running. They carry a Tab mark; order is
-   * unchanged. Repaints only when the set changed, and defers the repaint while
-   * an inline rename is open.
+   * Set the entries some live pane is running. They carry a Tab mark and lead
+   * their group, after any pinned rows. Repaints only when the set changed, and
+   * defers the repaint while an inline rename is open.
    */
   setOpenEntryIds(ids: readonly string[]): void {
     const next = new Set(ids);
@@ -997,7 +997,7 @@ export class VaultPanel {
     const prevScrollTop = this.bodyEl.scrollTop;
     this.listEl.replaceChildren();
     // Recent → flat list (no group headers). Agent/Folder → grouped headers.
-    for (const group of groupEntries(visible, this.groupMode, this.pinnedEntryIds)) {
+    for (const group of groupEntries(visible, this.groupMode, this.pinnedEntryIds, this.openEntryIds)) {
       if (group.mode !== "recent") {
         const collapsed = this.collapsedGroups.has(`${group.mode}:${group.key}`);
         const agent = group.key;

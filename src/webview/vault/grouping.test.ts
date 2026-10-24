@@ -142,3 +142,25 @@ describe("groupEntries with pinned sessions", () => {
     expect(groups[0].entries.map((e) => e.id)).toEqual(["a"]);
   });
 });
+
+describe("groupEntries with open sessions", () => {
+  it("Recent → open rows follow pinned ones and lead the rest", () => {
+    const groups = groupEntries(
+      [entry({ id: "new", modified: 30 }), entry({ id: "open", modified: 29 }), entry({ id: "pin", modified: 1 })],
+      "recent",
+      new Set(["pin"]),
+      new Set(["open"]),
+    );
+    expect(groups[0].entries.map((e) => e.id)).toEqual(["pin", "open", "new"]);
+  });
+
+  it("Agent → a group holding an open row leads a newer one", () => {
+    const groups = groupEntries(
+      [entry({ id: "c-open", agent: "claude", modified: 1 }), entry({ id: "x-newest", agent: "codex", modified: 50 })],
+      "agent",
+      new Set(),
+      new Set(["c-open"]),
+    );
+    expect(groups.map((g) => g.key)).toEqual(["claude", "codex"]);
+  });
+});
