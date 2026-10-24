@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.30.0] — 2026-10-25
+
+### Changed
+
+- **Sessions open in a tab move to the top.** An AI Vault session that a terminal pane is running kept its place in the list, so the one in your active tab could sit below newer sessions. Rows with the **Tab** mark now come right after pinned sessions, and in **Agent** or **Folder** grouping their group moves up too.
+
+### Fixed
+
+- **This folder only works in folders with accented names.** In a folder whose name holds a character such as **ç** or **ş** (for example `PHP-8 Geçişi`), **This folder only** showed no sessions at all. macOS reports the terminal's folder in a different Unicode form than the agents record, so the two never matched. They are now compared in the same form.
+
 ## [0.29.0] — 2026-10-25
 
 ### Added
