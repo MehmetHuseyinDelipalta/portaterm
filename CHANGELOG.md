@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.29.0] — 2026-10-25
+
+### Added
+
+- **Close a tab with Cmd+W.** While a Portaterm terminal has focus, **Cmd+W** (**Ctrl+Shift+W** on Windows and Linux) closes the active tab, or only the focused pane when the tab is split. It used to close whatever file was open in the editor instead. It asks first when an agent is running and leaves pinned tabs open, just like the tab's close button. Plain **Ctrl+W** still reaches the shell, where it deletes the previous word.
+
+### Changed
+
+- **Closing a tab returns to the tab you used before it.** Closing the active tab, by keyboard or with its close button, used to jump to the first tab in the bar. It now goes back to the tab you were using before, the way VS Code's editor tabs work.
+
 ## [0.28.0] — 2026-10-23
 
 ### Added
