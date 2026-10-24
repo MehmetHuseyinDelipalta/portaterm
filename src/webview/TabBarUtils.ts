@@ -141,6 +141,19 @@ export function revealActiveTab(tabBarEl: HTMLElement): void {
 }
 
 /**
+ * Bring the tab `tabId` into view. For a tab that moved without the active tab
+ * changing — pinning or unpinning re-sorts it to the other end of the strip.
+ */
+export function revealTab(tabBarEl: HTMLElement, tabId: string): void {
+  const tab = Array.from(tabBarEl.querySelectorAll<HTMLElement>(":scope > .tab-item")).find(
+    (el) => el.dataset.tabId === tabId,
+  );
+  if (tab) {
+    scrollTabIntoView(tabBarEl, tab);
+  }
+}
+
+/**
  * Draw the `+N` mark for tabs past the right edge, or remove it when there are
  * none. Absent rather than hidden when unused, so the bar's child list is only
  * tabs, `+` and the scope chip on a surface that fits.

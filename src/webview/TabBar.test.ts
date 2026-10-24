@@ -15,6 +15,7 @@ import {
   type RenderTabBarDeps,
   renderTabBar,
   revealActiveTab,
+  revealTab,
   type TabBarDataSource,
   type TabBarScope,
   type TabKeyboardDeps,
@@ -1116,7 +1117,7 @@ describe("tab overflow: active tab reveal and the +N mark", () => {
     });
   }
 
-  type FakeTab = { name: string; activityStatus?: "idle" | "running" | "waiting" };
+  type FakeTab = { name: string; activityStatus?: "idle" | "running" | "waiting"; pinned?: boolean };
 
   function tabs(count: number): Map<string, FakeTab> {
     return new Map(Array.from({ length: count }, (_, i) => [`t${i}`, { name: `Terminal ${i}` }]));
@@ -1175,6 +1176,21 @@ describe("tab overflow: active tab reveal and the +N mark", () => {
     renderTabBar(deps);
     expect(deps.tabBarEl.scrollLeft).toBe(200);
     revealActiveTab(deps.tabBarEl);
+    expect(deps.tabBarEl.scrollLeft).toBe(0);
+  });
+
+  it("follows a pinned tab to the front of a bar scrolled to the end", () => {
+    fakeLayout(250);
+    const terminals = tabs(5);
+    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "t4" });
+    renderTabBar(deps);
+    expect(deps.tabBarEl.scrollLeft).toBe(280);
+    // Pinned-first order, as the tab collector hands it over after a pin.
+    const pinned = new Map([["t4", { name: "Terminal 4", pinned: true }], ...[...terminals].slice(0, 4)]);
+    renderTabBar({ ...deps, terminals: pinned as never });
+    // Same active tab, so the render alone leaves the bar where it was.
+    expect(deps.tabBarEl.scrollLeft).toBe(280);
+    revealTab(deps.tabBarEl, "t4");
     expect(deps.tabBarEl.scrollLeft).toBe(0);
   });
 

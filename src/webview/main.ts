@@ -72,6 +72,7 @@ import {
   isCloseTabShortcut,
   renderTabBar,
   revealActiveTab,
+  revealTab,
 } from "./TabBarUtils";
 import { type TabBarScopeWiring, wireTabBarScope } from "./tabBarScopeWiring";
 import { hideRenameOverlay, repositionRenameOverlay, showRenameOverlay } from "./tabRenameOverlay";
@@ -823,6 +824,11 @@ const routeMessage = createMessageRouter({
       instance.pinned = msg.pinned;
     }
     updateTabBar();
+    // Pinning re-sorts the tab to the other end of the strip; follow it there.
+    const tabBarEl = document.getElementById("tab-bar");
+    if (tabBarEl) {
+      revealTab(tabBarEl, msg.tabId);
+    }
   },
   onRestore(msg) {
     const instance = store.terminals.get(msg.tabId);
