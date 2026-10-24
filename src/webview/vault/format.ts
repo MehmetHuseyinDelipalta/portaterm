@@ -47,7 +47,7 @@ export function formatStats(stats: VaultSessionDetail["stats"]): string {
   return parts.join(" · ");
 }
 
-/** True iff `child` equals `parent` or sits inside its subtree (either separator). */
+/** True iff `child` equals `parent` or sits inside its subtree (either separator, any Unicode normal form). */
 export function isWithin(child: string, parent: string): boolean {
   if (!child || !parent) {
     return false;
@@ -56,7 +56,9 @@ export function isWithin(child: string, parent: string): boolean {
   // (`/`) compare correctly without falling into the sibling-prefix trap
   // (`/a/b` must NOT match `/a/bc`). A parent that normalizes to empty was a
   // filesystem root → it contains every absolute path.
-  const strip = (p: string): string => p.replace(/[/\\]+$/, "");
+  // NFC first: macOS reports a live cwd (lsof) decomposed — `c` + U+0327 for
+  // `ç` — while agents record it composed, so the same folder would not match.
+  const strip = (p: string): string => p.normalize("NFC").replace(/[/\\]+$/, "");
   const c = strip(child);
   const p = strip(parent);
   if (p === "") {
