@@ -11,6 +11,7 @@ import {
   chooseScopeDensity,
   countTabsPastRightEdge,
   handleTabKeyboardShortcut,
+  isCloseTabShortcut,
   type RenderTabBarDeps,
   renderTabBar,
   revealActiveTab,
@@ -1184,5 +1185,36 @@ describe("tab overflow: active tab reveal and the +N mark", () => {
     deps.tabBarEl.querySelector<HTMLElement>(".tab-overflow")?.click();
     // t2 ends at 300; visible strip 220.
     expect(deps.tabBarEl.scrollLeft).toBe(80);
+  });
+});
+
+// ─── isCloseTabShortcut ─────────────────────────────────────────────
+
+describe("isCloseTabShortcut", () => {
+  const key = (k: string, mods: Partial<Record<"metaKey" | "ctrlKey" | "shiftKey" | "altKey", boolean>> = {}) => ({
+    key: k,
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    ...mods,
+  });
+
+  it("matches Cmd+W on macOS only without other modifiers", () => {
+    expect(isCloseTabShortcut(key("w", { metaKey: true }), true)).toBe(true);
+    expect(isCloseTabShortcut(key("W", { metaKey: true }), true)).toBe(true);
+    expect(isCloseTabShortcut(key("w", { metaKey: true, shiftKey: true }), true)).toBe(false);
+    expect(isCloseTabShortcut(key("w", { metaKey: true, altKey: true }), true)).toBe(false);
+    expect(isCloseTabShortcut(key("w", { ctrlKey: true }), true)).toBe(false);
+  });
+
+  it("matches Ctrl+Shift+W elsewhere and leaves plain Ctrl+W to the shell", () => {
+    expect(isCloseTabShortcut(key("W", { ctrlKey: true, shiftKey: true }), false)).toBe(true);
+    expect(isCloseTabShortcut(key("w", { ctrlKey: true }), false)).toBe(false);
+    expect(isCloseTabShortcut(key("w", { metaKey: true }), false)).toBe(false);
+  });
+
+  it("ignores other keys", () => {
+    expect(isCloseTabShortcut(key("q", { metaKey: true }), true)).toBe(false);
   });
 });

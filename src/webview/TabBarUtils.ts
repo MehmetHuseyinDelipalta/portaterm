@@ -822,3 +822,20 @@ export function handleTabKeyboardShortcut(
   deps.switchTab(tabIds[nextIndex]);
   return true;
 }
+
+/**
+ * Cmd+W on macOS, Ctrl+Shift+W elsewhere: close the active tab (or the focused
+ * split pane). Caught inside the webview because a manifest keybinding never
+ * wins here — focus in a webview view does not reach `focusedView`, so VS Code
+ * resolved the key to its own Close Editor and closed an unrelated file.
+ * Plain Ctrl+W is left alone off macOS: in a shell it deletes the previous word.
+ */
+export function isCloseTabShortcut(
+  e: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; key: string },
+  isMac: boolean,
+): boolean {
+  if (e.key.toLowerCase() !== "w" || e.altKey) {
+    return false;
+  }
+  return isMac ? e.metaKey && !e.ctrlKey && !e.shiftKey : e.ctrlKey && e.shiftKey && !e.metaKey;
+}

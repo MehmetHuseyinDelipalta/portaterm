@@ -116,6 +116,7 @@ The built-in terminal is awkward to reposition and can't live in the sidebar. Po
 | `Cmd+K` | Clear terminal |
 | `Cmd+Backspace` | Kill input line |
 | `Shift+Enter` | Insert newline |
+| `Cmd+W` (Windows/Linux: `Ctrl+Shift+W`) | Close the active tab — only while a Portaterm view has focus |
 
 Rename a root tab by double-clicking its label, choosing **Rename Tab…** from the tab context menu, or running **Portaterm: Rename Tab…** from the Command Palette. The box opens with the name the tab shows. Renaming a tab that runs an agent session also renames that session in the AI Vault. No default rename keybinding is shipped.
 

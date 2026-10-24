@@ -807,6 +807,12 @@ export class TerminalEditorProvider {
           break;
         }
 
+        case "requestClosePane":
+          if (typeof message.sessionId === "string") {
+            void vscode.commands.executeCommand("portaterm.ctx.closePane", { paneSessionId: message.sessionId });
+          }
+          break;
+
         case "clear":
           if (typeof message.tabId === "string") {
             this.sessionManager.clearScrollback(message.tabId);

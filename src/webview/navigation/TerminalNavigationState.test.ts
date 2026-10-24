@@ -7,8 +7,10 @@ import {
   isTerminalNavigationStateValid,
   MAIN_TERMINAL_OWNER,
   normalizeTerminalNavigationState,
+  recordRecentTab,
   selectNavigationOwner,
   selectNavigationTab,
+  selectRecentNavigationTab,
   type TerminalNavigationCatalog,
   type TerminalNavigationState,
 } from "./TerminalNavigationState";
@@ -160,5 +162,38 @@ describe("TerminalNavigationState", () => {
 
     expect(selectNavigationTab(facts, initial, "gone")).toBe(initial);
     expect(focusNavigationPane(facts, initial, "gone")).toBe(initial);
+  });
+});
+
+describe("recent-tab selection after closing the active tab", () => {
+  it("keeps the most recently active tab first without duplicates", () => {
+    expect(recordRecentTab(["b", "a"], "c")).toEqual(["c", "b", "a"]);
+    expect(recordRecentTab(["c", "b", "a"], "a")).toEqual(["a", "c", "b"]);
+    expect(recordRecentTab(["a"], null)).toEqual(["a"]);
+  });
+
+  it("returns to the previously active tab rather than the first one", () => {
+    // "c" was closed while active; "a" is first in the bar, "b" was used last.
+    const cat = catalog({ a: MAIN_TERMINAL_OWNER, b: MAIN_TERMINAL_OWNER }, { a: createLeaf("a"), b: createLeaf("b") });
+    const closing: TerminalNavigationState = {
+      activeOwner: MAIN_TERMINAL_OWNER,
+      activeTabId: "c",
+      activePaneByTab: { a: "a", b: "b", c: "c" },
+    };
+    expect(selectRecentNavigationTab(cat, closing, ["c", "b", "a"]).activeTabId).toBe("b");
+  });
+
+  it("skips recent tabs of another owner and falls back to the owner's first tab", () => {
+    const cat = catalog(
+      { a: MAIN_TERMINAL_OWNER, b: MAIN_TERMINAL_OWNER, w: linked("/repo/wt") },
+      { a: createLeaf("a"), b: createLeaf("b"), w: createLeaf("w") },
+    );
+    const closing: TerminalNavigationState = {
+      activeOwner: MAIN_TERMINAL_OWNER,
+      activeTabId: "c",
+      activePaneByTab: { a: "a", b: "b", w: "w" },
+    };
+    expect(selectRecentNavigationTab(cat, closing, ["c", "w", "b"]).activeTabId).toBe("b");
+    expect(selectRecentNavigationTab(cat, closing, ["c", "w"]).activeTabId).toBe("a");
   });
 });

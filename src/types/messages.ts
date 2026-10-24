@@ -171,6 +171,17 @@ export interface RequestCloseSplitPaneMessage {
   sessionId: string;
 }
 
+/**
+ * User asked to close a split pane from the keyboard. Unlike
+ * `requestCloseSplitPane`, nothing is disposed yet: the host runs the gated
+ * Close Pane command, which confirms first and then tells the webview to close.
+ */
+export interface RequestClosePaneMessage {
+  type: "requestClosePane";
+  /** Session ID of the pane to close */
+  sessionId: string;
+}
+
 /** User requested terminal clear (scrollback + viewport). */
 export interface ClearMessage {
   type: "clear";
@@ -1831,6 +1842,7 @@ export type WebViewToExtensionMessage =
   | AckMessage
   | RequestSplitSessionMessage
   | RequestCloseSplitPaneMessage
+  | RequestClosePaneMessage
   | SplitPaneAttachmentResultMessage
   | FocusMessage
   | ToggleMaximizedPanelMessage

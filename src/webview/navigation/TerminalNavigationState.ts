@@ -230,6 +230,37 @@ export function selectNavigationTab(
   return { activeOwner, activeTabId: tabId, activePaneByTab };
 }
 
+/** Move `tabId` to the front of a most-recently-active list, dropping its older entry. */
+export function recordRecentTab(recentTabIds: readonly string[], tabId: string | null): string[] {
+  if (tabId === null || recentTabIds[0] === tabId) {
+    return [...recentTabIds];
+  }
+  return [tabId, ...recentTabIds.filter((id) => id !== tabId)];
+}
+
+/**
+ * After the active tab is closed: the most recently active surviving tab of the
+ * same owner, like VS Code's own editors. Falls back to `selectNavigationOwner`
+ * (the owner's first tab) when no recent tab survives.
+ */
+export function selectRecentNavigationTab(
+  catalog: TerminalNavigationCatalog,
+  current: TerminalNavigationState,
+  recentTabIds: readonly string[],
+): TerminalNavigationState {
+  const fallback = selectNavigationOwner(catalog, current, current.activeOwner);
+  for (const tabId of recentTabIds) {
+    if (tabId === current.activeTabId) {
+      continue;
+    }
+    const next = selectNavigationTab(catalog, fallback, tabId);
+    if (next.activeTabId === tabId && terminalOwnersEqual(next.activeOwner, current.activeOwner)) {
+      return next;
+    }
+  }
+  return fallback;
+}
+
 export function focusNavigationPane(
   catalog: TerminalNavigationCatalog,
   current: TerminalNavigationState,

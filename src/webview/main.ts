@@ -55,8 +55,10 @@ import {
   focusNavigationPane,
   MAIN_TERMINAL_OWNER,
   normalizeTerminalNavigationState,
+  recordRecentTab,
   selectNavigationOwner,
   selectNavigationTab,
+  selectRecentNavigationTab,
   type TerminalNavigationState,
   type TerminalOwner,
 } from "./navigation/TerminalNavigationState";
@@ -64,7 +66,13 @@ import { ResizeCoordinator } from "./resize/ResizeCoordinator";
 import { SplitTreeRenderer } from "./split/SplitTreeRenderer";
 import { resolveTabDisplayPane } from "./split/tabDisplay";
 import { WebviewStateStore } from "./state/WebviewStateStore";
-import { buildTabBarData, handleTabKeyboardShortcut, renderTabBar, revealActiveTab } from "./TabBarUtils";
+import {
+  buildTabBarData,
+  handleTabKeyboardShortcut,
+  isCloseTabShortcut,
+  renderTabBar,
+  revealActiveTab,
+} from "./TabBarUtils";
 import { type TabBarScopeWiring, wireTabBarScope } from "./tabBarScopeWiring";
 import { hideRenameOverlay, repositionRenameOverlay, showRenameOverlay } from "./tabRenameOverlay";
 import { hasCurrentCursorApproval, hasStrictCursorTitle } from "./terminal/CursorApprovalDetector";
@@ -398,12 +406,16 @@ function flushPendingSplitAttachmentAcks(): void {
   }
 }
 
+// Most recently active first; closing the active tab returns to the next one.
+let recentTabIds: string[] = [];
+
 const navigationController = new TerminalNavigationController(
   { activeOwner: MAIN_TERMINAL_OWNER, activeTabId: null, activePaneByTab: {} },
   {
     readCatalog: () => navigationCatalogFromStore(store),
     effects: {
       renderProjections: (state) => {
+        recentTabIds = recordRecentTab(recentTabIds, state.activeTabId);
         applyTerminalNavigationProjection(state, {
           store,
           render: () => {
@@ -703,8 +715,12 @@ function removeTerminal(id: string): void {
         factory.disposeHoverController(splitId);
       }
     },
-    (catalog, state) => selectNavigationOwner(catalog, state, state.activeOwner),
+    (catalog, state) =>
+      closedActiveTab
+        ? selectRecentNavigationTab(catalog, state, recentTabIds)
+        : selectNavigationOwner(catalog, state, state.activeOwner),
   );
+  recentTabIds = recentTabIds.filter((tabId) => tabId !== id);
 
   const state = navigationController.getState();
   if (closedActiveTab && state.activeTabId === null) {
@@ -1513,6 +1529,19 @@ function bootstrap(): void {
       const tabId = store.activeTabId;
       const targetId = tabId ? (store.tabActivePaneIds.get(tabId) ?? tabId) : null;
       if (!targetId) {
+        return;
+      }
+
+      // Cmd+W / Ctrl+Shift+W → close. Stopped here so the key never reaches VS
+      // Code, which would close the active editor instead. Both doors are the
+      // existing gated ones: a root pane goes the tab close button's way (pin
+      // refusal + kill confirmation), a split pane the context menu's Close Pane.
+      if (isCloseTabShortcut(e, isMac)) {
+        e.preventDefault();
+        e.stopPropagation();
+        vscode.postMessage(
+          targetId === tabId ? { type: "closeTab", tabId } : { type: "requestClosePane", sessionId: targetId },
+        );
         return;
       }
 

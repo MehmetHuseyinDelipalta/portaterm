@@ -1306,6 +1306,12 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           break;
         }
 
+        case "requestClosePane":
+          if (typeof message.sessionId === "string") {
+            void vscode.commands.executeCommand("portaterm.ctx.closePane", { paneSessionId: message.sessionId });
+          }
+          break;
+
         case "toggleMaximizedPanel":
           if (this.location === "panel" && this._view === webviewView && webviewView.visible) {
             void vscode.commands.executeCommand("workbench.action.toggleMaximizedPanel").then(undefined, (err) => {
