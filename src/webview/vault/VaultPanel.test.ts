@@ -3915,6 +3915,21 @@ describe("VaultPanel header tooltips", () => {
     expect(searchBtn?.getAttribute("aria-label")).toBe("Close search");
     expect(searchBtn?.hasAttribute("title")).toBe(false); // no native tooltip resurrected
   });
+
+  it("the settings button sits right of search and asks the host to open settings", () => {
+    const host = createHost();
+    const postMessage = vi.fn();
+    const panel = new VaultPanel({ host, postMessage });
+    const header = host.querySelector<HTMLElement>(".vault-header");
+    const settingsBtn = host.querySelector<HTMLButtonElement>(".vault-header__settings-btn");
+    expect(header?.lastElementChild).toBe(settingsBtn);
+    expect(settingsBtn?.previousElementSibling?.getAttribute("aria-label")).toBe("Search sessions");
+    expect(settingsBtn?.hasAttribute("title")).toBe(false);
+    expect(settingsBtn?.getAttribute("aria-describedby")).toBe("webview-tooltip-widget");
+    settingsBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(postMessage).toHaveBeenCalledWith({ type: "openVaultSettings" });
+    expect(panel.isCollapsed()).toBe(true); // the click does not toggle the section
+  });
 });
 
 describe("VaultPanel session-preview geometry persistence", () => {

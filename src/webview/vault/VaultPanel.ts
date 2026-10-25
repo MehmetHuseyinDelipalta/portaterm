@@ -8,6 +8,7 @@
 // never innerHTML, so a crafted title cannot inject markup.
 
 import type {
+  OpenVaultSettingsMessage,
   RequestVaultLaunchTargetsMessage,
   RequestVaultMessageRecordMessage,
   RequestVaultSessionDetailMessage,
@@ -33,7 +34,15 @@ import { attachTooltip, attachTooltipDelegate } from "../ui/Tooltip";
 import { ICON_BRANCH, ICON_PLUS } from "../worktree/worktreeIcons";
 import { agentLabel, isWithin } from "./format";
 import { type GroupMode, groupEntries } from "./grouping";
-import { ICON_AGENT, ICON_CHEVRON_DOWN, ICON_CLOSE, ICON_FOLDER, ICON_RECENT, ICON_SEARCH } from "./icons";
+import {
+  ICON_AGENT,
+  ICON_CHEVRON_DOWN,
+  ICON_CLOSE,
+  ICON_FOLDER,
+  ICON_RECENT,
+  ICON_SEARCH,
+  ICON_SETTINGS,
+} from "./icons";
 import { PreviewController } from "./PreviewController";
 import { VaultContextMenu } from "./VaultContextMenu";
 import {
@@ -46,7 +55,7 @@ import {
 } from "./vaultListView";
 import { entriesSignature } from "./vaultRenderSignature";
 
-/** Every message the panel can post — all webview→host vault messages carry entryId only. */
+/** Every message the panel can post — every one but `openVaultSettings` carries entryId only. */
 export type VaultPanelPostMessage = (
   m:
     | RequestVaultSessionsMessage
@@ -63,7 +72,8 @@ export type VaultPanelPostMessage = (
     | VaultCopyResumeCommandMessage
     | VaultCopyFilePathMessage
     | VaultRenameSessionMessage
-    | VaultWatchSessionMessage,
+    | VaultWatchSessionMessage
+    | OpenVaultSettingsMessage,
 ) => void;
 
 /** Rows shown per group before a "Show more" affordance keeps the list scannable. */
@@ -353,7 +363,17 @@ export class VaultPanel {
     });
     this.searchBtnEl = searchBtn;
 
-    header.append(mainRow, searchBtn);
+    const settingsBtn = document.createElement("button");
+    settingsBtn.type = "button";
+    settingsBtn.className = "vault-header__search-btn vault-header__settings-btn";
+    settingsBtn.innerHTML = ICON_SETTINGS;
+    settingsBtn.setAttribute("aria-label", "Open Portaterm settings");
+    settingsBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.postMessage({ type: "openVaultSettings" });
+    });
+
+    header.append(mainRow, searchBtn, settingsBtn);
 
     // Reliable hover/focus tooltips — native `title` doesn't render dependably in
     // VSCode webviews (see fileTree/Tooltip). `getText` for search so the hint
@@ -370,6 +390,7 @@ export class VaultPanel {
               ? "Search worktrees by branch, path, or agent"
               : "Search sessions by title, folder, or agent",
       }),
+      attachTooltip(settingsBtn, { text: "Open Portaterm settings" }),
     );
 
     this.worktreeBodyEl = deps.worktreeBody ?? null;

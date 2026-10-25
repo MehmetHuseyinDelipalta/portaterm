@@ -579,6 +579,11 @@ export interface VaultWatchSessionMessage {
   entryId: string | null;
 }
 
+/** Webview → Extension: open the Settings editor filtered to Portaterm's settings. */
+export interface OpenVaultSettingsMessage {
+  type: "openVaultSettings";
+}
+
 /**
  * Webview → Extension: resolve the REAL current working directory of a terminal
  * pane (the host queries its own PTY: lsof/`/proc` live cwd, else the
@@ -1891,6 +1896,7 @@ export type WebViewToExtensionMessage =
   | VaultCopyFilePathMessage
   | VaultRenameSessionMessage
   | VaultWatchSessionMessage
+  | OpenVaultSettingsMessage
   | RequestVaultContextCwdMessage
   | RequestSubagentPreviewMessage
   | PasteClipboardImageMessage

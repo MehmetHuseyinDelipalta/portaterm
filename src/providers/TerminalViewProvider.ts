@@ -1055,6 +1055,10 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           break;
         }
 
+        case "openVaultSettings":
+          void vscode.commands.executeCommand("workbench.action.openSettings", "@ext:mhd.portaterm");
+          break;
+
         case "requestVaultSessions":
           void this.handleRequestVaultSessions(webviewView.webview);
           break;

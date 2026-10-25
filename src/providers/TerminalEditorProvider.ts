@@ -889,6 +889,10 @@ export class TerminalEditorProvider {
           }
           break;
 
+        case "openVaultSettings":
+          void vscode.commands.executeCommand("workbench.action.openSettings", "@ext:mhd.portaterm");
+          break;
+
         case "requestVaultSessions":
           void this.handleRequestVaultSessions();
           break;

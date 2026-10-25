@@ -16,6 +16,8 @@ export const ICON_PLUS =
   '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="3.5" x2="8" y2="12.5"/><line x1="3.5" y1="8" x2="12.5" y2="8"/></svg>';
 export const ICON_SEARCH =
   '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>';
+export const ICON_SETTINGS =
+  '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><path d="M14.41 6.43v3.14l-1.72-.15-.37.89 1.32 1.11-2.22 2.22-1.11-1.32-.89.37.15 1.72H6.43l.15-1.72-.89-.37-1.11 1.32-2.22-2.22 1.32-1.11-.37-.89-1.72.15V6.43l1.72.15.37-.89-1.32-1.11 2.22-2.22 1.11 1.32.89-.37-.15-1.72h3.14l-.15 1.72.89.37 1.11-1.32 2.22 2.22-1.32 1.11.37.89z"/><circle cx="8" cy="8" r="2"/></svg>';
 export const ICON_RECENT =
   '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4.5v3.7l2.4 1.4"/><path d="M2.6 8a5.4 5.4 0 1 1 1.6 3.8"/><path d="M2.4 12v-2.3h2.3"/></svg>';
 export const ICON_AGENT =
