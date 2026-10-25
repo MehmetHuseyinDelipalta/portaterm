@@ -397,6 +397,96 @@ export function getTerminalHtml(
       outline: 2px solid var(--vscode-focusBorder, #007acc);
       outline-offset: -1px;
     }
+    /* Terminal find widget (Cmd+F / Ctrl+F) — floats over the top-right of
+       #terminal-container, styled after VS Code's editor find widget. */
+    .terminal-search {
+      position: absolute;
+      top: 4px;
+      right: 18px;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      max-width: calc(100% - 28px);
+      padding: 3px 4px;
+      box-sizing: border-box;
+      font-family: var(--vscode-font-family, sans-serif);
+      font-size: var(--vscode-font-size, 12px);
+      color: var(--vscode-editorWidget-foreground, #ccc);
+      background: var(--vscode-editorWidget-background, #252526);
+      border: 1px solid var(--vscode-editorWidget-border, transparent);
+      border-radius: 4px;
+      box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+    }
+    .terminal-search[hidden] {
+      display: none;
+    }
+    .terminal-search-input {
+      flex: 1 1 160px;
+      min-width: 60px;
+      width: 180px;
+      height: 22px;
+      box-sizing: border-box;
+      padding: 2px 6px;
+      margin-right: 2px;
+      font: inherit;
+      color: var(--vscode-input-foreground, #ccc);
+      background: var(--vscode-input-background, #3c3c3c);
+      border: 1px solid var(--vscode-input-border, transparent);
+      border-radius: 2px;
+      outline: none;
+    }
+    .terminal-search-input:focus {
+      border-color: var(--vscode-focusBorder, #007acc);
+    }
+    .terminal-search-input.terminal-search-input-invalid {
+      border-color: var(--vscode-inputValidation-errorBorder, #be1100);
+    }
+    .terminal-search-toggle,
+    .terminal-search-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      font: inherit;
+      color: inherit;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .terminal-search-toggle {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 11px;
+    }
+    .terminal-search-toggle:hover,
+    .terminal-search-action:hover {
+      background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+    }
+    .terminal-search-toggle.terminal-search-toggle-on {
+      color: var(--vscode-inputOption-activeForeground, #fff);
+      background: var(--vscode-inputOption-activeBackground, rgba(0, 127, 212, 0.4));
+      border-color: var(--vscode-inputOption-activeBorder, #007acc);
+    }
+    .terminal-search-toggle:focus-visible,
+    .terminal-search-action:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, #007acc);
+      outline-offset: -1px;
+    }
+    .terminal-search-count {
+      flex-shrink: 0;
+      min-width: 64px;
+      padding: 0 4px;
+      font-size: 11px;
+      white-space: nowrap;
+      color: var(--vscode-descriptionForeground, #999);
+    }
+    .terminal-search-count.terminal-search-count-empty {
+      color: var(--vscode-errorForeground, #f48771);
+    }
     .error-banner {
       display: flex;
       align-items: center;

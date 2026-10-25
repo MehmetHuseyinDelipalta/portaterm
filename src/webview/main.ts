@@ -63,6 +63,7 @@ import {
   type TerminalOwner,
 } from "./navigation/TerminalNavigationState";
 import { ResizeCoordinator } from "./resize/ResizeCoordinator";
+import { isFindStepShortcut, TerminalSearchWidget } from "./search/TerminalSearchWidget";
 import { SplitTreeRenderer } from "./split/SplitTreeRenderer";
 import { resolveTabDisplayPane } from "./split/tabDisplay";
 import { WebviewStateStore } from "./state/WebviewStateStore";
@@ -393,6 +394,8 @@ let worktreeController: WorktreeController | null = null;
 // Constructed on init beside the controller that feeds it, and owning the join
 // itself. See: webview/tabBarScopeWiring.ts and design.md D8.
 let tabBarScope: TabBarScopeWiring | null = null;
+/** Cmd+F / Ctrl+F find widget; created in bootstrap once #terminal-container exists. */
+let terminalSearch: TerminalSearchWidget | null = null;
 const pendingSplitAttachmentAcks = new Map<string, string>();
 
 function flushPendingSplitAttachmentAcks(): void {
@@ -555,6 +558,8 @@ function updateTabBar(): void {
   // of the tab-bar check, because the region does not depend on that element
   // (round-2 suggestion).
   tabBarScope?.syncEmptyScope();
+  // An open find widget follows the active pane; a no-op when it did not change.
+  terminalSearch?.sync();
   const tabBarEl = document.getElementById("tab-bar");
   if (!tabBarEl) {
     return;
@@ -1496,6 +1501,16 @@ function showDragDropTip(): void {
   tipEl.appendChild(dismissBtn);
 }
 
+/** Cmd+F on macOS, Ctrl+F elsewhere, with no other modifier. */
+function isFindShortcut(e: KeyboardEvent, isMac: boolean): boolean {
+  const mod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+  return mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "f";
+}
+
+function isInAuxRegion(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("#aux-region") !== null;
+}
+
 function bootstrap(): void {
   const locationAttr = document.body.getAttribute("data-terminal-location");
   if (locationAttr === "sidebar" || locationAttr === "panel" || locationAttr === "editor") {
@@ -1524,10 +1539,52 @@ function bootstrap(): void {
   //   behavior with `macOptionIsMeta: false` does not produce these.
   const isMac = navigator.platform.includes("Mac");
   const isWindows = navigator.platform.includes("Win");
+  const terminalContainerEl = document.getElementById("terminal-container");
+  if (terminalContainerEl) {
+    terminalSearch = new TerminalSearchWidget({
+      host: terminalContainerEl,
+      getTarget: () => {
+        const instance = factory.getActivePaneTerminal();
+        return instance?.searchAddon
+          ? { id: instance.id, terminal: instance.terminal, searchAddon: instance.searchAddon }
+          : undefined;
+      },
+      getThemeKind: () => themeStore.kind,
+    });
+  }
   document.addEventListener(
     "keydown",
     (e: KeyboardEvent) => {
       if (isComposing) {
+        return;
+      }
+      // The find widget's input owns its own keys (Enter, Escape, Cmd+Left…);
+      // routing them to the PTY here would type into the shell instead.
+      if (terminalSearch?.contains(e.target)) {
+        return;
+      }
+      // Cmd+F / Ctrl+F → find in the active terminal. Stopped here so VS Code
+      // never sees it. Left alone in the side region (file tree, vault), whose
+      // own inputs and lists keep their native behaviour.
+      if (isFindShortcut(e, isMac) && !isInAuxRegion(e.target)) {
+        if (terminalSearch && factory.getActivePaneTerminal()) {
+          e.preventDefault();
+          e.stopPropagation();
+          terminalSearch.open();
+          return;
+        }
+      }
+      // Cmd+G / Shift+Cmd+G (F3 / Shift+F3 off macOS, where Ctrl+G is the shell's
+      // abort) step through matches while the widget is open, even with focus
+      // back in the terminal.
+      if (terminalSearch?.isOpen && isFindStepShortcut(e, isMac)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.shiftKey) {
+          terminalSearch.findPrevious();
+        } else {
+          terminalSearch.findNext();
+        }
         return;
       }
       const tabId = store.activeTabId;

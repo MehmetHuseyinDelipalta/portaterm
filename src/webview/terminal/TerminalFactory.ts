@@ -6,6 +6,7 @@
 // See: docs/design/xterm-integration.md#§3-§6
 
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
@@ -258,6 +259,10 @@ export class TerminalFactory {
       tabStopWidth: 8,
       theme: this.themeManager.getTheme(),
       overviewRuler: { width: 10 },
+      // Required by @xterm/addon-search's match highlighting, which is built on
+      // the decoration API xterm still marks as proposed. VS Code's terminal
+      // enables it for the same reason.
+      allowProposedApi: true,
     });
 
     // Load addons
@@ -267,8 +272,11 @@ export class TerminalFactory {
     const webLinksAddon = new WebLinksAddon((_event, uri) => {
       this.postMessage({ type: "openLink", url: uri });
     });
+    // Cmd+F / Ctrl+F find; driven by the webview's single TerminalSearchWidget.
+    const searchAddon = new SearchAddon({ highlightLimit: 1000 });
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(webLinksAddon);
+    terminal.loadAddon(searchAddon);
 
     // Build the hover-preview controller + renderers + popup for this terminal.
     // The controller is also registered in `hoverControllers` so main.ts can
@@ -453,6 +461,7 @@ export class TerminalFactory {
       customName,
       terminal,
       container,
+      searchAddon,
       worktreeId: options?.worktreeId,
       exited: false,
       activityStatus: "idle",

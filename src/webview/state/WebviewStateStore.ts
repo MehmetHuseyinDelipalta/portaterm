@@ -5,6 +5,7 @@
 //
 // See: docs/PLAN.md#8.5
 
+import type { SearchAddon } from "@xterm/addon-search";
 import type { Terminal } from "@xterm/xterm";
 import type { TerminalConfig } from "../../types/messages";
 import {
@@ -42,6 +43,8 @@ export interface TerminalInstance {
   pinned?: boolean;
   terminal: Terminal;
   container: HTMLDivElement;
+  /** Find support for this pane. Absent only on test doubles that never search. */
+  searchAddon?: SearchAddon;
   /** Stable linked-worktree owner. Absent means the main terminal bucket. */
   worktreeId?: string;
   /** Whether the PTY process has exited (terminal becomes read-only). */
