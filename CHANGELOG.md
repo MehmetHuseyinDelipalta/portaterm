@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.32.0] — 2026-10-25
+
+### Added
+
+- **Every tab running Claude picks up its conversation after a restart.** Until now only a pinned tab resumed the Claude session it was running; any other tab came back as a plain shell under its restored scrollback. Now every tab that was running Claude when the window went away types `claude --resume <id>` into its new shell and continues where it left off. The new `portaterm.sessionRestore.resumeClaude` setting picks which tabs do this: `all` (the default), `pinned` for the old behaviour, or `off`. Tabs started from the vault relaunch their agent as before.
+
 ## [0.31.0] — 2026-10-25
 
 ### Added
