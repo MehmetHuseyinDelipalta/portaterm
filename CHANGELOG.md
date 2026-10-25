@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.30.3] — 2026-10-25
+
+### Fixed
+
+- **Each agent is listed once in Worktrees.** A Claude session started in a Portaterm tab could show up twice under its worktree: once as the tab's own row, and once more as a session running elsewhere (for example with a **CURSOR** label). Two open tabs then read as *4 agents*. Claude names its terminal before it records its session, so the first look found the agent but not the session, and that half answer was never looked at again. The tab row now picks up its session once Claude records it, and the duplicate disappears.
+
 ## [0.30.2] — 2026-10-25
 
 ### Fixed
