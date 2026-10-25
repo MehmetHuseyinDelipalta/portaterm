@@ -105,6 +105,7 @@ The built-in terminal is awkward to reposition and can't live in the sidebar. Po
 - **Real terminal** — `node-pty` backed, full shell support, adaptive flow control.
 - **GPU rendering** — WebGL, smooth on Retina.
 - **Theme aware** — follows your VS Code theme (dark / light / high contrast).
+- **Find in the terminal** — `Cmd+F` / `Ctrl+F` highlights every match in the scrollback, with a match counter, previous/next, and match case, whole word and regular expression toggles.
 - **Smart clipboard** — `Cmd+C` / `Cmd+V`, selection-aware, with `Ctrl+C` fallback.
 - **Clickable URLs** — `Cmd+Click` with confirmation.
 - **Drop files to insert their path** — hold `Shift` and drop files from the Explorer or, on macOS, from Finder onto a terminal to type their quoted paths; or right-click in the Explorer → **Insert Path in Portaterm**.
@@ -116,6 +117,7 @@ The built-in terminal is awkward to reposition and can't live in the sidebar. Po
 |----------|--------|
 | `Cmd+C` / `Cmd+V` | Copy / paste |
 | `Cmd+K` | Clear terminal |
+| `Cmd+F` | Find in the terminal — `Enter` / `Shift+Enter` (or `Cmd+G` / `Shift+Cmd+G`; `F3` / `Shift+F3` on Windows/Linux) step through matches, `Escape` closes |
 | `Cmd+Backspace` | Kill input line |
 | `Shift+Enter` | Insert newline |
 | `Cmd+W` (Windows/Linux: `Ctrl+Shift+W`) | Close the active tab — only while a Portaterm view has focus |

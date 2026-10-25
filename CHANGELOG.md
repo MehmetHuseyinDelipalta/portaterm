@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.34.0] — 2026-10-25
+
+### Added
+
+- **Find in the terminal.** Press `Cmd+F` (`Ctrl+F` on Windows and Linux) to search the active terminal, scrollback included, which helps most with long agent output. Every match is highlighted and a counter shows where you are, as in "3 of 17". `Enter` and `Shift+Enter` step to the next and previous match, as do `Cmd+G` and `Shift+Cmd+G` on macOS or `F3` and `Shift+F3` elsewhere, and `Escape` closes the search. Toggles for match case, whole word and regular expressions sit next to the box (`Alt+C`, `Alt+W`, `Alt+R`). A single-line selection becomes the search text, and the search follows you when you switch tabs or panes.
+
 ## [0.33.0] — 2026-10-25
 
 ### Added
