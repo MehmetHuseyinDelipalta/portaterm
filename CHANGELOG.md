@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.33.0] — 2026-10-25
+
+### Added
+
+- **A settings button in the vault.** A gear now sits next to search in the vault header. Clicking it opens VS Code's Settings filtered to Portaterm, so worktree, session-restore and agent-hook options are one click away instead of a search through the Settings editor.
+
 ## [0.32.1] — 2026-10-25
 
 ### Fixed

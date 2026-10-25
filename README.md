@@ -57,6 +57,7 @@ Claude Code, Codex, OpenCode, and Cursor Agent all keep local session data in di
 - **See what's already open** — a session that a terminal pane is running carries a **Tab** mark and moves to the top of its group, right after pinned sessions. **Resume** brings that tab forward instead of starting a second agent on the same conversation.
 - **Rename once** — renaming a session in the Vault renames the open tab running it, and renaming the tab renames the session. OpenCode and Codex keep the name in their own store.
 - **Find it fast** — client-side search plus a **"This folder only"** filter, on by default, scoped to the focused terminal's working directory. When that folder has no sessions, **Show all sessions** turns the filter off.
+- **Settings one click away** — the gear next to search opens VS Code's Settings filtered to Portaterm.
 - **Right-click for more** — provider-supported actions such as Resume, Reveal in Finder/Explorer, Copy File Path or Resume Command, and Open Working Directory.
 - **Cross-platform** — store locations resolve per-OS (honoring `CLAUDE_CONFIG_DIR`, `CODEX_HOME` / `CODEX_SQLITE_HOME`, `XDG_DATA_HOME`); falls back to a built-in SQLite engine when the `sqlite3` CLI is missing (typically Windows). A missing store degrades to an empty list, never an error.
 
