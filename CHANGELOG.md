@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.32.1] — 2026-10-25
+
+### Fixed
+
+- **Closing the last tab no longer opens a new one.** Closing the last terminal used to start a fresh one right away, so pressing `Cmd+W` again and again never got past Portaterm. Now the view shows its empty state with an **Open a terminal** button. Once the terminals are gone, the next `Cmd+W` reaches your editor and closes its tabs.
+
 ## [0.32.0] — 2026-10-25
 
 ### Added
