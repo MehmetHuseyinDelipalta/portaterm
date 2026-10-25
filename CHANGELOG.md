@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.35.0] — 2026-10-25
+
+### Added
+
+- **See which agent needs you.** A tab whose Claude Code or Cursor Agent is waiting for your approval or an answer now shows a yellow status dot until you respond, and the Portaterm view icon in the sidebar or panel carries a badge counting those tabs, so you notice even with the view closed. A turn that finished while you were looking elsewhere leaves a blue dot on its tab until you open it. Turn on `portaterm.agentNotifications.enabled` to also get a notification, with a **Go to Tab** button, when the agent is in a background tab, a hidden view or an unfocused window; `portaterm.agentNotifications.onTurnEnd` controls whether finished turns notify too. Claude Code detection needs `portaterm.agentHooks.claude.enabled`.
+
 ## [0.34.0] — 2026-10-25
 
 ### Added
