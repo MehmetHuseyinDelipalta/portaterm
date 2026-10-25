@@ -1042,6 +1042,13 @@ const routeMessage = createMessageRouter({
   onVaultSessionsResponse(msg) {
     vaultPanel?.render(msg.result);
   },
+  onAgentAttention(msg) {
+    store.agentAttention.clear();
+    for (const [paneId, attention] of Object.entries(msg.panes)) {
+      store.agentAttention.set(paneId, attention);
+    }
+    updateTabBar();
+  },
   onVaultPinnedSessions(msg) {
     // Held as well as applied: the set can land before the panel mounts.
     pinnedVaultEntryIds = msg.entryIds;

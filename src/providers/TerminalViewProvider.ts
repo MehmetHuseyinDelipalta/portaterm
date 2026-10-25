@@ -36,6 +36,7 @@ import { openExternalLink } from "./openExternalLink";
 import { DEFAULT_FIND_FILES_MAX_RESULTS, openFileLink } from "./openFileLink";
 import { handleInsertOsDropPaths } from "./osDropPaths";
 import { isValidPreviewRequest } from "./previewValidation";
+import { signalDisplayChanged, signalPaneInput, signalSurfaceReady } from "./surfaceSignals";
 import type { VaultWatchClient, VaultWatchCoordinator } from "./VaultWatchCoordinator";
 import type { WorktreeHost, WorktreeSurface } from "./WorktreeHost";
 import { getTerminalHtml } from "./webviewHtml";
@@ -99,6 +100,9 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   /** Whether the webview has sent the 'ready' message. Gates outbound messages. */
   private _ready = false;
 
+  /** Badge to show on this view, kept so a view resolved later still carries it. */
+  private _badge: vscode.ViewBadge | undefined;
+
   /** Callback fired when this provider receives user interaction (message from webview). */
   private _onDidReceiveInteraction: (() => void) | undefined;
 
@@ -149,6 +153,14 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   /** Public accessor for the current webview view. */
   get view(): vscode.WebviewView | undefined {
     return this._view;
+  }
+
+  /** Set (or clear, with `undefined`) the badge on this view's container icon. */
+  setBadge(badge: vscode.ViewBadge | undefined): void {
+    this._badge = badge;
+    if (this._view) {
+      this._view.badge = badge;
+    }
   }
 
   /** Register a callback to be notified when the user interacts with this view. */
@@ -217,6 +229,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken,
   ): void {
     this._view = webviewView;
+    webviewView.badge = this._badge;
 
     // 1. Configure webview options
     webviewView.webview.options = {
@@ -349,6 +362,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           // Pause output flushing when view becomes hidden
           this.sessionManager.pauseOutputForView(viewId);
         }
+        signalDisplayChanged();
       }),
     );
 
@@ -943,6 +957,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         case "input":
           if (typeof message.tabId === "string" && typeof message.data === "string") {
             this.sessionManager.writeToSession(message.tabId, message.data);
+            signalPaneInput(message.tabId);
           }
           break;
 
@@ -1186,6 +1201,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
               message.activeTabId === null || message.activePaneId === null
                 ? null
                 : { tabId: message.activeTabId, paneId: message.activePaneId };
+            signalDisplayChanged();
           }
           break;
         }
@@ -1453,6 +1469,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   private async onReady(webviewView: vscode.WebviewView): Promise<void> {
     // Mark webview as ready — gates outbound messages
     this._ready = true;
+    signalSurfaceReady((message) => this.safePostMessage(webviewView.webview, message));
 
     // Post the initial theme so the hover-preview renderer can pick the
     // correct Shiki theme before the first hover. Subsequent changes flow

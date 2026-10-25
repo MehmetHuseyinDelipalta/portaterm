@@ -300,6 +300,28 @@ describe("renderTabBar", () => {
     expect(tabs[3].dataset.status).toBe("exited");
     expect(tabs[3].querySelector(".tab-status-exited")).toBeTruthy();
   });
+
+  it("puts an agent's wait above output activity and marks a finished turn nobody saw", () => {
+    const terminals = new Map<string, object>([
+      ["tab-1", { name: "Claude", activityStatus: "running", agentAttention: { state: "approval", agent: "Claude" } }],
+      ["tab-2", { name: "Ask", activityStatus: "idle", agentAttention: { state: "question", agent: "Claude" } }],
+      ["tab-3", { name: "Done", activityStatus: "running", agentAttention: { state: "unseen", agent: "Claude" } }],
+      ["tab-4", { name: "Gone", exited: true, agentAttention: { state: "approval", agent: "Claude" } }],
+    ]);
+    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-1" });
+
+    renderTabBar(deps);
+
+    const tabs = deps.tabBarEl.querySelectorAll<HTMLElement>(".tab-item");
+    expect(tabs[0].dataset.status).toBe("waiting");
+    expect(tabs[0].getAttribute("aria-label")).toBe("Claude: Claude is waiting for your approval");
+    expect(tabs[1].dataset.status).toBe("waiting");
+    expect(tabs[1].getAttribute("aria-label")).toBe("Ask: Claude is waiting for your answer");
+    expect(tabs[2].dataset.status).toBe("unseen");
+    expect(tabs[2].querySelector(".tab-status-unseen")).toBeTruthy();
+    expect(tabs[2].getAttribute("aria-label")).toBe("Done: Claude finished — not seen yet");
+    expect(tabs[3].dataset.status).toBe("exited");
+  });
 });
 
 // ─── handleTabKeyboardShortcut ──────────────────────────────────────
@@ -674,6 +696,52 @@ describe("buildTabBarData", () => {
     });
 
     expect(buildTabBarData(store).tabs.get("tab-1")?.activityStatus).toBe("waiting");
+  });
+
+  it("gives a split tab its blocked pane's attention over an unseen one, skipping exited panes", () => {
+    const store = source({
+      tabLayouts: new Map([
+        [
+          "tab-1",
+          createBranch("horizontal", createLeaf("tab-1"), createBranch("vertical", createLeaf("b"), createLeaf("c"))),
+        ],
+      ]),
+      tabActivePaneIds: new Map([["tab-1", "tab-1"]]),
+      terminals: new Map([
+        ["tab-1", { name: "Shell", exited: false, activityStatus: "idle" }],
+        ["b", { name: "Done", exited: false, activityStatus: "idle" }],
+        ["c", { name: "Ask", exited: false, activityStatus: "idle" }],
+      ]) as never,
+      agentAttention: new Map([
+        ["b", { state: "unseen", agent: "Claude" }],
+        ["c", { state: "question", agent: "Claude" }],
+      ]),
+    });
+    expect(buildTabBarData(store).tabs.get("tab-1")?.agentAttention).toEqual({ state: "question", agent: "Claude" });
+
+    store.agentAttention = new Map([["b", { state: "unseen", agent: "Claude" }]]);
+    expect(buildTabBarData(store).tabs.get("tab-1")?.agentAttention?.state).toBe("unseen");
+
+    (store.terminals.get("b") as { exited: boolean }).exited = true;
+    expect(buildTabBarData(store).tabs.get("tab-1")?.agentAttention).toBeUndefined();
+  });
+
+  it("counts a hidden tab whose agent is blocked, but not one merely unseen", () => {
+    const store = source({
+      tabLayouts: new Map([
+        ["a", createLeaf("a")],
+        ["b", createLeaf("b")],
+      ]),
+      terminals: new Map([
+        ["a", { name: "A", exited: false, activityStatus: "idle", worktreeId: "wt" }],
+        ["b", { name: "B", exited: false, activityStatus: "idle", worktreeId: "wt" }],
+      ]) as never,
+      agentAttention: new Map([
+        ["a", { state: "approval", agent: "Claude" }],
+        ["b", { state: "unseen", agent: "Claude" }],
+      ]),
+    });
+    expect(buildTabBarData(store).hiddenWaiting).toBe(1);
   });
 });
 

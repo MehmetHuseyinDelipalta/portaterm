@@ -132,6 +132,16 @@
           "default": ".claude/worktrees",
           "description": "Where new worktrees are created. A relative path is resolved against the repository's main worktree. Leave unset to use the layout this repository's existing worktrees already follow, falling back to .claude/worktrees when there is none."
         },
+        "portaterm.agentNotifications.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also show a notification when an agent in a terminal you cannot see — a background tab, a hidden view, or an unfocused window — is waiting for your approval or answer, with a button to go to its tab. The tab's status dot and the badge on the Portaterm view show this regardless. Claude Code detection requires portaterm.agentHooks.claude.enabled."
+        },
+        "portaterm.agentNotifications.onTurnEnd": {
+          "type": "boolean",
+          "default": true,
+          "description": "Also notify when an agent you cannot see finishes its turn. Requires portaterm.agentNotifications.enabled."
+        },
         "portaterm.cursorAgent.hooks.enabled": {
           "type": "boolean",
           "default": false,

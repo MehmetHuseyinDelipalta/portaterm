@@ -105,6 +105,7 @@ The built-in terminal is awkward to reposition and can't live in the sidebar. Po
 - **Real terminal** — `node-pty` backed, full shell support, adaptive flow control.
 - **GPU rendering** — WebGL, smooth on Retina.
 - **Theme aware** — follows your VS Code theme (dark / light / high contrast).
+- **Know which agent needs you** — a tab whose Claude Code or Cursor Agent is waiting on an approval or an answer shows a yellow status dot, and the Portaterm view icon counts those tabs in a badge. A turn that finished while you were looking elsewhere leaves a blue dot until you open its tab. Set `agentNotifications.enabled` for a notification, with a **Go to Tab** button, when the agent is out of sight.
 - **Find in the terminal** — `Cmd+F` / `Ctrl+F` highlights every match in the scrollback, with a match counter, previous/next, and match case, whole word and regular expression toggles.
 - **Smart clipboard** — `Cmd+C` / `Cmd+V`, selection-aware, with `Ctrl+C` fallback.
 - **Clickable URLs** — `Cmd+Click` with confirmation.
@@ -145,6 +146,8 @@ Key settings under `portaterm.*` (see the Settings UI for the full list):
 | `defaultCwd` | `""` | Empty = workspace root or `$HOME`. |
 | `sessionRestore.enabled` | `true` | Restore terminal scrollback and metadata across VS Code restarts. |
 | `sessionRestore.resumeClaude` | `all` | Which restored tabs resume the Claude conversation they were running: `all`, `pinned`, or `off`. |
+| `agentNotifications.enabled` | `false` | Notify when an agent you cannot see is waiting for your approval or answer. |
+| `agentNotifications.onTurnEnd` | `true` | Also notify when an agent you cannot see finishes its turn. |
 | `cursorAgent.hooks.enabled` | `false` | Machine-scoped, fail-open Cursor Agent activity and approval observation. |
 | `hoverPreview.delay` | `300` | Debounce (ms) before the file hover preview fetches, range 100–2000. |
 | `hoverPreview.blockSensitive` | `true` | Block auto-preview for dotfiles and sensitive folders (`Cmd`/`Ctrl` overrides). |

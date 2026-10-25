@@ -7,7 +7,7 @@
 
 import type { SearchAddon } from "@xterm/addon-search";
 import type { Terminal } from "@xterm/xterm";
-import type { TerminalConfig } from "../../types/messages";
+import type { AgentAttentionState, TerminalConfig } from "../../types/messages";
 import {
   decodeTerminalNavigationCheckpoint,
   type TerminalNavigationCheckpointV1,
@@ -21,6 +21,12 @@ import type { WebviewState } from "./WebviewState";
 export type { WebviewState } from "./WebviewState";
 
 // ─── Types ──────────────────────────────────────────────────────────
+
+/** Why a pane's agent wants the user, and which agent it is. */
+export interface PaneAgentAttention {
+  state: AgentAttentionState;
+  agent: string;
+}
 
 /** A single terminal instance with its addons and DOM container. */
 export interface TerminalInstance {
@@ -107,6 +113,13 @@ export class WebviewStateStore {
 
   /** Active pane ID per tab — tracks which pane is focused in a split layout. */
   readonly tabActivePaneIds = new Map<string, string>();
+
+  /**
+   * Panes whose agent needs the user, keyed by pane ID — mirrored whole from the
+   * host's `agentAttention`. Held apart from `terminals` because the set can land
+   * before the panes it names are built.
+   */
+  readonly agentAttention = new Map<string, PaneAgentAttention>();
 
   /** Cleanup functions for resize handles — keyed by tab ID. */
   readonly resizeCleanups = new Map<string, (() => void)[]>();

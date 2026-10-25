@@ -2182,6 +2182,20 @@ export interface TabPinnedMessage {
   pinned: boolean;
 }
 
+/** Why a pane's agent wants the user, as its tab shows it. */
+export type AgentAttentionState = "approval" | "question" | "unseen";
+
+/**
+ * Extension → WebView: the panes whose agent needs the user, in every view —
+ * waiting on an approval or an answer, or finished a turn nobody has looked at
+ * yet. The full set, sent whenever it changes and when a surface is ready; a
+ * pane absent from it needs nothing. Each webview ignores ids it does not hold.
+ */
+export interface AgentAttentionMessage {
+  type: "agentAttention";
+  panes: Record<string, { state: AgentAttentionState; agent: string }>;
+}
+
 /**
  * Extension → WebView: the vault entries that pinned tabs are running, in every
  * view. The vault list lists these first and marks them pinned. The full set,
@@ -3175,6 +3189,7 @@ export type ExtensionToWebViewMessage =
   | TabCreatedMessage
   | TabRenamedMessage
   | TabPinnedMessage
+  | AgentAttentionMessage
   | VaultPinnedSessionsMessage
   | VaultOpenSessionsMessage
   | TabRemovedMessage

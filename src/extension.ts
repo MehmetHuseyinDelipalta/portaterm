@@ -25,6 +25,7 @@ import { CursorHookInstaller } from "./cursor/CursorHookInstaller";
 import { createWatcherPool } from "./providers/fsWatcherPool";
 import { createGitDecorationProvider } from "./providers/gitDecorationProvider";
 import { resolveRenameTargetTabId } from "./providers/resolveRenameTarget";
+import { setSurfaceSignalListener } from "./providers/surfaceSignals";
 import { TerminalEditorProvider } from "./providers/TerminalEditorProvider";
 import { TerminalPanelSerializer } from "./providers/TerminalPanelSerializer";
 import { TerminalViewProvider } from "./providers/TerminalViewProvider";
@@ -38,6 +39,7 @@ import {
 import { applyVaultRename, type VaultRenameListener, type VaultRenameSurface } from "./providers/webviewRequests";
 import { loadNodePty } from "./pty/PtyManager";
 import { createProcessTableSnapshot } from "./pty/processTableSnapshot";
+import { createAgentAttention } from "./session/agentAttention";
 import type { MessageSender } from "./session/OutputBuffer";
 import { createPaneEvidenceStore } from "./session/PaneEvidenceStore";
 import { SessionManager } from "./session/SessionManager";
@@ -477,9 +479,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // same pane facts (lifecycle, reported identity) and are built after the
   // providers.
   let refreshPinnedVaultSessions: (() => void) | undefined;
-  const announcePaneChange = () => {
+  // A third: agent-attention notifications, which need the pane that moved.
+  let onAgentAttentionChange: ((paneId: string) => void) | undefined;
+  const announcePaneChange = (paneId?: string) => {
     onPaneEvidenceChange?.();
     refreshPinnedVaultSessions?.();
+    if (paneId !== undefined) {
+      onAgentAttentionChange?.(paneId);
+    }
   };
   const paneEvidence = createPaneEvidenceStore({ onChange: announcePaneChange });
 
@@ -1793,6 +1800,73 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   sidebarProvider.focusLiveVaultSession = focusLiveVaultSession;
   panelProvider.focusLiveVaultSession = focusLiveVaultSession;
+
+  // Mark the tabs whose agent needs the user — waiting on approval, or done with
+  // a turn nobody saw — badge each view with the panes waiting in it, and, when
+  // the user opted in, notify about the ones out of sight.
+  const readAgentAttentionSettings = () => {
+    const config = vscode.workspace.getConfiguration("portaterm.agentNotifications");
+    return {
+      enabled: config.get<boolean>("enabled") === true,
+      onTurnEnd: config.get<boolean>("onTurnEnd") !== false,
+    };
+  };
+  const badgeProviders = new Map([
+    [TerminalViewProvider.sidebarViewType, sidebarProvider],
+    [TerminalViewProvider.panelViewType, panelProvider],
+  ]);
+  const agentAttention = createAgentAttention({
+    readPane: (paneId) => paneEvidence.read(paneId),
+    panes: () => paneEvidence.panes(),
+    tabName: (paneId) => {
+      const session = sessionManager.getSession(paneId);
+      const root = sessionManager.getSession(session?.rootTabId ?? paneId) ?? session;
+      return root ? (root.customName ?? root.name) : undefined;
+    },
+    isPaneVisible: (paneId) => {
+      if (!vscode.window.state.focused) {
+        return false;
+      }
+      const session = sessionManager.getSession(paneId);
+      const root = sessionManager.getSession(session?.rootTabId ?? paneId);
+      if (!session || !root?.isActive) {
+        return false;
+      }
+      const editor = TerminalEditorProvider.findByViewId(session.viewId);
+      if (editor) {
+        return editor.panel.visible;
+      }
+      return badgeProviders.get(session.viewId)?.view?.visible === true;
+    },
+    readSettings: readAgentAttentionSettings,
+    notify: (message, action) => vscode.window.showInformationMessage(message, action),
+    focusPane: (paneId, viewId) => worktreeActions.focusPane(paneId, viewId),
+    setBadge: (viewId, count) =>
+      badgeProviders
+        .get(viewId)
+        ?.setBadge(
+          count > 0
+            ? { value: count, tooltip: count === 1 ? "1 agent is waiting" : `${count} agents are waiting` }
+            : undefined,
+        ),
+    badgeViews: [...badgeProviders.keys()],
+    publish: (panes) => postToVaultSurfaces({ type: "agentAttention", panes }),
+  });
+  onAgentAttentionChange = (paneId) => agentAttention.update(paneId);
+  setSurfaceSignalListener({
+    displayChanged: () => agentAttention.displayChanged(),
+    paneInput: (paneId) => agentAttention.paneInput(paneId),
+    surfaceReady: (post) => post({ type: "agentAttention", panes: agentAttention.snapshot() }),
+  });
+  context.subscriptions.push(
+    vscode.window.onDidChangeWindowState(() => agentAttention.displayChanged()),
+    {
+      dispose: () => {
+        onAgentAttentionChange = undefined;
+        setSurfaceSignalListener(undefined);
+      },
+    },
+  );
   // Which entries those live panes run, by the same rule, so the vault marks
   // exactly the rows a resume would focus rather than relaunch.
   const openVaultPublisher = createPinnedVaultPublisher({

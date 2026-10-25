@@ -7,6 +7,7 @@
 
 import type {
   AgentActivityStatusMessage,
+  AgentAttentionMessage,
   ClipboardImagePreviewMessage,
   CloseSplitPaneByIdMessage,
   ConfigUpdateMessage,
@@ -83,6 +84,8 @@ export interface MessageHandlers {
   onTabRemoved(msg: TabRemovedMessage): void;
   onTabRenamed(msg: TabRenamedMessage): void;
   onTabPinned(msg: TabPinnedMessage): void;
+  /** Optional: a webview that draws no tab bar has nothing to mark. */
+  onAgentAttention?(msg: AgentAttentionMessage): void;
   onRestore(msg: RestoreMessage): void;
   onConfigUpdate(msg: ConfigUpdateMessage): void;
   onViewShow(): void;
@@ -193,6 +196,9 @@ export function createMessageRouter(handlers: MessageHandlers): (msg: ExtensionT
         break;
       case "tabPinned":
         handlers.onTabPinned(msg);
+        break;
+      case "agentAttention":
+        handlers.onAgentAttention?.(msg);
         break;
       case "restore":
         handlers.onRestore(msg);

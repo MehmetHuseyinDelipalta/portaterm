@@ -5,7 +5,7 @@
 
 import { stripDecorations } from "../shared/titleDecorations";
 import { getAllSessionIds, type SplitNode } from "./SplitModel";
-import type { TerminalInstance } from "./state/WebviewStateStore";
+import type { PaneAgentAttention, TerminalInstance } from "./state/WebviewStateStore";
 import { attachTooltip } from "./ui/Tooltip";
 import { ICON_BRANCH } from "./worktree/worktreeIcons";
 
@@ -233,6 +233,8 @@ export interface TabInfo {
   exited?: boolean;
   /** Recent PTY output activity for the status indicator. */
   activityStatus?: "idle" | "running" | "waiting";
+  /** What an agent in this tab wants from the user, when anything. Outranks output activity. */
+  agentAttention?: PaneAgentAttention;
 }
 
 /** Minimal store interface for buildTabBarData — avoids importing full WebviewStateStore. */
@@ -240,6 +242,8 @@ export interface TabBarDataSource {
   tabLayouts: Map<string, SplitNode>;
   tabActivePaneIds: Map<string, string>;
   terminals: Map<string, TerminalInstance>;
+  /** Host-reported agent attention per pane. Absent means no pane has any. */
+  agentAttention?: ReadonlyMap<string, PaneAgentAttention>;
 }
 
 /** Linked-owner filter projected from the total active owner. Main is absent. */
@@ -304,8 +308,33 @@ function tabIsWaiting(paneIds: readonly string[], store: TabBarDataSource, waiti
     if (instance?.exited) {
       return false;
     }
-    return instance?.activityStatus === "waiting" || waiting.has(paneId);
+    return (
+      instance?.activityStatus === "waiting" || waiting.has(paneId) || isBlocked(store.agentAttention?.get(paneId))
+    );
   });
+}
+
+function isBlocked(attention: PaneAgentAttention | undefined): boolean {
+  return attention?.state === "approval" || attention?.state === "question";
+}
+
+/**
+ * The attention a tab shows: a pane blocked on the user outranks a finished turn
+ * nobody has seen, and an exited pane wants nothing.
+ */
+function tabAttention(paneIds: readonly string[], store: TabBarDataSource): PaneAgentAttention | undefined {
+  let unseen: PaneAgentAttention | undefined;
+  for (const paneId of paneIds) {
+    const attention = store.agentAttention?.get(paneId);
+    if (attention === undefined || store.terminals.get(paneId)?.exited) {
+      continue;
+    }
+    if (isBlocked(attention)) {
+      return attention;
+    }
+    unseen ??= attention;
+  }
+  return unseen;
 }
 
 export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): TabBarData {
@@ -341,6 +370,7 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
         pinned: rootInstance?.pinned === true,
         exited: (activeInstance ?? rootInstance)?.exited,
         activityStatus: anyWaiting ? "waiting" : anyRunning ? "running" : "idle",
+        agentAttention: tabAttention(sessionIds, store),
         worktreeId: activeInstance?.worktreeId ?? rootInstance?.worktreeId,
       });
     } else {
@@ -359,6 +389,7 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
           pinned: instance.pinned === true,
           exited: instance.exited,
           activityStatus: instance.activityStatus,
+          agentAttention: tabAttention([paneId], store),
           worktreeId: instance.worktreeId,
         });
       } else if (!presented && tabIsWaiting([paneId], store, waiting)) {
@@ -514,6 +545,36 @@ export interface RenderTabBarDeps {
      */
     hiddenWaiting?: number;
   };
+}
+
+type TabStatus = "idle" | "running" | "waiting" | "unseen" | "exited";
+
+/**
+ * The tab's status dot and the sentence behind it. An agent waiting on the user
+ * wins over everything a live tab can show, then a turn that finished out of
+ * sight, then raw output activity.
+ */
+function tabStatus(instance: TabInfo): { status: TabStatus; reason: string } {
+  if (instance.exited) {
+    return { status: "exited", reason: "Terminal exited" };
+  }
+  const attention = instance.agentAttention;
+  if (attention?.state === "approval") {
+    return { status: "waiting", reason: `${attention.agent} is waiting for your approval` };
+  }
+  if (attention?.state === "question") {
+    return { status: "waiting", reason: `${attention.agent} is waiting for your answer` };
+  }
+  if (instance.activityStatus === "waiting") {
+    return { status: "waiting", reason: "Cursor approval required" };
+  }
+  if (attention?.state === "unseen") {
+    return { status: "unseen", reason: `${attention.agent} finished — not seen yet` };
+  }
+  if (instance.activityStatus === "running") {
+    return { status: "running", reason: "Terminal is producing output" };
+  }
+  return { status: "idle", reason: "Terminal idle" };
 }
 
 /**
@@ -705,18 +766,14 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
       nameSpan.textContent = renderedName;
     }
 
-    const status = instance.exited ? "exited" : (instance.activityStatus ?? "idle");
+    const { status, reason } = tabStatus(instance);
     const statusSpan = tab.querySelector<HTMLElement>(".tab-status")!;
     statusSpan.className = `tab-status tab-status-${status}`;
-    statusSpan.title =
-      status === "waiting"
-        ? "Cursor approval required"
-        : status === "running"
-          ? "Terminal is producing output"
-          : status === "exited"
-            ? "Terminal exited"
-            : "Terminal idle";
-    tab.setAttribute("aria-label", status === "waiting" ? `${renderedName}: Cursor approval required` : renderedName);
+    statusSpan.title = reason;
+    tab.setAttribute(
+      "aria-label",
+      status === "waiting" || status === "unseen" ? `${renderedName}: ${reason}` : renderedName,
+    );
     tab.dataset.status = status;
   }
 

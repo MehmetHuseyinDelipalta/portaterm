@@ -193,6 +193,10 @@ export function getTerminalHtml(
       background: var(--vscode-editorWarning-foreground, #cca700);
       opacity: 1;
     }
+    .tab-status-unseen {
+      background: var(--vscode-notificationsInfoIcon-foreground, #3794ff);
+      opacity: 1;
+    }
     .tab-status-exited {
       background: var(--vscode-testing-iconFailed, #f14c4c);
       opacity: 0.8;
