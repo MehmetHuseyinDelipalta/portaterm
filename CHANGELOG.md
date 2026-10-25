@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.31.0] — 2026-10-25
+
+### Added
+
+- **Drop files from Finder to insert their path.** Hold `Shift` and drop files or folders from Finder onto a terminal, and their full paths are typed at the prompt, quoted and followed by a space, the same way **Insert Path in Portaterm** does. Until now only drops from the Explorer worked, because a terminal panel cannot see where a dropped Finder file lives. Portaterm now reads the paths from macOS's drag data, and types them only when they match the files you dropped. This works on macOS only, since Windows and Linux keep no drag data that can be read after the drop.
+
 ## [0.30.4] — 2026-10-25
 
 ### Fixed
