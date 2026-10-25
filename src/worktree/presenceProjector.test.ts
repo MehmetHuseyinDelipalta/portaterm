@@ -237,6 +237,7 @@ describe("the resolution slot", () => {
   it("reuses a proven identity while the pane's process and directory hold", async () => {
     const h = makeProjector([pane({ paneId: "a" })]);
     h.setLookup(() => ({ kind: "resolved", agent: "claude", sessionId: "s1", evidence: "process" }));
+    h.setRegistry({ kind: "ok", sessions: [{ sessionId: "s1", cwd: WT, pid: 4242 }] });
     await h.projector.project([WT]);
     const first = h.counts().resolves;
     await h.projector.project([WT]);
@@ -268,6 +269,38 @@ describe("the resolution slot", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ scope: "window", entryId: "claude:s1" });
+  });
+
+  it("re-reads once its session ends, so claude started again in the same pane is claimed", async () => {
+    // Leaving claude and starting it again keeps the pty pid and the cwd, so a
+    // cache keyed on those two held the first session and drew the second one
+    // as an external row beside it.
+    const h = makeProjector([pane({ paneId: "a", ptyPid: 42 })]);
+    h.setLookup(() => ({ kind: "resolved", agent: "claude", sessionId: "s1", evidence: "process" }));
+    h.setRegistry({ kind: "ok", sessions: [{ sessionId: "s1", cwd: WT, pid: 4242 }] });
+    await h.projector.project([WT]);
+
+    h.setLookup(() => ({ kind: "resolved", agent: "claude", sessionId: "s2", evidence: "process" }));
+    h.setRegistry({ kind: "ok", sessions: [{ sessionId: "s2", cwd: WT, pid: 4343 }] });
+    const rows = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ scope: "window", entryId: "claude:s2" });
+  });
+
+  it("keeps a proven session through a registry read that failed", async () => {
+    // A failed read is not proof the session ended (D10).
+    const h = makeProjector([pane({ paneId: "a", ptyPid: 42 })]);
+    h.setLookup(() => ({ kind: "resolved", agent: "claude", sessionId: "s1", evidence: "process" }));
+    h.setRegistry({ kind: "ok", sessions: [{ sessionId: "s1", cwd: WT, pid: 4242 }] });
+    await h.projector.project([WT]);
+    const before = h.counts().resolves;
+
+    h.setRegistry({ kind: "failed", reason: "EACCES" });
+    const [row] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(h.counts().resolves).toBe(before);
+    expect(row).toMatchObject({ entryId: "claude:s1" });
   });
 
   it("re-reads once the pane changes directory", async () => {
@@ -551,6 +584,7 @@ describe("every pane claims its session, whether or not it produces a row", () =
   it("keeps the identity it proved for an unattributed pane, so a later rebuild reuses it", async () => {
     const h = makeProjector([pane({ paneId: "elsewhere", cwd: "/somewhere/else" })]);
     h.setLookup(() => ({ kind: "resolved", agent: "claude", sessionId: "s9", evidence: "process" }));
+    h.setRegistry({ kind: "ok", sessions: [{ sessionId: "s9", cwd: "/somewhere/else", pid: 4242 }] });
 
     await h.projector.project([WT]);
     await h.projector.project([WT]);

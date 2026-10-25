@@ -752,7 +752,12 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
     // negative about the session, and caching it would leave the pane unable to
     // claim that session for its whole life, drawing it twice: once here and
     // once as an external row.
-    if (state.proven?.entryId !== undefined && state.provenPtyPid === pane.ptyPid && state.provenCwd === pane.cwd) {
+    if (
+      state.proven?.entryId !== undefined &&
+      state.provenPtyPid === pane.ptyPid &&
+      state.provenCwd === pane.cwd &&
+      !(await outlived(state.proven, snapshot))
+    ) {
       return state.proven;
     }
 
@@ -793,6 +798,26 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
     state.provenPtyPid = pane.ptyPid;
     state.provenCwd = pane.cwd;
     return undefined;
+  }
+
+  /**
+   * Has the registry session a cached proof names ended?
+   *
+   * Leaving claude and starting it again keeps the pane's pty pid and cwd, so
+   * the cache alone would hold the first session for the life of the pane —
+   * and the second one, unclaimed, would be drawn again as an external row.
+   * Only a successful read can say a session is gone; a failed one keeps the
+   * proof, as D10 requires.
+   */
+  async function outlived(proven: ProvenIdentity, snapshot: ResolutionSnapshot): Promise<boolean> {
+    if (proven.agent !== REGISTRY_AGENT) {
+      return false;
+    }
+    const read = await snapshot.sessions();
+    return (
+      read.kind === "ok" &&
+      !read.sessions.some((session) => formatEntryId(REGISTRY_AGENT, session.sessionId) === proven.entryId)
+    );
   }
 
   /**
