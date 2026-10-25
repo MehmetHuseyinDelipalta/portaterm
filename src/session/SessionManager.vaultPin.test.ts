@@ -233,6 +233,35 @@ describe("SessionManager restore of a pinned tab's title and hand-started Claude
     r.sm.dispose();
   });
 
+  it("resumes an unpinned tab by default", () => {
+    const r = restore(snapshotOf({ pinned: false, resumeClaudeSessionId: CLAUDE_ID }));
+    r.promptStart();
+    expect(r.pty.write).toHaveBeenCalledWith(`claude --resume ${CLAUDE_ID}\r`);
+    r.sm.dispose();
+  });
+
+  it("resumes only a pinned tab when the mode is pinned", () => {
+    const unpinned = restore(snapshotOf({ pinned: false, resumeClaudeSessionId: CLAUDE_ID }));
+    unpinned.sm.resumeClaudeOnRestore = "pinned";
+    unpinned.promptStart();
+    expect(unpinned.pty.write).not.toHaveBeenCalled();
+    unpinned.sm.dispose();
+
+    const pinned = restore(snapshotOf({ pinned: true, resumeClaudeSessionId: CLAUDE_ID }));
+    pinned.sm.resumeClaudeOnRestore = "pinned";
+    pinned.promptStart();
+    expect(pinned.pty.write).toHaveBeenCalledWith(`claude --resume ${CLAUDE_ID}\r`);
+    pinned.sm.dispose();
+  });
+
+  it("resumes nothing when the mode is off, pinned or not", () => {
+    const r = restore(snapshotOf({ pinned: true, resumeClaudeSessionId: CLAUDE_ID }));
+    r.sm.resumeClaudeOnRestore = "off";
+    r.promptStart();
+    expect(r.pty.write).not.toHaveBeenCalled();
+    r.sm.dispose();
+  });
+
   it("drops the resume when the tab closes before its prompt", () => {
     vi.useFakeTimers();
     try {

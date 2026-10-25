@@ -146,6 +146,25 @@ export function affectsSessionRestoreEnabled(e: vscode.ConfigurationChangeEvent)
   return e.affectsConfiguration("portaterm.sessionRestore.enabled");
 }
 
+/** Which restored tabs resume the Claude conversation they were running. */
+export type ResumeClaudeOnRestore = "all" | "pinned" | "off";
+
+/**
+ * Read the resume-Claude-on-restore setting. Default `"all"`. A stored value
+ * that is none of the three (hand-edited settings.json, a downgrade) falls
+ * back to the default.
+ */
+export function readResumeClaudeOnRestore(): ResumeClaudeOnRestore {
+  const config = vscode.workspace.getConfiguration("portaterm");
+  const value = config.get<string>("sessionRestore.resumeClaude");
+  return value === "pinned" || value === "off" ? value : "all";
+}
+
+/** Check whether a configuration change event affects resume-Claude-on-restore. */
+export function affectsResumeClaudeOnRestore(e: vscode.ConfigurationChangeEvent): boolean {
+  return e.affectsConfiguration("portaterm.sessionRestore.resumeClaude");
+}
+
 /** What activating an agent row in the worktree panel does. */
 export type WorktreeRowActivation = "focus" | "preview";
 

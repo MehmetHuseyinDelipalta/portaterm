@@ -213,6 +213,14 @@ export class SessionManager {
    */
   onTabRenamed?: (tabId: string, customName: string | null) => void;
 
+  /**
+   * Which restored panes may type their pending `claude --resume`: every one,
+   * only those of a pinned tab, or none. Checked when the resume runs, not when
+   * the pane is restored, so an id persisted under another mode is not obeyed
+   * and a split sees its root's pin however the restore ordered them.
+   */
+  resumeClaudeOnRestore: "all" | "pinned" | "off" = "all";
+
   /** Restored panes still owed a `claude --resume`, with their fallback timer. */
   private readonly pendingResumes = new Map<string, { sessionId: string; fallback: ReturnType<typeof setTimeout> }>();
 
@@ -666,8 +674,8 @@ export class SessionManager {
     // Wire PTY events (extracted so respawnFallbackShell can re-wire a fresh PTY).
     this.wirePty(session, pty, webview);
 
-    // A pinned tab was running Claude by hand when the window went away: carry
-    // the id forward and type the resume into the restored shell.
+    // The tab was running Claude by hand when the window went away: carry the
+    // id forward and type the resume into the restored shell (mode permitting).
     const resumeId = restoreFrom?.metadata.resumeClaudeSessionId;
     if (!restoringExited && !isAgentLaunch && typeof resumeId === "string" && CLAUDE_SESSION_ID.test(resumeId)) {
       session.resumeClaudeSessionId = resumeId;
@@ -696,13 +704,18 @@ export class SessionManager {
     if (session?.state !== "live") {
       return;
     }
+    const mode = this.resumeClaudeOnRestore;
+    if (mode === "off" || (mode === "pinned" && this.sessions.get(session.rootTabId ?? session.id)?.pinned !== true)) {
+      return;
+    }
     session.pty.write(`claude --resume ${pending.sessionId}\r`);
   }
 
   /**
-   * Record which pinned panes are running Claude by hand, so a restore can
-   * resume them; every pane not named here forgets its id. Called by the
-   * vault's pinned-session mirror after each pass over the process table.
+   * Record which panes are running Claude by hand, so a restore can resume
+   * them; every pane not named here forgets its id. Called by the vault's
+   * pinned- or open-session mirror (per `resumeClaudeOnRestore`) after each
+   * pass over the process table.
    */
   setResumeClaudeSessions(byPane: ReadonlyMap<string, string>): void {
     for (const session of this.sessions.values()) {

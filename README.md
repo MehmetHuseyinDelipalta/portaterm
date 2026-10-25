@@ -141,6 +141,7 @@ Key settings under `portaterm.*` (see the Settings UI for the full list):
 | `cursorBlink` | `true` | Cursor blink. |
 | `defaultCwd` | `""` | Empty = workspace root or `$HOME`. |
 | `sessionRestore.enabled` | `true` | Restore terminal scrollback and metadata across VS Code restarts. |
+| `sessionRestore.resumeClaude` | `all` | Which restored tabs resume the Claude conversation they were running: `all`, `pinned`, or `off`. |
 | `cursorAgent.hooks.enabled` | `false` | Machine-scoped, fail-open Cursor Agent activity and approval observation. |
 | `hoverPreview.delay` | `300` | Debounce (ms) before the file hover preview fetches, range 100–2000. |
 | `hoverPreview.blockSensitive` | `true` | Block auto-preview for dotfiles and sensitive folders (`Cmd`/`Ctrl` overrides). |
@@ -155,7 +156,7 @@ Key settings under `portaterm.*` (see the Settings UI for the full list):
 Terminals attempt to survive two distinct interruptions:
 
 - **Window reload (`Cmd+R` / `workbench.action.reloadWindow`)** — every terminal location keeps its PTY alive across the reload. Editor-tab terminals use a 5 s grace window before tearing down; if VS Code revives the panel within that window (the normal case), the shell continues without interruption — including long-running processes like `npm run dev`.
-- **Full restart (quit and relaunch VS Code, or open a fresh workspace)** — the shell process itself does **not** survive (a fresh PTY is spawned), but the scrollback, custom tab name, view location (sidebar / panel / editor), and last known `cwd` are restored. A dim divider line marks the boundary between the restored buffer and the new shell prompt: `─── restored — last update at HH:MM ───`. If the prior shell had exited, the divider includes the exit code and the restored tab is read-only.
+- **Full restart (quit and relaunch VS Code, or open a fresh workspace)** — the shell process itself does **not** survive (a fresh PTY is spawned), but the scrollback, custom tab name, view location (sidebar / panel / editor), and last known `cwd` are restored. A dim divider line marks the boundary between the restored buffer and the new shell prompt: `─── restored — last update at HH:MM ───`. If the prior shell had exited, the divider includes the exit code and the restored tab is read-only. A tab that was running Claude when the window went away types `claude --resume <id>` into the new shell, so the conversation continues where it left off; set `portaterm.sessionRestore.resumeClaude` to `pinned` to limit this to pinned tabs, or `off` to turn it off.
 
 Persistence is workspace-scoped (when a workspace folder is open): snapshots from workspace A are not surfaced in workspace B. Storage is capped at 20 snapshots per workspace, 1 MB per snapshot, and 7 days of age — whichever comes first. Disable the entire pipeline via `portaterm.sessionRestore.enabled` if you don't want any state written to disk; toggling the setting off also purges existing snapshots. When no workspace folder is open, persistence is disabled for that window (the no-folder global directory could otherwise leak snapshots between unrelated no-folder windows).
 

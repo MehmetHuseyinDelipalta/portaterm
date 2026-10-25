@@ -43,8 +43,10 @@ import { createPaneEvidenceStore } from "./session/PaneEvidenceStore";
 import { SessionManager } from "./session/SessionManager";
 import { SessionStorage } from "./session/SessionStorage";
 import {
+  affectsResumeClaudeOnRestore,
   affectsSessionRestoreEnabled,
   affectsTerminalConfig,
+  readResumeClaudeOnRestore,
   readSessionRestoreEnabled,
   readTerminalConfig,
   readTerminalSettings,
@@ -489,6 +491,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     shellIntegrationContext,
     paneEvidence,
   });
+  sessionManager.resumeClaudeOnRestore = readResumeClaudeOnRestore();
 
   // Hydrate restore state BEFORE registering any view provider so the
   // sidebar/panel/editor onReady branches see populated pending snapshots.
@@ -1746,12 +1749,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ptyPid: (paneId: string) => paneEvidence.read(paneId)?.ptyPid,
     claudeByProcess,
   };
+  // Which restored tabs resume the Claude they were running. Exactly one of the
+  // two passes below feeds the session manager, by its mode: each call names
+  // every pane to resume and clears the rest, so two feeds would undo each other.
   const pinnedVaultPublisher = createPinnedVaultPublisher({
     compute: () => {
       const resolution = resolvePinnedEntryIds(sessionManager.pinnedTabPanes(), identitySources);
       return resolution.then(({ entryIds, claudeByPane }) => {
-        // The same pass tells a restore which pinned panes to resume.
-        sessionManager.setResumeClaudeSessions(claudeByPane);
+        if (sessionManager.resumeClaudeOnRestore === "pinned") {
+          sessionManager.setResumeClaudeSessions(claudeByPane);
+        }
         return entryIds;
       });
     },
@@ -1794,6 +1801,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       watchClaudeRegistry(panes.length > 0);
       const { entryIds, claudeByPane } = await resolvePinnedEntryIds(panes, identitySources);
       openClaudeByPane = claudeByPane;
+      if (sessionManager.resumeClaudeOnRestore === "all") {
+        sessionManager.setResumeClaudeSessions(claudeByPane);
+      }
       return entryIds;
     },
     onError: (err) => console.warn("[Portaterm] Failed to resolve open vault sessions:", err),
@@ -1808,6 +1818,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openVaultPublisher.refresh();
   };
   sessionManager.onPinnedChange = () => pinnedVaultPublisher.refresh();
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (!affectsResumeClaudeOnRestore(e)) {
+        return;
+      }
+      sessionManager.resumeClaudeOnRestore = readResumeClaudeOnRestore();
+      if (sessionManager.resumeClaudeOnRestore === "off") {
+        sessionManager.setResumeClaudeSessions(new Map());
+      }
+      refreshPinnedVaultSessions?.();
+    }),
+  );
 
   // ─── Tab ↔ vault name sync ────────────────────────────────────────
   // A tab running an agent session and that session's vault row are one thing

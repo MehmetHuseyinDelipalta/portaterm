@@ -99,6 +99,21 @@
           "default": true,
           "description": "Restore terminal scrollback and metadata across VS Code restarts. NOTE: the persisted scrollback is plaintext on disk — anything echoed in the terminal (passwords typed at prompts, .env file contents, API tokens, kubeconfigs) lands in <storageUri>/snapshots until the per-snapshot caps evict it. Use Cmd+K (clear) before sensitive output, or set this to false to opt out entirely."
         },
+        "portaterm.sessionRestore.resumeClaude": {
+          "type": "string",
+          "enum": [
+            "all",
+            "pinned",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Every tab running Claude when the window closes resumes its conversation with `claude --resume` after a restart.",
+            "Only pinned tabs resume their Claude conversation; other tabs come back as a shell.",
+            "No tab resumes its Claude conversation; every tab comes back as a shell."
+          ],
+          "default": "all",
+          "description": "Which restored tabs resume the Claude conversation they were running when the window went away. Tabs launched from the vault always relaunch their agent. Requires portaterm.sessionRestore.enabled."
+        },
         "portaterm.worktree.rowActivation": {
           "type": "string",
           "enum": [

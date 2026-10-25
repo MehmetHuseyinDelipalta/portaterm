@@ -2,7 +2,12 @@
 import os from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetAll, __setConfigValues, __setWorkspaceFolders } from "../test/__mocks__/vscode";
-import { affectsTerminalConfig, readTerminalConfig, readTerminalSettings } from "./SettingsReader";
+import {
+  affectsTerminalConfig,
+  readResumeClaudeOnRestore,
+  readTerminalConfig,
+  readTerminalSettings,
+} from "./SettingsReader";
 
 // Mock node:fs for PtyManager's detectShell
 vi.mock("node:fs", () => {
@@ -163,6 +168,25 @@ describe("readTerminalSettings — other settings", () => {
     __setConfigValues({ "portaterm.scrollback": 5000 });
     const settings = readTerminalSettings();
     expect(settings.scrollback).toBe(5000);
+  });
+});
+
+describe("readResumeClaudeOnRestore", () => {
+  it("defaults to all", () => {
+    __setConfigValues({});
+    expect(readResumeClaudeOnRestore()).toBe("all");
+  });
+
+  it("reads pinned and off", () => {
+    __setConfigValues({ "portaterm.sessionRestore.resumeClaude": "pinned" });
+    expect(readResumeClaudeOnRestore()).toBe("pinned");
+    __setConfigValues({ "portaterm.sessionRestore.resumeClaude": "off" });
+    expect(readResumeClaudeOnRestore()).toBe("off");
+  });
+
+  it("falls back to all for an unknown value", () => {
+    __setConfigValues({ "portaterm.sessionRestore.resumeClaude": "sometimes" });
+    expect(readResumeClaudeOnRestore()).toBe("all");
   });
 });
 
