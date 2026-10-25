@@ -94,6 +94,19 @@ export interface InputMessage {
   data: string;
 }
 
+/**
+ * Files dropped from the OS file manager (Finder) whose paths the sandboxed
+ * webview cannot read. The host resolves them from the OS drag pasteboard and
+ * types them into the session only when their basenames match `names`.
+ */
+export interface InsertOsDropPathsMessage {
+  type: "insertOsDropPaths";
+  /** Target terminal session ID */
+  tabId: string;
+  /** `File.name` of each dropped item, in drop order */
+  names: string[];
+}
+
 /** Terminal viewport resized (e.g., sidebar dragged, window resized). */
 export interface ResizeMessage {
   type: "resize";
@@ -1833,6 +1846,7 @@ export interface PaneEvidenceMessage {
 export type WebViewToExtensionMessage =
   | ReadyMessage
   | InputMessage
+  | InsertOsDropPathsMessage
   | ResizeMessage
   | CreateTabMessage
   | SwitchTabMessage

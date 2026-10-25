@@ -255,6 +255,22 @@ describe("DragDropHandler", () => {
     expect(postMessage).not.toHaveBeenCalled();
   });
 
+  it("asks the host to resolve a Finder Shift+drop that carries only bare files", () => {
+    const dt = mockDataTransfer({}, [{ name: "report.pdf" }, { name: "My Folder" }]);
+    container.dispatchEvent(makeDragEvent("drop", { dataTransfer: dt, shiftKey: true }));
+    expect(postMessage).toHaveBeenCalledWith({
+      type: "insertOsDropPaths",
+      tabId: "session-1",
+      names: ["report.pdf", "My Folder"],
+    });
+  });
+
+  it("does not ask the host to resolve a Finder drop without Shift", () => {
+    const dt = mockDataTransfer({}, [{ name: "report.pdf" }]);
+    container.dispatchEvent(makeDragEvent("drop", { dataTransfer: dt, shiftKey: false }));
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
   it("joins multiple paths with spaces and adds trailing space", () => {
     const dt = mockDataTransfer({
       ResourceURLs: JSON.stringify(["file:///Users/me/a.txt", "file:///Users/me/b.txt"]),

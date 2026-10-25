@@ -28,6 +28,7 @@ import type { GitDecorationProvider } from "./gitDecorationProvider";
 import { affectsHoverPreview, readHoverPreviewSettings, updateHoverPreviewSetting } from "./hoverPreviewSettings";
 import { openExternalLink } from "./openExternalLink";
 import { DEFAULT_FIND_FILES_MAX_RESULTS, openFileLink } from "./openFileLink";
+import { handleInsertOsDropPaths } from "./osDropPaths";
 import { isValidPreviewRequest } from "./previewValidation";
 import { themeKindFor } from "./TerminalViewProvider";
 import type { WorktreeAttachment, WorktreeHost, WorktreeSurface } from "./WorktreeHost";
@@ -650,6 +651,18 @@ export class TerminalEditorProvider {
         case "input":
           if (typeof message.tabId === "string" && typeof message.data === "string") {
             this.sessionManager.writeToSession(message.tabId, message.data);
+          }
+          break;
+
+        case "insertOsDropPaths":
+          if (
+            typeof message.tabId === "string" &&
+            Array.isArray(message.names) &&
+            message.names.every((n: unknown) => typeof n === "string")
+          ) {
+            void handleInsertOsDropPaths(message.tabId, message.names, (tabId, data) =>
+              this.sessionManager.writeToSession(tabId, data),
+            );
           }
           break;
 

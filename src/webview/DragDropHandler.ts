@@ -4,8 +4,10 @@
 // Extracts paths from DataTransfer, escapes them for POSIX shells, and injects
 // via the existing input IPC message.
 //
-// NOTE: OS file manager (Finder) drops are NOT supported — sandboxed WebView
-// iframes cannot access File.path or webUtils.getPathForFile().
+// OS file manager (Finder) drops carry no readable path — sandboxed WebView
+// iframes cannot access File.path or webUtils.getPathForFile(). For those the
+// handler sends the dropped file names to the host, which resolves the paths
+// from the OS drag pasteboard (see src/providers/osDropPaths.ts).
 //
 // See: docs/design/message-protocol.md, research/drag-drop-terminal.md
 
@@ -302,15 +304,21 @@ export class DragDropHandler {
       return;
     }
 
+    const sessionId = this.getActiveSessionId();
+
     // Extract paths from the drop event
     const paths = extractPathsFromDrop(e.dataTransfer);
     if (paths.length === 0) {
+      // A Finder drop: only bare File objects. Let the host resolve their paths.
+      const names = Array.from(e.dataTransfer.files, (f) => f.name).filter((n) => n.length > 0);
+      if (names.length > 0 && sessionId) {
+        this.postMessage({ type: "insertOsDropPaths", tabId: sessionId, names });
+      }
       return;
     }
 
     // Escape each path and join with spaces, append trailing space
     const escaped = paths.map(escapePathForShell).join(" ");
-    const sessionId = this.getActiveSessionId();
 
     this.postMessage({ type: "input", tabId: sessionId, data: `${escaped} ` });
   };

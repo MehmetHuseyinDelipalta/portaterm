@@ -23,7 +23,18 @@ When a user right-clicks one or more files or folders in VS Code's Explorer and 
 
 When a user holds Shift and drops one or more files from VS Code's Explorer onto a terminal instance, the system SHALL extract file paths from the drop event's DataTransfer and insert them as shell-escaped text into the active terminal session via the existing `input` message, without executing the command.
 
-**Limitation**: OS file manager (Finder) drops are NOT supported — the sandboxed WebView iframe does not have access to `File.path` or `webUtils.getPathForFile()`, so file paths cannot be extracted from Finder drag events.
+**OS file manager drops (macOS)**: the sandboxed WebView iframe has no `File.path` or `webUtils.getPathForFile()`, so a Finder drop yields only bare `File` objects. When no strategy extracts a path but `dataTransfer.files` is non-empty, the webview SHALL send `insertOsDropPaths` with the active session ID and each file's `name`. The host SHALL read the file URLs from the macOS drag pasteboard and write the shell-escaped paths (trailing space, no Enter) to that session ONLY when their basenames match the dropped names one-for-one; on any mismatch (e.g. a stale pasteboard from an earlier drag) or on non-macOS platforms it SHALL write nothing.
+
+#### Scenario: Files Shift+dropped from Finder on macOS
+- Given: a terminal session is active and not exited
+- When: user holds Shift and drops `report.pdf` and `My Folder` from Finder onto the terminal
+- Then: the webview sends `insertOsDropPaths` with names `["report.pdf", "My Folder"]`
+- And: the host writes both absolute paths, shell-escaped and in drop order, followed by a trailing space
+
+#### Scenario: Drag pasteboard does not match the drop
+- Given: the drag pasteboard holds paths whose basenames differ from the dropped names
+- When: the host handles `insertOsDropPaths`
+- Then: nothing is written to the session
 
 #### Scenario: Single file Shift+dropped from Explorer
 - Given: a terminal session is active and not exited
@@ -56,7 +67,7 @@ The system SHALL attempt to extract file paths from the DataTransfer object usin
 4. `dataTransfer.files` with `.path` property — Electron non-standard file path (NOTE: unavailable in sandboxed WebView iframes — kept for future compatibility)
 5. `dataTransfer.getData('text/plain')` — use as raw path if it starts with `/`
 
-**Limitation**: OS file manager (Finder) drops do NOT provide usable path data in sandboxed WebView iframes (`File.path` is undefined, `webUtils.getPathForFile` is unavailable). Strategy 4 is retained for potential future Electron/VS Code changes but is currently non-functional for Finder drags.
+**Limitation**: OS file manager (Finder) drops do NOT provide usable path data in sandboxed WebView iframes (`File.path` is undefined, `webUtils.getPathForFile` is unavailable). Strategy 4 is retained for potential future Electron/VS Code changes; Finder drops are instead resolved host-side (see drop-file-path-insertion).
 
 Each strategy MUST be wrapped in try/catch to handle malformed data gracefully. File URIs MUST be decoded using `decodeURIComponent()` before returning, to convert percent-encoded characters (e.g., `%20`) back to their original form.
 

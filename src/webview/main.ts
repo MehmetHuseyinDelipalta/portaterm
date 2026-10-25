@@ -1480,7 +1480,7 @@ function showDragDropTip(): void {
   const textSpan = document.createElement("span");
   textSpan.className = "drag-drop-tip-text";
   textSpan.textContent =
-    'Drag files from Explorer while holding Shift to insert path, or right-click \u2192 "Insert Path in Portaterm".';
+    'Drag files from Explorer or Finder while holding Shift to insert path, or right-click \u2192 "Insert Path in Portaterm".';
   tipEl.appendChild(textSpan);
 
   const dismissBtn = document.createElement("button");
