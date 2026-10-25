@@ -489,6 +489,8 @@ describe("TerminalViewProvider: requestFilePreview dispatch", () => {
     const sm = new SessionManager();
     const evidence = createPaneEvidenceStore();
     evidence.create("target", { viewId: "sidebar", shell: "claude", isAgentLaunch: true });
+    // Mid-turn: an agent idle at its own prompt is closed without asking.
+    evidence.reportTurn("target", { state: "working", stateStartedAt: 0, subagents: [] });
     const destroy = vi.spyOn(sm, "destroySession").mockImplementation(() => {});
     vi.spyOn(sm, "panesOfTab").mockReturnValue(["target"]);
     const asked: string[] = [];

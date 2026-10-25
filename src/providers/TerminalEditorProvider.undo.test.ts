@@ -69,6 +69,7 @@ describe("closing an editor tab that holds a live agent", () => {
     const sm = new SessionManager(undefined, { paneEvidence: evidence });
     const { panel, sessionId } = await openPanel(sm, evidence);
     evidence.markProcess(sessionId, { shell: "claude", isAgentLaunch: true });
+    evidence.reportTurn(sessionId, { state: "working", stateStartedAt: 0, subagents: [] });
     const scheduleSpy = vi.spyOn(sm, "scheduleDestroyForView");
 
     panel.dispose();
@@ -102,6 +103,7 @@ describe("the undo", () => {
     const sm = new SessionManager(undefined, { paneEvidence: evidence });
     const { ctx, panel, sessionId } = await openPanel(sm, evidence);
     evidence.markProcess(sessionId, { shell: "claude", isAgentLaunch: true });
+    evidence.reportTurn(sessionId, { state: "working", stateStartedAt: 0, subagents: [] });
     panel.dispose();
     const { panelId, viewId } = disposals[0];
 
@@ -137,6 +139,7 @@ describe("the undo", () => {
     const sm = new SessionManager(undefined, { paneEvidence: evidence });
     const { ctx, panel, sessionId } = await openPanel(sm, evidence);
     evidence.markProcess(sessionId, { shell: "claude", isAgentLaunch: true });
+    evidence.reportTurn(sessionId, { state: "working", stateStartedAt: 0, subagents: [] });
     panel.dispose();
     const { panelId } = disposals[0];
 

@@ -19,7 +19,7 @@ function gates(
   const tabRemoved: string[] = [];
   const paneClosed: string[] = [];
   const deps: CloseGateDeps = {
-    evidence: { read: (id) => panes[id] },
+    evidence: { read: (id) => panes[id], activityFor: () => "running" },
     ui: {
       showWarningMessage: (message, options) => {
         asked.push(`${message}${options.detail ?? ""}`);
@@ -131,12 +131,12 @@ describe("disposalGrace", () => {
 
   it("leaves the ordinary grace alone when nothing is running", () => {
     // Lengthening it for every closed tab would hold ptys for no reason.
-    const g = disposalGrace(["t1"], { read: () => SHELL }, MS);
+    const g = disposalGrace(["t1"], { read: () => SHELL, activityFor: () => "running" }, MS);
     expect(g).toEqual({ graceMs: 5_000, running: [] });
   });
 
   it("lengthens it and names what is at stake when an agent is", () => {
-    const g = disposalGrace(["t1"], { read: () => AGENT }, MS);
+    const g = disposalGrace(["t1"], { read: () => AGENT, activityFor: () => "running" }, MS);
     expect(g.graceMs).toBe(30_000);
     expect(g.running).toEqual([{ sessionId: "t1", name: "claude" }]);
   });
@@ -145,7 +145,7 @@ describe("disposalGrace", () => {
     // Closing the editor tab kills them all, so one live agent anywhere in it
     // is enough to earn the undo window.
     const panes: Record<string, typeof AGENT | typeof SHELL> = { a: SHELL, b: AGENT };
-    const g = disposalGrace(["a", "b"], { read: (id) => panes[id] }, MS);
+    const g = disposalGrace(["a", "b"], { read: (id) => panes[id], activityFor: () => "running" }, MS);
     expect(g.graceMs).toBe(30_000);
     expect(g.running.map((p) => p.sessionId)).toEqual(["b"]);
   });

@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
+import type { PaneActivity } from "../shared/paneEvidence";
 import { confirmKill, type KillConfirmationUi, type KillEvidenceReader, runningAgentPanes } from "./killConfirmation";
 
-type Pane = { exited: boolean; isAgentLaunch?: boolean; shell?: string };
+type Pane = {
+  exited: boolean;
+  isAgentLaunch?: boolean;
+  shell?: string;
+  turn?: { report: { state: "working" | "waiting" | "done" } };
+  /** Inferred activity; defaults to `running` so a pane is mid-turn unless a test says otherwise. */
+  activity?: PaneActivity;
+};
 
 function evidence(panes: Record<string, Pane>): KillEvidenceReader {
-  return { read: (id) => panes[id] };
+  return {
+    read: (id) => panes[id],
+    activityFor: (id) => (panes[id] ? (panes[id].activity ?? "running") : undefined),
+  };
 }
 
 /** Records what was asked, and answers with `answer` (undefined = dismissed). */
@@ -45,6 +56,31 @@ describe("runningAgentPanes", () => {
     // `undefined` means nothing has told us, which is not a claim that an agent
     // is running — a confirmation on it would fire on every ordinary close.
     expect(runningAgentPanes(["never-seen"], evidence({}))).toEqual([]);
+  });
+
+  it("passes over an agent that finished its turn and sits at its prompt", () => {
+    // Its conversation is already on disk; closing it loses nothing a resume
+    // cannot bring back, so asking would only be in the way.
+    const idle = { exited: false, isAgentLaunch: true, shell: "claude", activity: "idle" as const };
+    expect(runningAgentPanes(["a"], evidence({ a: idle }))).toEqual([]);
+    expect(runningAgentPanes(["a"], evidence({ a: { ...idle, turn: { report: { state: "done" } } } }))).toEqual([]);
+    // Non-vacuous: the same pane working, or blocked on the user, is found.
+    expect(runningAgentPanes(["a"], evidence({ a: { ...idle, activity: "running" } }))).toHaveLength(1);
+    expect(runningAgentPanes(["a"], evidence({ a: { ...idle, activity: "waiting" } }))).toHaveLength(1);
+  });
+
+  it("trusts a turn report that says working, however quiet the terminal", () => {
+    // A long tool call can go silent; the report still stands until the next hook.
+    for (const state of ["working", "waiting"] as const) {
+      const pane = {
+        exited: false,
+        isAgentLaunch: true,
+        shell: "claude",
+        activity: "idle" as const,
+        turn: { report: { state } },
+      };
+      expect(runningAgentPanes(["a"], evidence({ a: pane }))).toHaveLength(1);
+    }
   });
 
   it("counts a pane named twice once", () => {

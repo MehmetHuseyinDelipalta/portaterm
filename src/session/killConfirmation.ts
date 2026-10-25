@@ -7,6 +7,11 @@
 // killed, and whatever it had not written to disk goes with it. That is the
 // only case this module speaks up for.
 //
+// "Mid-session" means mid-TURN. An agent that finished its turn and sits at its
+// own prompt has already written its conversation out — closing it loses
+// nothing a resume cannot bring back — so a live process alone is not enough:
+// the pane must also be working or blocked on the user.
+//
 // The rule reads `PaneEvidenceStore`, which is the host's pane registry and
 // outlives `SessionManager`'s own maps (a naturally-exited pane still has a
 // row there while its tab is on screen). `exited` panes are excluded for
@@ -15,10 +20,20 @@
 // The UI seam is a parameter rather than an import so the rule is testable
 // without the `vscode` module — the same shape `exportCommands.ts` uses.
 
+import type { AgentTurnReport } from "../agentHooks/AgentHookRuntime";
+import type { PaneActivity } from "../shared/paneEvidence";
+
 /** What `PaneEvidenceStore` exposes that this rule needs. `undefined` = no such pane. */
 export interface KillEvidenceReader {
-  read(paneId: string): { exited: boolean; isAgentLaunch?: boolean; shell?: string } | undefined;
+  read(
+    paneId: string,
+  ):
+    | { exited: boolean; isAgentLaunch?: boolean; shell?: string; turn?: { report: { state: AgentTurnState } } }
+    | undefined;
+  activityFor(paneId: string): PaneActivity | undefined;
 }
+
+type AgentTurnState = AgentTurnReport["state"];
 
 /** One pane that would lose a live agent. `name` is its root executable. */
 export interface RunningAgentPane {
@@ -45,7 +60,7 @@ const WORDING: Record<KillTarget, { question: string; confirm: string }> = {
 };
 
 /**
- * Which of `sessionIds` is running an agent right now.
+ * Which of `sessionIds` is running an agent that is mid-turn right now.
  *
  * `isAgentLaunch` is the host's own fact — it is written when the pty is
  * spawned and cleared when a fallback shell replaces the process — so this asks
@@ -68,12 +83,33 @@ export function runningAgentPanes(
     }
     seen.add(sessionId);
     const pane = evidence.read(sessionId);
-    if (!pane || pane.exited || pane.isAgentLaunch !== true) {
+    if (!pane || pane.exited || pane.isAgentLaunch !== true || !midTurn(sessionId, pane.turn, evidence)) {
       continue;
     }
     found.push({ sessionId, name: pane.shell ?? "An agent" });
   }
   return found;
+}
+
+/**
+ * Whether the agent is in the middle of something closing would cut off.
+ *
+ * Either source is enough. The agent's own turn report is the authority when
+ * it has made one, and it is read regardless of age: hooks fire on events, so
+ * a long tool call leaves a `working` report standing that is still true. The
+ * inferred activity covers the agent with no hooks at all, and the moment
+ * between a prompt being typed and its first hook landing.
+ */
+function midTurn(
+  sessionId: string,
+  turn: { report: { state: AgentTurnState } } | undefined,
+  evidence: KillEvidenceReader,
+): boolean {
+  if (turn !== undefined && turn.report.state !== "done") {
+    return true;
+  }
+  const activity = evidence.activityFor(sessionId);
+  return activity === "running" || activity === "waiting";
 }
 
 /**

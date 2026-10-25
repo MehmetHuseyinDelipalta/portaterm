@@ -28,7 +28,7 @@ function world(w: World = {}) {
   const destroyed: string[] = [];
   const posted: { surface: string; message: { type: string; tabId?: string; sessionId?: string } }[] = [];
   const deps: CloseCommandDeps = {
-    evidence: { read: (id) => w.panes?.[id] },
+    evidence: { read: (id) => w.panes?.[id], activityFor: () => "running" },
     ui: {
       showWarningMessage: (message, options) => {
         asked.push(`${message} ${options.detail ?? ""}`);
