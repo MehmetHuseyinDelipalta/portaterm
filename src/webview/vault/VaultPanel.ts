@@ -30,6 +30,7 @@ import type {
 } from "../../types/messages";
 import type { VaultListResult, VaultSessionEntry } from "../../vault/types";
 import type { VaultPreviewGeometry } from "../state/WebviewState";
+import { type PaneAgentAttention, strongestAttention } from "../state/WebviewStateStore";
 import { attachTooltip, attachTooltipDelegate } from "../ui/Tooltip";
 import { ICON_BRANCH, ICON_PLUS } from "../worktree/worktreeIcons";
 import { agentLabel, isWithin } from "./format";
@@ -236,6 +237,10 @@ export class VaultPanel {
   private pinnedEntryIds: ReadonlySet<string> = new Set();
   /** Entry ids some live pane is running (host-pushed); a resume focuses them. */
   private openEntryIds: ReadonlySet<string> = new Set();
+  /** The live panes running each open entry (host-pushed), for their agent attention. */
+  private openPanesByEntry: Readonly<Record<string, readonly string[]>> = {};
+  /** Agent attention per pane (host-pushed), shown on the open entry's Tab mark. */
+  private paneAttention: ReadonlyMap<string, PaneAgentAttention> = new Map();
   /**
    * Agents the host said a quick launch can start in the workspace root. Empty
    * until it answers, and empty means no header carries a start button.
@@ -820,17 +825,45 @@ export class VaultPanel {
    * their group, after any pinned rows. Repaints only when the set changed, and
    * defers the repaint while an inline rename is open.
    */
-  setOpenEntryIds(ids: readonly string[]): void {
+  setOpenEntryIds(ids: readonly string[], panesByEntry: Readonly<Record<string, readonly string[]>> = {}): void {
     const next = new Set(ids);
-    if (next.size === this.openEntryIds.size && ids.every((id) => this.openEntryIds.has(id))) {
+    const samePanes = JSON.stringify(panesByEntry) === JSON.stringify(this.openPanesByEntry);
+    if (samePanes && next.size === this.openEntryIds.size && ids.every((id) => this.openEntryIds.has(id))) {
       return;
     }
     this.openEntryIds = next;
+    this.openPanesByEntry = panesByEntry;
+    this.repaintForLiveState();
+  }
+
+  /**
+   * Set the agent attention per pane. An open entry's Tab mark names what its
+   * panes' agent is doing — working, waiting on the user, or done unseen.
+   */
+  setAgentAttention(attention: ReadonlyMap<string, PaneAgentAttention>): void {
+    const before = this.openAttentionSignature();
+    this.paneAttention = new Map(attention);
+    if (this.openAttentionSignature() !== before) {
+      this.repaintForLiveState();
+    }
+  }
+
+  /** Repaint for a host-pushed live-state change, deferring while an inline rename is open. */
+  private repaintForLiveState(): void {
     if (this.renamingEntryId) {
       this.lastRenderSig = null;
       return;
     }
     this.renderList();
+  }
+
+  /** What an open entry's panes' agent is doing, strongest first. */
+  private entryAttention(entryId: string): PaneAgentAttention | undefined {
+    return strongestAttention((this.openPanesByEntry[entryId] ?? []).map((paneId) => this.paneAttention.get(paneId)));
+  }
+
+  private openAttentionSignature(): string {
+    return JSON.stringify([...this.openEntryIds].sort().map((id) => [id, this.entryAttention(id) ?? null]));
   }
 
   /** Toggle the "This folder only" filter (the search-row toggle button). */
@@ -960,7 +993,7 @@ export class VaultPanel {
       liveCwd ?? null,
       this.groupMode,
       [...this.pinnedEntryIds].sort(),
-      [...this.openEntryIds].sort(),
+      this.openAttentionSignature(),
       [...this.startableAgents].sort(),
     ]);
   }
@@ -1054,7 +1087,10 @@ export class VaultPanel {
         const fresh = this.pendingFreshIds?.has(entry.id) ?? false;
         const pinned = this.pinnedEntryIds.has(entry.id);
         const open = this.openEntryIds.has(entry.id);
-        this.listEl.appendChild(renderRow(entry, { hideCwd: group.hideCwd, fresh, pinned, open }, this.rowCallbacks));
+        const attention = open ? this.entryAttention(entry.id) : undefined;
+        this.listEl.appendChild(
+          renderRow(entry, { hideCwd: group.hideCwd, fresh, pinned, open, attention }, this.rowCallbacks),
+        );
       }
       if (!expanded && overflow > 0) {
         const key = group.key;

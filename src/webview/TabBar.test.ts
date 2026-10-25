@@ -307,6 +307,7 @@ describe("renderTabBar", () => {
       ["tab-2", { name: "Ask", activityStatus: "idle", agentAttention: { state: "question", agent: "Claude" } }],
       ["tab-3", { name: "Done", activityStatus: "running", agentAttention: { state: "unseen", agent: "Claude" } }],
       ["tab-4", { name: "Gone", exited: true, agentAttention: { state: "approval", agent: "Claude" } }],
+      ["tab-5", { name: "Busy", activityStatus: "idle", agentAttention: { state: "working", agent: "Claude" } }],
     ]);
     const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-1" });
 
@@ -315,12 +316,16 @@ describe("renderTabBar", () => {
     const tabs = deps.tabBarEl.querySelectorAll<HTMLElement>(".tab-item");
     expect(tabs[0].dataset.status).toBe("waiting");
     expect(tabs[0].getAttribute("aria-label")).toBe("Claude: Claude is waiting for your approval");
-    expect(tabs[1].dataset.status).toBe("waiting");
+    expect(tabs[0].querySelector(".tab-status-waiting")).toBeTruthy();
+    expect(tabs[1].dataset.status).toBe("question");
+    expect(tabs[1].querySelector(".tab-status-question")).toBeTruthy();
     expect(tabs[1].getAttribute("aria-label")).toBe("Ask: Claude is waiting for your answer");
     expect(tabs[2].dataset.status).toBe("unseen");
     expect(tabs[2].querySelector(".tab-status-unseen")).toBeTruthy();
     expect(tabs[2].getAttribute("aria-label")).toBe("Done: Claude finished — not seen yet");
     expect(tabs[3].dataset.status).toBe("exited");
+    expect(tabs[4].dataset.status).toBe("running");
+    expect(tabs[4].querySelector(".tab-status")?.getAttribute("title")).toBe("Claude is working");
   });
 });
 
@@ -719,10 +724,16 @@ describe("buildTabBarData", () => {
     });
     expect(buildTabBarData(store).tabs.get("tab-1")?.agentAttention).toEqual({ state: "question", agent: "Claude" });
 
-    store.agentAttention = new Map([["b", { state: "unseen", agent: "Claude" }]]);
+    store.agentAttention = new Map([
+      ["tab-1", { state: "working", agent: "Claude" }],
+      ["b", { state: "unseen", agent: "Claude" }],
+    ]);
     expect(buildTabBarData(store).tabs.get("tab-1")?.agentAttention?.state).toBe("unseen");
 
     (store.terminals.get("b") as { exited: boolean }).exited = true;
+    expect(buildTabBarData(store).tabs.get("tab-1")?.agentAttention?.state).toBe("working");
+
+    store.agentAttention = new Map([["b", { state: "unseen", agent: "Claude" }]]);
     expect(buildTabBarData(store).tabs.get("tab-1")?.agentAttention).toBeUndefined();
   });
 

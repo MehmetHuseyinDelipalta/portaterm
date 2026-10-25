@@ -2182,14 +2182,15 @@ export interface TabPinnedMessage {
   pinned: boolean;
 }
 
-/** Why a pane's agent wants the user, as its tab shows it. */
-export type AgentAttentionState = "approval" | "question" | "unseen";
+/** Where a pane's agent stands with the user, as its tab and vault row show it. */
+export type AgentAttentionState = "approval" | "question" | "unseen" | "working";
 
 /**
  * Extension → WebView: the panes whose agent needs the user, in every view —
  * waiting on an approval or an answer, or finished a turn nobody has looked at
- * yet. The full set, sent whenever it changes and when a surface is ready; a
- * pane absent from it needs nothing. Each webview ignores ids it does not hold.
+ * yet — and the panes whose agent is working. The full set, sent whenever it
+ * changes and when a surface is ready; a pane absent from it has no agent
+ * state to show. Each webview ignores ids it does not hold.
  */
 export interface AgentAttentionMessage {
   type: "agentAttention";
@@ -2217,6 +2218,8 @@ export interface VaultOpenSessionsMessage {
   type: "vaultOpenSessions";
   /** Vault entry ids (`<agent>:<sessionId>`), sorted. Untrusted on the webview side: only matched, never parsed. */
   entryIds: string[];
+  /** The live panes running each entry, so a row can show its panes' agent attention. */
+  panesByEntry?: Record<string, string[]>;
 }
 
 /** A terminal tab has been removed and its PTY destroyed. */

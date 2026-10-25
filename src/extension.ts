@@ -1873,20 +1873,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     compute: async () => {
       const panes = sessionManager.livePanes();
       watchClaudeRegistry(panes.length > 0);
-      const { entryIds, claudeByPane } = await resolvePinnedEntryIds(panes, identitySources);
+      const { entryIds, panesByEntry, claudeByPane } = await resolvePinnedEntryIds(panes, identitySources);
       openClaudeByPane = claudeByPane;
       if (sessionManager.resumeClaudeOnRestore === "all") {
         sessionManager.setResumeClaudeSessions(claudeByPane);
       }
-      return entryIds;
+      return { entryIds, panesByEntry };
     },
+    initial: { entryIds: [], panesByEntry: {} },
     onError: (err) => console.warn("[Portaterm] Failed to resolve open vault sessions:", err),
-    post: (entryIds) => {
-      postToVaultSurfaces({ type: "vaultOpenSessions", entryIds });
+    post: (open) => {
+      postToVaultSurfaces({ type: "vaultOpenSessions", ...open });
     },
   });
-  sidebarProvider.openVaultEntryIds = () => openVaultPublisher.current();
-  panelProvider.openVaultEntryIds = () => openVaultPublisher.current();
+  sidebarProvider.openVaultSessions = () => openVaultPublisher.current();
+  panelProvider.openVaultSessions = () => openVaultPublisher.current();
   refreshPinnedVaultSessions = () => {
     pinnedVaultPublisher.refresh();
     openVaultPublisher.refresh();

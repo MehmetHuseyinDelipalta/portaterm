@@ -28,6 +28,25 @@ export interface PaneAgentAttention {
   agent: string;
 }
 
+/** Which attention a tab or vault row shows when its panes differ: what blocks on the user first. */
+const ATTENTION_RANK: Record<AgentAttentionState, number> = { approval: 3, question: 2, unseen: 1, working: 0 };
+
+/** The strongest of several panes' attention, or undefined when none has any. */
+export function strongestAttention(
+  attentions: Iterable<PaneAgentAttention | undefined>,
+): PaneAgentAttention | undefined {
+  let best: PaneAgentAttention | undefined;
+  for (const attention of attentions) {
+    if (
+      attention !== undefined &&
+      (best === undefined || ATTENTION_RANK[attention.state] > ATTENTION_RANK[best.state])
+    ) {
+      best = attention;
+    }
+  }
+  return best;
+}
+
 /** A single terminal instance with its addons and DOM container. */
 export interface TerminalInstance {
   id: string;

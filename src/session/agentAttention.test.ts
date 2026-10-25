@@ -87,7 +87,7 @@ describe("createAgentAttention marks", () => {
     const h = harness();
     h.set("a", { turn: turn("waiting") });
     h.attention.paneInput("a");
-    expect(h.publish).toHaveBeenLastCalledWith({});
+    expect(h.publish).toHaveBeenLastCalledWith({ a: { state: "working", agent: "Claude" } });
     h.attention.paneInput("a");
     expect(h.publish).toHaveBeenCalledTimes(2);
     h.set("a", { turn: { ...turn("waiting")!, receivedAt: NOW + 1 } });
@@ -100,7 +100,7 @@ describe("createAgentAttention marks", () => {
     h.set("a", { turn: turn("done") });
     expect(h.publish).toHaveBeenLastCalledWith({ a: { state: "unseen", agent: "Claude" } });
     h.attention.displayChanged();
-    expect(h.publish).toHaveBeenCalledTimes(1);
+    expect(h.publish).toHaveBeenCalledTimes(2);
     h.visible.add("a");
     h.attention.displayChanged();
     expect(h.publish).toHaveBeenLastCalledWith({});
@@ -120,17 +120,27 @@ describe("createAgentAttention marks", () => {
     h.set("a", { semantic: "idle" });
     expect(h.attention.snapshot()).toEqual({ a: { state: "unseen", agent: "Cursor Agent" } });
     h.set("a", { semantic: "working" });
-    expect(h.attention.snapshot()).toEqual({});
+    expect(h.attention.snapshot()).toEqual({ a: { state: "working", agent: "Cursor Agent" } });
     h.set("a", { semantic: "idle" });
     h.set("a", { exited: true });
     expect(h.attention.snapshot()).toEqual({});
   });
 
-  it("badges waiting panes even with notifications off, and never counts unseen ones", () => {
+  it("publishes a working agent, and drops it once its turn ends in sight", () => {
+    const h = harness();
+    h.visible.add("a");
+    h.set("a", { turn: turn("working") });
+    expect(h.publish).toHaveBeenLastCalledWith({ a: { state: "working", agent: "Claude" } });
+    h.set("a", { turn: turn("done") });
+    expect(h.publish).toHaveBeenLastCalledWith({});
+  });
+
+  it("badges waiting panes even with notifications off, and never counts unseen or working ones", () => {
     const h = harness();
     h.settings.enabled = false;
     h.set("a", { turn: turn("waiting") });
     h.set("b", { turn: turn("working") });
+    h.set("c", { semantic: "working" });
     h.set("b", { turn: turn("done") });
     expect(h.setBadge).toHaveBeenCalledWith("sidebar", 1);
     expect(h.setBadge).not.toHaveBeenCalledWith("sidebar", 2);

@@ -1,9 +1,9 @@
 // src/session/agentAttention.ts — Show the user which agents need them.
 //
 // Reads the same pane evidence the tab and the worktree rows read, and turns it
-// into the quiet signals the tab bar draws: a pane waiting on an approval or an
-// answer, and a turn that finished while nobody was looking — which stays marked
-// until its tab is seen. Each terminal view also carries a badge counting its
+// into the quiet signals the tab bar and the vault draw: a pane waiting on an
+// approval or an answer, an agent at work, and a turn that finished while nobody
+// was looking — which stays marked until its tab is seen. Each terminal view also carries a badge counting its
 // waiting panes, for when the view itself is out of sight. A notification is
 // opt-in on top of that, for a pane the user cannot see.
 
@@ -141,8 +141,10 @@ export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
         ? phase
         : unseen.has(pane.paneId)
           ? "unseen"
-          : undefined;
-      const by = isBlocked(phase) ? agent : unseen.get(pane.paneId);
+          : phase === "working"
+            ? "working"
+            : undefined;
+      const by = state === "unseen" ? unseen.get(pane.paneId) : agent;
       if (state !== undefined && by !== undefined) {
         panes[pane.paneId] = { state, agent: by };
       }
@@ -164,7 +166,7 @@ export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
     const counts = new Map<string, number>(deps.badgeViews.map((viewId) => [viewId, 0]));
     for (const pane of deps.panes()) {
       const state = panes[pane.paneId]?.state;
-      if (pane.viewId === undefined || !counts.has(pane.viewId) || state === undefined || state === "unseen") {
+      if (pane.viewId === undefined || !counts.has(pane.viewId) || (state !== "approval" && state !== "question")) {
         continue;
       }
       counts.set(pane.viewId, (counts.get(pane.viewId) ?? 0) + 1);

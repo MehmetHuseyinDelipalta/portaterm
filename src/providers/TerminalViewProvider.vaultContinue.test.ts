@@ -209,12 +209,16 @@ describe("vault list request", () => {
       refresh: vi.fn(async () => ({ entries: [], errors: [] })),
     });
     const h = mount(vault);
-    h.provider.openVaultEntryIds = () => ["claude:s1"];
+    h.provider.openVaultSessions = () => ({ entryIds: ["claude:s1"], panesByEntry: { "claude:s1": ["p1"] } });
 
     h.send({ type: "requestVaultSessions" });
     await tick();
 
-    expect(h.postMessageSpy).toHaveBeenCalledWith({ type: "vaultOpenSessions", entryIds: ["claude:s1"] });
+    expect(h.postMessageSpy).toHaveBeenCalledWith({
+      type: "vaultOpenSessions",
+      entryIds: ["claude:s1"],
+      panesByEntry: { "claude:s1": ["p1"] },
+    });
     h.dispose();
   });
 });

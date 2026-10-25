@@ -103,6 +103,7 @@ describe("resolvePinnedEntryIds", () => {
     const s = sources({ claudeByProcess: async () => new Map([["p1", "sess-1"]]) });
     await expect(resolvePinnedEntryIds([{ paneId: "p1" }], s)).resolves.toEqual({
       entryIds: ["claude:sess-1"],
+      panesByEntry: { "claude:sess-1": ["p1"] },
       claudeByPane: new Map([["p1", "sess-1"]]),
     });
   });
@@ -119,6 +120,19 @@ describe("resolvePinnedEntryIds", () => {
     ];
     const resolved = await resolvePinnedEntryIds(panes, s);
     expect(resolved.entryIds).toEqual(["claude:now", "codex:t1", "opencode:ses_1"]);
+    expect(resolved.panesByEntry).toEqual({
+      "opencode:ses_1": ["reported"],
+      "claude:now": ["process"],
+      "codex:t1": ["resumed"],
+    });
+  });
+
+  it("lists every pane running the same entry", async () => {
+    const resolved = await resolvePinnedEntryIds(
+      [{ paneId: "a", vaultEntryId: "codex:t1" }, { paneId: "b", vaultEntryId: "codex:t1" }, { paneId: "c" }],
+      sources(),
+    );
+    expect(resolved.panesByEntry).toEqual({ "codex:t1": ["a", "b"] });
   });
 
   it("asks the process table about every pinned pane with a pty, reported or not", async () => {
@@ -143,6 +157,7 @@ describe("resolvePinnedEntryIds", () => {
     const claudeByProcess = vi.fn(async () => new Map<string, string>());
     await expect(resolvePinnedEntryIds([], sources({ claudeByProcess }))).resolves.toEqual({
       entryIds: [],
+      panesByEntry: {},
       claudeByPane: new Map(),
     });
     expect(claudeByProcess).not.toHaveBeenCalled();

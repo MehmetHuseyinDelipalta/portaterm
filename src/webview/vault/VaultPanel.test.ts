@@ -489,16 +489,21 @@ describe("VaultPanel open sessions", () => {
     expect(mark?.getAttribute("aria-label")).toBe("Open in a tab");
   });
 
-  it("puts the mark ahead of the title, after a pin mark", () => {
+  it("puts the marks in their own column after the title, the pin first, so titles align", () => {
     const host = createHost();
     const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
-    panel.render(result([entry({ id: "claude:a", title: "the title" })]));
+    panel.render(result([entry({ id: "claude:a", title: "the title" }), entry({ id: "claude:b", modified: 0 })]));
     panel.setPinnedEntryIds(["claude:a"]);
     panel.setOpenEntryIds(["claude:a"]);
-    const title = host.querySelector(".vault-row-title");
-    expect(title?.children[0]?.className).toBe("vault-row-pin");
-    expect(title?.children[1]?.className).toBe("vault-row-tab");
-    expect(title?.lastChild?.textContent).toBe("the title");
+    const [marked, plain] = Array.from(host.querySelectorAll<HTMLElement>(".vault-row"));
+    const title = marked?.querySelector(".vault-row-title");
+    expect(title?.textContent).toBe("the title");
+    expect(title?.children).toHaveLength(0);
+    expect(title?.nextElementSibling?.className).toBe("vault-row-marks");
+    const marks = marked?.querySelector(".vault-row-marks");
+    expect(Array.from(marks?.children ?? []).map((c) => c.className)).toEqual(["vault-row-pin", "vault-row-tab"]);
+    // A row with nothing to mark keeps the column, empty, so the grid stays aligned.
+    expect(plain?.querySelector(".vault-row-marks")?.childElementCount).toBe(0);
   });
 
   it("drops the mark once no pane runs the session", () => {
@@ -519,6 +524,49 @@ describe("VaultPanel open sessions", () => {
     panel.setOpenEntryIds(["claude:a"]);
     expect(host.querySelector(".vault-row")).toBe(row);
     expect(tabMarked(host)).toEqual(["claude:a"]);
+  });
+
+  it("leads the Tab mark with what its panes' agent is doing, the strongest pane winning", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "claude:a" })]));
+    panel.setOpenEntryIds(["claude:a"], { "claude:a": ["p1", "p2"] });
+    const mark = () => host.querySelector<HTMLElement>(".vault-row-tab");
+
+    panel.setAgentAttention(new Map([["p1", { state: "working", agent: "Claude" }]]));
+    expect(mark()?.textContent).toBe("runningTab");
+    expect(mark()?.classList.contains("vault-row-tab--working")).toBe(true);
+
+    panel.setAgentAttention(
+      new Map([
+        ["p1", { state: "working", agent: "Claude" }],
+        ["p2", { state: "question", agent: "Claude" }],
+      ]),
+    );
+    expect(mark()?.querySelector(".vault-row-tab-state")?.textContent).toBe("answer");
+    expect(mark()?.classList.contains("vault-row-tab--question")).toBe(true);
+    expect(mark()?.getAttribute("aria-label")).toBe("Open in a tab: Claude is waiting for your answer");
+
+    panel.setAgentAttention(new Map([["p2", { state: "approval", agent: "Claude" }]]));
+    expect(mark()?.querySelector(".vault-row-tab-state")?.textContent).toBe("approve");
+
+    panel.setAgentAttention(new Map([["p1", { state: "unseen", agent: "Claude" }]]));
+    expect(mark()?.querySelector(".vault-row-tab-state")?.textContent).toBe("done");
+
+    panel.setAgentAttention(new Map());
+    expect(mark()?.textContent).toBe("Tab");
+    expect(mark()?.className).toBe("vault-row-tab");
+  });
+
+  it("ignores attention on panes no open entry runs", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "claude:a" })]));
+    panel.setOpenEntryIds(["claude:a"], { "claude:a": ["p1"] });
+    const row = host.querySelector(".vault-row");
+    panel.setAgentAttention(new Map([["other", { state: "approval", agent: "Claude" }]]));
+    expect(host.querySelector(".vault-row")).toBe(row);
+    expect(host.querySelector(".vault-row-tab")?.textContent).toBe("Tab");
   });
 });
 

@@ -175,8 +175,8 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
    */
   pinnedVaultEntryIds: (() => string[]) | undefined;
 
-  /** The vault entries some live pane is running now; answered like `pinnedVaultEntryIds`. */
-  openVaultEntryIds: (() => string[]) | undefined;
+  /** The vault entries some live pane is running now, and those panes; answered like `pinnedVaultEntryIds`. */
+  openVaultSessions: (() => { entryIds: string[]; panesByEntry: Record<string, string[]> }) | undefined;
 
   /**
    * Focus the live pane already running a vault entry, wherever it lives;
@@ -442,8 +442,8 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     if (this.pinnedVaultEntryIds) {
       this.safePostMessage(webview, { type: "vaultPinnedSessions", entryIds: this.pinnedVaultEntryIds() });
     }
-    if (this.openVaultEntryIds) {
-      this.safePostMessage(webview, { type: "vaultOpenSessions", entryIds: this.openVaultEntryIds() });
+    if (this.openVaultSessions) {
+      this.safePostMessage(webview, { type: "vaultOpenSessions", ...this.openVaultSessions() });
     }
     // Provider-owned: the rename push (`vaultRenameSession`) and the watcher
     // both drive this same counter, so it cannot move into the shared module.

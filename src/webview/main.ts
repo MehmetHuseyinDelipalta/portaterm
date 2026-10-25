@@ -387,8 +387,9 @@ let fileTreeController: FileTreeController | null = null;
 let vaultPanel: VaultPanel | null = null;
 // Vault entries pinned tabs are running (host-pushed, `vaultPinnedSessions`).
 let pinnedVaultEntryIds: readonly string[] = [];
-// Vault entries some live pane is running (host-pushed, `vaultOpenSessions`).
+// Vault entries some live pane is running, and those panes (host-pushed, `vaultOpenSessions`).
 let openVaultEntryIds: readonly string[] = [];
+let openVaultPanesByEntry: Record<string, string[]> = {};
 let worktreeController: WorktreeController | null = null;
 // This surface's tab-bar scope — the panel, the coordinator and the bar joined.
 // Constructed on init beside the controller that feeds it, and owning the join
@@ -1048,6 +1049,7 @@ const routeMessage = createMessageRouter({
       store.agentAttention.set(paneId, attention);
     }
     updateTabBar();
+    vaultPanel?.setAgentAttention(store.agentAttention);
   },
   onVaultPinnedSessions(msg) {
     // Held as well as applied: the set can land before the panel mounts.
@@ -1057,7 +1059,8 @@ const routeMessage = createMessageRouter({
   onVaultOpenSessions(msg) {
     // Held as well as applied: the set can land before the panel mounts.
     openVaultEntryIds = msg.entryIds;
-    vaultPanel?.setOpenEntryIds(msg.entryIds);
+    openVaultPanesByEntry = msg.panesByEntry ?? {};
+    vaultPanel?.setOpenEntryIds(msg.entryIds, openVaultPanesByEntry);
   },
   onVaultSessionDetailResponse(msg) {
     vaultPanel?.handleSessionDetailResponse(msg);
@@ -1441,7 +1444,8 @@ function handleInit(msg: InitMessage): void {
     // constructor seed (setCollapsed's collapsed→expanded path).
     vaultPanel.setContextCwd(resolveVaultContextCwd());
     vaultPanel.setPinnedEntryIds(pinnedVaultEntryIds);
-    vaultPanel.setOpenEntryIds(openVaultEntryIds);
+    vaultPanel.setOpenEntryIds(openVaultEntryIds, openVaultPanesByEntry);
+    vaultPanel.setAgentAttention(store.agentAttention);
     requestVaultContextCwd();
   }
 

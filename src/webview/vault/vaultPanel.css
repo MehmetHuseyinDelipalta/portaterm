@@ -417,10 +417,10 @@
   color: var(--vscode-descriptionForeground);
 }
 
-/* ── Row: single line, four cells. Truncation happens in the title cell. ── */
+/* ── Row: single line, five cells. Truncation happens in the title cell. ── */
 .vault-row {
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto auto;
+  grid-template-columns: 8px minmax(0, 1fr) auto auto auto;
   column-gap: 8px;
   align-items: center;
   padding: 2px 12px;
@@ -551,12 +551,18 @@
   text-overflow: ellipsis;
   min-width: 0;
 }
+/* Pin and Tab marks — their own column, right of the title, so titles align. */
+.vault-row-marks {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  white-space: nowrap;
+}
 .vault-row-pin {
   display: inline-flex;
   align-items: center;
-  margin-right: 5px;
   opacity: 0.75;
-  vertical-align: -1px;
 }
 .vault-row-source {
   display: inline-flex;
@@ -575,11 +581,10 @@
 }
 
 /* Open-in-a-tab mark — theme-neutral, not an agent accent: it says where the
-   session runs, not which agent it is. Leads the title, so it spaces rightward. */
+   session runs, not which agent it is. */
 .vault-row-tab {
   display: inline-flex;
   align-items: center;
-  margin-right: 6px;
   padding: 0 4px;
   border: 1px solid color-mix(in srgb, var(--vscode-descriptionForeground) 55%, transparent);
   border-radius: 999px;
@@ -590,6 +595,30 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   vertical-align: 1px;
+}
+
+/* An open entry's agent state leads its Tab mark: the word and the pill take the
+   state's colour, the same one the tab's status dot uses. */
+.vault-row-tab-state {
+  margin-right: 4px;
+  padding-right: 4px;
+  border-right: 1px solid currentColor;
+}
+.vault-row-tab--working {
+  --_tab-state: var(--vscode-testing-iconPassed, #73c991);
+}
+.vault-row-tab--approval {
+  --_tab-state: var(--vscode-editorWarning-foreground, #cca700);
+}
+.vault-row-tab--question {
+  --_tab-state: var(--vscode-charts-purple, #b180d7);
+}
+.vault-row-tab--unseen {
+  --_tab-state: var(--vscode-notificationsInfoIcon-foreground, #3794ff);
+}
+.vault-row-tab[class*="vault-row-tab--"] {
+  border-color: color-mix(in srgb, var(--_tab-state) 70%, transparent);
+  color: var(--_tab-state);
 }
 
 /* cwd chip — folder icon + leaf segment, mono, dim. Single-line. */

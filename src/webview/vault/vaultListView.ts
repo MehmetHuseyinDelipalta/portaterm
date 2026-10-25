@@ -8,6 +8,7 @@
 
 import type { VaultSessionEntry } from "../../vault/types";
 import { setIcon } from "../shared/iconNode";
+import type { PaneAgentAttention } from "../state/WebviewStateStore";
 import { getAgentAccent, getAgentIcon } from "./agentIcons";
 import { agentLabel, formatRelativeTime, leafSegment } from "./format";
 import type { GroupMode } from "./grouping";
@@ -39,13 +40,21 @@ export function cursorSourceLabel(entry: VaultSessionEntry): string | undefined 
   return entry.sessionId.startsWith("project:") ? "Project" : undefined;
 }
 
+/** The word an open entry's Tab mark leads with, and the sentence behind it. */
+const TAB_ATTENTION: Record<PaneAgentAttention["state"], { word: string; reason: string }> = {
+  working: { word: "running", reason: "is working" },
+  approval: { word: "approve", reason: "is waiting for your approval" },
+  question: { word: "answer", reason: "is waiting for your answer" },
+  unseen: { word: "done", reason: "finished — not seen yet" },
+};
+
 /**
- * Single-line CSS-grid row: badge | title | cwd-chip | time, with an icon-only
+ * Single-line CSS-grid row: badge | title | marks | cwd-chip | time, with an icon-only
  * Resume is revealed on hover/focus.
  */
 export function renderRow(
   entry: VaultSessionEntry,
-  opts: { hideCwd?: boolean; fresh?: boolean; pinned?: boolean; open?: boolean },
+  opts: { hideCwd?: boolean; fresh?: boolean; pinned?: boolean; open?: boolean; attention?: PaneAgentAttention },
   cb: VaultRowCallbacks,
 ): HTMLElement {
   const row = document.createElement("div");
@@ -101,6 +110,12 @@ export function renderRow(
   if (shownTitle) {
     titleEl.dataset.tip = shownTitle;
   }
+  // Pin and Tab marks sit in their own column between the title and the cwd,
+  // so every title starts on the same line however many marks a row carries,
+  // and a long title's ellipsis cannot cut a mark off. Always present, empty
+  // when there is nothing to mark, to keep the grid's column count stable.
+  const marksEl = document.createElement("span");
+  marksEl.className = "vault-row-marks";
   // A pinned tab is running this session. A mark, not a control: the pin
   // belongs to the tab and is changed from the tab's context menu.
   if (opts.pinned) {
@@ -110,19 +125,31 @@ export function renderRow(
     pinMark.dataset.tip = "Running in a pinned tab";
     pinMark.setAttribute("aria-label", "Pinned tab");
     setIcon(pinMark, ICON_PIN);
-    titleEl.prepend(pinMark);
+    marksEl.appendChild(pinMark);
   }
   // Some live pane runs this session, so Resume focuses it instead of
-  // launching a second agent on the same transcript. Leads the title, after
-  // any pin mark, so a long title's ellipsis cannot cut it off.
+  // launching a second agent on the same transcript. Follows any pin mark.
   if (opts.open) {
     const tabMark = document.createElement("span");
     tabMark.className = "vault-row-tab";
-    tabMark.textContent = "Tab";
-    tabMark.dataset.tip = "Open in a tab — Resume focuses it";
-    tabMark.setAttribute("aria-label", "Open in a tab");
-    const pinMark = titleEl.querySelector(".vault-row-pin");
-    titleEl.insertBefore(tabMark, pinMark ? pinMark.nextSibling : titleEl.firstChild);
+    const status = opts.attention ? TAB_ATTENTION[opts.attention.state] : undefined;
+    if (opts.attention && status) {
+      // The state word leads the mark in its own colour, so a glance down the
+      // list finds the session that needs you.
+      tabMark.classList.add(`vault-row-tab--${opts.attention.state}`);
+      const word = document.createElement("span");
+      word.className = "vault-row-tab-state";
+      word.textContent = status.word;
+      tabMark.append(word, document.createTextNode("Tab"));
+      const reason = `${opts.attention.agent} ${status.reason}`;
+      tabMark.dataset.tip = `${reason} — Resume focuses its tab`;
+      tabMark.setAttribute("aria-label", `Open in a tab: ${reason}`);
+    } else {
+      tabMark.textContent = "Tab";
+      tabMark.dataset.tip = "Open in a tab — Resume focuses it";
+      tabMark.setAttribute("aria-label", "Open in a tab");
+    }
+    marksEl.appendChild(tabMark);
   }
   const sourceLabel = cursorSourceLabel(entry);
   if (sourceLabel) {
@@ -132,7 +159,7 @@ export function renderRow(
     sourceBadge.setAttribute("aria-label", `Cursor ${sourceLabel}`);
     titleEl.appendChild(sourceBadge);
   }
-  row.appendChild(titleEl);
+  row.append(titleEl, marksEl);
   // The row is the focus owner, so it carries the hint too: `closest()` only
   // looks upwards, and a keyboard user never lands on the title span. A nearer
   // descendant hint still wins under the pointer.

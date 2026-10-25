@@ -5,7 +5,7 @@
 
 import { stripDecorations } from "../shared/titleDecorations";
 import { getAllSessionIds, type SplitNode } from "./SplitModel";
-import type { PaneAgentAttention, TerminalInstance } from "./state/WebviewStateStore";
+import { type PaneAgentAttention, strongestAttention, type TerminalInstance } from "./state/WebviewStateStore";
 import { attachTooltip } from "./ui/Tooltip";
 import { ICON_BRANCH } from "./worktree/worktreeIcons";
 
@@ -198,7 +198,7 @@ function syncTabOverflow(tabBarEl: HTMLElement): void {
   const edge = tabBarEl.clientWidth - chipWidth - mark.offsetWidth;
   const hidden = tabs.filter((_tab, i) => (rights[i] ?? 0) > edge + 1);
   mark.textContent = `+${hidden.length}`;
-  const waiting = hidden.some((tab) => tab.dataset.status === "waiting");
+  const waiting = hidden.some((tab) => tab.dataset.status === "waiting" || tab.dataset.status === "question");
   mark.classList.toggle("tab-overflow-waiting", waiting);
   const noun = hidden.length === 1 ? "tab" : "tabs";
   const label = `${hidden.length} more ${noun} to the right${waiting ? ", one needs you" : ""}`;
@@ -320,21 +320,12 @@ function isBlocked(attention: PaneAgentAttention | undefined): boolean {
 
 /**
  * The attention a tab shows: a pane blocked on the user outranks a finished turn
- * nobody has seen, and an exited pane wants nothing.
+ * nobody has seen, which outranks an agent at work, and an exited pane wants nothing.
  */
 function tabAttention(paneIds: readonly string[], store: TabBarDataSource): PaneAgentAttention | undefined {
-  let unseen: PaneAgentAttention | undefined;
-  for (const paneId of paneIds) {
-    const attention = store.agentAttention?.get(paneId);
-    if (attention === undefined || store.terminals.get(paneId)?.exited) {
-      continue;
-    }
-    if (isBlocked(attention)) {
-      return attention;
-    }
-    unseen ??= attention;
-  }
-  return unseen;
+  return strongestAttention(
+    paneIds.map((paneId) => (store.terminals.get(paneId)?.exited ? undefined : store.agentAttention?.get(paneId))),
+  );
 }
 
 export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): TabBarData {
@@ -547,7 +538,7 @@ export interface RenderTabBarDeps {
   };
 }
 
-type TabStatus = "idle" | "running" | "waiting" | "unseen" | "exited";
+type TabStatus = "idle" | "running" | "waiting" | "question" | "unseen" | "exited";
 
 /**
  * The tab's status dot and the sentence behind it. An agent waiting on the user
@@ -563,13 +554,16 @@ function tabStatus(instance: TabInfo): { status: TabStatus; reason: string } {
     return { status: "waiting", reason: `${attention.agent} is waiting for your approval` };
   }
   if (attention?.state === "question") {
-    return { status: "waiting", reason: `${attention.agent} is waiting for your answer` };
+    return { status: "question", reason: `${attention.agent} is waiting for your answer` };
   }
   if (instance.activityStatus === "waiting") {
     return { status: "waiting", reason: "Cursor approval required" };
   }
   if (attention?.state === "unseen") {
     return { status: "unseen", reason: `${attention.agent} finished — not seen yet` };
+  }
+  if (attention?.state === "working") {
+    return { status: "running", reason: `${attention.agent} is working` };
   }
   if (instance.activityStatus === "running") {
     return { status: "running", reason: "Terminal is producing output" };
@@ -772,7 +766,9 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     statusSpan.title = reason;
     tab.setAttribute(
       "aria-label",
-      status === "waiting" || status === "unseen" ? `${renderedName}: ${reason}` : renderedName,
+      status === "waiting" || status === "question" || status === "unseen"
+        ? `${renderedName}: ${reason}`
+        : renderedName,
     );
     tab.dataset.status = status;
   }

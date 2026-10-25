@@ -106,6 +106,8 @@ export interface PinnedIdentitySources {
 export interface PinnedResolution {
   /** Entry ids pinned tabs are running, sorted. */
   entryIds: string[];
+  /** The panes running each of those entries, in pane order. */
+  panesByEntry: Record<string, string[]>;
   /**
    * Claude sessions found RUNNING under a pinned pane's pty, by paneId — the
    * process table's word, never a hook report alone, since a report outlives
@@ -131,15 +133,22 @@ export async function resolvePinnedEntryIds(
     }
   }
   const byProcess = withPty.length > 0 ? await sources.claudeByProcess(withPty) : new Map<string, string>();
-  const entryIds = pinnedEntryIds(panes, (paneId) => {
+  const runningEntryId = (paneId: string) => {
     const reported = sources.reported(paneId);
     if (reported !== undefined) {
       return reported;
     }
     const claudeSessionId = byProcess.get(paneId);
     return claudeSessionId === undefined ? undefined : formatEntryId("claude", claudeSessionId);
-  });
-  return { entryIds, claudeByPane: byProcess };
+  };
+  const panesByEntry: Record<string, string[]> = {};
+  for (const pane of panes) {
+    const entryId = runningEntryId(pane.paneId) ?? pane.vaultEntryId;
+    if (entryId) {
+      (panesByEntry[entryId] ??= []).push(pane.paneId);
+    }
+  }
+  return { entryIds: pinnedEntryIds(panes, runningEntryId), panesByEntry, claudeByPane: byProcess };
 }
 
 /**
@@ -181,11 +190,11 @@ export function createClaudeProcessLookup(deps: {
   };
 }
 
-export interface PinnedVaultPublisher {
+export interface PinnedVaultPublisher<T = string[]> {
   /** Recompute soon; posts only if the set changed. Coalesces bursts. */
   refresh(): void;
   /** The last published set, for a surface that has just asked for the vault list. */
-  current(): string[];
+  current(): T;
   dispose(): void;
 }
 
@@ -204,9 +213,24 @@ export function createPinnedVaultPublisher(deps: {
   post: (entryIds: string[]) => void;
   schedule?: (run: () => void) => void;
   onError?: (err: unknown) => void;
-}): PinnedVaultPublisher {
+}): PinnedVaultPublisher;
+export function createPinnedVaultPublisher<T>(deps: {
+  compute: () => Promise<T> | T;
+  post: (value: T) => void;
+  /** What `current()` returns before the first pass publishes. */
+  initial: T;
+  schedule?: (run: () => void) => void;
+  onError?: (err: unknown) => void;
+}): PinnedVaultPublisher<T>;
+export function createPinnedVaultPublisher<T>(deps: {
+  compute: () => Promise<T> | T;
+  post: (value: T) => void;
+  initial?: T;
+  schedule?: (run: () => void) => void;
+  onError?: (err: unknown) => void;
+}): PinnedVaultPublisher<T> {
   const schedule = deps.schedule ?? queueMicrotask;
-  let published: string[] = [];
+  let published = deps.initial ?? ([] as unknown as T);
   let scheduled = false;
   let running = false;
   let again = false;
