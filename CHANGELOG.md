@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.30.4] — 2026-10-25
+
+### Fixed
+
+- **Restarting Claude in the same tab no longer adds an agent.** If you left Claude with `/exit` and ran `claude` again in the same tab, the tab row kept pointing at the session that had ended. The new session then appeared a second time in Worktrees as one running elsewhere, and the agent count went up with every restart. The tab row now switches to the new session. This only happened with Portaterm's agent hooks turned off; with them on, Claude already reported the new session itself.
+
 ## [0.30.3] — 2026-10-25
 
 ### Fixed
