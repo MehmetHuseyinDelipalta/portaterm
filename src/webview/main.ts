@@ -722,11 +722,9 @@ function removeTerminal(id: string): void {
         : selectNavigationOwner(catalog, state, state.activeOwner),
   );
   recentTabIds = recentTabIds.filter((tabId) => tabId !== id);
-
-  const state = navigationController.getState();
-  if (closedActiveTab && state.activeTabId === null) {
-    requestNewTerminal(worktreeIdForTerminalOwner(state.activeOwner));
-  }
+  // Closing the last tab leaves the scope empty on purpose: no replacement is
+  // spawned, so repeated Cmd+W drains the terminals and then falls through to
+  // VS Code's editors. The empty-scope region offers "Open a terminal" instead.
 }
 
 // ─── Scrollback Dump (export-terminal-session) ───────────────────────
