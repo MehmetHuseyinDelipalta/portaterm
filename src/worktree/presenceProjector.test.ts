@@ -253,6 +253,23 @@ describe("the resolution slot", () => {
     expect(row).toMatchObject({ agent: "codex", agentSource: "registry", entryId: "codex:s9" });
   });
 
+  it("retries a pane proven only by its title, so the session it later resolves to is claimed", async () => {
+    // `claude` sets its title before its registry file exists: the first read
+    // proves the agent but names no session. Cached, that proof kept the pane
+    // from ever claiming the session, which then drew a second, external row.
+    const h = makeProjector([pane({ paneId: "a", ptyPid: 42, title: "✳ Claude Code" })]);
+    const [first] = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+    expect(first).toMatchObject({ agent: "claude", agentSource: "title" });
+    expect(first.entryId).toBeUndefined();
+
+    h.setLookup(() => ({ kind: "resolved", agent: "claude", sessionId: "s1", evidence: "process" }));
+    h.setRegistry({ kind: "ok", sessions: [{ sessionId: "s1", cwd: WT, pid: 4242 }] });
+    const rows = (await h.projector.project([WT])).rowsByWorktreeId[WT];
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ scope: "window", entryId: "claude:s1" });
+  });
+
   it("re-reads once the pane changes directory", async () => {
     const h = makeProjector([pane({ paneId: "a", ptyPid: 42 })]);
     h.setLookup(() => ({ kind: "resolved", agent: "claude", sessionId: "s1", evidence: "process" }));

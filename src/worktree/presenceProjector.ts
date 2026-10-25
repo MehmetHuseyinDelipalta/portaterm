@@ -747,7 +747,12 @@ export function createPresenceProjector(deps: PresenceProjectorDeps): PresencePr
       return retainedReport;
     }
 
-    if (state.proven && state.provenPtyPid === pane.ptyPid && state.provenCwd === pane.cwd) {
+    // Only a proof that names a session is reused. One that named just the
+    // agent — a title read before the registry listed the session — is a
+    // negative about the session, and caching it would leave the pane unable to
+    // claim that session for its whole life, drawing it twice: once here and
+    // once as an external row.
+    if (state.proven?.entryId !== undefined && state.provenPtyPid === pane.ptyPid && state.provenCwd === pane.cwd) {
       return state.proven;
     }
 
