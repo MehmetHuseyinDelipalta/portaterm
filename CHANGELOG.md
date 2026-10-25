@@ -7,6 +7,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.36.0] — 2026-10-25
+
+### Added
+
+- **The vault shows what each open session's agent is doing.** A session running in a tab now carries its state on the Tab mark, in its own colour: green `running` while the agent works, yellow `approve` when it waits for your permission, purple `answer` when it asked you a question, and blue `done` when it finished while you were looking elsewhere. Hover the mark for the full sentence. When a session runs in several panes, the most urgent state wins.
+
+### Changed
+
+- **A tab waiting on your answer has its own colour.** Its status dot is now purple, while a tab waiting for an approval stays yellow, matching the vault.
+- **Vault titles line up.** The pin and Tab marks moved from in front of the title into their own column before the folder, so every title starts on the same line and a long title can no longer push the marks out of view.
+
 ## [0.35.0] — 2026-10-25
 
 ### Added
