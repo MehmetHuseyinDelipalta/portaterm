@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.30.2] — 2026-10-25
+
+### Fixed
+
+- **No close warning for an agent that has finished.** Closing a tab or pane asked *"claude is still running here"* even when Claude had finished its reply and was waiting at its own prompt. Nothing is lost there, since the conversation is already saved and can be resumed. Portaterm now asks only while the agent is working or waiting for your approval. When you close the editor tab that holds the terminal, the longer undo window works the same way.
+
 ## [0.30.1] — 2026-10-25
 
 ### Fixed
