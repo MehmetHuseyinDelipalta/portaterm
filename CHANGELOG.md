@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.38.0] — 2026-10-26
+
+### Added
+
+- **Double-click a Vault row to resume it.** A single click still opens the preview, and the Resume button still appears on hover. A double-click resumes the session and closes the preview its clicks opened; if a tab is already running the session, it brings that tab forward instead. Rows that cannot be resumed ignore the double-click.
+
+### Changed
+
+- **Resuming from a row's Resume button closes that session's open preview**, the same as the Resume button in the preview header.
+
 ## [0.37.0] — 2026-10-26
 
 ### Added

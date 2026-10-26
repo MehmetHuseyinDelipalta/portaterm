@@ -51,7 +51,7 @@ Claude Code, Codex, OpenCode, and Cursor Agent all keep local session data in di
 
 ![AI Vault panel](images/ai-vault.png)
 
-- **Preview first, then choose an action** — click, Enter, or Space opens every supported row preview. Resume Claude Code / Codex / OpenCode sessions; Cursor Resume is an explicit action available only for validated CLI chats. Cursor IDE and project-mirror entries are non-resumable.
+- **Preview first, then choose an action** — click, Enter, or Space opens every supported row preview; double-click a resumable row to resume it straight away. Resume Claude Code / Codex / OpenCode sessions; Cursor Resume is an explicit action available only for validated CLI chats. Cursor IDE and project-mirror entries are non-resumable.
 - **Group your way** — **Recent**, **Agent**, or **Folder** grouping (persisted), with Claude / Codex / OpenCode / Cursor identity and per-agent accents. A session running in a pinned tab is pinned to the top of its group.
 - **Start an agent from its group** — in **Agent** grouping, hover an agent's header and click **+** to start a new session of that agent in the workspace root with its default permission mode — in the active tab if it is a fresh shell nobody has typed into, otherwise in a new tab. Shown only for agents installed on this machine.
 - **See what's already open** — a session that a terminal pane is running carries a **Tab** mark and moves to the top of its group, right after pinned sessions. **Resume** brings that tab forward instead of starting a second agent on the same conversation. The mark names what the agent is doing in its own colour — `running`, `approve`, `answer`, or `done` when it finished while you were elsewhere — matching the tab's status dot.
