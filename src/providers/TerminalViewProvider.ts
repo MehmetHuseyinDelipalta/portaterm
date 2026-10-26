@@ -957,7 +957,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         case "input":
           if (typeof message.tabId === "string" && typeof message.data === "string") {
             this.sessionManager.writeToSession(message.tabId, message.data);
-            signalPaneInput(message.tabId);
+            signalPaneInput(message.tabId, message.data);
           }
           break;
 

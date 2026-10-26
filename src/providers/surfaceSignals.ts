@@ -28,8 +28,26 @@ export function signalDisplayChanged(): void {
   listener?.displayChanged();
 }
 
-export function signalPaneInput(paneId: string): void {
-  listener?.paneInput(paneId);
+/**
+ * What the terminal sends on its own rather than from the user's keys: focus
+ * reports (an agent that asks for them gets one each time its tab is opened),
+ * mouse reports, and replies to the program's queries — cursor position, device
+ * attributes, mode reports, OSC and DCS strings. None of them answers a wait.
+ */
+const TERMINAL_REPORT =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching escape sequences is the point
+  /\x1b\[[IO]|\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[M[\s\S]{3}|\x1b\[\d+;\d+R|\x1b\[[?>]?[\d;]*c|\x1b\[\??[\d;]+\$y|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[\s\S]*?\x1b\\/g;
+
+/** True when `data` holds something the user typed, not only terminal reports. */
+export function isUserInput(data: string): boolean {
+  return data.replace(TERMINAL_REPORT, "").length > 0;
+}
+
+/** Report what was written to a pane; terminal-generated reports are not the user typing. */
+export function signalPaneInput(paneId: string, data: string): void {
+  if (isUserInput(data)) {
+    listener?.paneInput(paneId);
+  }
 }
 
 export function signalSurfaceReady(post: (message: ExtensionToWebViewMessage) => void): void {
