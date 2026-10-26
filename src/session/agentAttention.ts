@@ -35,8 +35,13 @@ export interface AgentAttentionDeps {
   /** Show a notification; resolves with the action the user picked, if any. */
   notify(message: string, action: string): Thenable<string | undefined>;
   focusPane(paneId: string, viewId: string): Promise<void> | void;
-  /** Badge count for a terminal view (sidebar or bottom panel). */
-  setBadge(viewId: string, count: number): void;
+  /** Badge for a terminal view (sidebar or bottom panel): the tab name of each waiting pane. */
+  setBadge(viewId: string, waiting: readonly string[]): void;
+  /**
+   * A waiting pane its view holds no tab for, left out of the badge. Reported
+   * once per pane, so the pane that would have been counted can be found.
+   */
+  reportUnreachable?(paneId: string, viewId: string): void;
   /** The view ids that can carry a badge. */
   badgeViews: readonly string[];
   /** Deliver the full attention set to every surface; called only when it changed. */
@@ -108,6 +113,8 @@ export interface AgentAttention {
   snapshot(): AttentionPanes;
   /** Recount every badge. */
   refreshBadges(): void;
+  /** The panes a view holds tabs for; `undefined` when its webview is gone and no longer says. */
+  panesPresented(viewId: string, paneIds: ReadonlySet<string> | undefined): void;
 }
 
 export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
@@ -124,7 +131,14 @@ export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
   const unseen = new Map<string, AttentionAgent>();
   /** The `receivedAt` of the waiting report the user answered by typing, per pane. */
   const answered = new Map<string, number>();
-  const badgeCounts = new Map<string, number>();
+  const badges = new Map<string, string>();
+  /**
+   * What each view's webview last said it holds tabs for. A view with no entry
+   * has not said, and every pane in it counts.
+   */
+  const presented = new Map<string, ReadonlySet<string>>();
+  /** Waiting panes already reported as unreachable, so each is reported once. */
+  const unreachable = new Set<string>();
   let published = "{}";
 
   function phaseOf(paneId: string, evidence: PaneEvidence, stamp: number) {
@@ -163,20 +177,42 @@ export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
   }
 
   function refreshBadges(panes: AttentionPanes = snapshot()): void {
-    const counts = new Map<string, number>(deps.badgeViews.map((viewId) => [viewId, 0]));
+    const waiting = new Map<string, string[]>(deps.badgeViews.map((viewId) => [viewId, []]));
     for (const pane of deps.panes()) {
       const state = panes[pane.paneId]?.state;
-      if (pane.viewId === undefined || !counts.has(pane.viewId) || (state !== "approval" && state !== "question")) {
+      const names = pane.viewId === undefined ? undefined : waiting.get(pane.viewId);
+      if (names === undefined || pane.viewId === undefined || (state !== "approval" && state !== "question")) {
         continue;
       }
-      counts.set(pane.viewId, (counts.get(pane.viewId) ?? 0) + 1);
+      // A pane that outlived its tab is one the user cannot reach, so a badge
+      // counting it points nowhere.
+      const tabs = presented.get(pane.viewId);
+      if (tabs !== undefined && !tabs.has(pane.paneId)) {
+        if (!unreachable.has(pane.paneId)) {
+          unreachable.add(pane.paneId);
+          deps.reportUnreachable?.(pane.paneId, pane.viewId);
+        }
+        continue;
+      }
+      unreachable.delete(pane.paneId);
+      names.push(deps.tabName(pane.paneId) ?? "Terminal");
     }
-    for (const [viewId, count] of counts) {
-      if (badgeCounts.get(viewId) !== count) {
-        badgeCounts.set(viewId, count);
-        deps.setBadge(viewId, count);
+    for (const [viewId, names] of waiting) {
+      const signature = names.join("\n");
+      if (badges.get(viewId) !== signature) {
+        badges.set(viewId, signature);
+        deps.setBadge(viewId, names);
       }
     }
+  }
+
+  function panesPresented(viewId: string, paneIds: ReadonlySet<string> | undefined): void {
+    if (paneIds === undefined) {
+      presented.delete(viewId);
+    } else {
+      presented.set(viewId, paneIds);
+    }
+    refreshBadges();
   }
 
   function announce(paneId: string, viewId: string | undefined, message: string): void {
@@ -193,6 +229,7 @@ export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
     turnOpen.delete(paneId);
     unseen.delete(paneId);
     answered.delete(paneId);
+    unreachable.delete(paneId);
   }
 
   function update(paneId: string): void {
@@ -263,5 +300,5 @@ export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
     }
   }
 
-  return { update, paneInput, displayChanged, snapshot, refreshBadges: () => refreshBadges() };
+  return { update, paneInput, displayChanged, snapshot, refreshBadges: () => refreshBadges(), panesPresented };
 }

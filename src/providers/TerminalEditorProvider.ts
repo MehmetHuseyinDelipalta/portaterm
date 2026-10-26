@@ -30,7 +30,7 @@ import { openExternalLink } from "./openExternalLink";
 import { DEFAULT_FIND_FILES_MAX_RESULTS, openFileLink } from "./openFileLink";
 import { handleInsertOsDropPaths } from "./osDropPaths";
 import { isValidPreviewRequest } from "./previewValidation";
-import { signalDisplayChanged, signalPaneInput, signalSurfaceReady } from "./surfaceSignals";
+import { signalDisplayChanged, signalPaneInput, signalPanesPresented, signalSurfaceReady } from "./surfaceSignals";
 import { themeKindFor } from "./TerminalViewProvider";
 import type { WorktreeAttachment, WorktreeHost, WorktreeSurface } from "./WorktreeHost";
 import { getTerminalHtml } from "./webviewHtml";
@@ -555,6 +555,7 @@ export class TerminalEditorProvider {
       }
       // Cancel any in-flight preview tokens (D10); the handlers own disposal.
       this._previewTokens.cancelAll();
+      signalPanesPresented(this._viewId, undefined);
       // Permanent for this panel — it leaves `_instances` on the next line — so
       // the root it claimed in the shared path memo is released here. Panels
       // open and close without bound, and a closed one used to leave a dead
@@ -858,6 +859,12 @@ export class TerminalEditorProvider {
           // view of its panes' titles. The store validates and drops unknown
           // ids, so no surface identity is needed here.
           this.paneEvidence?.report(message);
+          break;
+
+        case "presentedPanes":
+          if (Array.isArray(message.paneIds) && message.paneIds.every((id) => typeof id === "string")) {
+            signalPanesPresented(this.getViewId(), new Set(message.paneIds));
+          }
           break;
 
         case "openLink":

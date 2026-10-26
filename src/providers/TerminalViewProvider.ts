@@ -36,7 +36,7 @@ import { openExternalLink } from "./openExternalLink";
 import { DEFAULT_FIND_FILES_MAX_RESULTS, openFileLink } from "./openFileLink";
 import { handleInsertOsDropPaths } from "./osDropPaths";
 import { isValidPreviewRequest } from "./previewValidation";
-import { signalDisplayChanged, signalPaneInput, signalSurfaceReady } from "./surfaceSignals";
+import { signalDisplayChanged, signalPaneInput, signalPanesPresented, signalSurfaceReady } from "./surfaceSignals";
 import type { VaultWatchClient, VaultWatchCoordinator } from "./VaultWatchCoordinator";
 import type { WorktreeHost, WorktreeSurface } from "./WorktreeHost";
 import { getTerminalHtml } from "./webviewHtml";
@@ -402,6 +402,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       }
       // Pause output for the view — sessions survive but don't flush to a disposed webview
       this.sessionManager.pauseOutputForView(this.getViewId());
+      signalPanesPresented(this.getViewId(), undefined);
       this._view = undefined;
       this._ready = false;
       // Remove from the focus-recency stack so getLastFocusedProvider doesn't
@@ -1416,6 +1417,12 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           // payload and ignores ids it holds no pane for, so the surface it
           // arrived from stops mattering here.
           this.paneEvidence?.report(message);
+          break;
+
+        case "presentedPanes":
+          if (Array.isArray(message.paneIds) && message.paneIds.every((id) => typeof id === "string")) {
+            signalPanesPresented(this.getViewId(), new Set(message.paneIds));
+          }
           break;
 
         case "updateHoverPreviewSetting":

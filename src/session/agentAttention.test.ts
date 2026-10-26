@@ -142,8 +142,8 @@ describe("createAgentAttention marks", () => {
     h.set("b", { turn: turn("working") });
     h.set("c", { semantic: "working" });
     h.set("b", { turn: turn("done") });
-    expect(h.setBadge).toHaveBeenCalledWith("sidebar", 1);
-    expect(h.setBadge).not.toHaveBeenCalledWith("sidebar", 2);
+    expect(h.setBadge).toHaveBeenCalledWith("sidebar", ["Tab a"]);
+    expect(h.setBadge).not.toHaveBeenCalledWith("sidebar", ["Tab a", "Tab b"]);
     expect(h.notify).not.toHaveBeenCalled();
   });
 });
@@ -206,13 +206,35 @@ describe("createAgentAttention notifications", () => {
     h.set("a", { waiting: true });
     h.set("b", { waiting: true, viewId: "panel" });
     h.set("c", { turn: turn("waiting") });
-    expect(h.setBadge).toHaveBeenCalledWith("sidebar", 2);
-    expect(h.setBadge).toHaveBeenCalledWith("panel", 1);
+    expect(h.setBadge).toHaveBeenCalledWith("sidebar", ["Tab a", "Tab c"]);
+    expect(h.setBadge).toHaveBeenCalledWith("panel", ["Tab b"]);
     const calls = h.setBadge.mock.calls.length;
     h.attention.update("c");
     expect(h.setBadge.mock.calls.length).toBe(calls);
     h.panes.delete("a");
     h.attention.update("a");
-    expect(h.setBadge).toHaveBeenLastCalledWith("sidebar", 1);
+    expect(h.setBadge).toHaveBeenLastCalledWith("sidebar", ["Tab c"]);
+  });
+
+  it("leaves a waiting pane its view holds no tab for out of the badge, and reports it once", () => {
+    const reportUnreachable = vi.fn();
+    const h = harness({ reportUnreachable });
+    h.set("a", { turn: turn("waiting") });
+    h.set("ghost", { turn: turn("waiting") });
+    expect(h.setBadge).toHaveBeenLastCalledWith("sidebar", ["Tab a", "Tab ghost"]);
+    h.attention.panesPresented("sidebar", new Set(["a"]));
+    expect(h.setBadge).toHaveBeenLastCalledWith("sidebar", ["Tab a"]);
+    h.attention.update("ghost");
+    expect(reportUnreachable).toHaveBeenCalledTimes(1);
+    expect(reportUnreachable).toHaveBeenCalledWith("ghost", "sidebar");
+  });
+
+  it("counts every pane again once a view's webview stops saying which it holds", () => {
+    const h = harness();
+    h.set("a", { turn: turn("waiting") });
+    h.attention.panesPresented("sidebar", new Set());
+    expect(h.setBadge).toHaveBeenLastCalledWith("sidebar", []);
+    h.attention.panesPresented("sidebar", undefined);
+    expect(h.setBadge).toHaveBeenLastCalledWith("sidebar", ["Tab a"]);
   });
 });

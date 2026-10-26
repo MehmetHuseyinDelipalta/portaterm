@@ -1841,14 +1841,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     readSettings: readAgentAttentionSettings,
     notify: (message, action) => vscode.window.showInformationMessage(message, action),
     focusPane: (paneId, viewId) => worktreeActions.focusPane(paneId, viewId),
-    setBadge: (viewId, count) =>
-      badgeProviders
-        .get(viewId)
-        ?.setBadge(
-          count > 0
-            ? { value: count, tooltip: count === 1 ? "1 agent is waiting" : `${count} agents are waiting` }
-            : undefined,
-        ),
+    setBadge: (viewId, waiting) =>
+      badgeProviders.get(viewId)?.setBadge(
+        waiting.length > 0
+          ? {
+              value: waiting.length,
+              tooltip: `${waiting.length === 1 ? "1 agent is" : `${waiting.length} agents are`} waiting: ${waiting.join(", ")}`,
+            }
+          : undefined,
+      ),
+    reportUnreachable: (paneId, viewId) => {
+      const session = sessionManager.getSession(paneId);
+      console.warn(
+        `[Portaterm] Agent attention: waiting pane ${paneId} has no tab in ${viewId}, left out of the badge` +
+          ` (session ${session?.state ?? "unknown"}, root ${session?.rootTabId ?? "none"}, split ${session?.isSplitPane === true})`,
+      );
+    },
     badgeViews: [...badgeProviders.keys()],
     publish: (panes) => postToVaultSurfaces({ type: "agentAttention", panes }),
   });
@@ -1856,6 +1864,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   setSurfaceSignalListener({
     displayChanged: () => agentAttention.displayChanged(),
     paneInput: (paneId) => agentAttention.paneInput(paneId),
+    panesPresented: (viewId, paneIds) => agentAttention.panesPresented(viewId, paneIds),
     surfaceReady: (post) => post({ type: "agentAttention", panes: agentAttention.snapshot() }),
   });
   context.subscriptions.push(

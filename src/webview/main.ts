@@ -63,6 +63,7 @@ import {
   type TerminalOwner,
 } from "./navigation/TerminalNavigationState";
 import { ResizeCoordinator } from "./resize/ResizeCoordinator";
+import { getAllSessionIds } from "./SplitModel";
 import { isFindStepShortcut, TerminalSearchWidget } from "./search/TerminalSearchWidget";
 import { SplitTreeRenderer } from "./split/SplitTreeRenderer";
 import { resolveTabDisplayPane } from "./split/tabDisplay";
@@ -552,7 +553,24 @@ function requestSplitSession(direction: "horizontal" | "vertical", sourceTabId: 
   vscode.postMessage({ type: "requestSplitSession", requestId, direction, sourceTabId, sourcePaneId });
 }
 
+/** The last pane set reported to the host, so an unchanged set is not resent. */
+let presentedPanes: string | undefined;
+
+/**
+ * Tell the host which panes this surface holds tabs for. Every tab counts,
+ * including those a worktree scope hides: the user can still reach them.
+ */
+function reportPresentedPanes(): void {
+  const paneIds = [...store.tabLayouts.values()].flatMap((layout) => getAllSessionIds(layout)).sort();
+  const signature = paneIds.join("\n");
+  if (signature !== presentedPanes) {
+    presentedPanes = signature;
+    vscode.postMessage({ type: "presentedPanes", paneIds });
+  }
+}
+
 function updateTabBar(): void {
+  reportPresentedPanes();
   // Every route a pane arrives or leaves by ends in a redraw: the region's own
   // offers, the `+` button, a split, a close, a tree push. Deciding the region at
   // selection alone left it standing over the terminal it had just opened. Ahead

@@ -1845,6 +1845,16 @@ export interface PaneEvidenceMessage {
 }
 
 /**
+ * Every pane the surface holds a tab for, split leaves included — sent whenever
+ * that set changes. The host needs it because a pane can outlive its tab: a
+ * badge counting such a pane would point at something the user cannot reach.
+ */
+export interface PresentedPanesMessage {
+  type: "presentedPanes";
+  paneIds: string[];
+}
+
+/**
  * All messages that can be sent from the WebView to the Extension Host.
  * Use msg.type as the discriminant in switch/case for exhaustive handling.
  */
@@ -1934,7 +1944,8 @@ export type WebViewToExtensionMessage =
   | WorktreeLockMessage
   | WorktreeUnlockMessage
   | WorktreePruneMessage
-  | PaneEvidenceMessage;
+  | PaneEvidenceMessage
+  | PresentedPanesMessage;
 
 /** A `T` that is not `never` is a compile error — see {@link WORKTREE_MESSAGE_TYPES}. */
 type AssertNever<T extends never> = T;
