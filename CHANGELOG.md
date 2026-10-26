@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.36.1] — 2026-10-26
+
+### Fixed
+
+- **Opening a tab no longer clears its agent's waiting mark.** Looking at a tab whose Claude Code waits for your approval or answer used to remove the yellow or purple dot and the view badge at once, so switching away lost track of it. The mark now stays until you actually type into the tab.
+
 ## [0.36.0] — 2026-10-25
 
 ### Added
