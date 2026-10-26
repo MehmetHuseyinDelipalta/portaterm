@@ -15,6 +15,14 @@ describe("isUserInput", () => {
     ["OSC reply ended by BEL", "\x1b]10;rgb:cccc/cccc/cccc\x07"],
     ["DCS reply", "\x1bP1$r0m\x1b\\"],
     ["several reports at once", "\x1b[I\x1b[12;40R"],
+    ["an arrow key", "\x1b[B"],
+    ["an application-mode arrow key", "\x1bOA"],
+    ["a modified arrow key", "\x1b[1;5C"],
+    ["Home and End", "\x1b[H\x1bOF"],
+    ["Page Down", "\x1b[6~"],
+    ["Tab", "\t"],
+    ["Shift+Tab", "\x1b[Z"],
+    ["a wheel scroll sent as arrows", "\x1b[A\x1b[A\x1b[A"],
   ])("does not count a %s", (_name, data) => {
     expect(isUserInput(data)).toBe(false);
   });
@@ -22,8 +30,9 @@ describe("isUserInput", () => {
   it.each([
     ["a letter", "y"],
     ["Enter", "\r"],
-    ["an arrow key", "\x1b[B"],
     ["Escape", "\x1b"],
+    ["Delete", "\x1b[3~"],
+    ["a digit after arrow keys", "\x1b[B\x1b[B2"],
     ["a key that follows a focus report", "\x1b[I1"],
   ])("counts %s", (_name, data) => {
     expect(isUserInput(data)).toBe(true);
@@ -35,7 +44,12 @@ describe("signalPaneInput", () => {
 
   it("tells the listener about typing, not about a focus report", () => {
     const paneInput = vi.fn();
-    setSurfaceSignalListener({ displayChanged: vi.fn(), paneInput, surfaceReady: vi.fn() } as SurfaceSignalListener);
+    setSurfaceSignalListener({
+      displayChanged: vi.fn(),
+      paneInput,
+      panesPresented: vi.fn(),
+      surfaceReady: vi.fn(),
+    } as SurfaceSignalListener);
     signalPaneInput("a", "\x1b[I");
     expect(paneInput).not.toHaveBeenCalled();
     signalPaneInput("a", "1");
