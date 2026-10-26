@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.37.0] — 2026-10-26
+
+### Added
+
+- **Turn hover previews off.** The new `portaterm.hoverPreview.enabled` setting (on by default) stops the popup from opening when you hover a file path or a pasted-image placeholder. Clicking a link still opens the file, and the change applies to open terminals at once.
+
 ## [0.36.2] — 2026-10-26
 
 ### Fixed

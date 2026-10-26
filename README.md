@@ -149,6 +149,7 @@ Key settings under `portaterm.*` (see the Settings UI for the full list):
 | `agentNotifications.enabled` | `false` | Notify when an agent you cannot see is waiting for your approval or answer. |
 | `agentNotifications.onTurnEnd` | `true` | Also notify when an agent you cannot see finishes its turn. |
 | `cursorAgent.hooks.enabled` | `false` | Machine-scoped, fail-open Cursor Agent activity and approval observation. |
+| `hoverPreview.enabled` | `true` | Show the hover preview popup for file paths and pasted images. Clicking a link still opens the file when off. |
 | `hoverPreview.delay` | `300` | Debounce (ms) before the file hover preview fetches, range 100–2000. |
 | `hoverPreview.blockSensitive` | `true` | Block auto-preview for dotfiles and sensitive folders (`Cmd`/`Ctrl` overrides). |
 | `fileTree.autoReveal` | `true` | Reveal the active editor file in the file tree (`"focusNoScroll"` to skip scrolling). |
