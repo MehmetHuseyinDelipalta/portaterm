@@ -193,6 +193,11 @@
           "default": "",
           "description": "Default working directory for new terminals. Leave empty to use workspace root or home directory."
         },
+        "portaterm.hoverPreview.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a preview popup when hovering over a file path or pasted-image placeholder in the terminal. Clicking a link still opens the file when this is off."
+        },
         "portaterm.hoverPreview.delay": {
           "type": "number",
           "default": 300,

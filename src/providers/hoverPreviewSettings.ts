@@ -15,6 +15,7 @@ const SECTION = "portaterm.hoverPreview";
  * fallback when the setting is absent from BOTH user and workspace scopes.
  */
 const DEFAULTS: HoverPreviewSettings = {
+  enabled: true,
   delay: 300,
   blockSensitive: true,
 };
@@ -37,13 +38,14 @@ function clampDelay(n: number): number {
  * `inspect()` and read ONLY the global/default values to prevent a hostile
  * repo from disabling the trust policy. See: round-2 WARN W2.
  *
- * `delay` is a benign UX preference — workspace overrides are fine there.
+ * `enabled` and `delay` are benign UX preferences — workspace overrides are fine there.
  */
 export function readHoverPreviewSettings(): HoverPreviewSettings {
   const cfg = vscode.workspace.getConfiguration(SECTION);
   const inspected = cfg.inspect<boolean>("blockSensitive");
   const blockSensitive = inspected?.globalValue ?? inspected?.defaultValue ?? DEFAULTS.blockSensitive;
   return {
+    enabled: cfg.get<boolean>("enabled", DEFAULTS.enabled),
     delay: clampDelay(cfg.get<number>("delay", DEFAULTS.delay)),
     blockSensitive,
   };
@@ -59,7 +61,7 @@ export async function updateHoverPreviewSetting(
   value: boolean | number,
 ): Promise<void> {
   let resolved: boolean | number;
-  if (key === "blockSensitive") {
+  if (key === "blockSensitive" || key === "enabled") {
     if (typeof value !== "boolean") {
       return;
     }

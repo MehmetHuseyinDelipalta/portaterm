@@ -543,7 +543,7 @@ describe("HoverPreviewPopup — show / hide", () => {
     const term = makeTerminalElement();
     const onUpdate = vi.fn();
     const popup = new HoverPreviewPopup({
-      getSettings: () => ({ delay: 300, blockSensitive: true }),
+      getSettings: () => ({ enabled: true, delay: 300, blockSensitive: true }),
       onUpdateSetting: onUpdate,
     });
     popup.show(fakeMouseEvent(term, 50, 50), makeOkResult({ content: "a" }), "dark");
@@ -560,7 +560,7 @@ describe("HoverPreviewPopup — show / hide", () => {
     const term = makeTerminalElement();
     const onUpdate = vi.fn();
     const popup = new HoverPreviewPopup({
-      getSettings: () => ({ delay: 300, blockSensitive: true }),
+      getSettings: () => ({ enabled: true, delay: 300, blockSensitive: true }),
       onUpdateSetting: onUpdate,
     });
     popup.show(fakeMouseEvent(term, 50, 50), makeOkResult({ content: "a" }), "dark");

@@ -124,7 +124,7 @@ const themeStore: { kind: HoverPreviewThemeKind } = { kind: "dark" };
  * read via the closures below. Default mirrors `contributes.configuration`.
  */
 const hoverPreviewSettingsStore: { settings: HoverPreviewSettings } = {
-  settings: { delay: 300, blockSensitive: true },
+  settings: { enabled: true, delay: 300, blockSensitive: true },
 };
 
 // ─── State & Services ───────────────────────────────────────────────
@@ -1011,10 +1011,11 @@ const routeMessage = createMessageRouter({
   },
   onHoverPreviewSettings(msg: HoverPreviewSettingsMessage) {
     hoverPreviewSettingsStore.settings = msg.settings;
-    // Push the new debounce into every active controller so the next hover
-    // uses it. Existing in-flight timers run to completion under the old delay.
+    // Push the new debounce and on/off switch into every active controller so
+    // the next hover uses them. Existing in-flight timers run to completion under the old delay.
     for (const controller of factory.hoverControllers.values()) {
       controller.setDebounceMs(msg.settings.delay);
+      controller.setEnabled(msg.settings.enabled);
     }
   },
   // ── File-tree (port-vscode-async-data-tree) ──

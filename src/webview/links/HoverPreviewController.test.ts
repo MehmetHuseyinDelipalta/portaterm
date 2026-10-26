@@ -232,6 +232,61 @@ describe("HoverPreviewController", () => {
     expect(typeof sent.requestId).toBe("string");
   });
 
+  it("does NOT post or show anything when constructed with enabled: false", () => {
+    const { terminal } = makeFakeTerminal();
+    const postMessage = vi.fn();
+    const popup = makePopup();
+    const controller = new HoverPreviewController({
+      terminal: terminal as unknown as import("@xterm/xterm").Terminal,
+      sessionId: "s1",
+      postMessage,
+      getTheme: () => "dark",
+      popup,
+      enabled: false,
+    });
+
+    const link = makeLink("src/foo.ts");
+    controller.attachHover(link);
+    link.hover?.(makeMouseEvent(), link.text);
+    const imageLink = makeLink("[Image #1]", 20, 1);
+    controller.attachImageHover(imageLink, () => ({
+      url: "blob:mock/1",
+      mimeType: "image/png",
+      byteSize: 10,
+      index: 1,
+    }));
+    imageLink.hover?.(makeMouseEvent(), imageLink.text);
+    vi.advanceTimersByTime(HOVER_DEBOUNCE_MS * 2);
+
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(popup.showImageCalls).toHaveLength(0);
+  });
+
+  it("setEnabled(false) cancels a pending hover, and setEnabled(true) restores previews", () => {
+    const { terminal } = makeFakeTerminal();
+    const postMessage = vi.fn();
+    const controller = new HoverPreviewController({
+      terminal: terminal as unknown as import("@xterm/xterm").Terminal,
+      sessionId: "s1",
+      postMessage,
+      getTheme: () => "dark",
+      popup: makePopup(),
+    });
+
+    const link = makeLink("src/foo.ts");
+    controller.attachHover(link);
+    link.hover?.(makeMouseEvent(), link.text);
+    vi.advanceTimersByTime(HOVER_DEBOUNCE_MS - 50);
+    controller.setEnabled(false);
+    vi.advanceTimersByTime(HOVER_DEBOUNCE_MS);
+    expect(postMessage).not.toHaveBeenCalled();
+
+    controller.setEnabled(true);
+    link.hover?.(makeMouseEvent(), link.text);
+    vi.advanceTimersByTime(HOVER_DEBOUNCE_MS);
+    expect(postMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("does NOT post when hover is followed by leave before the debounce fires", () => {
     const { terminal } = makeFakeTerminal();
     const postMessage = vi.fn();

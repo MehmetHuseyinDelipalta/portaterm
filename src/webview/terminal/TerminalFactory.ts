@@ -377,6 +377,7 @@ export class TerminalFactory {
       getTheme: this.getHoverPreviewTheme,
       popup: hoverPopup,
       debounceMs: this.getHoverPreviewSettings().delay,
+      enabled: this.getHoverPreviewSettings().enabled,
     });
     this.hoverControllers.set(id, hoverController);
 

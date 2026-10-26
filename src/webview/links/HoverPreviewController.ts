@@ -79,6 +79,8 @@ export interface HoverPreviewControllerDeps {
   popup: HoverPreviewPopupHost;
   /** Debounce override for tests. Defaults to HOVER_DEBOUNCE_MS. */
   debounceMs?: number;
+  /** `portaterm.hoverPreview.enabled`. Defaults to true. */
+  enabled?: boolean;
 }
 
 /**
@@ -93,6 +95,7 @@ export class HoverPreviewController {
   private readonly getTheme: () => HoverPreviewThemeKind;
   private readonly popup: HoverPreviewPopupHost;
   private debounceMs: number;
+  private enabled: boolean;
 
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
   /**
@@ -173,6 +176,7 @@ export class HoverPreviewController {
     this.getTheme = deps.getTheme;
     this.popup = deps.popup;
     this.debounceMs = deps.debounceMs ?? HOVER_DEBOUNCE_MS;
+    this.enabled = deps.enabled ?? true;
   }
 
   /**
@@ -283,6 +287,18 @@ export class HoverPreviewController {
     this.debounceMs = ms;
   }
 
+  /**
+   * Turn hover previews on/off (`portaterm.hoverPreview.enabled`). Turning
+   * them off dismisses a pending or visible popup; link click-to-open is
+   * unaffected because it doesn't go through the controller.
+   */
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) {
+      this.dismiss();
+    }
+  }
+
   /** Programmatic dismiss — clears timer + invalidates requestId + unmounts popup. */
   dismiss(): void {
     if (this.pendingTimer) {
@@ -356,7 +372,7 @@ export class HoverPreviewController {
     fire: () => void,
     opts?: { beforeSchedule?: () => void; isInFlight?: () => boolean },
   ): void {
-    if (this.disposed) {
+    if (this.disposed || !this.enabled) {
       return;
     }
     this.ensureWindowListeners();

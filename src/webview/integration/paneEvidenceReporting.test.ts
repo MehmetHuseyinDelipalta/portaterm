@@ -108,7 +108,7 @@ function wireSurface() {
     onTabBarUpdate: vi.fn(),
     getIsComposing: () => false,
     getHoverPreviewTheme: () => "dark",
-    getHoverPreviewSettings: () => ({ delay: 300, blockSensitive: true }),
+    getHoverPreviewSettings: () => ({ enabled: true, delay: 300, blockSensitive: true }),
     onTitleEvidence: (sessionId, rawTitle) => {
       reporter.reportTitle(sessionId, rawTitle);
       tracker.setTitle(sessionId, rawTitle);

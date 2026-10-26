@@ -2408,6 +2408,8 @@ export interface ThemeChangedMessage {
 
 /** Hover-preview user-facing settings, mirrored from `contributes.configuration`. */
 export interface HoverPreviewSettings {
+  /** Hover popup on/off (matches `portaterm.hoverPreview.enabled`). */
+  enabled: boolean;
   /** Debounce in milliseconds (matches `portaterm.hoverPreview.delay`). */
   delay: number;
   /** Trust policy on/off (matches `portaterm.hoverPreview.blockSensitive`). */
