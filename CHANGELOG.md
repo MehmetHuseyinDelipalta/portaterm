@@ -7,6 +7,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.36.2] — 2026-10-26
+
+### Fixed
+
+- **Moving through an agent's choices no longer counts as answering.** Arrow keys, Home/End, Page Up/Down and Tab used to clear a tab's waiting mark, so browsing Claude Code's options — or scrolling over its prompt, which the terminal sends as arrow keys — turned the tab to `running`, and the mark was gone for good a little later. Only a real answer, such as Enter, Escape, a digit or a letter, clears it now.
+- **The view badge counts only tabs you can reach.** A waiting pane that had lost its tab kept the badge at 1 with nothing on screen to answer. Such a pane is no longer counted.
+
+### Changed
+
+- **The view badge names the waiting tabs.** Hover it to see which tabs are waiting, for example `1 agent is waiting: Sağ üst albüm etiketi`.
+
 ## [0.36.1] — 2026-10-26
 
 ### Fixed
