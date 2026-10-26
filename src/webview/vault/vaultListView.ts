@@ -50,7 +50,7 @@ const TAB_ATTENTION: Record<PaneAgentAttention["state"], { word: string; reason:
 
 /**
  * Single-line CSS-grid row: badge | title | marks | cwd-chip | time, with an icon-only
- * Resume is revealed on hover/focus.
+ * Resume is revealed on hover/focus. Click previews the session; double-click resumes it.
  */
 export function renderRow(
   entry: VaultSessionEntry,
@@ -77,6 +77,19 @@ export function renderRow(
       cb.onActivate(entry, row);
     }
   });
+
+  // Double-click resumes. Its two clicks have already opened the preview, which
+  // the resume handler closes. A double-click inside a control (the Resume
+  // button, the rename input) belongs to that control, not the row.
+  const onRowResume = cb.onResume;
+  if (onRowResume && canResumeVaultEntry(entry)) {
+    row.addEventListener("dblclick", (ev) => {
+      if ((ev.target as Element | null)?.closest("button, input")) {
+        return;
+      }
+      onRowResume(entry.id);
+    });
+  }
 
   // Agent marker — a small accent-colored dot. The real brand icon lives on
   // the Agent group header + preview header, not on every row (keeps rows

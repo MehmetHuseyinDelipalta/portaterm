@@ -294,6 +294,41 @@ describe("VaultPanel row rendering (redesign 4_1)", () => {
     host.querySelector<HTMLButtonElement>(".vault-action--resume")?.click();
     expect(posted).toContainEqual({ type: "vaultResume", entryId: "codex:x1" });
   });
+
+  it("double-clicking a row resumes it and closes the preview its clicks opened", () => {
+    const host = createHost();
+    const posted: { type: string; entryId?: string | null }[] = [];
+    const panel = new VaultPanel({ host, postMessage: (m) => posted.push(m), getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "codex:x1", agent: "codex" })]));
+    const row = host.querySelector<HTMLElement>(".vault-row");
+    row?.click();
+    row?.click();
+    expect(shownEntryId(panel)).toBe("codex:x1");
+    row?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(posted.filter((m) => m.type === "vaultResume")).toEqual([{ type: "vaultResume", entryId: "codex:x1" }]);
+    expect(shownEntryId(panel)).toBeNull();
+  });
+
+  it("does not resume a second time when the Resume button itself is double-clicked", () => {
+    const host = createHost();
+    const posted: { type: string; entryId?: string | null }[] = [];
+    const panel = new VaultPanel({ host, postMessage: (m) => posted.push(m), getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "codex:x1", agent: "codex" })]));
+    const btn = host.querySelector<HTMLButtonElement>(".vault-action--resume");
+    btn?.click();
+    btn?.click();
+    btn?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(posted.filter((m) => m.type === "vaultResume")).toHaveLength(2);
+  });
+
+  it("does not resume on double-click when the row cannot be resumed", () => {
+    const host = createHost();
+    const posted: { type: string; entryId?: string | null }[] = [];
+    const panel = new VaultPanel({ host, postMessage: (m) => posted.push(m), getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "codex:x1", agent: "codex", canResume: false })]));
+    host.querySelector<HTMLElement>(".vault-row")?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(posted.some((m) => m.type === "vaultResume")).toBe(false);
+  });
 });
 
 describe("VaultPanel grouping + states (redesign 4_2)", () => {
@@ -4731,3 +4766,8 @@ describe("round-1 review fixes", () => {
     );
   });
 });
+
+/** The preview overlay's own record of what it is showing. */
+function shownEntryId(p: VaultPanel): string | null {
+  return (p as unknown as { preview: { activeEntryId: string | null } }).preview.activeEntryId;
+}

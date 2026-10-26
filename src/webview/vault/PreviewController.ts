@@ -238,6 +238,11 @@ export class PreviewController {
     }
   }
 
+  /** Close the preview if it is open. Idempotent. */
+  close(): void {
+    this.closePreview();
+  }
+
   /** Tear down all owned resources. Closing the preview detaches the document
    *  listeners, disposes header tooltips, cancels any in-flight drag, and resets
    *  the scroll-nav timer. Idempotent — safe when nothing is open. */

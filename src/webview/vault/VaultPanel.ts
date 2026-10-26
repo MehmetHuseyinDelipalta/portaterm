@@ -278,6 +278,10 @@ export class VaultPanel {
               return;
             }
             this.postMessage({ type: "vaultResume", entryId });
+            // Same as the preview header's Resume: the session moves to a tab.
+            if (this.preview.activeEntryId === entryId) {
+              this.preview.close();
+            }
           }
         : undefined,
     };
