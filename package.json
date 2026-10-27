@@ -287,6 +287,10 @@
         "title": "Portaterm: Remove Current Agent Hooks"
       },
       {
+        "command": "portaterm.showAgentAttentionState",
+        "title": "Portaterm: Show Agent Attention State"
+      },
+      {
         "command": "portaterm.renameTab",
         "category": "Portaterm",
         "title": "Rename Tab…"

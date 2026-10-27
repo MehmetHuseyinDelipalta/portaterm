@@ -39,7 +39,7 @@ import {
 import { applyVaultRename, type VaultRenameListener, type VaultRenameSurface } from "./providers/webviewRequests";
 import { loadNodePty } from "./pty/PtyManager";
 import { createProcessTableSnapshot } from "./pty/processTableSnapshot";
-import { createAgentAttention } from "./session/agentAttention";
+import { attentionPhaseOf, createAgentAttention } from "./session/agentAttention";
 import type { MessageSender } from "./session/OutputBuffer";
 import { createPaneEvidenceStore } from "./session/PaneEvidenceStore";
 import { SessionManager } from "./session/SessionManager";
@@ -1867,6 +1867,58 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     publish: (panes) => postToVaultSurfaces({ type: "agentAttention", panes }),
   });
   onAgentAttentionChange = (paneId) => agentAttention.update(paneId);
+  // What the badge was counted from, pane by pane, for a badge that disagrees
+  // with the tabs it names.
+  context.subscriptions.push(
+    vscode.commands.registerCommand("portaterm.showAgentAttentionState", async () => {
+      const stamp = Date.now();
+      const panes = paneEvidence.panes().map((pane) => {
+        const session = sessionManager.getSession(pane.paneId);
+        const report = pane.turn?.report;
+        return {
+          paneId: pane.paneId,
+          displayedName: sessionManager.displayedName(session?.rootTabId ?? pane.paneId),
+          viewId: pane.viewId,
+          exited: pane.exited,
+          screenWaiting: pane.waiting,
+          semantic: pane.semantic,
+          isSplitPane: pane.isSplitPane,
+          session:
+            session === undefined
+              ? null
+              : {
+                  state: session.state,
+                  viewId: session.viewId,
+                  rootTabId: session.rootTabId,
+                  isActive: session.isActive,
+                },
+          turn:
+            report === undefined || pane.turn === undefined
+              ? null
+              : {
+                  state: report.state,
+                  ageMs: stamp - pane.turn.receivedAt,
+                  receivedAt: pane.turn.receivedAt,
+                  toolName: report.toolName,
+                  prompt: report.interactivePrompt?.slice(0, 80),
+                  subagents: report.subagents?.length ?? 0,
+                },
+          phase: attentionPhaseOf(pane, stamp),
+        };
+      });
+      const state = {
+        at: new Date(stamp).toISOString(),
+        snapshot: agentAttention.snapshot(),
+        ...agentAttention.debugState(),
+        panes,
+      };
+      const doc = await vscode.workspace.openTextDocument({
+        language: "json",
+        content: JSON.stringify(state, null, 2),
+      });
+      await vscode.window.showTextDocument(doc, { preview: false });
+    }),
+  );
   setSurfaceSignalListener({
     displayChanged: () => agentAttention.displayChanged(),
     paneInput: (paneId) => agentAttention.paneInput(paneId),

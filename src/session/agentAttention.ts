@@ -120,6 +120,16 @@ export interface AgentAttention {
   refreshBadges(): void;
   /** The panes a view holds tabs for; `undefined` when its webview is gone and no longer says. */
   panesPresented(viewId: string, paneIds: ReadonlySet<string> | undefined): void;
+  /** What the badges were last computed from, for the diagnostic command. */
+  debugState(): AttentionDebugState;
+}
+
+export interface AttentionDebugState {
+  presented: Record<string, string[]>;
+  badges: Record<string, string[]>;
+  unseen: string[];
+  turnOpen: string[];
+  answered: Record<string, number>;
 }
 
 export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
@@ -305,5 +315,23 @@ export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
     }
   }
 
-  return { update, paneInput, displayChanged, snapshot, refreshBadges: () => refreshBadges(), panesPresented };
+  function debugState(): AttentionDebugState {
+    return {
+      presented: Object.fromEntries([...presented].map(([viewId, ids]) => [viewId, [...ids]])),
+      badges: Object.fromEntries([...badges].map(([viewId, names]) => [viewId, names === "" ? [] : names.split("\n")])),
+      unseen: [...unseen.keys()],
+      turnOpen: [...turnOpen],
+      answered: Object.fromEntries(answered),
+    };
+  }
+
+  return {
+    update,
+    paneInput,
+    displayChanged,
+    snapshot,
+    refreshBadges: () => refreshBadges(),
+    panesPresented,
+    debugState,
+  };
 }
