@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.38.1] — 2026-10-27
+
+### Fixed
+
+- **A turn that finishes while you work in the editor stays marked `done`.** If an agent finished while its terminal was on screen but your focus was in the editor or another view, the tab and Vault marks counted it as seen, and `running` simply disappeared. The mark now turns to `done` and stays until you focus that terminal.
+
 ## [0.38.0] — 2026-10-26
 
 ### Added
