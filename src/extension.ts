@@ -1830,10 +1830,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const agentAttention = createAgentAttention({
     readPane: (paneId) => paneEvidence.read(paneId),
     panes: () => paneEvidence.panes(),
+    // The label the tab shows — the agent's own title when it set one — not the
+    // creation-time `Terminal N` the tab stopped showing once that title arrived.
     tabName: (paneId) => {
       const session = sessionManager.getSession(paneId);
-      const root = sessionManager.getSession(session?.rootTabId ?? paneId) ?? session;
-      return root ? (root.customName ?? root.name) : undefined;
+      return sessionManager.displayedName(session?.rootTabId ?? paneId) ?? sessionManager.displayedName(paneId);
     },
     isPaneVisible: (paneId) => {
       const surface = activeSurfaceOf(paneId);
