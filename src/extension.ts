@@ -2581,8 +2581,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand(
       "portaterm.insertPath",
       (uri: vscode.Uri | undefined, uris: vscode.Uri[] | undefined) => {
-        // Resolve file URIs: multi-select (uris) or single-select (uri) from Explorer
-        const targets = uris && uris.length > 0 ? uris : uri ? [uri] : [];
+        // Resolve file URIs: multi-select (uris) or single-select (uri) from
+        // Explorer / editor menus. The editor tab menu passes a non-array second
+        // argument, hence Array.isArray. Command Palette and keybinding calls
+        // carry no URI and fall back to the active editor's file.
+        const fallback = vscode.window.activeTextEditor?.document.uri;
+        const targets =
+          Array.isArray(uris) && uris.length > 0
+            ? uris
+            : uri
+              ? [uri]
+              : fallback && fallback.scheme !== "untitled"
+                ? [fallback]
+                : [];
         if (targets.length === 0) {
           return;
         }

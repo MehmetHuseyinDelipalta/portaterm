@@ -109,7 +109,7 @@ The built-in terminal is awkward to reposition and can't live in the sidebar. Po
 - **Find in the terminal** — `Cmd+F` / `Ctrl+F` highlights every match in the scrollback, with a match counter, previous/next, and match case, whole word and regular expression toggles.
 - **Smart clipboard** — `Cmd+C` / `Cmd+V`, selection-aware, with `Ctrl+C` fallback.
 - **Clickable URLs** — `Cmd+Click` with confirmation.
-- **Drop files to insert their path** — hold `Shift` and drop files from the Explorer or, on macOS, from Finder onto a terminal to type their quoted paths; or right-click in the Explorer → **Insert Path in Portaterm**.
+- **Drop files to insert their path** — hold `Shift` and drop files from the Explorer or, on macOS, from Finder onto a terminal to type their quoted paths; or right-click a file in the Explorer, an editor tab or inside an open editor → **Insert Path in Portaterm**.
 - **Embedded file tree** — browse the workspace alongside the terminal, with VS Code-style git decorations, live filesystem sync, in-panel search, and drag-a-row-into-a-pane to insert a path. Right-click a row for Reveal in Finder, Copy Path, Copy Relative Path, or Delete.
 
 ## Shortcuts

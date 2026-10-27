@@ -588,6 +588,20 @@
           "group": "portaterm@1"
         }
       ],
+      "editor/title/context": [
+        {
+          "command": "portaterm.insertPath",
+          "when": "resourceScheme != untitled",
+          "group": "portaterm@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "portaterm.insertPath",
+          "when": "resourceScheme != untitled",
+          "group": "portaterm@1"
+        }
+      ],
       "commandPalette": [
         {
           "command": "portaterm.ctx.clearTerminal",
