@@ -157,7 +157,8 @@
 /* ── Search row (shown only while searching) ────────────────────────────── */
 .vault-search-icon {
   position: absolute;
-  left: 7px;
+  /* Bar's 8px left padding + 7px inset, so the glyph sits inside the input. */
+  left: 15px;
   display: inline-flex;
   color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
   pointer-events: none;
