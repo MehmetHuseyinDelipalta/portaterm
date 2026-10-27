@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.39.0] — 2026-10-27
+
+### Added
+
+- **Insert Path in Portaterm works from the editor.** Right-click an editor tab or inside an open file to type that file's quoted path into the active terminal, the same as the Explorer command. Run from the Command Palette or a keybinding, it uses the active editor's file.
+
 ## [0.38.2] — 2026-10-27
 
 ### Fixed
