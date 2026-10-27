@@ -25,6 +25,10 @@ export default defineConfig({
     //     trees), so `test:unit` sets UV_THREADPOOL_SIZE=16. It must be set on the parent
     //     process — `test.env` is applied too late, after the pool is initialized.
     pool: "threads",
+    // Tests that run the real `activate()` reconcile agent hooks under `os.homedir()`; this
+    // points HOME at a throwaway directory so they can never touch the developer's own
+    // `~/.claude/settings.json` or `~/.cursor/hooks.json`.
+    globalSetup: ["src/test/isolatedHome.ts"],
     // Discover colocated test files under src/
     include: ["src/**/*.test.ts"],
     // Exclude build artifacts and the extension-host lane. The host lane runs under
