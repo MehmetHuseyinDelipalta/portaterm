@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.39.1] — 2026-10-27
+
+### Fixed
+
+- **The waiting-agent badge names the tab you see.** Its tooltip, and the agent notifications, named a tab by the `Terminal N` it was created with, which no tab shows once its agent sets a title. They now use the tab's displayed name.
+
 ## [0.39.0] — 2026-10-27
 
 ### Added
