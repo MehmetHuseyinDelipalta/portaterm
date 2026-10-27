@@ -17,11 +17,14 @@ function harness(overrides: Partial<AgentAttentionDeps> = {}) {
   const publish = vi.fn<AgentAttentionDeps["publish"]>();
   const settings = { enabled: true, onTurnEnd: true };
   const visible = new Set<string>();
+  /** Panes on screen whose surface does not hold keyboard focus. */
+  const unfocused = new Set<string>();
   const attention = createAgentAttention({
     readPane: (id) => panes.get(id),
     panes: () => [...panes].map(([paneId, e]) => ({ paneId, ...e })),
     tabName: (id) => `Tab ${id}`,
     isPaneVisible: (id) => visible.has(id),
+    isPaneFocused: (id) => visible.has(id) && !unfocused.has(id),
     readSettings: () => settings,
     notify,
     focusPane,
@@ -35,7 +38,7 @@ function harness(overrides: Partial<AgentAttentionDeps> = {}) {
     panes.set(id, { exited: false, viewId: "sidebar", ...evidence });
     attention.update(id);
   }
-  return { attention, panes, notify, focusPane, setBadge, publish, settings, visible, set };
+  return { attention, panes, notify, focusPane, setBadge, publish, settings, visible, unfocused, set };
 }
 
 describe("attentionPhaseOf", () => {
@@ -112,6 +115,19 @@ describe("createAgentAttention marks", () => {
     h.set("a", { turn: turn("working") });
     h.set("a", { turn: turn("done") });
     expect(h.attention.snapshot()).toEqual({});
+  });
+
+  it("marks a turn that finished on screen while focus was elsewhere, until the pane is focused", () => {
+    const h = harness();
+    h.visible.add("a");
+    h.unfocused.add("a");
+    h.set("a", { turn: turn("working") });
+    h.set("a", { turn: turn("done") });
+    expect(h.publish).toHaveBeenLastCalledWith({ a: { state: "unseen", agent: "Claude" } });
+    expect(h.notify).not.toHaveBeenCalled();
+    h.unfocused.delete("a");
+    h.attention.displayChanged();
+    expect(h.publish).toHaveBeenLastCalledWith({});
   });
 
   it("lets a new turn supersede an unseen one, and forgets an exited pane", () => {

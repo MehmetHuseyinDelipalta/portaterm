@@ -107,6 +107,8 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   private _onDidReceiveInteraction: (() => void) | undefined;
 
   private _activeNavigation: { tabId: string; paneId: string } | null | undefined;
+  /** Whether the webview holds keyboard focus, as its `focus` / `blur` messages last said. */
+  private _webviewFocused = false;
   private readonly pendingSplitChildren = new Map<string, PendingSplitChild>();
 
   /**
@@ -153,6 +155,11 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   /** Public accessor for the current webview view. */
   get view(): vscode.WebviewView | undefined {
     return this._view;
+  }
+
+  /** True when the view is on screen and its webview holds keyboard focus. */
+  get hasFocus(): boolean {
+    return this._webviewFocused && this._view?.visible === true;
   }
 
   /** Set (or clear, with `undefined`) the badge on this view's container icon. */
@@ -405,6 +412,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       signalPanesPresented(this.getViewId(), undefined);
       this._view = undefined;
       this._ready = false;
+      this._webviewFocused = false;
       // Remove from the focus-recency stack so getLastFocusedProvider doesn't
       // pin a disposed provider. See `.reviews/round-1.md` W2.
       this.unmarkFocused();
@@ -1359,6 +1367,11 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
 
         case "focus":
           this.markFocused();
+          this.setWebviewFocused(true);
+          break;
+
+        case "blur":
+          this.setWebviewFocused(false);
           break;
 
         case "openLink":
@@ -1829,6 +1842,13 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       order.splice(i, 1);
     }
     order.unshift(this);
+  }
+
+  private setWebviewFocused(focused: boolean): void {
+    if (this._webviewFocused !== focused) {
+      this._webviewFocused = focused;
+      signalDisplayChanged();
+    }
   }
 
   /** Internal: remove this provider from the recency stack (called on dispose). */

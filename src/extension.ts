@@ -1815,6 +1815,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     [TerminalViewProvider.sidebarViewType, sidebarProvider],
     [TerminalViewProvider.panelViewType, panelProvider],
   ]);
+  /** The surface showing the pane's tab as its active one, in a focused window; else `undefined`. */
+  const activeSurfaceOf = (paneId: string): TerminalEditorProvider | TerminalViewProvider | undefined => {
+    if (!vscode.window.state.focused) {
+      return undefined;
+    }
+    const session = sessionManager.getSession(paneId);
+    const root = sessionManager.getSession(session?.rootTabId ?? paneId);
+    if (!session || !root?.isActive) {
+      return undefined;
+    }
+    return TerminalEditorProvider.findByViewId(session.viewId) ?? badgeProviders.get(session.viewId);
+  };
   const agentAttention = createAgentAttention({
     readPane: (paneId) => paneEvidence.read(paneId),
     panes: () => paneEvidence.panes(),
@@ -1824,20 +1836,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return root ? (root.customName ?? root.name) : undefined;
     },
     isPaneVisible: (paneId) => {
-      if (!vscode.window.state.focused) {
-        return false;
+      const surface = activeSurfaceOf(paneId);
+      if (surface instanceof TerminalEditorProvider) {
+        return surface.panel.visible;
       }
-      const session = sessionManager.getSession(paneId);
-      const root = sessionManager.getSession(session?.rootTabId ?? paneId);
-      if (!session || !root?.isActive) {
-        return false;
-      }
-      const editor = TerminalEditorProvider.findByViewId(session.viewId);
-      if (editor) {
-        return editor.panel.visible;
-      }
-      return badgeProviders.get(session.viewId)?.view?.visible === true;
+      return surface?.view?.visible === true;
     },
+    isPaneFocused: (paneId) => activeSurfaceOf(paneId)?.hasFocus === true,
     readSettings: readAgentAttentionSettings,
     notify: (message, action) => vscode.window.showInformationMessage(message, action),
     focusPane: (paneId, viewId) => worktreeActions.focusPane(paneId, viewId),

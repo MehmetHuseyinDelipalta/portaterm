@@ -137,6 +137,8 @@ export class TerminalEditorProvider {
   /** Whether the webview has sent the 'ready' message. Gates outbound messages. */
   private _ready = false;
   private _activeNavigation: { tabId: string; paneId: string } | null | undefined;
+  /** Whether the webview holds keyboard focus, as its `focus` / `blur` messages last said. */
+  private _webviewFocused = false;
   /** The WebviewPanel managed by this instance. */
   private readonly _panel: vscode.WebviewPanel;
   /**
@@ -173,6 +175,11 @@ export class TerminalEditorProvider {
   /** Public accessor — used by `extension.ts` to post messages to this panel. */
   get panel(): vscode.WebviewPanel {
     return this._panel;
+  }
+
+  /** True when the panel is on screen and its webview holds keyboard focus. */
+  get hasFocus(): boolean {
+    return this._webviewFocused && this._panel.visible;
   }
 
   /**
@@ -782,6 +789,14 @@ export class TerminalEditorProvider {
           }
           break;
         }
+
+        case "focus":
+        case "blur":
+          if (this._webviewFocused !== (message.type === "focus")) {
+            this._webviewFocused = message.type === "focus";
+            signalDisplayChanged();
+          }
+          break;
 
         case "closeTab":
           if (typeof message.tabId === "string") {

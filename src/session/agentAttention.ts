@@ -2,8 +2,8 @@
 //
 // Reads the same pane evidence the tab and the worktree rows read, and turns it
 // into the quiet signals the tab bar and the vault draw: a pane waiting on an
-// approval or an answer, an agent at work, and a turn that finished while nobody
-// was looking — which stays marked until its tab is seen. Each terminal view also carries a badge counting its
+// approval or an answer, an agent at work, and a turn that finished while the
+// user's focus was elsewhere — which stays marked until its tab is focused. Each terminal view also carries a badge counting its
 // waiting panes, for when the view itself is out of sight. A notification is
 // opt-in on top of that, for a pane the user cannot see.
 
@@ -31,6 +31,11 @@ export interface AgentAttentionDeps {
   tabName(paneId: string): string | undefined;
   /** True when the pane is on screen right now: window focused, view shown, its tab active. */
   isPaneVisible(paneId: string): boolean;
+  /**
+   * True when the pane is visible and its surface holds keyboard focus. A turn
+   * that ends on screen while the user works in the editor is still unseen.
+   */
+  isPaneFocused(paneId: string): boolean;
   readSettings(): AttentionSettings;
   /** Show a notification; resolves with the action the user picked, if any. */
   notify(message: string, action: string): Thenable<string | undefined>;
@@ -107,7 +112,7 @@ export interface AgentAttention {
   update(paneId: string): void;
   /** The user typed into a pane, which answers whatever wait it was holding. */
   paneInput(paneId: string): void;
-  /** What is on screen changed; a finished turn the user can now see is no longer unseen. */
+  /** What is on screen or focused changed; a finished turn the user now focuses is no longer unseen. */
   displayChanged(): void;
   /** The current attention set, for a surface that just loaded. */
   snapshot(): AttentionPanes;
@@ -255,7 +260,7 @@ export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
     }
     const visible = deps.isPaneVisible(paneId);
     const finished = phase === "done" && phase !== previous && wasOpen && agent !== undefined;
-    if (finished && !visible) {
+    if (finished && !deps.isPaneFocused(paneId)) {
       unseen.set(paneId, agent);
     }
 
@@ -290,7 +295,7 @@ export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
   function displayChanged(): void {
     let changed = false;
     for (const paneId of unseen.keys()) {
-      if (deps.isPaneVisible(paneId)) {
+      if (deps.isPaneFocused(paneId)) {
         unseen.delete(paneId);
         changed = true;
       }

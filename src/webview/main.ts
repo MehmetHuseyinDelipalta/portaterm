@@ -1844,6 +1844,9 @@ function bootstrap(): void {
     }
     vscode.postMessage({ type: "focus" });
   });
+  // Focus leaving the webview (to the editor, another view, or another app) means
+  // a turn that ends here is no longer watched.
+  window.addEventListener("blur", () => vscode.postMessage({ type: "blur" }));
   window.addEventListener("message", (event: MessageEvent) => {
     const msg = event.data;
     if (!msg || typeof msg.type !== "string") {

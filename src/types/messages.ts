@@ -216,11 +216,16 @@ export interface ToggleMaximizedPanelMessage {
   type: "toggleMaximizedPanel";
 }
 
-/** Surface-focus signal used only for provider recency. */
+/** Surface-focus signal: provider recency, and whether an agent's finished turn was seen. */
 export interface FocusMessage {
   type: "focus";
   /** @deprecated Navigation routing comes from `terminalNavigationCommitted`. */
   activeSessionId?: string;
+}
+
+/** The surface's webview lost keyboard focus, e.g. to the editor. */
+export interface BlurMessage {
+  type: "blur";
 }
 
 /** One atomically committed per-surface tab and pane routing result. */
@@ -1874,6 +1879,7 @@ export type WebViewToExtensionMessage =
   | RequestClosePaneMessage
   | SplitPaneAttachmentResultMessage
   | FocusMessage
+  | BlurMessage
   | ToggleMaximizedPanelMessage
   | TerminalNavigationCommittedMessage
   | OpenLinkMessage
