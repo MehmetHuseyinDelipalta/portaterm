@@ -372,12 +372,28 @@ export const ColorThemeKind = {
 const _themeChangeHandlers: Array<(theme: { kind: number }) => void> = [];
 let _activeColorTheme: { kind: number } = { kind: ColorThemeKind.Dark };
 
+export const StatusBarAlignment = { Left: 1, Right: 2 } as const;
+
+export class ThemeColor {
+  constructor(public readonly id: string) {}
+}
+
 export const window = {
   showInformationMessage: () => {},
   showErrorMessage: (_msg?: string) => Promise.resolve(undefined),
   showWarningMessage: (_msg?: string, ..._rest: unknown[]) => Promise.resolve(undefined),
   showTextDocument: (_uri?: unknown, _opts?: unknown) => Promise.resolve({}),
   showQuickPick: async () => undefined,
+  createStatusBarItem: (_id?: string, _alignment?: number, _priority?: number) => ({
+    name: undefined as string | undefined,
+    text: "",
+    tooltip: undefined as unknown,
+    command: undefined as unknown,
+    backgroundColor: undefined as unknown,
+    show: () => {},
+    hide: () => {},
+    dispose: () => {},
+  }),
   showOpenDialog: (options?: unknown) => _showOpenDialogImpl(options),
   showInputBox: (_options?: unknown) => Promise.resolve(undefined),
   createWebviewPanel: createMockWebviewPanel,

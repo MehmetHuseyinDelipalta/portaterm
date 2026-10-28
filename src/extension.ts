@@ -39,7 +39,8 @@ import {
 import { applyVaultRename, type VaultRenameListener, type VaultRenameSurface } from "./providers/webviewRequests";
 import { loadNodePty } from "./pty/PtyManager";
 import { createProcessTableSnapshot } from "./pty/processTableSnapshot";
-import { attentionPhaseOf, createAgentAttention } from "./session/agentAttention";
+import { type AttentionPanes, attentionPhaseOf, createAgentAttention } from "./session/agentAttention";
+import { attentionTargets, describeAttention, summarizeAttention } from "./session/agentStatusBar";
 import type { MessageSender } from "./session/OutputBuffer";
 import { createPaneEvidenceStore } from "./session/PaneEvidenceStore";
 import { SessionManager } from "./session/SessionManager";
@@ -1827,15 +1828,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     return TerminalEditorProvider.findByViewId(session.viewId) ?? badgeProviders.get(session.viewId);
   };
+  // The label the tab shows — the agent's own title when it set one — not the
+  // creation-time `Terminal N` the tab stopped showing once that title arrived.
+  const agentTabName = (paneId: string) => {
+    const session = sessionManager.getSession(paneId);
+    return sessionManager.displayedName(session?.rootTabId ?? paneId) ?? sessionManager.displayedName(paneId);
+  };
+  // One entry counting every agent in the window. It has an id, so the user
+  // hides it from the status bar's own context menu rather than a setting.
+  const agentStatusItem = vscode.window.createStatusBarItem("portaterm.agentStatus", vscode.StatusBarAlignment.Left);
+  agentStatusItem.name = "Portaterm Agents";
+  agentStatusItem.command = "portaterm.goToAgent";
+  const renderAgentStatus = (panes: AttentionPanes) => {
+    const summary = summarizeAttention(panes, agentTabName);
+    if (summary === undefined) {
+      agentStatusItem.hide();
+      return;
+    }
+    agentStatusItem.text = summary.text;
+    agentStatusItem.tooltip = summary.tooltip;
+    agentStatusItem.backgroundColor = summary.urgent
+      ? new vscode.ThemeColor("statusBarItem.warningBackground")
+      : undefined;
+    agentStatusItem.show();
+  };
   const agentAttention = createAgentAttention({
     readPane: (paneId) => paneEvidence.read(paneId),
     panes: () => paneEvidence.panes(),
-    // The label the tab shows — the agent's own title when it set one — not the
-    // creation-time `Terminal N` the tab stopped showing once that title arrived.
-    tabName: (paneId) => {
-      const session = sessionManager.getSession(paneId);
-      return sessionManager.displayedName(session?.rootTabId ?? paneId) ?? sessionManager.displayedName(paneId);
-    },
+    tabName: agentTabName,
     isPaneVisible: (paneId) => {
       const surface = activeSurfaceOf(paneId);
       if (surface instanceof TerminalEditorProvider) {
@@ -1864,9 +1884,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
     },
     badgeViews: [...badgeProviders.keys()],
-    publish: (panes) => postToVaultSurfaces({ type: "agentAttention", panes }),
+    publish: (panes) => {
+      postToVaultSurfaces({ type: "agentAttention", panes });
+      renderAgentStatus(panes);
+    },
   });
   onAgentAttentionChange = (paneId) => agentAttention.update(paneId);
+  context.subscriptions.push(
+    agentStatusItem,
+    vscode.commands.registerCommand("portaterm.goToAgent", async () => {
+      const targets = attentionTargets(agentAttention.snapshot()).flatMap((target) => {
+        const viewId = paneEvidence.read(target.paneId)?.viewId;
+        return viewId === undefined ? [] : [{ ...target, viewId }];
+      });
+      const picked =
+        targets.length <= 1
+          ? targets[0]
+          : (
+              await vscode.window.showQuickPick(
+                targets.map((target) => ({
+                  label: agentTabName(target.paneId) ?? "Terminal",
+                  description: `${target.agent} · ${describeAttention(target.state)}`,
+                  target,
+                })),
+                { placeHolder: "Go to an agent's tab" },
+              )
+            )?.target;
+      if (picked !== undefined) {
+        await worktreeActions.focusPane(picked.paneId, picked.viewId);
+      }
+    }),
+  );
   // What the badge was counted from, pane by pane, for a badge that disagrees
   // with the tabs it names.
   context.subscriptions.push(
