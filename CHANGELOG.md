@@ -7,6 +7,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.40.0] — 2026-10-28
+
+### Added
+
+- **Portaterm: Show Agent Attention State.** Opens, as JSON, every pane Portaterm tracks with its agent's last turn report and the mark it computes, along with what each view's badge was counted from. Use it when a tab mark or badge disagrees with what you see.
+
+### Changed
+
+- **A `done` mark stays until you touch its terminal.** Coming back from another window put focus back in the terminal, which counted as seeing the finished turn, so the mark vanished before you could read it. It now stays until you type into the terminal, click it, or click its tab.
+
+### Fixed
+
+- **`running` stays lit through long tool runs.** A tool run or a stretch of thinking that went over a minute without an agent hook let the mark go dark while Claude was still working. It now holds while the terminal is still drawing, and drops once it goes quiet.
+- **The waiting badge clears in Cursor.** An answered wait could leave `1` on the Portaterm view icon until the window was reloaded.
+
 ## [0.39.1] — 2026-10-27
 
 ### Fixed
