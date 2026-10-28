@@ -103,6 +103,38 @@ function createMockWebviewView(): {
   return { webviewView, messageHandlers, disposeHandlers, visibilityHandlers, postMessageSpy, setVisible };
 }
 
+// ─── setBadge ───────────────────────────────────────────────────────
+
+describe("TerminalViewProvider: setBadge", () => {
+  it("clears a live view's badge with a zero badge, not undefined", () => {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "panel");
+    const { webviewView } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+
+    provider.setBadge({ value: 1, tooltip: "1 agent is waiting: Tab a" });
+    expect(webviewView.badge).toEqual({ value: 1, tooltip: "1 agent is waiting: Tab a" });
+
+    provider.setBadge(undefined);
+    expect(webviewView.badge).toEqual({ value: 0, tooltip: "" });
+
+    sm.dispose();
+  });
+
+  it("resolves a view with no badge after a clear that happened while it was gone", () => {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "panel");
+    provider.setBadge({ value: 1, tooltip: "1 agent is waiting: Tab a" });
+    provider.setBadge(undefined);
+
+    const { webviewView } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    expect(webviewView.badge).toBeUndefined();
+
+    sm.dispose();
+  });
+});
+
 // ─── getActiveSessionId ─────────────────────────────────────────────
 
 describe("TerminalViewProvider: getActiveSessionId", () => {

@@ -81,6 +81,9 @@ interface PendingSplitChild {
 
 const MAX_PENDING_SPLIT_CHILDREN = 64;
 
+/** A badge the workbench draws as no badge at all. See {@link TerminalViewProvider.setBadge}. */
+const CLEARED_BADGE: vscode.ViewBadge = { value: 0, tooltip: "" };
+
 /**
  * WebviewViewProvider for sidebar and panel terminal views.
  *
@@ -162,11 +165,18 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     return this._webviewFocused && this._view?.visible === true;
   }
 
-  /** Set (or clear, with `undefined`) the badge on this view's container icon. */
+  /**
+   * Set (or clear, with `undefined`) the badge on this view's container icon.
+   *
+   * A clear is written as a zero badge, which the workbench hides, rather than
+   * as `undefined`: Cursor left the last count on the icon when a live view's
+   * badge was set to `undefined`, so a wait the user had already answered kept
+   * its `1` until the window reloaded.
+   */
   setBadge(badge: vscode.ViewBadge | undefined): void {
     this._badge = badge;
     if (this._view) {
-      this._view.badge = badge;
+      this._view.badge = badge ?? CLEARED_BADGE;
     }
   }
 
