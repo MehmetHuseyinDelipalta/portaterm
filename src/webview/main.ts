@@ -1844,6 +1844,22 @@ function bootstrap(): void {
     }
     vscode.postMessage({ type: "focus" });
   });
+  // A click on a pane, or on a tab and so on every pane it holds, is what says
+  // the user looked at it; focus returning with the window says nothing.
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const leafSessionId = target?.closest<HTMLElement>(".split-leaf")?.dataset.sessionId;
+      const tabId = target?.closest<HTMLElement>("[data-tab-id]")?.dataset.tabId;
+      const layout = tabId === undefined ? undefined : store.tabLayouts.get(tabId);
+      const paneIds = leafSessionId ? [leafSessionId] : layout ? getAllSessionIds(layout) : [];
+      if (paneIds.length > 0) {
+        vscode.postMessage({ type: "paneEngaged", paneIds });
+      }
+    },
+    true,
+  );
   // Focus leaving the webview (to the editor, another view, or another app) means
   // a turn that ends here is no longer watched.
   window.addEventListener("blur", () => vscode.postMessage({ type: "blur" }));

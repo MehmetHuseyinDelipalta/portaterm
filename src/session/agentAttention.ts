@@ -3,7 +3,9 @@
 // Reads the same pane evidence the tab and the worktree rows read, and turns it
 // into the quiet signals the tab bar and the vault draw: a pane waiting on an
 // approval or an answer, an agent at work, and a turn that finished while the
-// user's focus was elsewhere — which stays marked until its tab is focused. Each terminal view also carries a badge counting its
+// user's focus was elsewhere — which stays marked until the user types into or
+// clicks its pane: a window that regains focus puts the pane back in focus
+// before the user has looked at it. Each terminal view also carries a badge counting its
 // waiting panes, for when the view itself is out of sight. A notification is
 // opt-in on top of that, for a pane the user cannot see.
 
@@ -122,10 +124,10 @@ function isBlocked(phase: AttentionPhase): phase is "approval" | "question" {
 export interface AgentAttention {
   /** Feed a pane-evidence change. */
   update(paneId: string): void;
-  /** The user typed into a pane, which answers whatever wait it was holding. */
+  /** The user typed into a pane, which answers whatever wait it was holding and sees its finished turn. */
   paneInput(paneId: string): void;
-  /** What is on screen or focused changed; a finished turn the user now focuses is no longer unseen. */
-  displayChanged(): void;
+  /** The user clicked these panes, or the tab holding them; their finished turns are seen. */
+  paneEngaged(paneIds: readonly string[]): void;
   /** The current attention set, for a surface that just loaded. */
   snapshot(): AttentionPanes;
   /** Recount every badge. */
@@ -308,19 +310,18 @@ export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
   function paneInput(paneId: string): void {
     const turn = deps.readPane(paneId)?.turn;
     if (turn?.report.state !== "waiting" || answered.get(paneId) === turn.receivedAt) {
+      paneEngaged([paneId]);
       return;
     }
     answered.set(paneId, turn.receivedAt);
+    unseen.delete(paneId);
     update(paneId);
   }
 
-  function displayChanged(): void {
+  function paneEngaged(paneIds: readonly string[]): void {
     let changed = false;
-    for (const paneId of unseen.keys()) {
-      if (deps.isPaneFocused(paneId)) {
-        unseen.delete(paneId);
-        changed = true;
-      }
+    for (const paneId of paneIds) {
+      changed = unseen.delete(paneId) || changed;
     }
     if (changed) {
       refresh();
@@ -340,7 +341,7 @@ export function createAgentAttention(deps: AgentAttentionDeps): AgentAttention {
   return {
     update,
     paneInput,
-    displayChanged,
+    paneEngaged,
     snapshot,
     refreshBadges: () => refreshBadges(),
     panesPresented,

@@ -45,8 +45,8 @@ describe("signalPaneInput", () => {
   it("tells the listener about typing, not about a focus report", () => {
     const paneInput = vi.fn();
     setSurfaceSignalListener({
-      displayChanged: vi.fn(),
       paneInput,
+      paneEngaged: vi.fn(),
       panesPresented: vi.fn(),
       surfaceReady: vi.fn(),
     } as SurfaceSignalListener);

@@ -9,10 +9,10 @@
 import type { ExtensionToWebViewMessage } from "../types/messages";
 
 export interface SurfaceSignalListener {
-  /** What is on screen may have changed: a surface shown or hidden, or a tab switched. */
-  displayChanged(): void;
   /** The user typed into a pane. Called per keystroke, so it must stay cheap. */
   paneInput(paneId: string): void;
+  /** The user clicked these panes, or the tab holding them. */
+  paneEngaged(paneIds: readonly string[]): void;
   /**
    * The panes a view holds tabs for; `undefined` when the view's webview is gone
    * and no longer says.
@@ -29,8 +29,8 @@ export function setSurfaceSignalListener(next: SurfaceSignalListener | undefined
   listener = next;
 }
 
-export function signalDisplayChanged(): void {
-  listener?.displayChanged();
+export function signalPaneEngaged(paneIds: readonly string[]): void {
+  listener?.paneEngaged(paneIds);
 }
 
 /**

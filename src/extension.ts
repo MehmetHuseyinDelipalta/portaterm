@@ -1920,20 +1920,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
   setSurfaceSignalListener({
-    displayChanged: () => agentAttention.displayChanged(),
     paneInput: (paneId) => agentAttention.paneInput(paneId),
+    paneEngaged: (paneIds) => agentAttention.paneEngaged(paneIds),
     panesPresented: (viewId, paneIds) => agentAttention.panesPresented(viewId, paneIds),
     surfaceReady: (post) => post({ type: "agentAttention", panes: agentAttention.snapshot() }),
   });
-  context.subscriptions.push(
-    vscode.window.onDidChangeWindowState(() => agentAttention.displayChanged()),
-    {
-      dispose: () => {
-        onAgentAttentionChange = undefined;
-        setSurfaceSignalListener(undefined);
-      },
+  context.subscriptions.push({
+    dispose: () => {
+      onAgentAttentionChange = undefined;
+      setSurfaceSignalListener(undefined);
     },
-  );
+  });
   // Which entries those live panes run, by the same rule, so the vault marks
   // exactly the rows a resume would focus rather than relaunch.
   const openVaultPublisher = createPinnedVaultPublisher({

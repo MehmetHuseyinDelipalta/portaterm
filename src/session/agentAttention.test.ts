@@ -108,15 +108,25 @@ describe("createAgentAttention marks", () => {
     expect(h.publish).toHaveBeenLastCalledWith({ a: { state: "approval", agent: "Claude" } });
   });
 
-  it("marks a turn that finished out of sight as unseen until its tab is seen", () => {
+  it("marks a turn that finished out of sight as unseen until its pane is clicked", () => {
     const h = harness();
     h.set("a", { turn: turn("working") });
     h.set("a", { turn: turn("done") });
     expect(h.publish).toHaveBeenLastCalledWith({ a: { state: "unseen", agent: "Claude" } });
-    h.attention.displayChanged();
-    expect(h.publish).toHaveBeenCalledTimes(2);
+    // Coming back to the window focuses the pane again; that alone is not a look.
     h.visible.add("a");
-    h.attention.displayChanged();
+    h.attention.update("a");
+    h.attention.paneEngaged(["b"]);
+    expect(h.publish).toHaveBeenCalledTimes(2);
+    h.attention.paneEngaged(["b", "a"]);
+    expect(h.publish).toHaveBeenLastCalledWith({});
+  });
+
+  it("clears an unseen turn once the user types into its pane", () => {
+    const h = harness();
+    h.set("a", { turn: turn("working") });
+    h.set("a", { turn: turn("done") });
+    h.attention.paneInput("a");
     expect(h.publish).toHaveBeenLastCalledWith({});
   });
 
@@ -128,7 +138,7 @@ describe("createAgentAttention marks", () => {
     expect(h.attention.snapshot()).toEqual({});
   });
 
-  it("marks a turn that finished on screen while focus was elsewhere, until the pane is focused", () => {
+  it("marks a turn that finished on screen while focus was elsewhere, until the pane is clicked", () => {
     const h = harness();
     h.visible.add("a");
     h.unfocused.add("a");
@@ -137,7 +147,7 @@ describe("createAgentAttention marks", () => {
     expect(h.publish).toHaveBeenLastCalledWith({ a: { state: "unseen", agent: "Claude" } });
     expect(h.notify).not.toHaveBeenCalled();
     h.unfocused.delete("a");
-    h.attention.displayChanged();
+    h.attention.paneEngaged(["a"]);
     expect(h.publish).toHaveBeenLastCalledWith({});
   });
 

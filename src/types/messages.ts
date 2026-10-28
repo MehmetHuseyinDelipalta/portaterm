@@ -1860,6 +1860,15 @@ export interface PresentedPanesMessage {
 }
 
 /**
+ * The user clicked a pane, or a tab and with it every pane it holds. Focus alone
+ * does not say they looked: a window that regains it hands it back unasked.
+ */
+export interface PaneEngagedMessage {
+  type: "paneEngaged";
+  paneIds: string[];
+}
+
+/**
  * All messages that can be sent from the WebView to the Extension Host.
  * Use msg.type as the discriminant in switch/case for exhaustive handling.
  */
@@ -1951,7 +1960,8 @@ export type WebViewToExtensionMessage =
   | WorktreeUnlockMessage
   | WorktreePruneMessage
   | PaneEvidenceMessage
-  | PresentedPanesMessage;
+  | PresentedPanesMessage
+  | PaneEngagedMessage;
 
 /** A `T` that is not `never` is a compile error — see {@link WORKTREE_MESSAGE_TYPES}. */
 type AssertNever<T extends never> = T;

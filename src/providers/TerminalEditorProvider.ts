@@ -30,7 +30,7 @@ import { openExternalLink } from "./openExternalLink";
 import { DEFAULT_FIND_FILES_MAX_RESULTS, openFileLink } from "./openFileLink";
 import { handleInsertOsDropPaths } from "./osDropPaths";
 import { isValidPreviewRequest } from "./previewValidation";
-import { signalDisplayChanged, signalPaneInput, signalPanesPresented, signalSurfaceReady } from "./surfaceSignals";
+import { signalPaneEngaged, signalPaneInput, signalPanesPresented, signalSurfaceReady } from "./surfaceSignals";
 import { themeKindFor } from "./TerminalViewProvider";
 import type { WorktreeAttachment, WorktreeHost, WorktreeSurface } from "./WorktreeHost";
 import { getTerminalHtml } from "./webviewHtml";
@@ -501,7 +501,6 @@ export class TerminalEditorProvider {
         if (e.webviewPanel.visible && this._ready) {
           this.safePostMessage({ type: "viewShow" });
         }
-        signalDisplayChanged();
       }),
     );
 
@@ -785,16 +784,18 @@ export class TerminalEditorProvider {
               message.activeTabId === null || message.activePaneId === null
                 ? null
                 : { tabId: message.activeTabId, paneId: message.activePaneId };
-            signalDisplayChanged();
           }
           break;
         }
 
         case "focus":
         case "blur":
-          if (this._webviewFocused !== (message.type === "focus")) {
-            this._webviewFocused = message.type === "focus";
-            signalDisplayChanged();
+          this._webviewFocused = message.type === "focus";
+          break;
+
+        case "paneEngaged":
+          if (Array.isArray(message.paneIds) && message.paneIds.every((id) => typeof id === "string")) {
+            signalPaneEngaged(message.paneIds);
           }
           break;
 

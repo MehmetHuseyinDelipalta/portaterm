@@ -36,7 +36,7 @@ import { openExternalLink } from "./openExternalLink";
 import { DEFAULT_FIND_FILES_MAX_RESULTS, openFileLink } from "./openFileLink";
 import { handleInsertOsDropPaths } from "./osDropPaths";
 import { isValidPreviewRequest } from "./previewValidation";
-import { signalDisplayChanged, signalPaneInput, signalPanesPresented, signalSurfaceReady } from "./surfaceSignals";
+import { signalPaneEngaged, signalPaneInput, signalPanesPresented, signalSurfaceReady } from "./surfaceSignals";
 import type { VaultWatchClient, VaultWatchCoordinator } from "./VaultWatchCoordinator";
 import type { WorktreeHost, WorktreeSurface } from "./WorktreeHost";
 import { getTerminalHtml } from "./webviewHtml";
@@ -379,7 +379,6 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
           // Pause output flushing when view becomes hidden
           this.sessionManager.pauseOutputForView(viewId);
         }
-        signalDisplayChanged();
       }),
     );
 
@@ -1220,7 +1219,6 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
               message.activeTabId === null || message.activePaneId === null
                 ? null
                 : { tabId: message.activeTabId, paneId: message.activePaneId };
-            signalDisplayChanged();
           }
           break;
         }
@@ -1377,11 +1375,17 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
 
         case "focus":
           this.markFocused();
-          this.setWebviewFocused(true);
+          this._webviewFocused = true;
           break;
 
         case "blur":
-          this.setWebviewFocused(false);
+          this._webviewFocused = false;
+          break;
+
+        case "paneEngaged":
+          if (Array.isArray(message.paneIds) && message.paneIds.every((id) => typeof id === "string")) {
+            signalPaneEngaged(message.paneIds);
+          }
           break;
 
         case "openLink":
@@ -1852,13 +1856,6 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       order.splice(i, 1);
     }
     order.unshift(this);
-  }
-
-  private setWebviewFocused(focused: boolean): void {
-    if (this._webviewFocused !== focused) {
-      this._webviewFocused = focused;
-      signalDisplayChanged();
-    }
   }
 
   /** Internal: remove this provider from the recency stack (called on dispose). */
