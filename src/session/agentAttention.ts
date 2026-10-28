@@ -7,6 +7,7 @@
 // waiting panes, for when the view itself is out of sight. A notification is
 // opt-in on top of that, for a pane the user cannot see.
 
+import { OUTPUT_IDLE_WINDOW_MS } from "../shared/paneEvidence";
 import type { AgentAttentionMessage, AgentAttentionState } from "../types/messages";
 import { type PaneEvidence, TURN_FRESHNESS_MS } from "./PaneEvidenceStore";
 
@@ -93,6 +94,17 @@ export function attentionPhaseOf(
     return report.sessionBoundary === true || report.interrupted === true
       ? { phase: "none" }
       : { phase: "done", agent: "Claude" };
+  }
+  // A long tool run or a long stretch of thinking fires no hook, so a turn can
+  // outlast its report's freshness while the agent is still at it. Its spinner
+  // repainting is what says so; once the pane goes quiet the turn decides
+  // nothing, and the `done` that follows is still announced.
+  if (
+    turn?.report.state === "working" &&
+    evidence.lastOutputAt !== undefined &&
+    now - evidence.lastOutputAt < OUTPUT_IDLE_WINDOW_MS
+  ) {
+    return { phase: "working", agent: "Claude" };
   }
   if (evidence.semantic === "working") {
     return { phase: "working", agent: "Cursor Agent" };

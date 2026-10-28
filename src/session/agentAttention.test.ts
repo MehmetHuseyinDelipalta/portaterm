@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentTurnReport } from "../agentHooks/AgentHookRuntime";
+import { OUTPUT_IDLE_WINDOW_MS } from "../shared/paneEvidence";
 import { type AgentAttentionDeps, attentionPhaseOf, createAgentAttention, GO_TO_TAB } from "./agentAttention";
 import { type PaneEvidence, TURN_FRESHNESS_MS } from "./PaneEvidenceStore";
 
@@ -58,6 +59,16 @@ describe("attentionPhaseOf", () => {
   it("ignores a stale turn and falls back to Cursor's semantic word", () => {
     const stale = { exited: false, semantic: "idle" as const, turn: turn("working") };
     expect(attentionPhaseOf(stale, NOW + TURN_FRESHNESS_MS)).toEqual({ phase: "done", agent: "Cursor Agent" });
+  });
+
+  it("keeps a stale working turn while the pane still paints, and drops it once quiet", () => {
+    const later = NOW + 5 * TURN_FRESHNESS_MS;
+    const painting = { exited: false, turn: turn("working"), lastOutputAt: later - OUTPUT_IDLE_WINDOW_MS + 1 };
+    expect(attentionPhaseOf(painting, later)).toEqual({ phase: "working", agent: "Claude" });
+    const quiet = { ...painting, lastOutputAt: later - OUTPUT_IDLE_WINDOW_MS };
+    expect(attentionPhaseOf(quiet, later).phase).toBe("none");
+    const finished = { ...painting, turn: turn("done") };
+    expect(attentionPhaseOf(finished, later).phase).toBe("none");
   });
 
   it("holds a Claude wait past the freshness window until it is answered", () => {
