@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.41.0] — 2026-10-28
+
+### Added
+
+- **Agent summary in the status bar.** One entry counts the window's agents — `2 working · 1 waiting · 1 done` — and turns to the warning colour while one waits on you. Its tooltip names each terminal. Click it, or run **Portaterm: Go to Agent**, to go to the agent that needs you most, or to pick one when several do. It hides itself when no agent is running; right-click the status bar to hide it for good.
+
 ## [0.40.0] — 2026-10-28
 
 ### Added
