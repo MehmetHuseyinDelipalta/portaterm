@@ -583,6 +583,26 @@ export interface VaultRenameSessionMessage {
 }
 
 /**
+ * Webview → Extension: star or unstar a session. A star is the user's own mark
+ * on the session and outlives every tab — unlike a tab pin, which marks a row
+ * only while a pinned tab runs it. Persisted host-side, never in agent files.
+ */
+export interface VaultSetStarredMessage {
+  type: "vaultSetStarred";
+  entryId: string;
+  starred: boolean;
+}
+
+/**
+ * Webview → Extension: edit a session's tags. The host owns the editor (a
+ * multi-select picker over every tag already in use), so only the id crosses.
+ */
+export interface VaultEditTagsMessage {
+  type: "vaultEditTags";
+  entryId: string;
+}
+
+/**
  * Webview → Extension: start/stop live-following the previewed session
  * (enhance-vault-sessions D5). `entryId` selects the session to watch;
  * `null` stops following (preview closed or switched). At most one follow
@@ -1930,6 +1950,8 @@ export type WebViewToExtensionMessage =
   | VaultCopyFilePathMessage
   | VaultExportMarkdownMessage
   | VaultRenameSessionMessage
+  | VaultSetStarredMessage
+  | VaultEditTagsMessage
   | VaultWatchSessionMessage
   | OpenVaultSettingsMessage
   | RequestVaultContextCwdMessage

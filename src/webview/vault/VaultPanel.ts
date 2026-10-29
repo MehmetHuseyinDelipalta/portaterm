@@ -17,6 +17,7 @@ import type {
   VaultContinueSessionMessage,
   VaultCopyFilePathMessage,
   VaultCopyResumeCommandMessage,
+  VaultEditTagsMessage,
   VaultExportMarkdownMessage,
   VaultLaunchTargetsMessage,
   VaultMessageRecordResponseMessage,
@@ -26,6 +27,7 @@ import type {
   VaultResumeMessage,
   VaultRevealInOSMessage,
   VaultSessionDetailResponseMessage,
+  VaultSetStarredMessage,
   VaultStartAgentMessage,
   VaultWatchSessionMessage,
 } from "../../types/messages";
@@ -44,6 +46,8 @@ import {
   ICON_RECENT,
   ICON_SEARCH,
   ICON_SETTINGS,
+  ICON_STAR,
+  ICON_STAR_FILLED,
 } from "./icons";
 import { PreviewController } from "./PreviewController";
 import { VaultContextMenu } from "./VaultContextMenu";
@@ -75,6 +79,8 @@ export type VaultPanelPostMessage = (
     | VaultCopyFilePathMessage
     | VaultExportMarkdownMessage
     | VaultRenameSessionMessage
+    | VaultSetStarredMessage
+    | VaultEditTagsMessage
     | VaultWatchSessionMessage
     | OpenVaultSettingsMessage,
 ) => void;
@@ -112,6 +118,10 @@ export interface VaultPanelDeps {
   getInitialFolderOnly?: () => boolean;
   /** Persist the "This folder only" filter state whenever it changes. */
   persistFolderOnly?: (folderOnly: boolean) => void;
+  /** Initial "Starred only" filter state (default false). Read once. */
+  getInitialStarredOnly?: () => boolean;
+  /** Persist the "Starred only" filter state whenever it changes. */
+  persistStarredOnly?: (starredOnly: boolean) => void;
   /** Initial grouping mode (default "recent"). Read once on construction. */
   getInitialGroupMode?: () => GroupMode;
   /** Persist the grouping mode whenever it changes. */
@@ -179,6 +189,7 @@ export class VaultPanel {
   private readonly searchBtnEl: HTMLButtonElement;
   private readonly folderToggleEl: HTMLLabelElement;
   private readonly folderCheckboxEl: HTMLInputElement;
+  private readonly starredToggleEl: HTMLButtonElement;
   /** Built by `composeControls`, which the constructor calls — hence not readonly. */
   private segmentedEl!: HTMLElement;
   /** Level 1 — which body. */
@@ -190,6 +201,7 @@ export class VaultPanel {
   private readonly listEl: HTMLElement;
   private readonly persistCollapsed?: (collapsed: boolean) => void;
   private readonly persistFolderOnly?: (folderOnly: boolean) => void;
+  private readonly persistStarredOnly?: (starredOnly: boolean) => void;
   private readonly persistGroupMode?: (mode: GroupMode) => void;
   private readonly getContextCwd?: () => string | null;
   private readonly animateCollapse?: (apply: () => void) => void;
@@ -217,6 +229,8 @@ export class VaultPanel {
   private searchActive = false;
   /** "This folder only" filter — scope the list to `contextCwd` when on. */
   private folderOnly = false;
+  /** "Starred only" filter — show just the sessions the user starred. */
+  private starredOnly = false;
   /** Grouping mode for the list (client-side, persisted). */
   private groupMode: GroupMode = "recent";
   /** Which body is shown. Independent of `groupMode`, which keeps its meaning. */
@@ -286,6 +300,14 @@ export class VaultPanel {
             }
           }
         : undefined,
+      ...(this.actionsAvailable
+        ? {
+            onToggleStar: (entry: VaultSessionEntry) =>
+              this.postMessage({ type: "vaultSetStarred", entryId: entry.id, starred: !entry.starred }),
+          }
+        : {}),
+      // Filtering is local, so a chip filters on every surface.
+      onTagClick: (tag: string) => this.filterByTag(tag),
     };
     this.preview = new PreviewController({
       postMessage: this.postMessage,
@@ -301,6 +323,7 @@ export class VaultPanel {
     });
     this.persistCollapsed = deps.persistCollapsed;
     this.persistFolderOnly = deps.persistFolderOnly;
+    this.persistStarredOnly = deps.persistStarredOnly;
     this.persistGroupMode = deps.persistGroupMode;
     this.getContextCwd = deps.getContextCwd;
     this.animateCollapse = deps.animateCollapse;
@@ -436,6 +459,19 @@ export class VaultPanel {
     this.folderToggleEl.append(this.folderCheckboxEl, folderText);
     this.folderCheckboxEl.addEventListener("change", () => this.setFolderOnly(this.folderCheckboxEl.checked));
 
+    // "Starred only" — an icon toggle, compact beside the folder filter.
+    this.starredToggleEl = document.createElement("button");
+    this.starredToggleEl.type = "button";
+    this.starredToggleEl.className = "vault-starred-toggle";
+    this.starredToggleEl.setAttribute("aria-label", "Starred only");
+    this.starredToggleEl.addEventListener("click", () => this.setStarredOnly(!this.starredOnly));
+    this.disposers.push(
+      attachTooltip(this.starredToggleEl, {
+        getText: () =>
+          this.starredOnly ? "Showing starred sessions — click to show all" : "Show starred sessions only",
+      }),
+    );
+
     this.statusEl = document.createElement("div");
     this.statusEl.className = "vault-status";
 
@@ -461,6 +497,7 @@ export class VaultPanel {
     // `vault-collapsed` default with any persisted preference.
     this.setCollapsed(deps.getInitialCollapsed?.() ?? true, { persist: false });
     this.setFolderOnly(deps.getInitialFolderOnly?.() ?? true, { persist: false });
+    this.setStarredOnly(deps.getInitialStarredOnly?.() ?? false, { persist: false });
     this.onWorktreeQuery = deps.onWorktreeQuery;
     this.persistView = deps.persistView;
     this.view = this.worktreeBodyEl ? (deps.getInitialView?.() ?? "sessions") : "sessions";
@@ -537,7 +574,10 @@ export class VaultPanel {
     }
     this.groupBarEl = document.createElement("div");
     this.groupBarEl.className = "vault-groupbar";
-    this.groupBarEl.append(this.segmentedEl, this.folderToggleEl);
+    const filters = document.createElement("div");
+    filters.className = "vault-groupbar__filters";
+    filters.append(this.starredToggleEl, this.folderToggleEl);
+    this.groupBarEl.append(this.segmentedEl, filters);
     this.bodyEl.insertBefore(this.groupBarEl, this.bodyEl.firstChild);
     this.wireTablist(this.viewToggleEl);
     this.wireTablist(this.segmentedEl);
@@ -889,6 +929,36 @@ export class VaultPanel {
     this.renderList();
   }
 
+  /** Whether the "Starred only" filter is active. */
+  isStarredOnly(): boolean {
+    return this.starredOnly;
+  }
+
+  /** Set the "Starred only" filter. Persists unless `persist: false`. */
+  setStarredOnly(starredOnly: boolean, opts: { persist?: boolean } = {}): void {
+    this.starredOnly = starredOnly;
+    this.starredToggleEl.classList.toggle("is-active", starredOnly);
+    this.starredToggleEl.setAttribute("aria-pressed", starredOnly ? "true" : "false");
+    this.starredToggleEl.innerHTML = starredOnly ? ICON_STAR_FILLED : ICON_STAR;
+    if (opts.persist !== false) {
+      this.persistStarredOnly?.(starredOnly);
+    }
+    this.renderList();
+  }
+
+  /**
+   * Filter the list to one tag (a row's tag chip): open the search with `#tag`,
+   * the query form that matches tags only.
+   */
+  filterByTag(tag: string): void {
+    this.setView("sessions");
+    this.enterSearch();
+    this.searchInput.value = `#${tag}`;
+    this.query = `#${tag}`.toLowerCase();
+    this.onWorktreeQuery?.(this.query);
+    this.renderList();
+  }
+
   private syncFolderToggleTitle(): void {
     this.folderToggleEl.title =
       this.folderOnly && this.contextCwd
@@ -996,6 +1066,7 @@ export class VaultPanel {
       entriesSignature(this.entries),
       this.query,
       this.folderOnly,
+      this.starredOnly,
       liveCwd ?? null,
       this.groupMode,
       [...this.pinnedEntryIds].sort(),
@@ -1004,16 +1075,32 @@ export class VaultPanel {
     ]);
   }
 
+  /**
+   * `#tag` matches the sessions carrying a tag that starts with it (a bare `#`,
+   * any tagged session). Anything else matches as a substring of the title —
+   * the derived one or the user's rename — the folder, the agent, or a tag.
+   */
   private matchesQuery(entry: VaultSessionEntry): boolean {
     if (!this.query) {
       return true;
     }
+    const tags = (entry.tags ?? []).map((t) => t.toLowerCase());
+    if (this.query.startsWith("#")) {
+      const prefix = this.query.slice(1);
+      return tags.some((t) => t.startsWith(prefix));
+    }
     return (
       entry.title.toLowerCase().includes(this.query) ||
+      (entry.customName?.toLowerCase().includes(this.query) ?? false) ||
       entry.cwd.toLowerCase().includes(this.query) ||
       agentLabel(entry.agent).toLowerCase().includes(this.query) ||
-      entry.agent.toLowerCase().includes(this.query)
+      entry.agent.toLowerCase().includes(this.query) ||
+      tags.some((t) => t.includes(this.query))
     );
+  }
+
+  private matchesStarred(entry: VaultSessionEntry): boolean {
+    return !this.starredOnly || entry.starred === true;
   }
 
   /** When "This folder only" is on, scope to the active pane's cwd subtree. */
@@ -1029,9 +1116,11 @@ export class VaultPanel {
       totalCount: this.entries.length,
       visibleCount,
       folderOnly: this.folderOnly,
+      starredOnly: this.starredOnly,
       contextCwd: this.contextCwd,
       query: this.query,
       onShowAll: () => this.setFolderOnly(false),
+      onShowUnstarred: () => this.setStarredOnly(false),
     });
     this.statusEl.replaceChildren(...(status ? [status] : []));
   }
@@ -1046,7 +1135,7 @@ export class VaultPanel {
       this.contextCwd = this.getContextCwd();
       this.syncFolderToggleTitle();
     }
-    const visible = this.entries.filter((e) => this.matchesFolder(e) && this.matchesQuery(e));
+    const visible = this.entries.filter((e) => this.matchesFolder(e) && this.matchesStarred(e) && this.matchesQuery(e));
     this.renderStatus(visible.length);
 
     // Preserve the scroll position across the rebuild so an auto-refresh push (or
@@ -1083,9 +1172,10 @@ export class VaultPanel {
       // Cap each group at MAX_VISIBLE_PER_GROUP rows; the rest hide behind a
       // "Show N more" button (per group, so one busy agent/folder can't bury
       // the others). Newest-first ordering means the cap keeps the most recent.
-      // Pinned rows lead the group and are never cut, however many there are.
-      const pinnedCount = group.entries.filter((e) => this.pinnedEntryIds.has(e.id)).length;
-      const cap = Math.max(MAX_VISIBLE_PER_GROUP, pinnedCount);
+      // Pinned and starred rows lead the group and are never cut, however many
+      // there are.
+      const leadCount = group.entries.filter((e) => this.pinnedEntryIds.has(e.id) || e.starred).length;
+      const cap = Math.max(MAX_VISIBLE_PER_GROUP, leadCount);
       const expanded = this.expandedGroups.has(group.key);
       const overflow = group.entries.length - cap;
       const shown = expanded || overflow <= 0 ? group.entries : group.entries.slice(0, cap);

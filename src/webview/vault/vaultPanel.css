@@ -36,6 +36,8 @@
   --vault-accent-codex: oklch(0.74 0.09 165);
   --vault-accent-opencode: oklch(0.74 0.1 285);
   --vault-accent-cursor: oklch(0.72 0.11 230);
+  /* The user's star — the theme's own warm accent where it defines one. */
+  --vault-star: var(--vscode-charts-yellow, #e2c08d);
 }
 
 /* Fit the header even when ultra-narrow navigation needs a second row. */
@@ -265,6 +267,37 @@
   cursor: pointer;
 }
 .vault-folder-toggle:focus-within {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+/* The filters share the bar's trailing edge: Starred only, then This folder only. */
+.vault-groupbar__filters {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.vault-starred-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+.vault-starred-toggle:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  color: var(--vscode-foreground);
+}
+.vault-starred-toggle.is-active {
+  color: var(--vault-star);
+}
+.vault-starred-toggle:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: 1px;
 }
@@ -565,6 +598,52 @@
   align-items: center;
   opacity: 0.75;
 }
+/* The user's star — the one mark in the column that is a control. */
+.vault-row-star {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vault-star);
+}
+button.vault-row-star {
+  cursor: pointer;
+}
+button.vault-row-star:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+/* A `#tag` chip. Long tags ellipsize so they cannot push the title out. */
+.vault-row-tag {
+  display: inline-block;
+  max-width: 9em;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-badge-background) 55%, transparent);
+  color: var(--vscode-badge-foreground);
+  font: inherit;
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+button.vault-row-tag {
+  cursor: pointer;
+}
+button.vault-row-tag:hover {
+  background: var(--vscode-badge-background);
+}
+button.vault-row-tag:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+.vault-row-tag--more {
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+}
 .vault-row-source {
   display: inline-flex;
   align-items: center;
@@ -716,6 +795,20 @@
   background: var(--vscode-button-hoverBackground);
 }
 .vault-action--resume:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+/* Hover-revealed Star on an unstarred row: quieter than Resume, its neighbour. */
+.vault-action--star {
+  margin-right: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+}
+.vault-action--star:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  color: var(--vault-star);
+}
+.vault-action--star:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: 1px;
 }
@@ -1009,6 +1102,10 @@ body:has(#tab-bar.visible) .vault-preview--max {
 .vault-preview-icon-btn:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: 1px;
+  opacity: 1;
+}
+.vault-preview-star.is-starred {
+  color: var(--vault-star);
   opacity: 1;
 }
 /* Decorative <svg> icons inside preview buttons must not steal the hover target

@@ -12,7 +12,17 @@ import type { PaneAgentAttention } from "../state/WebviewStateStore";
 import { getAgentAccent, getAgentIcon } from "./agentIcons";
 import { agentLabel, formatRelativeTime, leafSegment } from "./format";
 import type { GroupMode } from "./grouping";
-import { ICON_ARCHIVE, ICON_CHEVRON_DOWN, ICON_FOLDER, ICON_PIN, ICON_PLUS, ICON_RESUME, ICON_SEARCH } from "./icons";
+import {
+  ICON_ARCHIVE,
+  ICON_CHEVRON_DOWN,
+  ICON_FOLDER,
+  ICON_PIN,
+  ICON_PLUS,
+  ICON_RESUME,
+  ICON_SEARCH,
+  ICON_STAR,
+  ICON_STAR_FILLED,
+} from "./icons";
 import { emptyState } from "./renderAtoms";
 
 /** Row interaction handlers — supplied by the panel so the row builder stays pure. */
@@ -21,7 +31,14 @@ export interface VaultRowCallbacks {
   onContextMenu: (entry: VaultSessionEntry, ev: MouseEvent, row: HTMLElement) => void;
   /** Absent on a surface that cannot perform the resume it would offer (B4). */
   onResume?: (entryId: string) => void;
+  /** Star or unstar. Absent → the star is a mark only, and an unstarred row offers none. */
+  onToggleStar?: (entry: VaultSessionEntry) => void;
+  /** A tag chip was clicked — the panel filters to that tag. Absent → chips are marks only. */
+  onTagClick?: (tag: string) => void;
 }
+
+/** Tag chips a row shows before folding the rest into a "+N" chip. */
+export const ROW_TAG_CHIPS = 2;
 
 export function canResumeVaultEntry(entry: VaultSessionEntry): boolean {
   return entry.agent === "cursor" ? entry.source === "cli" && entry.canResume === true : entry.canResume !== false;
@@ -129,6 +146,26 @@ export function renderRow(
   // when there is nothing to mark, to keep the grid's column count stable.
   const marksEl = document.createElement("span");
   marksEl.className = "vault-row-marks";
+  // The user's star leads the marks: it is theirs, and it lasts.
+  if (entry.starred) {
+    row.classList.add("is-starred");
+    marksEl.appendChild(renderStar(entry, true, cb.onToggleStar));
+  }
+  const tags = entry.tags ?? [];
+  for (const tag of tags.slice(0, ROW_TAG_CHIPS)) {
+    marksEl.appendChild(renderTagChip(tag, cb.onTagClick));
+  }
+  if (tags.length > ROW_TAG_CHIPS) {
+    const more = document.createElement("span");
+    more.className = "vault-row-tag vault-row-tag--more";
+    more.textContent = `+${tags.length - ROW_TAG_CHIPS}`;
+    more.dataset.tip = tags
+      .slice(ROW_TAG_CHIPS)
+      .map((t) => `#${t}`)
+      .join(" ");
+    more.setAttribute("aria-label", `${tags.length - ROW_TAG_CHIPS} more tags`);
+    marksEl.appendChild(more);
+  }
   // A pinned tab is running this session. A mark, not a control: the pin
   // belongs to the tab and is changed from the tab's context menu.
   if (opts.pinned) {
@@ -176,8 +213,10 @@ export function renderRow(
   // The row is the focus owner, so it carries the hint too: `closest()` only
   // looks upwards, and a keyboard user never lands on the title span. A nearer
   // descendant hint still wins under the pointer.
-  const rowTip = shownTitle || "(untitled session)";
-  row.dataset.tip = entry.cwd ? `${rowTip}\n${entry.cwd}` : rowTip;
+  const rowTip = [shownTitle || "(untitled session)", entry.cwd, tags.map((t) => `#${t}`).join(" ")]
+    .filter(Boolean)
+    .join("\n");
+  row.dataset.tip = rowTip;
 
   if (!opts.hideCwd) {
     const cwdEl = document.createElement("span");
@@ -209,9 +248,19 @@ export function renderRow(
   // rows without the capability field retain their established Resume action.
   // A surface that cannot perform resume at all supplies no handler (B4).
   const onResume = cb.onResume;
-  if (onResume && canResumeVaultEntry(entry)) {
-    const actions = document.createElement("span");
-    actions.className = "vault-row-actions";
+  const resumable = onResume !== undefined && canResumeVaultEntry(entry);
+  // An unstarred row offers its star on hover, beside Resume; a starred one
+  // already shows it among the marks.
+  const offerStar = !entry.starred && cb.onToggleStar !== undefined;
+  if (!resumable && !offerStar) {
+    return row;
+  }
+  const actions = document.createElement("span");
+  actions.className = "vault-row-actions";
+  if (offerStar) {
+    actions.appendChild(renderStar(entry, false, cb.onToggleStar));
+  }
+  if (onResume && resumable) {
     const resumeBtn = document.createElement("button");
     resumeBtn.type = "button";
     resumeBtn.className = "vault-action vault-action--resume";
@@ -223,10 +272,71 @@ export function renderRow(
       onResume(entry.id);
     });
     actions.appendChild(resumeBtn);
-    row.appendChild(actions);
   }
-
+  row.appendChild(actions);
   return row;
+}
+
+/**
+ * The star: a button that flips it when the surface can, else a plain mark.
+ * Its clicks stop here — the row behind it opens the preview.
+ */
+function renderStar(
+  entry: VaultSessionEntry,
+  starred: boolean,
+  onToggle: ((entry: VaultSessionEntry) => void) | undefined,
+): HTMLElement {
+  const label = starred ? "Starred" : "Star";
+  if (!onToggle) {
+    const mark = document.createElement("span");
+    mark.className = "vault-row-star is-starred";
+    mark.dataset.tip = "Starred";
+    mark.setAttribute("aria-label", label);
+    setIcon(mark, ICON_STAR_FILLED);
+    return mark;
+  }
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = starred ? "vault-row-star is-starred" : "vault-action vault-action--star";
+  btn.dataset.tip = starred ? "Starred — click to unstar" : "Star — keep this session at the top";
+  btn.setAttribute("aria-label", starred ? "Unstar session" : "Star session");
+  btn.setAttribute("aria-pressed", starred ? "true" : "false");
+  setIcon(btn, starred ? ICON_STAR_FILLED : ICON_STAR);
+  btn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    onToggle(entry);
+  });
+  btn.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      // The row turns these keys into a preview; the button keeps them.
+      ev.stopPropagation();
+    }
+  });
+  return btn;
+}
+
+/** One `#tag` chip: a filter button when the surface supplies one, else a mark. */
+function renderTagChip(tag: string, onClick: ((tag: string) => void) | undefined): HTMLElement {
+  const chip: HTMLElement = document.createElement(onClick ? "button" : "span");
+  chip.className = "vault-row-tag";
+  // Session-adjacent user text: textContent only.
+  chip.textContent = `#${tag}`;
+  if (onClick) {
+    (chip as HTMLButtonElement).type = "button";
+    chip.dataset.tip = `Show sessions tagged #${tag}`;
+    chip.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      onClick(tag);
+    });
+    chip.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.stopPropagation();
+      }
+    });
+  } else {
+    chip.dataset.tip = `#${tag}`;
+  }
+  return chip;
 }
 
 /**
@@ -415,10 +525,14 @@ export function buildListStatus(args: {
   totalCount: number;
   visibleCount: number;
   folderOnly: boolean;
+  /** "Starred only" is on. Absent reads as off. */
+  starredOnly?: boolean;
   contextCwd: string | null;
   query: string;
   /** Turns the folder filter off — offered when the filter alone hides everything. */
   onShowAll?: () => void;
+  /** Turns the starred filter off — offered when it is what leaves the list empty. */
+  onShowUnstarred?: () => void;
 }): HTMLElement | null {
   if (args.totalCount === 0) {
     return emptyState(
@@ -431,6 +545,17 @@ export function buildListStatus(args: {
     // Distinct no-match state (NOT the empty state) — actionable hint. With no
     // query, the folder filter alone hides every entry, so all of them live in
     // other folders: say how many and offer the way back to them.
+    // The starred filter is named first: with it on, an empty list most often
+    // means nothing is starred (here) yet, whatever the folder filter says.
+    if (args.starredOnly && !args.query) {
+      const here = args.folderOnly && args.contextCwd;
+      return emptyState(
+        ICON_STAR,
+        here ? "No starred sessions in this folder" : "No starred sessions",
+        "Star a session from its row or its right-click menu to keep it here.",
+        args.onShowUnstarred ? { label: "Show all sessions", onClick: args.onShowUnstarred } : undefined,
+      );
+    }
     if (args.folderOnly && args.contextCwd && !args.query) {
       const n = args.totalCount;
       return emptyState(

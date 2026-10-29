@@ -259,6 +259,13 @@ export interface VaultSessionEntry {
    * stays agent-derived. When present the webview renders `customName ?? title`.
    */
   customName?: string;
+  /**
+   * The user starred this session, overlaid at serve time from `VaultMarksRegistry`.
+   * Unlike a tab pin it outlives every tab. Like `customName`, never cached.
+   */
+  starred?: boolean;
+  /** The user's tags on this session, overlaid like `starred`. Absent when none. */
+  tags?: string[];
 }
 
 /**

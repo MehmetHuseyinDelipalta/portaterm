@@ -22,7 +22,7 @@ import { FloatingPreviewShell } from "./FloatingPreviewShell";
 import type { ForkPoint } from "./forkPoint";
 import { agentLabel } from "./format";
 import { mountMessageActions } from "./messageActions";
-import { buildPreviewHeader as buildPreviewHeaderDom } from "./previewHeader";
+import { buildPreviewHeader as buildPreviewHeaderDom, syncPreviewStar } from "./previewHeader";
 import {
   type BoardSelection,
   type NestedInvocationFallback,
@@ -235,6 +235,11 @@ export class PreviewController {
       if (titleEl) {
         titleEl.textContent = previewTitleOf(entry);
       }
+    }
+    // A star toggled here or on the row comes back the same way.
+    const starBtn = this.headerEl?.querySelector<HTMLElement>(".vault-preview-star");
+    if (starBtn) {
+      syncPreviewStar(starBtn, entry.starred === true);
     }
   }
 
@@ -682,6 +687,19 @@ export class PreviewController {
               onResume: () => {
                 this.deps.postMessage({ type: "vaultResume", entryId: entry.id });
                 this.closePreview();
+              },
+            }
+          : {}),
+        ...(this.actionsAvailable
+          ? {
+              star: {
+                starred: entry.starred === true,
+                // Read at click time: the list push after a toggle updates the
+                // active entry without rebuilding this header.
+                onToggle: () => {
+                  const current = this.activePreviewEntry?.id === entry.id ? this.activePreviewEntry : entry;
+                  this.deps.postMessage({ type: "vaultSetStarred", entryId: entry.id, starred: !current.starred });
+                },
               },
             }
           : {}),

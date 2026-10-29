@@ -10,7 +10,15 @@
 
 import { attachTooltip } from "../ui/Tooltip";
 import type { AgentIcon } from "./agentIcons";
-import { ICON_CLOSE, ICON_EXPORT, ICON_MAXIMIZE, ICON_RESTORE, ICON_RESUME } from "./icons";
+import {
+  ICON_CLOSE,
+  ICON_EXPORT,
+  ICON_MAXIMIZE,
+  ICON_RESTORE,
+  ICON_RESUME,
+  ICON_STAR,
+  ICON_STAR_FILLED,
+} from "./icons";
 
 export interface PreviewHeaderModel {
   /** Brand badge: the resolved icon, or a text fallback when none. */
@@ -31,6 +39,11 @@ export interface PreviewHeaderCallbacks {
   onResume?: () => void;
   /** Render the Export as Markdown button only when provided (vault only). */
   onExport?: () => void;
+  /**
+   * Render the star toggle only when provided (vault only). `starred` is the
+   * state it opens with; {@link syncPreviewStar} keeps it current afterwards.
+   */
+  star?: { starred: boolean; onToggle: () => void };
   /**
    * Double-click the title to rename. Vault only — the subagent popup supplies
    * nothing and so gets no listener at all. Double-click rather than click
@@ -90,6 +103,14 @@ export function buildPreviewHeader(
     disposers.push(attachTooltip(resumeBtn));
   }
 
+  if (cb.star) {
+    const { onToggle } = cb.star;
+    const starBtn = iconButton("vault-preview-star", "Star session", ICON_STAR, onToggle);
+    syncPreviewStar(starBtn, cb.star.starred);
+    actions.appendChild(starBtn);
+    disposers.push(attachTooltip(starBtn, { getText: () => starBtn.getAttribute("aria-label") ?? "" }));
+  }
+
   if (cb.onExport) {
     const exportBtn = iconButton("vault-preview-export", "Export as Markdown", ICON_EXPORT, cb.onExport);
     actions.appendChild(exportBtn);
@@ -130,6 +151,19 @@ export function buildPreviewHeader(
     header.appendChild(model.meta);
   }
   return { element: header, disposers };
+}
+
+/**
+ * Point the header's star button at `starred`: icon, pressed state and label.
+ * The list push after a toggle lands here rather than rebuilding the header.
+ */
+export function syncPreviewStar(btn: HTMLElement, starred: boolean): void {
+  const label = starred ? "Unstar session" : "Star session";
+  btn.classList.toggle("is-starred", starred);
+  btn.setAttribute("aria-pressed", starred ? "true" : "false");
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+  btn.innerHTML = starred ? ICON_STAR_FILLED : ICON_STAR;
 }
 
 /** A `.vault-preview-icon-btn` with svg + aria/title; click wired. */

@@ -62,6 +62,7 @@ import {
 import type { VaultAgentAdapter, VaultWatchTarget } from "./VaultAgentAdapter";
 import type { VaultCacheStore } from "./VaultCacheStore";
 import { normalizeVaultCustomName, type VaultCustomNameRegistry } from "./VaultCustomNameRegistry";
+import type { VaultEntryMarks, VaultMarksRegistry } from "./VaultMarksRegistry";
 
 // Agent identity is a single source of truth in `registry.ts`: `VaultAgentId`
 // is derived from `VAULT_AGENT_IDS`, and the keyed reader records below are
@@ -150,6 +151,11 @@ export interface VaultServiceDeps {
    * the cache. When omitted, no overlay is applied.
    */
   customNames?: VaultCustomNameRegistry;
+  /**
+   * The user's stars and tags. When provided, list results are overlaid with
+   * `starred` / `tags` at serve time, the same way as `customName`.
+   */
+  marks?: VaultMarksRegistry;
   /**
    * Per-agent native title writers (write-vault-rename-to-store D1). Only opencode
    * and codex have one; claude is absent (no writable title field). Injectable for
@@ -284,6 +290,7 @@ export class VaultService {
   private readonly adapters: Record<VaultAgentId, VaultAgentAdapter>;
   private readonly cacheStore?: VaultCacheStore;
   private readonly customNames?: VaultCustomNameRegistry;
+  private readonly marks?: VaultMarksRegistry;
   private readonly cursorReaderOptions: CursorCombinedReaderOptions;
   private readonly resolveCursorLaunchTargetFn: (
     sessionId: string,
@@ -395,6 +402,7 @@ export class VaultService {
     ) as Record<VaultAgentId, VaultAgentAdapter>;
     this.cacheStore = deps.cacheStore;
     this.customNames = deps.customNames;
+    this.marks = deps.marks;
     this.resolveCursorLaunchTargetFn = deps.resolveCursorLaunchTargetFn ?? resolveCursorLaunchTarget;
     this.verifyCursorLaunchTargetFn = deps.verifyCursorLaunchTargetFn ?? verifyCursorLaunchTarget;
   }
@@ -411,6 +419,26 @@ export class VaultService {
   /** The user custom name a served list would overlay on this entry, if any. */
   customNameOf(entryId: string): string | undefined {
     return this.customNames?.get(entryId);
+  }
+
+  /** Star or unstar a session. No-op when the service was built without marks. */
+  setStarred(entryId: string, starred: boolean): void {
+    this.marks?.setStarred(entryId, starred);
+  }
+
+  /** Replace a session's tags; an empty list clears them. */
+  setTags(entryId: string, tags: readonly string[]): void {
+    this.marks?.setTags(entryId, tags);
+  }
+
+  /** The stars and tags a served list would overlay on this entry, if any. */
+  marksOf(entryId: string): VaultEntryMarks | undefined {
+    return this.marks?.get(entryId);
+  }
+
+  /** Every tag in use on any session — what the tag picker offers to reuse. */
+  knownTags(): string[] {
+    return this.marks?.knownTags() ?? [];
   }
 
   /**
@@ -435,21 +463,29 @@ export class VaultService {
   }
 
   /**
-   * Overlay user custom names onto a served list WITHOUT mutating the cache: only
-   * renamed entries are cloned (`{ ...entry, customName }`); the rest pass through
-   * by reference, and `this.mem.entries` / the persisted doc are never touched.
+   * Overlay the user's own marks — custom names, stars, tags — onto a served list
+   * WITHOUT mutating the cache: only marked entries are cloned
+   * (`{ ...entry, customName, starred, tags }`); the rest pass through by
+   * reference, and `this.mem.entries` / the persisted doc are never touched.
    */
-  private overlayCustomNames(result: VaultListResult): VaultListResult {
-    if (!this.customNames) {
-      return result;
-    }
-    const names = this.customNames.all();
-    if (Object.keys(names).length === 0) {
+  private overlayUserMarks(result: VaultListResult): VaultListResult {
+    const names = this.customNames?.all() ?? {};
+    const marks = this.marks?.all() ?? {};
+    if (Object.keys(names).length === 0 && Object.keys(marks).length === 0) {
       return result;
     }
     const entries = result.entries.map((e) => {
       const name = names[e.id];
-      return name ? { ...e, customName: name } : e;
+      const mark = marks[e.id];
+      if (!name && !mark) {
+        return e;
+      }
+      return {
+        ...e,
+        ...(name ? { customName: name } : {}),
+        ...(mark?.starred ? { starred: true } : {}),
+        ...(mark?.tags ? { tags: [...mark.tags] } : {}),
+      };
     });
     return { entries, unreadable: result.unreadable };
   }
@@ -557,7 +593,7 @@ export class VaultService {
    */
   listCached(): VaultListResult | null {
     this.ensureMemLoaded();
-    return this.mem ? this.overlayCustomNames({ entries: this.mem.entries, unreadable: this.mem.unreadable }) : null;
+    return this.mem ? this.overlayUserMarks({ entries: this.mem.entries, unreadable: this.mem.unreadable }) : null;
   }
 
   /**
@@ -657,7 +693,7 @@ export class VaultService {
       this.mem = this.mem ? withAgentSegment(this.mem, doc, hint.agent) : doc;
       this.memLoaded = true;
       await this.persist(this.mem);
-      return this.overlayCustomNames({ entries: this.mem.entries, unreadable: this.mem.unreadable });
+      return this.overlayUserMarks({ entries: this.mem.entries, unreadable: this.mem.unreadable });
     })();
     this.lanes.set(hint.agent, run);
     const clear = () => {
@@ -868,7 +904,7 @@ export class VaultService {
       this.memLoaded = true;
       await this.persist(merged);
       // Overlay AFTER persistence so the cache stays agent-derived (D1).
-      return this.overlayCustomNames(
+      return this.overlayUserMarks(
         merged === doc ? result : { entries: merged.entries, unreadable: merged.unreadable },
       );
     })();

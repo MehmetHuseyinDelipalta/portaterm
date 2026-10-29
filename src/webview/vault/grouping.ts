@@ -33,9 +33,11 @@ function byModifiedDesc(a: VaultSessionEntry, b: VaultSessionEntry): number {
  * entries within every group are ordered by modified desc.
  *
  * `pinned` holds the entry ids pinned tabs are running, `open` the ids any live
- * pane is running. Pinned rows lead their group, open rows follow them, and a
- * group is ranked by the highest band it holds; the newest-first order still
- * applies within each band.
+ * pane is running. Pinned rows lead their group, then the user's starred rows,
+ * then open ones, and a group is ranked by the highest band it holds; the
+ * newest-first order still applies within each band. A star outranks an open
+ * pane because it is the user's lasting choice, where open is only where a
+ * session happens to run right now.
  */
 export function groupEntries(
   entries: VaultSessionEntry[],
@@ -43,8 +45,9 @@ export function groupEntries(
   pinned: ReadonlySet<string> = new Set(),
   open: ReadonlySet<string> = new Set(),
 ): VaultGroup[] {
-  // 2 = pinned, 1 = open in a live pane, 0 = neither.
-  const band = (entry: VaultSessionEntry) => (pinned.has(entry.id) ? 2 : open.has(entry.id) ? 1 : 0);
+  // 3 = pinned, 2 = starred, 1 = open in a live pane, 0 = none of these.
+  const band = (entry: VaultSessionEntry) =>
+    pinned.has(entry.id) ? 3 : entry.starred ? 2 : open.has(entry.id) ? 1 : 0;
   const sorted = [...entries].sort((a, b) => band(b) - band(a) || byModifiedDesc(a, b));
 
   if (mode === "recent") {

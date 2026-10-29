@@ -20,6 +20,9 @@ import {
   ICON_RENAME,
   ICON_RESUME,
   ICON_REVEAL,
+  ICON_STAR,
+  ICON_STAR_FILLED,
+  ICON_TAG,
   ICON_TERMINAL,
 } from "./icons";
 import type { VaultPanelPostMessage } from "./VaultPanel";
@@ -83,6 +86,16 @@ export class VaultContextMenu {
         label: "Rename",
         icon: ICON_RENAME,
         act: () => this.beginRename(entry, row),
+      },
+      {
+        label: entry.starred ? "Unstar" : "Star",
+        icon: entry.starred ? ICON_STAR_FILLED : ICON_STAR,
+        act: () => this.postMessage({ type: "vaultSetStarred", entryId: entry.id, starred: !entry.starred }),
+      },
+      {
+        label: "Edit Tags…",
+        icon: ICON_TAG,
+        act: () => this.postMessage({ type: "vaultEditTags", entryId: entry.id }),
       },
       "sep",
       {

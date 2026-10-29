@@ -52,3 +52,10 @@ export const ICON_MAXIMIZE =
   '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2.5h4v4"/><path d="M13.5 2.5l-4.5 4.5"/><path d="M6.5 13.5h-4v-4"/><path d="M2.5 13.5l4.5-4.5"/></svg>';
 export const ICON_RESTORE =
   '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3l-4 4m0-4v4h4"/><path d="M3 13l4-4m0 4v-4H3"/></svg>';
+// A star is the user's own lasting mark on a session (a pin lasts as long as its tab).
+export const ICON_STAR =
+  '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.9l1.85 3.85 4.2.55-3.07 2.92.78 4.17L8 11.37l-3.76 2.02.78-4.17L1.95 6.3l4.2-.55z"/></svg>';
+export const ICON_STAR_FILLED =
+  '<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.9l1.85 3.85 4.2.55-3.07 2.92.78 4.17L8 11.37l-3.76 2.02.78-4.17L1.95 6.3l4.2-.55z"/></svg>';
+export const ICON_TAG =
+  '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><path d="M1.75 2.75v4.5l7 7 5-5-7-7h-4.5a.5.5 0 0 0-.5.5z"/><circle cx="4.75" cy="5.25" r="1" fill="currentColor" stroke="none"/></svg>';

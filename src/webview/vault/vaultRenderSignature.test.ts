@@ -68,6 +68,14 @@ describe("entriesSignature", () => {
     expect(entriesSignature([entry({ source: "ide" })])).not.toBe(entriesSignature([entry({ source: "cli" })]));
   });
 
+  it("changes when the star or the tags change (row marks and order)", () => {
+    const base = entriesSignature([entry()]);
+    expect(entriesSignature([entry({ starred: true })])).not.toBe(base);
+    expect(entriesSignature([entry({ tags: ["a"] })])).not.toBe(base);
+    expect(entriesSignature([entry({ tags: ["a", "b"] })])).not.toBe(entriesSignature([entry({ tags: ["b", "a"] })]));
+    expect(entriesSignature([entry({ starred: false, tags: [] })])).toBe(base);
+  });
+
   it("changes when the order changes", () => {
     const a = entry({ id: "claude:c1" });
     const b = entry({ id: "codex:x1", agent: "codex" });

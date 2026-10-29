@@ -26,6 +26,10 @@ export function entriesSignature(entries: readonly VaultSessionEntry[]): string 
         // signature or the no-op guard would mask the change (enhance-vault-sessions D1).
         e.customName ?? "",
         e.gitBranch ?? "",
+        // Stars and tags are overlays too: a star moves the row and marks it, a
+        // tag adds a chip — neither touches any field above.
+        e.starred ? "1" : "0",
+        JSON.stringify(e.tags ?? []),
         e.cwd,
         String(e.modified),
         // Explicit false hides Resume; undefined preserves legacy resume behavior.

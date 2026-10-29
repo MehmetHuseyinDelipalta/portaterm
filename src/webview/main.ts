@@ -1440,6 +1440,8 @@ function handleInit(msg: InitMessage): void {
       // "This folder only" scope — default on; only an explicit opt-out shows all.
       getInitialFolderOnly: () => store.getState().vaultFolderOnly !== false,
       persistFolderOnly: (folderOnly) => store.updateState({ vaultFolderOnly: folderOnly }),
+      getInitialStarredOnly: () => store.getState().vaultStarredOnly === true,
+      persistStarredOnly: (starredOnly) => store.updateState({ vaultStarredOnly: starredOnly }),
       // Grouping mode — default "recent". Persisted across reloads.
       getInitialGroupMode: () => store.getState().vaultGroupMode ?? "recent",
       persistGroupMode: (mode) => store.updateState({ vaultGroupMode: mode }),

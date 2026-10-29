@@ -234,7 +234,12 @@ describe("VaultPanel row rendering (redesign 4_1)", () => {
     const host = createHost();
     const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
     panel.render(result([entry({ id: "claude:a" })]));
-    expect(host.querySelectorAll(".vault-row-actions button")).toHaveLength(1);
+    // The hover strip also offers the star, which launches nothing.
+    const actions = Array.from(host.querySelectorAll<HTMLElement>(".vault-row-actions button"));
+    expect(actions.map((b) => b.className)).toEqual([
+      "vault-action vault-action--star",
+      "vault-action vault-action--resume",
+    ]);
     expect(host.querySelectorAll(".vault-action--resume")).toHaveLength(1);
   });
 
@@ -770,6 +775,8 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
     expect(labels).toEqual([
       "Resume",
       "Rename",
+      "Star",
+      "Edit Tags…",
       "Copy Resume Command",
       "Export as Markdown…",
       "Open Working Directory",
@@ -784,7 +791,7 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
     const panel = new VaultPanel({ host, postMessage: (m) => posted.push(m), getInitialCollapsed: () => false });
     panel.render(result([entry({ id: "cursor:a", agent: "cursor", canResume: false })]));
     const labels = Array.from(openMenu(host)?.querySelectorAll("button") ?? []).map((b) => b.textContent);
-    expect(labels).toEqual(["Rename", "Export as Markdown…", "Open Working Directory"]);
+    expect(labels).toEqual(["Rename", "Star", "Edit Tags…", "Export as Markdown…", "Open Working Directory"]);
     expect(labels).not.toContain("Resume");
     expect(labels).not.toContain("Copy Resume Command");
     Array.from(host.querySelectorAll<HTMLButtonElement>(".vault-context-menu button"))
@@ -802,6 +809,8 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
     const fileLabels = Array.from(host.querySelectorAll(".vault-context-menu button")).map((b) => b.textContent);
     expect(fileLabels).toEqual([
       "Rename",
+      "Star",
+      "Edit Tags…",
       "Open",
       "Reveal in Finder",
       "Copy File Path",

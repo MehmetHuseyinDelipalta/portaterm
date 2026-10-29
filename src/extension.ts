@@ -104,6 +104,7 @@ import { formatEntryId, VAULT_AGENT_IDS } from "./vault/types";
 import { VaultCacheStore } from "./vault/VaultCacheStore";
 import { VaultCustomNameRegistry } from "./vault/VaultCustomNameRegistry";
 import { VaultLauncher } from "./vault/VaultLauncher";
+import { VaultMarksRegistry } from "./vault/VaultMarksRegistry";
 import { VaultService } from "./vault/VaultService";
 import { probeAdopt } from "./worktree/adoptProbe";
 import { type AdoptFs, adoptWorktree } from "./worktree/adoptWorktree";
@@ -697,7 +698,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // User custom names for vault sessions (enhance-vault-sessions D1). Machine-global,
   // like the cache, and applied as a serve-time overlay — it NEVER writes agent files.
   const vaultCustomNames = new VaultCustomNameRegistry(context.globalState);
-  const vaultService = new VaultService({ cacheStore: vaultCacheStore, customNames: vaultCustomNames });
+  // Stars and tags: the user's own marks on a session, persisted the same way. A
+  // tab pin, by contrast, lasts only while its tab runs the session.
+  const vaultMarks = new VaultMarksRegistry(context.globalState);
+  const vaultService = new VaultService({
+    cacheStore: vaultCacheStore,
+    customNames: vaultCustomNames,
+    marks: vaultMarks,
+  });
 
   // Worktree tree — one host per window, shared by the sidebar / panel / editor
   // surfaces so freshness costs one set of git calls and watchers regardless of
@@ -2046,6 +2054,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   sidebarProvider.onVaultRenamed = onVaultRenamed;
   panelProvider.onVaultRenamed = onVaultRenamed;
   TerminalEditorProvider.setVaultRenameNotifier(onVaultRenamed);
+  // A star or tag change is an overlay change, so every surface re-serves the
+  // cached list — the one that made it as well, since it waits on this push.
+  const disposeVaultMarksListener = vaultMarks.onDidChange(() => {
+    for (const surface of vaultSurfaces()) {
+      surface.refreshVaultAfterRename(false);
+    }
+  });
   sessionManager.onTabRenamed = (tabId, customName) => {
     const panes = sessionManager
       .panesOfTab(tabId)
@@ -2071,6 +2086,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       sidebarProvider.onVaultRenamed = undefined;
       panelProvider.onVaultRenamed = undefined;
       TerminalEditorProvider.setVaultRenameNotifier(null);
+      disposeVaultMarksListener();
       sessionManager.onTabRenamed = undefined;
       refreshPinnedVaultSessions = undefined;
       sessionManager.onPinnedChange = undefined;

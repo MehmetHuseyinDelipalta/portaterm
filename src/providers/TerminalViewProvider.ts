@@ -39,6 +39,7 @@ import { isValidPreviewRequest } from "./previewValidation";
 import { signalPaneEngaged, signalPaneInput, signalPanesPresented, signalSurfaceReady } from "./surfaceSignals";
 import type { VaultWatchClient, VaultWatchCoordinator } from "./VaultWatchCoordinator";
 import { exportVaultSessionMarkdown, vscodeVaultExportDeps } from "./vaultExportMarkdown";
+import { editVaultTags, vscodeVaultTagsDeps } from "./vaultTags";
 import type { WorktreeHost, WorktreeSurface } from "./WorktreeHost";
 import { getTerminalHtml } from "./webviewHtml";
 import {
@@ -1100,6 +1101,22 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         case "vaultRenameSession":
           if (typeof message.entryId === "string" && typeof message.name === "string") {
             void this.handleVaultRenameSession(message.entryId, message.name, webviewView.webview);
+          }
+          break;
+
+        // Stars and tags persist host-side; the registry's change event pushes
+        // the re-overlaid list to every vault surface, this one included.
+        case "vaultSetStarred":
+          if (typeof message.entryId === "string" && typeof message.starred === "boolean") {
+            this.vaultService?.setStarred(message.entryId, message.starred);
+          }
+          break;
+
+        case "vaultEditTags":
+          if (typeof message.entryId === "string" && this.vaultService) {
+            void editVaultTags(message.entryId, vscodeVaultTagsDeps(this.vaultService)).catch((err) =>
+              console.error("[Portaterm] Failed to edit vault tags:", err),
+            );
           }
           break;
 

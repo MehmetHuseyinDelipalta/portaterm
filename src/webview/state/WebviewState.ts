@@ -88,6 +88,8 @@ export interface WebviewState {
    * so the scope choice survives reloads. Absent → on (scoped).
    */
   vaultFolderOnly?: boolean;
+  /** Vault "Starred only" filter. Absent → off. */
+  vaultStarredOnly?: boolean;
   /**
    * Vault grouping mode — "recent" (flat), "agent", or "folder". Persisted so
    * the chosen grouping survives reloads. Absent → "recent" (default).

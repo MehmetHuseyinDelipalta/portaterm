@@ -74,6 +74,8 @@ describe("vault context menu items", () => {
     expect(labels(host)).toEqual([
       "Resume",
       "Rename",
+      "Star",
+      "Edit Tags…",
       "Open",
       "Reveal in Finder",
       "Copy File Path",

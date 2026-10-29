@@ -1484,6 +1484,112 @@ describe("TerminalViewProvider: vaultCopyResumeCommand", () => {
   });
 });
 
+// ─── vaultSetStarred / vaultEditTags ────────────────────────────────
+
+describe("TerminalViewProvider: vault stars and tags", () => {
+  afterEach(() => {
+    delete (vscodeMockWindow as { createQuickPick?: unknown }).createQuickPick;
+  });
+
+  function wireMarks(vaultService: Partial<VaultService>): { sm: SessionManager; send: (msg: unknown) => void } {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider(
+      { fsPath: "/mock/extension" } as vscode.Uri,
+      sm,
+      "sidebar",
+      null,
+      null,
+      vaultService as VaultService,
+    );
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    return {
+      sm,
+      send: (msg: unknown) => {
+        for (const handler of messageHandlers) {
+          handler(msg);
+        }
+      },
+    };
+  }
+
+  it("stars and unstars the named entry", () => {
+    const setStarred = vi.fn();
+    const { sm, send } = wireMarks({ setStarred });
+    send({ type: "vaultSetStarred", entryId: "claude:s1", starred: true });
+    send({ type: "vaultSetStarred", entryId: "claude:s1", starred: false });
+    expect(setStarred.mock.calls).toEqual([
+      ["claude:s1", true],
+      ["claude:s1", false],
+    ]);
+    sm.dispose();
+  });
+
+  it("ignores a malformed star message", () => {
+    const setStarred = vi.fn();
+    const { sm, send } = wireMarks({ setStarred });
+    send({ type: "vaultSetStarred", entryId: "claude:s1", starred: "yes" });
+    send({ type: "vaultSetStarred", entryId: 7, starred: true });
+    send({ type: "vaultSetStarred", starred: true });
+    expect(setStarred).not.toHaveBeenCalled();
+    sm.dispose();
+  });
+
+  it("opens the tag picker over the entry's tags and saves what is accepted", async () => {
+    const listeners: Record<string, Array<(...args: unknown[]) => unknown>> = {};
+    const on = (name: string) => (l: (...args: unknown[]) => unknown) => {
+      (listeners[name] ??= []).push(l);
+      return { dispose: () => {} };
+    };
+    const qp = {
+      title: undefined,
+      placeholder: undefined,
+      canSelectMany: false,
+      items: [] as Array<{ label: string }>,
+      selectedItems: [] as Array<{ label: string }>,
+      value: "",
+      onDidChangeValue: on("value"),
+      onDidChangeSelection: on("selection"),
+      onDidAccept: on("accept"),
+      onDidHide: on("hide"),
+      show: vi.fn(),
+      hide: () => {
+        for (const l of listeners.hide ?? []) {
+          l();
+        }
+      },
+      dispose: vi.fn(),
+    };
+    (vscodeMockWindow as { createQuickPick?: unknown }).createQuickPick = () => qp;
+    const setTags = vi.fn();
+    const { sm, send } = wireMarks({
+      marksOf: () => ({ tags: ["review"] }),
+      knownTags: () => ["infra", "review"],
+      setTags,
+    });
+    send({ type: "vaultEditTags", entryId: "claude:s1" });
+    await vi.waitFor(() => expect(qp.show).toHaveBeenCalled());
+    expect(qp.items.map((i) => i.label)).toEqual(["review", "infra"]);
+    expect(qp.selectedItems.map((i) => i.label)).toEqual(["review"]);
+    qp.selectedItems = qp.items.slice();
+    for (const l of listeners.accept ?? []) {
+      l();
+    }
+    await vi.waitFor(() => expect(setTags).toHaveBeenCalledWith("claude:s1", ["review", "infra"]));
+    expect(qp.dispose).toHaveBeenCalled();
+    sm.dispose();
+  });
+
+  it("ignores a tag edit without an entry id", () => {
+    const createQuickPick = vi.fn();
+    (vscodeMockWindow as { createQuickPick?: unknown }).createQuickPick = createQuickPick;
+    const { sm, send } = wireMarks({ marksOf: () => undefined, knownTags: () => [], setTags: vi.fn() });
+    send({ type: "vaultEditTags" });
+    expect(createQuickPick).not.toHaveBeenCalled();
+    sm.dispose();
+  });
+});
+
 // ─── vaultExportMarkdown ────────────────────────────────────────────
 
 describe("TerminalViewProvider: vaultExportMarkdown", () => {
