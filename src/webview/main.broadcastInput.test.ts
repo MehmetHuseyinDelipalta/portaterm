@@ -10,6 +10,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { getTerminalHtml } from "../providers/webviewHtml";
 
+// Every test re-imports the whole webview bundle entry; under a loaded full-suite
+// run that cold import alone can pass the 5s default (seen at load ~11).
+vi.setConfig({ testTimeout: 30_000 });
+
 // ─── xterm stand-in ─────────────────────────────────────────────────
 // Records each terminal's onData and private onUserInput listeners so a test
 // can emit "typed" chunks (user-input flag, then data) and xterm's own replies.
