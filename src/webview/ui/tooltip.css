@@ -21,3 +21,9 @@
   border: 1px solid var(--vscode-editorHoverWidget-border, #454545);
   box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
 }
+
+.webview-tooltip--multiline {
+  max-width: 420px;
+  white-space: pre-line;
+  font-variant-numeric: tabular-nums;
+}

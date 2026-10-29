@@ -67,6 +67,8 @@ export interface CursorNormalizedRecord {
   messageCount: number;
   /** Non-subagent tool CALLS only. */
   toolCount: number;
+  /** The name of each call `toolCount` counted, in order. */
+  toolNames: string[];
   subagentCount: number;
 }
 
@@ -83,11 +85,12 @@ const EMPTY: CursorNormalizedRecord = {
   textChars: 0,
   messageCount: 0,
   toolCount: 0,
+  toolNames: [],
   subagentCount: 0,
 };
 
 export function emptyCursorRecord(): CursorNormalizedRecord {
-  return { ...EMPTY, timeline: [], activity: [], subagentCalls: [], toolResults: [] };
+  return { ...EMPTY, timeline: [], activity: [], subagentCalls: [], toolResults: [], toolNames: [] };
 }
 
 /** First `<name>…</name>` body, by indexOf scan (no regex over untrusted text). */
@@ -484,6 +487,7 @@ export function normalizeCursorRecord(value: unknown): CursorNormalizedRecord | 
   }
 
   timeline.push(...activity);
+  const toolNames = activity.flatMap((step) => (step.kind === "tool" ? [step.tool] : []));
   return {
     timeline,
     activity,
@@ -495,7 +499,8 @@ export function normalizeCursorRecord(value: unknown): CursorNormalizedRecord | 
       activity.reduce((sum, step) => sum + stepChars(step), 0) +
       toolResults.reduce((sum, result) => sum + result.result.length, 0),
     messageCount,
-    toolCount: activity.filter((step) => step.kind === "tool").length,
+    toolCount: toolNames.length,
+    toolNames,
     subagentCount: activity.filter((step) => step.kind === "subagent").length,
   };
 }

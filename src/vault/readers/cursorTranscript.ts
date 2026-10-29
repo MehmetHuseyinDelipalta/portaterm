@@ -4,7 +4,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { provesAbsence } from "../../utils/fsPresence";
-import type { VaultActivityStep, VaultTimelineItem } from "../types";
+import type { VaultActivityStep, VaultSessionStats, VaultTimelineItem } from "../types";
 import {
   type CursorNormalizedRecord,
   collectCursorAgentTypes,
@@ -15,6 +15,7 @@ import {
   normalizeCursorRecord,
 } from "./cursorNormalization";
 import { type CursorPathFsDeps, isSafeCursorChatId } from "./cursorPaths";
+import { createToolTally, toolStats } from "./toolTally";
 
 const READ_CHUNK_BYTES = 256 * 1024;
 const MAX_READ_BYTES = 32 * 1024 * 1024;
@@ -52,7 +53,7 @@ export type CursorTranscriptResult =
       status: "ok";
       timeline: VaultTimelineItem[];
       recentActivity: VaultActivityStep[];
-      stats: { messageCount: number; toolCount: number; subagentCount: number };
+      stats: Pick<VaultSessionStats, "messageCount" | "toolCount" | "tools" | "subagentCount">;
       truncated: boolean;
       nextOffset: number;
       pendingTail: boolean;
@@ -480,6 +481,7 @@ export async function readCursorTranscript(
   const activity: VaultActivityStep[] = [];
   let messageCount = 0;
   let toolCount = 0;
+  const tools = createToolTally();
   let pendingTail = false;
   while (localStart < buffer.length) {
     const newline = buffer.indexOf(0x0a, localStart);
@@ -497,6 +499,9 @@ export async function readCursorTranscript(
         activity.push(...normalized.activity);
         messageCount += normalized.messageCount;
         toolCount += normalized.toolCount;
+        for (const name of normalized.toolNames) {
+          tools.add(name);
+        }
       } catch {
         if (completeAtEof) {
           pendingTail = true;
@@ -531,6 +536,7 @@ export async function readCursorTranscript(
     stats: {
       messageCount,
       toolCount,
+      ...toolStats(tools.result()),
       subagentCount: countCursorAgents(mergedActivity),
     },
     truncated,

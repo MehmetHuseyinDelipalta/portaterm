@@ -873,7 +873,12 @@ describe("readCursorDetail: bounded CLI transcript", () => {
     expect(detail?.contentKind).toBe("timeline");
     expect(detail?.timeline.map((item) => item.kind)).toEqual(["message", "message", "tool"]);
     expect(detail?.timeline.every((item) => !("msgRef" in item))).toBe(true);
-    expect(detail?.stats).toEqual({ messageCount: 2, toolCount: 1, subagentCount: 0 });
+    expect(detail?.stats).toEqual({
+      messageCount: 2,
+      toolCount: 1,
+      tools: [{ name: "Read", count: 1 }],
+      subagentCount: 0,
+    });
   });
 
   it("links a safe Agent ID to one exact same-project child transcript", async () => {
@@ -1375,7 +1380,12 @@ describe("readCursorDetail: bounded CLI transcript", () => {
       },
     ]);
     expect(fromMirror?.timeline).toEqual(fromStore?.timeline);
-    expect(fromStore?.stats).toEqual({ messageCount: 2, toolCount: 1, subagentCount: 1 });
+    expect(fromStore?.stats).toEqual({
+      messageCount: 2,
+      toolCount: 1,
+      tools: [{ name: "Read", count: 1 }],
+      subagentCount: 1,
+    });
     expect(fromMirror?.stats).toEqual(fromStore?.stats);
     expect(fromStore?.recentActivity).toEqual([
       { kind: "subagent", name: "code-reviewer", title: "Review" },

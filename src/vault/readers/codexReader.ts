@@ -45,6 +45,8 @@ import {
 import { streamJsonlLines, streamJsonlObjects } from "./jsonlStream";
 import { findRecordLine, type RecordLineResult } from "./recordLine";
 import { parseEpochMilliseconds, parseStoredTimestamp } from "./timestamp";
+import { createToolTally, toolStats } from "./toolTally";
+import { createUsageTally, usageStats } from "./usage";
 
 /** Bound the SQLite read so the vault list stays cheap (D2). */
 const ROW_LIMIT = 500;
@@ -835,7 +837,12 @@ export function classifyCodexRolloutEvents(
   const timeline: VaultTimelineItem[] = [];
   let messageCount = 0;
   let toolCount = 0;
+  const tools = createToolTally();
   let totalTokens: number | undefined;
+  let totalUsage: Record<string, unknown> | undefined;
+  // `total_token_usage` is one cumulative figure, not a per-model one: it can be
+  // credited to a model only while the session never switched models.
+  const models = new Set<string>();
   // Per-message model/tokens (enhance-vault-sessions D3/D6): the model rides on
   // `turn_context` (captured as we walk), and the per-turn token usage arrives in
   // the `token_count` event AFTER the turn's `agent_message` — so we backfill it
@@ -869,6 +876,7 @@ export function classifyCodexRolloutEvents(
       const m = asString(payload.model);
       if (m) {
         currentModel = m;
+        models.add(m);
       }
       continue;
     }
@@ -912,13 +920,15 @@ export function classifyCodexRolloutEvents(
         const n = tot ? finiteNumberOrZero(tot.total_tokens) : 0;
         if (n > 0) {
           totalTokens = n; // last token_count is the cumulative session total (D7)
+          totalUsage = tot;
         }
         // Backfill this turn's usage onto its assistant message (arrives after it).
         const last = asRecord(info?.last_token_usage);
         if (last && lastAssistantItem) {
           const ctx = info ? finiteNumberOrZero(info.model_context_window) : 0;
           lastAssistantItem.tokens = {
-            input: finiteNumberOrZero(last.input_tokens) + finiteNumberOrZero(last.cached_input_tokens),
+            // `input_tokens` already includes the cached share.
+            input: finiteNumberOrZero(last.input_tokens),
             output: finiteNumberOrZero(last.output_tokens),
             ...(ctx > 0 ? { contextWindow: ctx } : {}),
           };
@@ -950,6 +960,7 @@ export function classifyCodexRolloutEvents(
       if (ptype === "function_call") {
         toolCount++;
         const name = asString(payload.name) ?? "tool";
+        tools.add(name);
         // request_user_input is a user decision point — surface it as a question
         // item (Q + options + recovered answer); anything else, and an unparseable
         // one, falls through to a generic tool step.
@@ -968,12 +979,14 @@ export function classifyCodexRolloutEvents(
       } else if (ptype === "custom_tool_call") {
         toolCount++;
         const name = asString(payload.name) ?? "tool";
+        tools.add(name);
         const label = codexPatchLabel(payload.input);
         const step: VaultActivityStep = { kind: "tool", tool: name, detail: label ? truncate(label) : undefined };
         activity.push(step);
         timeline.push(step);
       } else if (ptype === "web_search_call") {
         toolCount++;
+        tools.add("WebSearch");
         const q = asString(asRecord(payload.action)?.query);
         const step: VaultActivityStep = { kind: "tool", tool: "WebSearch", detail: q ? truncate(q) : undefined };
         activity.push(step);
@@ -1002,10 +1015,34 @@ export function classifyCodexRolloutEvents(
     stats: {
       messageCount,
       toolCount,
+      ...toolStats(tools.result()),
       subagentCount: childStubs.length,
       ...(totalTokens !== undefined ? { tokenCount: totalTokens } : {}),
+      ...usageStats(codexUsage(totalUsage, models.size === 1 ? [...models][0] : undefined)),
     },
   };
+}
+
+/**
+ * The session's last cumulative `total_token_usage` as a breakdown. Codex counts
+ * cached tokens INSIDE `input_tokens` and reasoning inside `output_tokens`, so the
+ * cached share moves out of `input` to keep the four counts disjoint. Codex
+ * records no cost and no cache writes. Undefined when only `total_tokens` exists.
+ */
+function codexUsage(total: Record<string, unknown> | undefined, model: string | undefined) {
+  if (!total || (total.input_tokens === undefined && total.output_tokens === undefined)) {
+    return undefined;
+  }
+  const input = finiteNumberOrZero(total.input_tokens);
+  const cached = Math.min(finiteNumberOrZero(total.cached_input_tokens), input);
+  const tally = createUsageTally();
+  tally.add(model, {
+    input: input - cached,
+    cacheRead: cached,
+    cacheWrite: 0,
+    output: finiteNumberOrZero(total.output_tokens),
+  });
+  return tally.result(false);
 }
 
 /**

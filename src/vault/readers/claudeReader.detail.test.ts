@@ -339,6 +339,118 @@ describe("readClaudeDetail nested subagents (depth-2)", () => {
   });
 });
 
+describe("readClaudeDetail token usage", () => {
+  const CWD = "-Users-me-usage";
+  const user = { type: "user", message: { role: "user", content: "go" }, timestamp: "2026-05-01T00:00:00.000Z" };
+  const reply = (id: string, usage: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+    type: "assistant",
+    message: { role: "assistant", id, model: "claude-opus-5-5", content: [{ type: "text", text: id }], usage },
+    timestamp: "2026-05-01T00:01:00.000Z",
+    ...extra,
+  });
+  const usage = { input_tokens: 3, cache_read_input_tokens: 100, cache_creation_input_tokens: 20, output_tokens: 7 };
+
+  it("reports Claude's own cost-state total, cost included, over the summed records", async () => {
+    await writeSession(CWD, "with-cost", [
+      user,
+      reply("m1", usage),
+      {
+        type: "cost-state",
+        sessionId: "with-cost",
+        totalCostUSD: 0.42,
+        modelUsage: {
+          "claude-opus-5-5": {
+            inputTokens: 30,
+            outputTokens: 70,
+            cacheReadInputTokens: 1000,
+            cacheCreationInputTokens: 200,
+            costUSD: 0.42,
+          },
+        },
+      },
+    ]);
+    const detail = await readClaudeDetail("with-cost", { configDir });
+    expect(detail?.stats.tokenCount).toBe(1300);
+    expect(detail?.stats.usage).toEqual({
+      models: [{ model: "claude-opus-5-5", input: 30, cacheRead: 1000, cacheWrite: 200, output: 70, costUSD: 0.42 }],
+      costUSD: 0.42,
+      includesSubagents: true,
+    });
+  });
+
+  it("sums a live session's responses once each when no cost-state exists yet", async () => {
+    // One response written as two records (text + tool_use) repeats its usage.
+    await writeSession(CWD, "live", [user, reply("m1", usage), reply("m1", usage), reply("m2", usage)]);
+    const detail = await readClaudeDetail("live", { configDir });
+    expect(detail?.stats.usage).toEqual({
+      models: [{ model: "claude-opus-5-5", input: 6, cacheRead: 200, cacheWrite: 40, output: 14 }],
+      includesSubagents: false,
+    });
+    expect(detail?.stats.tokenCount).toBe(260);
+  });
+
+  it("counts the records a very large session's head+tail read drops", async () => {
+    const records = [user, ...Array.from({ length: 4200 }, (_, i) => reply(`m${i}`, { output_tokens: 1 }))];
+    await writeSession(CWD, "huge", records);
+    const detail = await readClaudeDetail("huge", { configDir });
+    expect(detail?.partial).toBe(true);
+    expect(detail?.stats.tokenCount).toBe(4200);
+  });
+
+  it("carries no token figures for a session that recorded no usage", async () => {
+    await writeSession(CWD, "no-usage", [user, { type: "assistant", message: { role: "assistant", content: "hi" } }]);
+    const detail = await readClaudeDetail("no-usage", { configDir });
+    expect(detail?.stats.tokenCount).toBeUndefined();
+    expect(detail?.stats.usage).toBeUndefined();
+  });
+
+  it("sums a subagent's own transcript", async () => {
+    await writeSession(CWD, "parent", [user]);
+    await writeSubagent(CWD, "parent", "agent-x", { agentType: "x" }, [
+      { ...user, isSidechain: true },
+      reply("s1", usage, { isSidechain: true }),
+    ]);
+    const detail = await readClaudeDetail("parent:subagent:agent-x", { configDir });
+    expect(detail?.stats.usage?.models).toEqual([
+      { model: "claude-opus-5-5", input: 3, cacheRead: 100, cacheWrite: 20, output: 7 },
+    ]);
+  });
+
+  it("sums a workflow agent's own transcript", async () => {
+    await writeSession(CWD, "wfp", [user]);
+    const dir = path.join(configDir, "projects", CWD, "wfp", "subagents", "workflows", "wf_u1");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "agent-w.jsonl"),
+      jsonl([{ ...user, isSidechain: true }, reply("w1", usage, { isSidechain: true })]),
+    );
+    const detail = await readClaudeDetail("wfp:wfagent:wf_u1:agent-w", { configDir });
+    expect(detail?.stats.tokenCount).toBe(130);
+    expect(detail?.stats.usage?.includesSubagents).toBe(false);
+  });
+
+  it("counts only a team turn's own responses, never the member session's cost-state", async () => {
+    const boundary = (text: string) => ({
+      type: "user",
+      teamName: "t",
+      message: { role: "user", content: `<teammate-message teammate_id="team-lead">${text}</teammate-message>` },
+      timestamp: "2026-05-01T00:00:00.000Z",
+    });
+    await writeSession(CWD, "member", [
+      boundary("first"),
+      reply("t1", usage),
+      { type: "cost-state", modelUsage: { "claude-opus-5-5": { inputTokens: 999, outputTokens: 999, costUSD: 5 } } },
+      boundary("second"),
+      reply("t2", { output_tokens: 1000 }),
+    ]);
+    const detail = await readClaudeDetail("member:turn:0", { configDir });
+    expect(detail?.stats.usage).toEqual({
+      models: [{ model: "claude-opus-5-5", input: 3, cacheRead: 100, cacheWrite: 20, output: 7 }],
+      includesSubagents: false,
+    });
+  });
+});
+
 // .reviews/round-1.md L6 — a uuid match alone addressed any record, so a locator
 // naming plumbing resolved it as if it were a message.
 describe("readClaudeMessageRecord", () => {

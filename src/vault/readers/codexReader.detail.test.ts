@@ -59,6 +59,17 @@ describe("classifyCodexRolloutEvents", () => {
     ]);
     expect(out.latestMessage).toMatchObject({ role: "assistant", text: "here is the review" });
     expect(out.stats).toMatchObject({ messageCount: 2, toolCount: 3, subagentCount: 0, tokenCount: 12650 });
+    expect(out.stats.tools).toEqual([
+      { name: "apply_patch", count: 1 },
+      { name: "exec_command", count: 1 },
+      { name: "WebSearch", count: 1 },
+    ]);
+  });
+
+  it("carries no tool breakdown when no tool was called", () => {
+    const out = classifyCodexRolloutEvents([rec("event_msg", { type: "user_message", message: "hi" })]);
+    expect(out.stats.toolCount).toBe(0);
+    expect(out.stats).not.toHaveProperty("tools");
   });
 
   it("preserves the shared omitted-history sentinel as a timeline gap", () => {
@@ -73,6 +84,66 @@ describe("classifyCodexRolloutEvents", () => {
   it("omits tokenCount when no token_count event is present", () => {
     const out = classifyCodexRolloutEvents([rec("event_msg", { type: "user_message", message: "hi" })]);
     expect(out.stats.tokenCount).toBeUndefined();
+  });
+
+  it("breaks the last cumulative total down, moving the cached share out of input", () => {
+    const out = classifyCodexRolloutEvents([
+      rec("turn_context", { turn_id: "t1", model: "gpt-5.5" }),
+      rec("event_msg", {
+        type: "token_count",
+        info: {
+          total_token_usage: { input_tokens: 500, cached_input_tokens: 100, output_tokens: 50, total_tokens: 550 },
+        },
+      }),
+      rec("event_msg", {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: 1000,
+            cached_input_tokens: 600,
+            output_tokens: 80,
+            reasoning_output_tokens: 30,
+            total_tokens: 1080,
+          },
+        },
+      }),
+    ]);
+    expect(out.stats.usage).toEqual({
+      models: [{ model: "gpt-5.5", input: 400, cacheRead: 600, cacheWrite: 0, output: 80 }],
+      includesSubagents: false,
+    });
+    // Disjoint counts: their sum is Codex's own total_tokens.
+    expect(out.stats.tokenCount).toBe(1080);
+  });
+
+  it("credits the total to no model once the session switched models", () => {
+    const out = classifyCodexRolloutEvents([
+      rec("turn_context", { turn_id: "t1", model: "gpt-5.5" }),
+      rec("turn_context", { turn_id: "t2", model: "gpt-5.5-mini" }),
+      rec("event_msg", {
+        type: "token_count",
+        info: { total_token_usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } },
+      }),
+    ]);
+    expect(out.stats.usage?.models).toEqual([{ input: 10, cacheRead: 0, cacheWrite: 0, output: 5 }]);
+  });
+
+  it("never lets a cached count above input go negative", () => {
+    const out = classifyCodexRolloutEvents([
+      rec("event_msg", {
+        type: "token_count",
+        info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 40, output_tokens: 1, total_tokens: 11 } },
+      }),
+    ]);
+    expect(out.stats.usage?.models).toEqual([{ input: 0, cacheRead: 10, cacheWrite: 0, output: 1 }]);
+  });
+
+  it("keeps a bare total_tokens as the count, with no breakdown to show", () => {
+    const out = classifyCodexRolloutEvents([
+      rec("event_msg", { type: "token_count", info: { total_token_usage: { total_tokens: 12650 } } }),
+    ]);
+    expect(out.stats.tokenCount).toBe(12650);
+    expect(out.stats.usage).toBeUndefined();
   });
 
   it("attaches per-message model (turn_context) + per-turn tokens (token_count) to the assistant message", () => {
@@ -94,8 +165,8 @@ describe("classifyCodexRolloutEvents", () => {
     expect(assistant).toBeDefined();
     if (assistant?.kind === "message") {
       expect(assistant.model).toBe("gpt-5.5");
-      // input = input + cached = 14291 + 9088 = 23379; output = 36; contextWindow = 258400
-      expect(assistant.tokens).toEqual({ input: 23379, output: 36, contextWindow: 258400 });
+      // Codex's input_tokens already includes the 9088 cached ones — not added again.
+      expect(assistant.tokens).toEqual({ input: 14291, output: 36, contextWindow: 258400 });
     }
     const user = out.timeline.find((t) => t.kind === "message" && t.role === "user");
     if (user?.kind === "message") {

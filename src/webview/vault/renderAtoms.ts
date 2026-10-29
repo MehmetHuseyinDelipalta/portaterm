@@ -11,7 +11,14 @@ import type {
   VaultTimelineItem,
 } from "../../vault/types";
 import { attachTooltip } from "../ui/Tooltip";
-import { formatRelativeTime, formatStats, leafSegment } from "./format";
+import {
+  formatRelativeTime,
+  formatStatsParts,
+  formatToolBreakdown,
+  formatUsageBreakdown,
+  leafSegment,
+  type StatsPart,
+} from "./format";
 import { ICON_CHEVRON_DOWN, ICON_COPY } from "./icons";
 import { bindLatestSuccess } from "./latestSuccess";
 import { renderMarkdownLite } from "./markdownLite";
@@ -146,10 +153,46 @@ export function buildPreviewMeta(
   }
   addRow("Session", ...session);
 
-  const age = formatRelativeTime(entry.modified);
-  const stats = detail ? formatStats(detail.stats) : "";
-  addRow("Activity", metaText([age, stats].filter(Boolean).join(" · ")));
+  addRow("Activity", activityLine(entry, detail, disposers));
   return { element: dl, disposers };
+}
+
+/**
+ * The Activity row: age, then the stats, as one ellipsizing line. The token and
+ * tool counts inside it are focusable spans whose tooltips break them down (per
+ * model, per tool); the rest is plain text.
+ */
+function activityLine(
+  entry: VaultSessionEntry,
+  detail: VaultSessionDetail | undefined,
+  disposers: Array<() => void>,
+): HTMLElement {
+  const parts: StatsPart[] = [
+    { kind: "plain", text: formatRelativeTime(entry.modified) },
+    ...(detail ? formatStatsParts(detail.stats) : []),
+  ];
+  const breakdowns = {
+    tokens: detail ? formatUsageBreakdown(detail.stats) : "",
+    tools: detail ? formatToolBreakdown(detail.stats) : "",
+  };
+  const line = metaText("");
+  parts.forEach((part, i) => {
+    if (i > 0) {
+      line.append(" · ");
+    }
+    const breakdown = part.kind === "plain" ? "" : breakdowns[part.kind];
+    if (!breakdown) {
+      line.append(part.text);
+      return;
+    }
+    const span = document.createElement("span");
+    span.className = "vault-preview-breakdown";
+    span.textContent = part.text;
+    span.tabIndex = 0;
+    disposers.push(attachTooltip(span, { text: breakdown, multiline: true }));
+    line.append(span);
+  });
+  return line;
 }
 
 /** Loading placeholder body. */

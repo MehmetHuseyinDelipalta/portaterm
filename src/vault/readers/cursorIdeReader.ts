@@ -14,6 +14,7 @@ import {
   type VaultTimelineItem,
 } from "../types";
 import { finalizeDetail, limitedDetail, sourceVerdict } from "./detail";
+import { createToolTally, toolStats } from "./toolTally";
 
 const MAX_COMPOSERS = 4096;
 const MAX_JSON_CHARS = 2 * 1024 * 1024;
@@ -552,6 +553,7 @@ export async function readCursorIdeDetail(
     const activity: VaultActivityStep[] = [];
     let messageCount = 0;
     let toolCount = 0;
+    const tools = createToolTally();
     let normalizedTextChars = 0;
     let sourceTruncated = loaded.composer.truncated;
     headers: for (const header of loaded.composer.headers) {
@@ -577,6 +579,7 @@ export async function readCursorIdeDetail(
           messageCount++;
         } else if (item.kind === "tool") {
           toolCount++;
+          tools.add(item.tool);
         }
       }
       activity.push(...normalized.activity);
@@ -588,7 +591,7 @@ export async function readCursorIdeDetail(
       {
         recentActivity: activity.slice(-12),
         timeline: bounded,
-        stats: { messageCount, toolCount, subagentCount: 0 },
+        stats: { messageCount, toolCount, ...toolStats(tools.result()), subagentCount: 0 },
         truncated: maxItems !== undefined && timeline.length > maxItems,
       },
       sourceVerdict(sourceTruncated),

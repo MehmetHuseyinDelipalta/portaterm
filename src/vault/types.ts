@@ -277,6 +277,58 @@ export interface VaultMessageTokens {
 }
 
 /**
+ * One model's cumulative token usage across a session. The four counts are
+ * disjoint, so their sum is everything the session sent and received:
+ * `input` is the UNCACHED prompt only (Codex's cached share moved to
+ * `cacheRead`), and `output` folds reasoning in, as {@link VaultMessageTokens} does.
+ */
+export interface VaultModelUsage {
+  /** Absent when the source does not attribute its totals to one model. */
+  model?: string;
+  input: number;
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+  /** USD as the agent itself computed it; absent when the agent records none. */
+  costUSD?: number;
+}
+
+/** A session's token usage, broken down per model, for the preview's Activity row. */
+export interface VaultSessionUsage {
+  /** Largest total first; models that used no tokens are left out. */
+  models: VaultModelUsage[];
+  /** Sum of the models' `costUSD`; absent when none of them carries one. */
+  costUSD?: number;
+  /**
+   * True only when the totals are the agent's own session-wide record (Claude's
+   * `cost-state`), which counts subagent and background calls too. False when
+   * they were summed from this one transcript, whose subagents live elsewhere.
+   */
+  includesSubagents: boolean;
+  /** The read skipped some of the session's messages, so every figure is a floor. */
+  lowerBound?: true;
+}
+
+/** How often a session called one tool. */
+export interface VaultToolUse {
+  name: string;
+  count: number;
+}
+
+/** Counts shown in a session preview's Activity row. */
+export interface VaultSessionStats {
+  messageCount: number;
+  toolCount: number;
+  /** Which tools `toolCount` counted, most-called first; sums to `toolCount`.
+   *  Absent when no tool was called. */
+  tools?: VaultToolUse[];
+  subagentCount: number;
+  /** Every token the session sent and received — the sum over `usage` when present. */
+  tokenCount?: number;
+  usage?: VaultSessionUsage;
+}
+
+/**
  * One step in a session's recent-activity timeline (redesign-vault-panel-ui
  * D6). Records tool **calls** and subagent invocations only — never tool
  * results as standalone steps.
@@ -487,7 +539,7 @@ export interface VaultSessionDetail {
    * carries those).
    */
   truncated?: boolean;
-  stats: { messageCount: number; toolCount: number; subagentCount: number; tokenCount?: number };
+  stats: VaultSessionStats;
   /**
    * SOURCE OMISSION, and nothing else: true when the read dropped source records
    * that no larger requested limit can recover — an index-only fallback (Codex

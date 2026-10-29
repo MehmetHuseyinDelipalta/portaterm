@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { asRecord } from "../../utils/record";
 import { type SqliteSnapshot, withSqliteSnapshot } from "../sqlite";
-import type { VaultActivityStep, VaultTimelineItem } from "../types";
+import type { VaultActivityStep, VaultSessionStats, VaultTimelineItem } from "../types";
 import {
   type CursorNormalizedRecord,
   type CursorSubagentStep,
@@ -11,6 +11,7 @@ import {
   mergeCursorSubagentInvocations,
   normalizeCursorRecord,
 } from "./cursorNormalization";
+import { createToolTally, toolStats } from "./toolTally";
 
 const MAX_META_HEX_CHARS = 128 * 1024;
 export const MAX_CURSOR_BLOB_BYTES = 5 * 1024 * 1024;
@@ -37,11 +38,7 @@ export interface CursorStoreOptions {
   withSqliteSnapshotFn?: typeof withSqliteSnapshot;
 }
 
-export interface CursorStoreStats {
-  messageCount: number;
-  toolCount: number;
-  subagentCount: number;
-}
+export type CursorStoreStats = Pick<VaultSessionStats, "messageCount" | "toolCount" | "tools" | "subagentCount">;
 
 export type CursorStoreResult =
   | {
@@ -415,6 +412,7 @@ async function decodeSnapshot(snapshot: SqliteSnapshot, expectedAgentId: string)
   let normalizedTextChars = 0;
   let messageCount = 0;
   let toolCount = 0;
+  const tools = createToolTally();
   const applyToolResult = (step: CursorSubagentStep, result: CursorToolResult) => {
     if (result.childAgentId) {
       step.childAgentId = result.childAgentId;
@@ -484,6 +482,9 @@ async function decodeSnapshot(snapshot: SqliteSnapshot, expectedAgentId: string)
     recentActivity.push(...record.activity);
     messageCount += record.messageCount;
     toolCount += record.toolCount;
+    for (const name of record.toolNames) {
+      tools.add(name);
+    }
   }
 
   // One agent, many invocations: give each its agent's declared type before
@@ -498,6 +499,7 @@ async function decodeSnapshot(snapshot: SqliteSnapshot, expectedAgentId: string)
     stats: {
       messageCount,
       toolCount,
+      ...toolStats(tools.result()),
       subagentCount: countCursorAgents(mergedActivity),
     },
   };

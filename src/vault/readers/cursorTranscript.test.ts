@@ -190,7 +190,12 @@ describe("readCursorTranscript", () => {
       { kind: "message", role: "assistant", text: "Answer" },
       { kind: "tool", tool: "Read", detail: "/tmp/a.ts" },
     ]);
-    expect(result.stats).toEqual({ messageCount: 2, toolCount: 1, subagentCount: 0 });
+    expect(result.stats).toEqual({
+      messageCount: 2,
+      toolCount: 1,
+      tools: [{ name: "Read", count: 1 }],
+      subagentCount: 0,
+    });
   });
 
   it("classifies wrapped queries, injected bootstrap, notices, and subagents like the CLI store", async () => {
@@ -243,7 +248,12 @@ describe("readCursorTranscript", () => {
       { kind: "subagent", name: "code-reviewer", title: "Review" },
       { kind: "tool", tool: "Read", detail: "/tmp/a.ts" },
     ]);
-    expect(result.stats).toEqual({ messageCount: 2, toolCount: 1, subagentCount: 1 });
+    expect(result.stats).toEqual({
+      messageCount: 2,
+      toolCount: 1,
+      tools: [{ name: "Read", count: 1 }],
+      subagentCount: 1,
+    });
   });
 
   /** D11: the mirror reuses the normalizer without the store's correlation maps,

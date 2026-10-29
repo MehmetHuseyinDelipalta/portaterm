@@ -48,6 +48,7 @@ import {
   teamContextCollector,
   teammateMessageHook,
 } from "./claudeTeam";
+import { createClaudeUsageCollector } from "./claudeUsage";
 import {
   boundTimeline,
   clampDetailLimit,
@@ -198,10 +199,12 @@ export async function readClaudeDetail(
   // is NOT flattened under the root (support-nested-subagent-preview D2).
   const { ctx, onRecord } = teamContextCollector();
   const spawn = createSpawnIdCollector(false);
+  const usage = createClaudeUsageCollector();
   const read = await streamClaudeRecords(filePath, {
     onRecord: (rec) => {
       onRecord(rec);
       spawn.onRecord(rec);
+      usage.onRecord(rec);
     },
   });
   if (read === null) {
@@ -221,7 +224,12 @@ export async function readClaudeDetail(
   // wrapper layer) — threaded with the teammate turns by timestamp below. Fallback
   // runs fold in as lazy "Workflow:" group stubs (classify merges them).
   const childStubs = [...scopeDirectChildren(subStubs, spawn.ids), ...wfNodes.stubs];
-  const detail = classifyClaudeStyleEvents(read.records, { limit, childStubs, teammateMessage: teammateMessageHook });
+  const detail = classifyClaudeStyleEvents(read.records, {
+    limit,
+    childStubs,
+    teammateMessage: teammateMessageHook,
+    usage: usage.result(),
+  });
   // Thread the teammate turns + inline workflow boards into the classified timeline
   // by timestamp, then re-bound (classify already bounded its stream-derived items) (D14).
   const extras = [...teammateTurns, ...wfNodes.boards];

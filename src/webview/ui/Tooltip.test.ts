@@ -143,6 +143,35 @@ describe("attachTooltip", () => {
   });
 });
 
+describe("attachTooltip multiline", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    resetTooltipForTests();
+    vi.useRealTimers();
+    document.body.innerHTML = "";
+  });
+
+  it("marks the shared widget multiline for its target only, and clears it for the next", () => {
+    const breakdown = makeTarget("");
+    const plain = makeTarget("Plain hint");
+    attachTooltip(breakdown, { text: "line one\nline two", multiline: true });
+    attachTooltip(plain);
+
+    breakdown.dispatchEvent(new MouseEvent("mouseenter"));
+    vi.advanceTimersByTime(300);
+    expect(widget()?.textContent).toBe("line one\nline two");
+    expect(widget()?.classList.contains("webview-tooltip--multiline")).toBe(true);
+    breakdown.dispatchEvent(new MouseEvent("mouseleave"));
+
+    plain.dispatchEvent(new MouseEvent("mouseenter"));
+    vi.advanceTimersByTime(300);
+    expect(widget()?.textContent).toBe("Plain hint");
+    expect(widget()?.classList.contains("webview-tooltip--multiline")).toBe(false);
+  });
+});
+
 describe("attachTooltipDelegate", () => {
   beforeEach(() => {
     vi.useFakeTimers();

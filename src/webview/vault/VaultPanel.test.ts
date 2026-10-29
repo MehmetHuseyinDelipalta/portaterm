@@ -2026,6 +2026,89 @@ describe("VaultPanel session preview (redesign 5_2)", () => {
     expect(activity).toContain("1.6k tok");
   });
 
+  it("Activity shows tokens, cost and tools, with per-model and per-tool breakdowns on hover", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "claude:a", modified: Date.now() - 5 * 60_000 })]));
+    host.querySelector<HTMLElement>(".vault-row")?.click();
+    panel.handleSessionDetailResponse({
+      type: "vaultSessionDetailResponse",
+      entryId: "claude:a",
+      detail: detail({
+        stats: {
+          messageCount: 24,
+          toolCount: 8,
+          tools: [
+            { name: "Bash", count: 5 },
+            { name: "Read", count: 3 },
+          ],
+          subagentCount: 2,
+          tokenCount: 1_298_026,
+          usage: {
+            models: [
+              {
+                model: "claude-opus-5-5",
+                input: 132,
+                cacheRead: 1_223_107,
+                cacheWrite: 61_223,
+                output: 13_564,
+                costUSD: 1.0062,
+              },
+            ],
+            costUSD: 1.0062,
+            includesSubagents: true,
+          },
+        },
+      }),
+    });
+
+    // Still three rows: the usage rides in the Activity line, not a row of its own.
+    expect(host.querySelectorAll(".vault-preview-meta dt")).toHaveLength(3);
+    const activity = host.querySelectorAll<HTMLElement>(".vault-preview-meta dd")[2];
+    expect(activity.textContent).toBe("5m ago · 24 msgs · 1.3M tok · ~$1.01 · 8 tools · 2 subagents");
+    const [usage, tools] = Array.from(activity.querySelectorAll<HTMLElement>(".vault-preview-breakdown"));
+    expect(usage?.textContent).toBe("1.3M tok");
+    expect(tools?.textContent).toBe("8 tools");
+    // Keyboard users reach the breakdown too (the tooltip opens on focus).
+    expect(usage?.tabIndex).toBe(0);
+
+    vi.useFakeTimers();
+    try {
+      expect(usage && hoverTooltipText(usage)).toBe(
+        [
+          "claude-opus-5-5 · $1.01",
+          "132 input · 1.2M cache read · 61.2k cache write · 13.6k output",
+          "",
+          "Cost at API rates, as recorded by the agent.",
+        ].join("\n"),
+      );
+      usage?.dispatchEvent(new MouseEvent("mouseenter"));
+      vi.advanceTimersByTime(500);
+      expect(document.getElementById("webview-tooltip-widget")?.classList.contains("webview-tooltip--multiline")).toBe(
+        true,
+      );
+      usage?.dispatchEvent(new MouseEvent("mouseleave"));
+      expect(tools && hoverTooltipText(tools)).toBe("Bash ×5\nRead ×3");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("Activity keeps a bare token count as plain text when there is no breakdown", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "claude:a" })]));
+    host.querySelector<HTMLElement>(".vault-row")?.click();
+    panel.handleSessionDetailResponse({
+      type: "vaultSessionDetailResponse",
+      entryId: "claude:a",
+      detail: detail({ stats: { messageCount: 1, toolCount: 0, subagentCount: 0, tokenCount: 12_650 } }),
+    });
+    const activity = host.querySelectorAll<HTMLElement>(".vault-preview-meta dd")[2];
+    expect(activity.textContent).toContain("12.7k tok");
+    expect(activity.querySelector(".vault-preview-breakdown")).toBeNull();
+  });
+
   it("hovering a meta value discloses its untruncated text through the shared tooltip", () => {
     const host = createHost();
     stubClipboard();

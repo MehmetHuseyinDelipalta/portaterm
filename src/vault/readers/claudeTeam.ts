@@ -11,6 +11,7 @@ import { formatEntryId, type VaultSessionDetail, type VaultTimelineItem } from "
 import { formatTeamTurnSessionId } from "./claudeChildIds";
 import { type ClaudeReaderOptions, isSafeSessionId, resolveClaudeSessionPath } from "./claudePaths";
 import { extractUserText, rawUserText } from "./claudeRecords";
+import { createClaudeUsageCollector } from "./claudeUsage";
 import {
   classifyClaudeStyleEvents,
   createBoundedRecordBuffer,
@@ -166,6 +167,7 @@ export async function readClaudeTeamSegment(
   // can span most of the file, so the collected window is head+tail bounded like
   // any detail read (R5) — never the full remainder materialized at once.
   const buffer = createBoundedRecordBuffer();
+  const usage = createClaudeUsageCollector({ wholeSession: false });
   let boundaryCount = 0;
   let collecting = false;
   let found = false;
@@ -182,6 +184,7 @@ export async function readClaudeTeamSegment(
       }
       if (collecting) {
         buffer.push(rec);
+        usage.onRecord(rec);
       }
     }
   } catch {
@@ -195,6 +198,7 @@ export async function readClaudeTeamSegment(
     limit,
     includeSidechain: true,
     teammateMessage: teammateMessageHook,
+    usage: usage.result(),
   });
   return finalizeDetail(
     formatEntryId("claude", formatTeamTurnSessionId(memberId, turn)),

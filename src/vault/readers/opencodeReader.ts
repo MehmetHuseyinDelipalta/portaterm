@@ -26,6 +26,7 @@ import {
   type VaultMessageTokens,
   type VaultSessionDetail,
   type VaultSessionEntry,
+  type VaultSessionUsage,
   type VaultTimelineItem,
 } from "../types";
 import {
@@ -44,6 +45,8 @@ import {
 } from "./detail";
 import { MAX_RECORD_BYTES, type RecordLineResult } from "./recordLine";
 import { parseEpochMilliseconds } from "./timestamp";
+import { createToolTally, toolStats } from "./toolTally";
+import { createUsageTally, usageStats } from "./usage";
 
 /** Bound the read so the vault list stays cheap (D2). */
 const ROW_LIMIT = 500;
@@ -458,6 +461,7 @@ export function mapOpencodeRows(
   let messageCount = 0;
   let tokenCount = 0;
   let sawTokens = false;
+  const usage = createUsageTally();
   // Timeline items carry their source timestamp so messages + tool/subtask parts
   // can be merged into one chronological stream below.
   const tl: { ts: number; item: VaultTimelineItem }[] = [];
@@ -491,6 +495,19 @@ export function mapOpencodeRows(
           finiteNumberOrZero(tokens.reasoning) +
           finiteNumberOrZero(cache.read) +
           finiteNumberOrZero(cache.write);
+        // OpenCode prices each message itself; a provider it bills nothing for
+        // (a subscription) records 0, which reads as "no cost" further down.
+        const cost = typeof m.data.cost === "number" && Number.isFinite(m.data.cost) ? m.data.cost : undefined;
+        usage.add(
+          msgModel,
+          {
+            input: finiteNumberOrZero(tokens.input),
+            cacheRead: finiteNumberOrZero(cache.read),
+            cacheWrite: finiteNumberOrZero(cache.write),
+            output: finiteNumberOrZero(tokens.output) + finiteNumberOrZero(tokens.reasoning),
+          },
+          cost,
+        );
         // "context" size = prompt tokens (input + cache read/creation); output =
         // generated. OpenCode records reasoning separately, but Claude/Codex fold it
         // into their output — add it here so `output` means the same across agents.
@@ -530,6 +547,7 @@ export function mapOpencodeRows(
 
   const activity: VaultActivityStep[] = [];
   let toolCount = 0;
+  const tools = createToolTally();
   /** Subtask parts held until every child stub is known — see the correlation below. */
   const subtasks: { ts: number; name: string; description: string | undefined; step: VaultActivityStep }[] = [];
   for (const p of ordered) {
@@ -537,6 +555,8 @@ export function mapOpencodeRows(
     if (type === "tool") {
       toolCount++;
       const tool = strField(p.data.tool) ?? "tool";
+      // The name the timeline shows, so the breakdown and the chips agree.
+      tools.add(titleCase(tool));
       const state = asRecord(p.data.state) ?? {};
       // AskUserQuestion is a user decision point, not plumbing — surface it as a
       // first-class question item (the Q + the user's answer) rather than a bare
@@ -640,6 +660,7 @@ export function mapOpencodeRows(
     stats: {
       messageCount,
       toolCount,
+      ...toolStats(tools.result()),
       // What the correlation actually accounted for: one per child session plus
       // one per subtask no child session explained. Preferring either window's
       // own counter states a total neither window can see — a capped child list
@@ -648,6 +669,7 @@ export function mapOpencodeRows(
       // comparing this against the items it received still detects that bound.
       subagentCount: delegations,
       ...(sawTokens && tokenCount > 0 ? { tokenCount } : {}),
+      ...usageStats(withoutZeroCost(usage.result(false))),
     },
   };
 }
@@ -847,6 +869,10 @@ export async function readOpenCodeDetail(
     // (specs/vault-session-preview/spec.md, round 2 B8).
     detail.stats.subagentCount = Math.max(detail.stats.subagentCount, CHILD_LIMIT + 1);
   }
+  if (messageWindowTruncated && detail.stats.usage) {
+    // The usage was summed over the two message windows only.
+    detail.stats.usage.lowerBound = true;
+  }
   if (messageWindowTruncated) {
     const firstTail = detail.timeline.findIndex(
       (item) => item.kind === "message" && !!item.msgRef && messageTailIds.has(item.msgRef),
@@ -935,6 +961,16 @@ function buildChildStubs(rows: Record<string, unknown>[]): { timestamp: number; 
     });
   }
   return stubs;
+}
+
+/** Drop a cost that sums to zero: OpenCode writes 0 for providers it does not
+ *  bill per token, and "$0.00" would claim the session was free. */
+function withoutZeroCost(usage: VaultSessionUsage | undefined): VaultSessionUsage | undefined {
+  if (!usage || usage.costUSD === undefined || usage.costUSD > 0) {
+    return usage;
+  }
+  const { costUSD: _total, ...rest } = usage;
+  return { ...rest, models: usage.models.map(({ costUSD: _cost, ...m }) => m) };
 }
 
 function parseJsonData(raw: unknown): Record<string, unknown> | null {

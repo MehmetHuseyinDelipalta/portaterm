@@ -21,6 +21,7 @@ import {
   WORKFLOW_ID_RE,
 } from "./claudePaths";
 import { readFirstUserRecord, readManifestJson, streamClaudeRecords } from "./claudeRecords";
+import { createClaudeUsageCollector } from "./claudeUsage";
 import {
   type ClaudeChildStub,
   classifyClaudeStyleEvents,
@@ -54,15 +55,26 @@ export async function readClaudeSubagentDetail(
   // sidechain) while reading; scope the session's flat subagent list to its direct
   // children. Both reads run in parallel.
   const spawn = createSpawnIdCollector(true);
+  const usage = createClaudeUsageCollector();
   const [read, allStubs] = await Promise.all([
-    streamClaudeRecords(filePath, { onRecord: spawn.onRecord }),
+    streamClaudeRecords(filePath, {
+      onRecord: (rec) => {
+        spawn.onRecord(rec);
+        usage.onRecord(rec);
+      },
+    }),
     listClaudeSubagentStubs(parentId, options),
   ]);
   if (read === null) {
     return null;
   }
   const childStubs = scopeDirectChildren(allStubs, spawn.ids);
-  const detail = classifyClaudeStyleEvents(read.records, { limit, includeSidechain: true, childStubs });
+  const detail = classifyClaudeStyleEvents(read.records, {
+    limit,
+    includeSidechain: true,
+    childStubs,
+    usage: usage.result(),
+  });
   return finalizeDetail(formatEntryId("claude", sessionId), detail, sourceVerdict(read.truncated));
 }
 
@@ -352,11 +364,12 @@ export async function readClaudeWorkflowAgentDetail(
   if (!filePath) {
     return null;
   }
-  const read = await streamClaudeRecords(filePath);
+  const usage = createClaudeUsageCollector();
+  const read = await streamClaudeRecords(filePath, { onRecord: usage.onRecord });
   if (read === null) {
     return null;
   }
-  const detail = classifyClaudeStyleEvents(read.records, { limit, includeSidechain: true });
+  const detail = classifyClaudeStyleEvents(read.records, { limit, includeSidechain: true, usage: usage.result() });
   return finalizeDetail(formatEntryId("claude", sessionId), detail, sourceVerdict(read.truncated));
 }
 

@@ -169,7 +169,12 @@ describe("readCursorStoreDetail", () => {
       { kind: "message", role: "assistant", text: "Current answer" },
       { kind: "tool", tool: "Read", detail: "/tmp/a.ts" },
     ]);
-    expect(result.stats).toEqual({ messageCount: 4, toolCount: 1, subagentCount: 0 });
+    expect(result.stats).toEqual({
+      messageCount: 4,
+      toolCount: 1,
+      tools: [{ name: "Read", count: 1 }],
+      subagentCount: 0,
+    });
   });
 
   it("ignores unreachable blobs, including an unrelated bad hash", async () => {
@@ -343,7 +348,12 @@ describe("readCursorStoreDetail", () => {
     }
     expect(result.timeline).toEqual([{ kind: "tool", tool: "Read", detail: "/tmp/a.ts" }]);
     expect(result.recentActivity).toEqual(result.timeline);
-    expect(result.stats).toEqual({ messageCount: 0, toolCount: 1, subagentCount: 0 });
+    expect(result.stats).toEqual({
+      messageCount: 0,
+      toolCount: 1,
+      tools: [{ name: "Read", count: 1 }],
+      subagentCount: 0,
+    });
   });
 
   it("shows only the wrapped user query and discards injected bootstrap context", async () => {
@@ -464,7 +474,12 @@ describe("readCursorStoreDetail", () => {
       { kind: "subagent", name: "docs-writer", title: "Write release notes" },
       { kind: "tool", tool: "Read", detail: "/tmp/a.ts" },
     ]);
-    expect(result.stats).toEqual({ messageCount: 0, toolCount: 1, subagentCount: 3 });
+    expect(result.stats).toEqual({
+      messageCount: 0,
+      toolCount: 1,
+      tools: [{ name: "Read", count: 1 }],
+      subagentCount: 3,
+    });
   });
 
   it("correlates blocking and background Task results without emitting notices or result tools", async () => {

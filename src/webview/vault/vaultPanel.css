@@ -1054,6 +1054,18 @@ body:has(#tab-bar.visible) .vault-preview--max {
   text-overflow: ellipsis;
 }
 
+/* The token and tool counts carry their breakdowns as tooltips — a dotted
+   underline marks them as hoverable without making the Activity line louder. */
+.vault-preview-breakdown {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+.vault-preview-breakdown:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
 /* Click-to-copy meta value: quiet until hovered, then a copy glyph + a subtle
    plate; a tick replaces the glyph for the flash after a successful copy. */
 .vault-preview-copyable {

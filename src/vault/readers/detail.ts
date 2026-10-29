@@ -9,8 +9,17 @@
 // preview reflects the main conversation.
 
 import { asRecord } from "../../utils/record";
-import type { VaultActivityStep, VaultMessageTokens, VaultSessionDetail, VaultTimelineItem } from "../types";
+import type {
+  VaultActivityStep,
+  VaultMessageTokens,
+  VaultSessionDetail,
+  VaultSessionStats,
+  VaultSessionUsage,
+  VaultTimelineItem,
+} from "../types";
 import { parseStoredTimestamp } from "./timestamp";
+import { createToolTally, toolStats } from "./toolTally";
+import { usageStats } from "./usage";
 import { classifyUserRecord } from "./userRecord";
 
 /** ~600-char cap per text field (D5). */
@@ -167,6 +176,12 @@ export interface ClassifyOptions {
    * decoupled from the team concept; absent → the old plain-message behavior.
    */
   teammateMessage?: (rawText: string) => { agentName: string; from: string; color?: string; body: string } | null;
+  /**
+   * The transcript's token usage, collected by the caller over the WHOLE stream
+   * (`createClaudeUsageCollector`) — the records here may be only its head and
+   * tail, which would undercount. Absent → the stats carry no token figures.
+   */
+  usage?: VaultSessionUsage;
 }
 
 /** Result of classifying a transcript — `readDetail` adds `entryId`. */
@@ -176,7 +191,7 @@ export interface ClassifiedDetail {
   latestMessage?: { role: "user" | "assistant"; text: string; timestamp: number };
   timeline: VaultTimelineItem[];
   truncated?: boolean;
-  stats: { messageCount: number; toolCount: number; subagentCount: number; tokenCount?: number };
+  stats: VaultSessionStats;
 }
 
 /** Shown when a transcript was too large to read whole (head+tail kept). */
@@ -620,10 +635,8 @@ export function classifyClaudeStyleEvents(records: Rec[], opts: ClassifyOptions 
   let latestMessage: ClassifiedDetail["latestMessage"];
   let messageCount = 0;
   let toolCount = 0;
+  const tools = createToolTally();
   let spawnCalls = 0;
-  let outputTokens = 0;
-  let lastContextTokens = 0;
-  let sawUsage = false;
 
   for (const rec of records) {
     if (!rec || typeof rec !== "object") {
@@ -799,6 +812,7 @@ export function classifyClaudeStyleEvents(records: Rec[], opts: ClassifyOptions 
                 ? buildClaudeQuestionItem(input, questionAnswers.get(str(block.id) ?? ""), ts)
                 : null;
             toolCount++;
+            tools.add(name);
             if (question) {
               timeline.push(question);
             } else {
@@ -821,18 +835,6 @@ export function classifyClaudeStyleEvents(records: Rec[], opts: ClassifyOptions 
     } else if (text) {
       timeline.push({ kind: "message", role: "assistant", text: normalizeRich(text), timestamp: ts, ...msgMeta });
     }
-
-    const usage = asRecord(msg.usage);
-    if (usage) {
-      sawUsage = true;
-      outputTokens += finiteNumberOrZero(usage.output_tokens);
-      // Last turn's context ≈ input + cache. Overwritten each turn so it's the
-      // final context size, not a (double-counting) cumulative input sum (D7).
-      lastContextTokens =
-        finiteNumberOrZero(usage.input_tokens) +
-        finiteNumberOrZero(usage.cache_read_input_tokens) +
-        finiteNumberOrZero(usage.cache_creation_input_tokens);
-    }
   }
 
   // Subagent files with no matched spawn call (e.g. a teammate launched a
@@ -844,7 +846,6 @@ export function classifyClaudeStyleEvents(records: Rec[], opts: ClassifyOptions 
   // exist but a description mismatch leaves a call unmatched, this avoids
   // double-counting the same child (the plain step AND the appended stub) (W4).
   const subagentCount = Math.max(spawnCalls, totalStubs);
-  const tokenCount = sawUsage ? outputTokens + lastContextTokens : undefined;
   const bounded = boundTimeline(timeline, limit);
   return {
     firstPrompt,
@@ -855,8 +856,9 @@ export function classifyClaudeStyleEvents(records: Rec[], opts: ClassifyOptions 
     stats: {
       messageCount,
       toolCount,
+      ...toolStats(tools.result()),
       subagentCount,
-      ...(tokenCount !== undefined ? { tokenCount } : {}),
+      ...usageStats(opts.usage),
     },
   };
 }

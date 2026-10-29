@@ -44,13 +44,15 @@ function ensureWidget(doc: Document): HTMLDivElement {
   return el;
 }
 
-function show(target: HTMLElement, text: string): void {
+function show(target: HTMLElement, text: string, multiline = false): void {
   const doc = target.ownerDocument;
   if (!doc?.body.contains(target)) {
     return;
   }
   const el = ensureWidget(doc);
   el.textContent = text;
+  // The widget is shared, so the modifier is set (or cleared) on every show.
+  el.classList.toggle("webview-tooltip--multiline", multiline);
   el.style.left = "0px";
   el.style.top = "0px";
   el.style.display = "block";
@@ -82,7 +84,7 @@ function hide(): void {
   }
 }
 
-function scheduleShow(target: HTMLElement, resolveText: () => string): void {
+function scheduleShow(target: HTMLElement, resolveText: () => string, multiline = false): void {
   if (pendingTimer !== null) {
     clearTimeout(pendingTimer);
   }
@@ -94,7 +96,7 @@ function scheduleShow(target: HTMLElement, resolveText: () => string): void {
     }
     const live = resolveText();
     if (live) {
-      show(target, live);
+      show(target, live, multiline);
     }
   }, SHOW_DELAY_MS);
 }
@@ -108,6 +110,9 @@ export interface AttachTooltipOptions {
    * precedence over `text`. The closure is re-evaluated on every show so
    * callers don't have to re-attach. */
   getText?: () => string;
+  /** Keep the text's line breaks and allow a wider widget — for a short
+   *  multi-line breakdown rather than a one-line hint. */
+  multiline?: boolean;
 }
 
 export function attachTooltip(target: HTMLElement, opts: AttachTooltipOptions = {}): () => void {
@@ -134,7 +139,7 @@ export function attachTooltip(target: HTMLElement, opts: AttachTooltipOptions = 
   }
   target.setAttribute("aria-describedby", WIDGET_ID);
 
-  const onEnter = (): void => scheduleShow(target, resolveText);
+  const onEnter = (): void => scheduleShow(target, resolveText, opts.multiline === true);
   const onLeave = (): void => {
     if (currentTarget === target) {
       hide();

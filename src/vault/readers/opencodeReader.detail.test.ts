@@ -109,6 +109,11 @@ describe("mapOpencodeRows", () => {
     ]);
     expect(out.latestMessage).toMatchObject({ role: "assistant", text: "done, look here", timestamp: 3 });
     expect(out.stats).toMatchObject({ messageCount: 3, toolCount: 2, subagentCount: 1, tokenCount: 135 });
+    // Named as the timeline names them; the subtask is a subagent, not a tool.
+    expect(out.stats.tools).toEqual([
+      { name: "Bash", count: 1 },
+      { name: "Read", count: 1 },
+    ]);
   });
 
   // improve-vault-transcript-messages 3_1 — the message row id is the locator.
@@ -287,6 +292,53 @@ describe("mapOpencodeRows", () => {
     const out = mapOpencodeRows([...messages], [textPart("m1", 1, "go"), errored]);
     expect(out.timeline.some((t) => t.kind === "question")).toBe(false);
     expect(out.timeline.some((t) => t.kind === "tool" && t.tool === "Question")).toBe(true);
+  });
+
+  it("tallies usage per model, reasoning folded into output, with OpenCode's own cost", () => {
+    const out = mapOpencodeRows(
+      [
+        msg("m1", "user", 1),
+        msg("m2", "assistant", 2, {
+          providerID: "anthropic",
+          modelID: "claude-opus-5-5",
+          cost: 0.25,
+          tokens: { input: 100, output: 20, reasoning: 5, cache: { read: 1000, write: 50 } },
+        }),
+        msg("m3", "assistant", 3, {
+          providerID: "anthropic",
+          modelID: "claude-opus-5-5",
+          cost: 0.5,
+          tokens: { input: 10, output: 2, reasoning: 0, cache: { read: 0, write: 0 } },
+        }),
+        msg("m4", "assistant", 4, { modelID: "small", tokens: { input: 3, output: 1 } }),
+      ],
+      [textPart("m1", 1, "hi")],
+    );
+    expect(out.stats.usage).toEqual({
+      models: [
+        { model: "anthropic/claude-opus-5-5", input: 110, cacheRead: 1000, cacheWrite: 50, output: 27, costUSD: 0.75 },
+        { model: "small", input: 3, cacheRead: 0, cacheWrite: 0, output: 1 },
+      ],
+      costUSD: 0.75,
+      includesSubagents: false,
+    });
+    expect(out.stats.tokenCount).toBe(1191);
+  });
+
+  it("shows no cost when OpenCode priced the whole session at zero", () => {
+    const out = mapOpencodeRows(
+      [msg("m1", "assistant", 1, { modelID: "sub", cost: 0, tokens: { input: 5, output: 5 } })],
+      [],
+    );
+    expect(out.stats.usage).toEqual({
+      models: [{ model: "sub", input: 5, cacheRead: 0, cacheWrite: 0, output: 5 }],
+      includesSubagents: false,
+    });
+  });
+
+  it("ignores a non-numeric cost", () => {
+    const out = mapOpencodeRows([msg("m1", "assistant", 1, { modelID: "x", cost: "1", tokens: { input: 1 } })], []);
+    expect(out.stats.usage).not.toHaveProperty("costUSD");
   });
 
   it("omits tokenCount when no assistant tokens are present", () => {
@@ -765,6 +817,43 @@ describe("readOpenCodeDetail head+tail windowing", () => {
 
   // Round 2 S1: message overflow short-circuits the `||`, so the part branch only
   // proves itself with messages sitting exactly at capacity.
+  // Usage is summed over the two message windows, so a dropped middle makes it a floor.
+  const withTokens = (base: ReturnType<typeof longSessionSqlite>) =>
+    vi.fn(async (db: string, sql: string): Promise<SqliteResult> => {
+      const res = await base(db, sql);
+      if (!sql.includes("FROM message") || sql.includes("OFFSET")) {
+        return res;
+      }
+      const rows = res.rows.map((row) => {
+        const data = JSON.parse(String(row.data)) as Record<string, unknown>;
+        return data.role === "assistant" ? { ...row, data: JSON.stringify({ ...data, tokens: { output: 1 } }) } : row;
+      });
+      return { ...res, rows };
+    });
+
+  it("marks the usage a lower bound when the message windows dropped rows", async () => {
+    const readSqliteFn = withTokens(longSessionSqlite(RETAINED_MESSAGES + 1, RETAINED_PARTS));
+    const detail = await readOpenCodeDetail(
+      "ses_long",
+      { dataDir: "/x/oc", withSqliteSnapshotFn: snapshotOf(readSqliteFn) },
+      undefined,
+    );
+    expect(detail?.stats.usage?.lowerBound).toBe(true);
+  });
+
+  it("does not mark the usage a lower bound when the windows cover every message", async () => {
+    const readSqliteFn = withTokens(longSessionSqlite(RETAINED_MESSAGES, RETAINED_PARTS + 1));
+    const detail = await readOpenCodeDetail(
+      "ses_long",
+      { dataDir: "/x/oc", withSqliteSnapshotFn: snapshotOf(readSqliteFn) },
+      undefined,
+    );
+    // Only parts overflowed — every message (and so every token count) was read.
+    expect(detail?.partial).toBe(true);
+    expect(detail?.stats.usage).toBeDefined();
+    expect(detail?.stats.usage?.lowerBound).toBeUndefined();
+  });
+
   it("reports partial when only the part table overflows", async () => {
     const readSqliteFn = longSessionSqlite(RETAINED_MESSAGES, RETAINED_PARTS + 1);
 

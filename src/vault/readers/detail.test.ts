@@ -363,28 +363,52 @@ describe("classifyClaudeStyleEvents", () => {
     });
   });
 
-  it("sums usage into an approximate token count when present", () => {
+  it("breaks the tool count down by tool name, leaving out subagent spawns and Workflow", () => {
+    const records: Rec[] = [
+      userText("hi"),
+      assistantTool("Bash", { command: "a" }),
+      assistantTool("Read", { file_path: "/a" }),
+      assistantTool("Bash", { command: "b" }),
+      assistantTool("AskUserQuestion", { questions: [] }),
+      assistantTool("Task", { subagent_type: "x", prompt: "p" }),
+      assistantTool("Workflow", { script: "s" }),
+    ];
+    const out = classifyClaudeStyleEvents(records);
+    expect(out.stats.toolCount).toBe(4);
+    expect(out.stats.tools).toEqual([
+      { name: "Bash", count: 2 },
+      { name: "AskUserQuestion", count: 1 },
+      { name: "Read", count: 1 },
+    ]);
+    // The breakdown explains the count exactly.
+    expect(out.stats.tools?.reduce((n, t) => n + t.count, 0)).toBe(out.stats.toolCount);
+  });
+
+  it("carries no tool breakdown when no tool was called", () => {
+    const out = classifyClaudeStyleEvents([userText("hi"), assistantText("yo")]);
+    expect(out.stats).not.toHaveProperty("tools");
+  });
+
+  it("carries the caller's whole-stream usage into the stats, totalled", () => {
+    const usage = {
+      models: [{ model: "claude-opus-5-5", input: 10, cacheRead: 1000, cacheWrite: 200, output: 40 }],
+      includesSubagents: false,
+    };
+    const out = classifyClaudeStyleEvents([userText("hi"), assistantText("yo")], { usage });
+    expect(out.stats.tokenCount).toBe(1250);
+    expect(out.stats.usage).toBe(usage);
+  });
+
+  it("reports no token figures without the caller's usage, whatever the records carry", () => {
+    // The records may be only a transcript's head and tail; summing them here
+    // would undercount, so the classifier never derives usage itself.
     const records: Rec[] = [
       userText("hi"),
       assistantTool("Bash", { command: "a" }, { output_tokens: 100, input_tokens: 500 }),
-      assistantTool(
-        "Bash",
-        { command: "b" },
-        {
-          output_tokens: 50,
-          input_tokens: 1200,
-          cache_read_input_tokens: 300,
-        },
-      ),
     ];
     const out = classifyClaudeStyleEvents(records);
-    // output sum (150) + last turn context (1200 + 300) = 1650.
-    expect(out.stats.tokenCount).toBe(1650);
-  });
-
-  it("omits tokenCount when no usage is present", () => {
-    const out = classifyClaudeStyleEvents([userText("hi"), assistantText("yo")]);
     expect(out.stats.tokenCount).toBeUndefined();
+    expect(out.stats.usage).toBeUndefined();
   });
 
   it("builds a full chronological timeline (messages interleaved with tool/subagent steps)", () => {

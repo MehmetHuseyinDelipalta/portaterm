@@ -28,23 +28,107 @@ export function collapseSeparators<T>(items: (T | "sep")[]): (T | "sep")[] {
   return out;
 }
 
-/** Compact token count: 1650 → "1.6k". */
+/** Compact token count: 1650 → "1.6k", 1_250_000 → "1.3M". */
 export function formatTokens(n: number): string {
+  if (n >= 999_950) {
+    return `${(n / 1_000_000).toFixed(1)}M`;
+  }
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
-/** Activity summary line: "24 msgs · 18.2k tok · 8 tools · 1 subagent". */
-export function formatStats(stats: VaultSessionDetail["stats"]): string {
+/** USD to the cent; a cost too small to show a cent reads "<$0.01", never "$0.00". */
+export function formatCost(usd: number): string {
+  if (usd > 0 && usd < 0.005) {
+    return "<$0.01";
+  }
+  return `$${usd.toFixed(2)}`;
+}
+
+/** One segment of the Activity line; `tokens` and `tools` carry a hover breakdown. */
+export interface StatsPart {
+  kind: "plain" | "tokens" | "tools";
+  text: string;
+}
+
+/** Activity summary segments: "24 msgs", "18.2k tok", "~$0.42", "8 tools", "1 subagent". */
+export function formatStatsParts(stats: VaultSessionDetail["stats"]): StatsPart[] {
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-  const parts = [plural(stats.messageCount, "msg")];
+  const parts: StatsPart[] = [{ kind: "plain", text: plural(stats.messageCount, "msg") }];
   if (stats.tokenCount !== undefined) {
-    parts.push(`${formatTokens(stats.tokenCount)} tok`);
+    const floor = stats.usage?.lowerBound ? "≥" : "";
+    parts.push({ kind: "tokens", text: `${floor}${formatTokens(stats.tokenCount)} tok` });
   }
-  parts.push(plural(stats.toolCount, "tool"));
+  if (stats.usage?.costUSD !== undefined) {
+    // "~": the agent's figure at API rates, not necessarily what was billed.
+    parts.push({ kind: "plain", text: `~${formatCost(stats.usage.costUSD)}` });
+  }
+  parts.push({ kind: "tools", text: plural(stats.toolCount, "tool") });
   if (stats.subagentCount > 0) {
-    parts.push(plural(stats.subagentCount, "subagent"));
+    parts.push({ kind: "plain", text: plural(stats.subagentCount, "subagent") });
   }
-  return parts.join(" · ");
+  return parts;
+}
+
+/** Activity summary line: "24 msgs · 18.2k tok · ~$0.42 · 8 tools · 1 subagent". */
+export function formatStats(stats: VaultSessionDetail["stats"]): string {
+  return formatStatsParts(stats)
+    .map((p) => p.text)
+    .join(" · ");
+}
+
+/** Tool lines shown before the rest collapse into one "+N more" line. */
+export const MAX_TOOL_BREAKDOWN_LINES = 15;
+
+/** The hover breakdown behind the tool count: one "Name ×count" line per tool. */
+export function formatToolBreakdown(stats: VaultSessionDetail["stats"]): string {
+  const tools = stats.tools ?? [];
+  const shown = tools.length > MAX_TOOL_BREAKDOWN_LINES ? MAX_TOOL_BREAKDOWN_LINES - 1 : tools.length;
+  const lines = tools.slice(0, shown).map((t) => `${t.name} ×${t.count}`);
+  const rest = tools.slice(shown);
+  if (rest.length > 0) {
+    const calls = rest.reduce((sum, t) => sum + t.count, 0);
+    lines.push(`+${rest.length} more tools ×${calls}`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * The hover breakdown behind the token count: per model, the non-zero counts and
+ * the agent's cost, then a note for each way the figures fall short of the truth.
+ */
+export function formatUsageBreakdown(stats: VaultSessionDetail["stats"]): string {
+  const usage = stats.usage;
+  if (!usage) {
+    return "";
+  }
+  const lines: string[] = [];
+  for (const m of usage.models) {
+    const cost = m.costUSD !== undefined ? ` · ${formatCost(m.costUSD)}` : "";
+    lines.push(`${m.model ?? "All models"}${cost}`);
+    const counts: [number, string][] = [
+      [m.input, "input"],
+      [m.cacheRead, "cache read"],
+      [m.cacheWrite, "cache write"],
+      [m.output, "output"],
+    ];
+    lines.push(
+      counts
+        .filter(([n]) => n > 0)
+        .map(([n, label]) => `${formatTokens(n)} ${label}`)
+        .join(" · "),
+    );
+  }
+  const notes: string[] = [];
+  if (usage.costUSD !== undefined) {
+    notes.push("Cost at API rates, as recorded by the agent.");
+  }
+  if (usage.lowerBound) {
+    notes.push("Only part of this session was read, so these are minimums.");
+  }
+  if (!usage.includesSubagents && stats.subagentCount > 0) {
+    notes.push("Subagent usage is not included.");
+  }
+  return [...lines, ...(notes.length > 0 ? ["", ...notes] : [])].join("\n");
 }
 
 /** True iff `child` equals `parent` or sits inside its subtree (either separator, any Unicode normal form). */

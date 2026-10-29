@@ -337,7 +337,12 @@ describe("Cursor IDE Composer detail", () => {
       { kind: "tool", tool: "read_file", detail: "/tmp/a.ts" },
       { kind: "message", role: "assistant", text: "Answer", timestamp: 1200 },
     ]);
-    expect(detail?.stats).toEqual({ messageCount: 2, toolCount: 1, subagentCount: 0 });
+    expect(detail?.stats).toEqual({
+      messageCount: 2,
+      toolCount: 1,
+      tools: [{ name: "read_file", count: 1 }],
+      subagentCount: 0,
+    });
   });
 
   it("bounds Composer headers to the most recent conversation window", async () => {
