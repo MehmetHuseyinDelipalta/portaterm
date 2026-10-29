@@ -3,9 +3,11 @@
 // Extracted for testability. Pure DOM rendering function with dependency injection.
 // See: docs/design/flow-multi-tab.md#Data-Routing-Architecture
 
+import { tabColorCss, toTabColor } from "../shared/tabAppearance";
 import { stripDecorations } from "../shared/titleDecorations";
 import { getAllSessionIds, type SplitNode } from "./SplitModel";
 import { type PaneAgentAttention, strongestAttention, type TerminalInstance } from "./state/WebviewStateStore";
+import { tabIconSvg } from "./tabIcons";
 import { attachTooltip } from "./ui/Tooltip";
 import { ICON_BRANCH } from "./worktree/worktreeIcons";
 
@@ -240,6 +242,9 @@ export interface TabInfo {
   customName?: string | null;
   /** Pinned tabs render first, with a pin mark in place of the close button. */
   pinned?: boolean;
+  /** Root tab color and icon ids (shared/tabAppearance.ts); an unknown id draws nothing. */
+  tabColor?: string;
+  tabIcon?: string;
   /** Stable linked-worktree owner. Absent means main. */
   worktreeId?: string;
   /** Whether the terminal process has exited. */
@@ -372,6 +377,8 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
         name: labelFor(activeInstance) ?? labelFor(rootInstance) ?? tabId,
         customName: rootInstance?.customName ?? null,
         pinned: rootInstance?.pinned === true,
+        tabColor: rootInstance?.tabColor,
+        tabIcon: rootInstance?.tabIcon,
         exited: (activeInstance ?? rootInstance)?.exited,
         activityStatus: anyWaiting ? "waiting" : anyRunning ? "running" : "idle",
         agentAttention: tabAttention(sessionIds, store),
@@ -391,6 +398,8 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
           name: labelFor(instance) ?? tabId,
           customName: instance.customName,
           pinned: instance.pinned === true,
+          tabColor: instance.tabColor,
+          tabIcon: instance.tabIcon,
           exited: instance.exited,
           activityStatus: instance.activityStatus,
           agentAttention: tabAttention([paneId], store),
@@ -749,6 +758,14 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
       // Outside the broadcast mark, which keeps its place against the name.
       tab.insertBefore(zoomMark, broadcastMark);
 
+      // The tab's chosen icon, first after the status dot: it names the tab, so
+      // the mode marks keep their place against the name. Set from the context menu.
+      const iconMark = document.createElement("span");
+      iconMark.className = "tab-icon";
+      iconMark.setAttribute("aria-hidden", "true");
+      iconMark.hidden = true;
+      tab.insertBefore(iconMark, zoomMark);
+
       tab.addEventListener("click", (event) => {
         // The second click of a native double-click is followed by `dblclick`.
         // Skip only that click; unlike the old timestamp heuristic, this cannot
@@ -786,6 +803,31 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     tab.querySelector<HTMLElement>(".tab-broadcast-mark")!.hidden = !broadcasting;
     tab.querySelector<HTMLElement>(".tab-zoom-mark")!.hidden = !zoomed;
     tab.dataset.tabId = id;
+
+    // Color: a stripe along the tab's top edge, and the icon's fill. Written as a
+    // custom property so the stylesheet owns where the color goes.
+    const color = toTabColor(instance.tabColor);
+    tab.classList.toggle("tab-colored", color !== undefined);
+    if (color) {
+      tab.style.setProperty("--tab-color", tabColorCss(color));
+      tab.dataset.tabColor = color;
+    } else {
+      tab.style.removeProperty("--tab-color");
+      delete tab.dataset.tabColor;
+    }
+    const iconMark = tab.querySelector<HTMLElement>(".tab-icon")!;
+    const iconSvg = tabIconSvg(instance.tabIcon);
+    const iconId = iconSvg ? instance.tabIcon : undefined;
+    iconMark.hidden = iconId === undefined;
+    // Rewritten only on a change: PTY activity re-renders the bar constantly.
+    if (iconMark.dataset.icon !== iconId) {
+      iconMark.innerHTML = iconSvg ?? "";
+      if (iconId) {
+        iconMark.dataset.icon = iconId;
+      } else {
+        delete iconMark.dataset.icon;
+      }
+    }
 
     // Custom name takes priority over the auto-derived (OSC-mutated) `name`.
     // See add-tab-rename design.md D1.

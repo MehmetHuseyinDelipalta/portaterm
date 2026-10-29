@@ -30,6 +30,9 @@ export function entriesSignature(entries: readonly VaultSessionEntry[]): string 
         // tag adds a chip — neither touches any field above.
         e.starred ? "1" : "0",
         JSON.stringify(e.tags ?? []),
+        // The row's color stripe and icon, from the tab that last ran it.
+        e.tabColor ?? "",
+        e.tabIcon ?? "",
         e.cwd,
         String(e.modified),
         // Explicit false hides Resume; undefined preserves legacy resume behavior.

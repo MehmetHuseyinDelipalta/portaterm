@@ -4,6 +4,7 @@
 // import the type without creating a circular dependency.
 
 import type { PtySession } from "../pty/PtySession";
+import type { TabColorId, TabIconId } from "../shared/tabAppearance";
 import type { MessageSender, OutputBuffer } from "./OutputBuffer";
 import type { CommandTracker } from "./TrackedCommand";
 
@@ -69,6 +70,12 @@ export interface TerminalSession {
    * pinned (and always absent on split panes).
    */
   pinned?: boolean;
+  /**
+   * The root tab's color and icon, chosen from the tab's context menu. Persisted
+   * in the session snapshot; absent means none (and always absent on split panes).
+   */
+  tabColor?: TabColorId;
+  tabIcon?: TabIconId;
   /** Whether this is the active tab in its view */
   isActive: boolean;
   /** Assigned terminal number (for name and recycling) */

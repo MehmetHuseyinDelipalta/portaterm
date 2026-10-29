@@ -55,6 +55,8 @@
     "onCommand:portaterm.splitVertical",
     "onCommand:portaterm.closeSplitPane",
     "onCommand:portaterm.renameTab",
+    "onCommand:portaterm.setTabColor",
+    "onCommand:portaterm.setTabIcon",
     "onWebviewPanel:portaterm.editor"
   ],
   "main": "./dist/extension.js",
@@ -298,6 +300,16 @@
         "command": "portaterm.renameTab",
         "category": "Portaterm",
         "title": "Rename Tab…"
+      },
+      {
+        "command": "portaterm.setTabColor",
+        "category": "Portaterm",
+        "title": "Change Tab Color…"
+      },
+      {
+        "command": "portaterm.setTabIcon",
+        "category": "Portaterm",
+        "title": "Change Tab Icon…"
       },
       {
         "command": "portaterm.pinTab",
@@ -562,6 +574,16 @@
           "command": "portaterm.unpinTab",
           "when": "webviewSection == 'terminalTab' && tabPinned",
           "group": "tab@2"
+        },
+        {
+          "command": "portaterm.setTabColor",
+          "when": "webviewSection == 'terminalTab'",
+          "group": "tab@3"
+        },
+        {
+          "command": "portaterm.setTabIcon",
+          "when": "webviewSection == 'terminalTab'",
+          "group": "tab@4"
         },
         {
           "command": "portaterm.ctx.clearTerminal",

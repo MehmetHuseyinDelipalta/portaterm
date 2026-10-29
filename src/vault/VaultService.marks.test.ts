@@ -65,6 +65,20 @@ describe("VaultService star and tag overlay", () => {
     expect(svc.listCached()?.entries[0]).toMatchObject({ customName: "Named", starred: true, tags: ["x"] });
   });
 
+  it("overlays a remembered tab color and icon", () => {
+    const doc = docWith([entry("claude:a"), entry("claude:b")]);
+    const marks = new VaultMarksRegistry(memStorage());
+    const cacheStore = { load: () => doc, save: async () => {} } as unknown as VaultCacheStore;
+    const svc = new VaultService({ cacheStore, marks });
+    marks.setTabAppearance("claude:a", { tabColor: "cyan", tabIcon: "server" });
+    marks.setTabAppearance("claude:b", { tabIcon: "bug" });
+    const listed = svc.listCached()?.entries ?? [];
+    expect(listed[0]).toMatchObject({ tabColor: "cyan", tabIcon: "server" });
+    expect(listed[1]?.tabColor).toBeUndefined();
+    expect(listed[1]?.tabIcon).toBe("bug");
+    expect(doc.entries.every((e) => e.tabColor === undefined && e.tabIcon === undefined)).toBe(true);
+  });
+
   it("drops the overlay once the marks are cleared", () => {
     const svc = service(docWith([entry("claude:a")]));
     svc.setStarred("claude:a", true);

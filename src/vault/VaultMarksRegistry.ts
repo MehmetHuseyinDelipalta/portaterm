@@ -9,6 +9,8 @@
 // change fires a fire-and-forget snapshot to the Memento, and VaultService
 // applies it as a serve-time overlay — it NEVER writes an agent's own store.
 
+import { type TabColorId, type TabIconId, toTabColor, toTabIcon } from "../shared/tabAppearance";
+
 /** Longest tag kept; longer input is truncated. */
 export const VAULT_TAG_MAX_LENGTH = 32;
 /** Most tags one session keeps; extra input is dropped. */
@@ -17,10 +19,16 @@ export const VAULT_TAGS_PER_SESSION = 12;
 /** globalState key for the vault marks record. */
 const VAULT_MARKS_STORAGE_KEY = "portaterm.vaultMarks";
 
-/** One session's marks. Absent fields mean "not starred" / "no tags". */
+/** One session's marks. Absent fields mean "not starred" / "no tags" / "no color" / "no icon". */
 export interface VaultEntryMarks {
   starred?: true;
   tags?: string[];
+  /**
+   * The color and icon of the tab that last ran this session, so a resume opens
+   * its new tab wearing them and the vault row shows them while it is closed.
+   */
+  tabColor?: TabColorId;
+  tabIcon?: TabIconId;
 }
 
 /**
@@ -97,6 +105,18 @@ export class VaultMarksRegistry {
     this.write(entryId, { ...current, tags: next.length > 0 ? next : undefined });
   }
 
+  /**
+   * Record the color and icon a tab running this entry now wears — both, as they
+   * stand, so a value left out is cleared. A no-op change neither persists nor notifies.
+   */
+  setTabAppearance(entryId: string, appearance: { tabColor?: TabColorId; tabIcon?: TabIconId }): void {
+    const current = this.cache.get(entryId);
+    if (current?.tabColor === appearance.tabColor && current?.tabIcon === appearance.tabIcon) {
+      return;
+    }
+    this.write(entryId, { ...current, tabColor: appearance.tabColor, tabIcon: appearance.tabIcon });
+  }
+
   /** Snapshot of every entry's marks, keyed by entryId. */
   all(): Readonly<Record<string, VaultEntryMarks>> {
     const snapshot: Record<string, VaultEntryMarks> = {};
@@ -132,8 +152,10 @@ export class VaultMarksRegistry {
     const kept: VaultEntryMarks = {
       ...(marks.starred ? { starred: true as const } : {}),
       ...(marks.tags && marks.tags.length > 0 ? { tags: marks.tags } : {}),
+      ...(marks.tabColor ? { tabColor: marks.tabColor } : {}),
+      ...(marks.tabIcon ? { tabIcon: marks.tabIcon } : {}),
     };
-    if (kept.starred || kept.tags) {
+    if (Object.keys(kept).length > 0) {
       this.cache.set(entryId, kept);
     } else {
       this.cache.delete(entryId);
@@ -158,7 +180,7 @@ export class VaultMarksRegistry {
       if (v === null || typeof v !== "object" || Array.isArray(v)) {
         continue;
       }
-      const record = v as { starred?: unknown; tags?: unknown };
+      const record = v as { starred?: unknown; tags?: unknown; tabColor?: unknown; tabIcon?: unknown };
       const tags = Array.isArray(record.tags)
         ? normalizeVaultTags(record.tags.filter((t): t is string => typeof t === "string"))
         : [];
@@ -166,7 +188,16 @@ export class VaultMarksRegistry {
         ...(record.starred === true ? { starred: true as const } : {}),
         ...(tags.length > 0 ? { tags } : {}),
       };
-      if (marks.starred || marks.tags) {
+      // An id this build does not know is dropped, like a malformed tag.
+      const tabColor = toTabColor(record.tabColor);
+      const tabIcon = toTabIcon(record.tabIcon);
+      if (tabColor) {
+        marks.tabColor = tabColor;
+      }
+      if (tabIcon) {
+        marks.tabIcon = tabIcon;
+      }
+      if (Object.keys(marks).length > 0) {
         result.set(k, marks);
       }
     }

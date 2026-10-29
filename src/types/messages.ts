@@ -2097,6 +2097,10 @@ export interface InitMessage {
     customName: string | null;
     /** Pinned root tab (absent from older hosts means unpinned). */
     pinned?: boolean;
+    /** Root tab color id (see shared/tabAppearance.ts). Absent means none. */
+    tabColor?: string;
+    /** Root tab icon id (see shared/tabAppearance.ts). Absent means none. */
+    tabIcon?: string;
     /** Whether this tab is currently active */
     isActive: boolean;
     /** Stable linked-worktree owner. Absent means main. */
@@ -2211,6 +2215,9 @@ export interface TabCreatedMessage {
   customName: string | null;
   /** Stable linked-worktree owner. Absent means main. */
   worktreeId?: string;
+  /** Color and icon ids a resumed session's tab opens wearing. Absent means none. */
+  tabColor?: string;
+  tabIcon?: string;
 }
 
 /**
@@ -2239,6 +2246,19 @@ export interface TabPinnedMessage {
   /** Target tab (root tab) session id */
   tabId: string;
   pinned: boolean;
+}
+
+/**
+ * Extension → WebView: a root tab's color or icon changed. Carries both, as they
+ * stand now; null means none. The webview mirrors them into `TerminalInstance`
+ * and resolves the ids itself, so an id it does not know draws nothing.
+ */
+export interface TabAppearanceMessage {
+  type: "tabAppearance";
+  /** Target tab (root tab) session id */
+  tabId: string;
+  tabColor: string | null;
+  tabIcon: string | null;
 }
 
 /** Where a pane's agent stands with the user, as its tab and vault row show it. */
@@ -3275,6 +3295,7 @@ export type ExtensionToWebViewMessage =
   | TabCreatedMessage
   | TabRenamedMessage
   | TabPinnedMessage
+  | TabAppearanceMessage
   | AgentAttentionMessage
   | VaultPinnedSessionsMessage
   | VaultOpenSessionsMessage

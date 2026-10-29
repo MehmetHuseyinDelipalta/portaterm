@@ -180,6 +180,50 @@ describe("SessionManager restore: pinned tabs", () => {
   });
 });
 
+describe("SessionManager restore: tab color and icon", () => {
+  it("restores a known color and icon, and reads an unknown id or an older entry as none", () => {
+    const storage = makeStorageMock({ buffers: { SET: "BUF", ODD: "BUF", OLD: "BUF" } });
+    const sm = new SessionManager(undefined, { restoreEnabled: true, storage: storage as any });
+    sm.hydrateFromSnapshots({
+      version: 1,
+      entries: {
+        SET: meta("SET", { tabColor: "magenta", tabIcon: "database" }),
+        ODD: meta("ODD", { terminalNumber: 2, tabColor: "plaid", tabIcon: "unicorn" }),
+        OLD: meta("OLD", { terminalNumber: 3 }),
+      },
+    });
+    const ids = sm
+      .consumeSnapshotsForLocation("sidebar")
+      .map((restoreFrom) => sm.createSession("sidebar", mockWebview(), { restoreFrom }));
+
+    expect(ids.map((id) => [sm.getSession(id)?.tabColor, sm.getSession(id)?.tabIcon])).toEqual([
+      ["magenta", "database"],
+      [undefined, undefined],
+      [undefined, undefined],
+    ]);
+    expect(sm.getTabsForView("sidebar").map((t) => [t.tabColor, t.tabIcon])).toEqual([
+      ["magenta", "database"],
+      [undefined, undefined],
+      [undefined, undefined],
+    ]);
+    sm.dispose();
+  });
+
+  it("never gives a restored split pane a color or icon of its own", () => {
+    const storage = makeStorageMock({ buffers: { PANE: "BUF" } });
+    const sm = new SessionManager(undefined, { restoreEnabled: true, storage: storage as any });
+    sm.hydrateFromSnapshots({
+      version: 1,
+      entries: { PANE: meta("PANE", { isSplitPane: true, rootTabId: "ROOT", tabColor: "red", tabIcon: "bug" }) },
+    });
+    const [restoreFrom] = sm.consumeSnapshotsForLocation("sidebar");
+    const id = sm.createSession("sidebar", mockWebview(), { restoreFrom });
+    expect(sm.getSession(id)?.tabColor).toBeUndefined();
+    expect(sm.getSession(id)?.tabIcon).toBeUndefined();
+    sm.dispose();
+  });
+});
+
 describe("SessionManager.hydrateLivePanels", () => {
   it("populates the live-panels map from a record", () => {
     const sm = new SessionManager(undefined, { restoreEnabled: true });

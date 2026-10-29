@@ -831,6 +831,8 @@ const routeMessage = createMessageRouter({
         const instance = factory.createTerminal(msg.tabId, msg.name, store.currentConfig, false, msg.customName, {
           worktreeId: msg.worktreeId,
         });
+        instance.tabColor = msg.tabColor;
+        instance.tabIcon = msg.tabIcon;
         instance.terminal.onTitleChange((title) => clearWaitingOnCursorTitleLoss(msg.tabId, title));
         instance.terminal.onResize(() => activityTracker.setWaiting(msg.tabId, false));
       },
@@ -866,6 +868,14 @@ const routeMessage = createMessageRouter({
     if (tabBarEl) {
       revealTab(tabBarEl, msg.tabId);
     }
+  },
+  onTabAppearance(msg) {
+    const instance = store.terminals.get(msg.tabId);
+    if (instance) {
+      instance.tabColor = msg.tabColor ?? undefined;
+      instance.tabIcon = msg.tabIcon ?? undefined;
+    }
+    updateTabBar();
   },
   onRestore(msg) {
     const instance = store.terminals.get(msg.tabId);
@@ -1341,6 +1351,8 @@ function handleInit(msg: InitMessage): void {
       worktreeId: tab.worktreeId,
     });
     instance.pinned = tab.pinned === true;
+    instance.tabColor = tab.tabColor;
+    instance.tabIcon = tab.tabIcon;
     instance.terminal.onTitleChange((title) => clearWaitingOnCursorTitleLoss(tab.id, title));
     instance.terminal.onResize(() => activityTracker.setWaiting(tab.id, false));
   }

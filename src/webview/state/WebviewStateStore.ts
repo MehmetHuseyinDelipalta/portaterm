@@ -66,6 +66,9 @@ export interface TerminalInstance {
   customName: string | null;
   /** Pinned root tab, mirrored from the host via `init` / `tabPinned`. Absent means unpinned. */
   pinned?: boolean;
+  /** Root tab color and icon ids, mirrored from the host via `init` / `tabAppearance`. Absent means none. */
+  tabColor?: string;
+  tabIcon?: string;
   terminal: Terminal;
   container: HTMLDivElement;
   /** Find support for this pane. Absent only on test doubles that never search. */

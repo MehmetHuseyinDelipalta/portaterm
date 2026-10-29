@@ -108,6 +108,34 @@ describe("TerminalViewProvider.onReady restore branch", () => {
     sm.dispose();
   });
 
+  it("sends a restored tab's color and icon in init, and none for a tab that wore none", async () => {
+    const sm = new SessionManager(undefined, { restoreEnabled: true });
+    const styled = pendingSnap("S1", "sidebar");
+    styled.metadata.tabColor = "magenta";
+    styled.metadata.tabIcon = "database";
+    const plain = pendingSnap("S2", "sidebar");
+    plain.metadata.terminalNumber = 2;
+    plain.metadata.rootTabId = "S2";
+    sm.__stagePendingSnapshot(styled);
+    sm.__stagePendingSnapshot(plain);
+    const provider = new TerminalViewProvider({ fsPath: "/mock/ext" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers, postMessage } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const h of messageHandlers) {
+      h({ type: "ready" });
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    const init = postMessage.mock.calls
+      .map((c) => c[0] as { type?: string; tabs?: Array<{ id: string; tabColor?: string; tabIcon?: string }> })
+      .find((m) => m.type === "init");
+    const tabs = init?.tabs ?? [];
+    expect(tabs.find((t) => t.id === "S1")).toMatchObject({ tabColor: "magenta", tabIcon: "database" });
+    expect(tabs.find((t) => t.id === "S2")?.tabColor).toBeUndefined();
+    expect(tabs.find((t) => t.id === "S2")?.tabIcon).toBeUndefined();
+    sm.dispose();
+  });
+
   it("does NOT take the restore branch when sessions already exist (existingTabs takes precedence)", () => {
     const sm = new SessionManager(undefined, { restoreEnabled: true });
     const provider = new TerminalViewProvider({ fsPath: "/mock/ext" } as vscode.Uri, sm, "sidebar");

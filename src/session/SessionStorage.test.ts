@@ -202,6 +202,28 @@ describe("SessionStorage", () => {
     expect(written.entries.s1.unknownFields).toBeUndefined();
   });
 
+  it("loads a tab's pin, color and icon as known fields, not as a newer build's unknowns", () => {
+    const mem = makeFakeMemento();
+    const { fs, files } = makeFakeFs();
+    const s = new SessionStorage(mem as unknown as vscode.Memento, STORAGE_URI, fs);
+    files.set(
+      `${SNAPS_DIR}/index.json`,
+      JSON.stringify({
+        version: 1,
+        entries: { s1: { ...makeMeta("s1"), pinned: true, tabColor: "red", tabIcon: "rocket" } },
+      }),
+    );
+
+    const detailed = s.loadIndexDetailed();
+    expect(detailed.kind).toBe("valid");
+    if (detailed.kind !== "valid") {
+      return;
+    }
+    const meta = detailed.index.entries.s1;
+    expect(meta).toMatchObject({ pinned: true, tabColor: "red", tabIcon: "rocket" });
+    expect(meta.unknownFields).toBeUndefined();
+  });
+
   it("[W1] literal top-level `unknownFields` key on disk is re-bucketed, not self-promoted", () => {
     // A corrupted / pathological sidecar that contains a literal top-level
     // "unknownFields" key (e.g. a buggy v(N+2) build that mistakenly persisted

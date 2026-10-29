@@ -19,6 +19,7 @@ import { PtySession } from "../pty/PtySession";
 import { queryProcessCwd } from "../pty/processCwd";
 import type { InjectionContext } from "../pty/ShellIntegrationInjector";
 import { MAX_REPORTED_TITLE_CHARS } from "../shared/paneEvidence";
+import { type TabColorId, type TabIconId, toTabColor, toTabIcon } from "../shared/tabAppearance";
 import { stripDecorations } from "../shared/titleDecorations";
 import { CustomNameRegistry, type CustomNameStorage, noopCustomNameStorage } from "./CustomNameRegistry";
 import { EditorPanelRegistry } from "./EditorPanelRegistry";
@@ -212,6 +213,18 @@ export class SessionManager {
    * listens; a rename the vault pushed in does not fire it.
    */
   onTabRenamed?: (tabId: string, customName: string | null) => void;
+
+  /**
+   * Fired after a root tab's color or icon changed from the tab (menu or
+   * palette). The vault listens, to remember them on the session the tab runs.
+   */
+  onTabAppearanceChange?: (tabId: string) => void;
+
+  /**
+   * The color and icon remembered on a vault entry — read when a resume opens a
+   * tab for it, so the session comes back wearing what its last tab wore.
+   */
+  appearanceForEntry?: (entryId: string) => { tabColor?: TabColorId; tabIcon?: TabIconId } | undefined;
 
   /**
    * Which restored panes may type their pending `claude --resume`: every one,
@@ -562,6 +575,10 @@ export class SessionManager {
     const recordedCustomName = this.isRestoreEnabled() ? null : this.customNames.getForNumber(number);
     const hydratedCustomName = isSplitPane ? null : (restoredCustomName ?? recordedCustomName);
 
+    const resumedAppearance =
+      options?.vaultEntryId && isAgentLaunch && !isSplitPane
+        ? this.appearanceForEntry?.(options.vaultEntryId)
+        : undefined;
     const session: TerminalSession = {
       id,
       // Initial state: live for fresh / restored-running, exited-preserved for
@@ -573,6 +590,14 @@ export class SessionManager {
       customName: hydratedCustomName,
       // Pins live only in the snapshot: a fresh session is never pinned.
       pinned: !isSplitPane && restoreFrom?.metadata.pinned === true,
+      // Likewise color and icon; an id this build does not know reads as none.
+      // A resume, which names its entry, opens wearing what the entry remembers.
+      tabColor: isSplitPane
+        ? undefined
+        : toTabColor(restoreFrom ? restoreFrom.metadata.tabColor : resumedAppearance?.tabColor),
+      tabIcon: isSplitPane
+        ? undefined
+        : toTabIcon(restoreFrom ? restoreFrom.metadata.tabIcon : resumedAppearance?.tabIcon),
       // Restored exited sessions surface read-only — keep them inactive so the
       // active-tab indicator doesn't move to a dead shell.
       isActive: !isSplitPane && !restoringExited && restoreFrom === undefined,
@@ -910,6 +935,15 @@ export class SessionManager {
     session.currentCwd = undefined;
     session.isAgentLaunch = isAgentLaunch || undefined;
     session.vaultEntryId = isAgentLaunch ? options.vaultEntryId : undefined;
+    // A resume into the idle tab brings what the entry remembers; the tab keeps
+    // its own color or icon where the entry has none.
+    const resumed = session.vaultEntryId ? this.appearanceForEntry?.(session.vaultEntryId) : undefined;
+    if (resumed?.tabColor || resumed?.tabIcon) {
+      this.setTabAppearance(sessionId, {
+        ...(resumed.tabColor ? { tabColor: resumed.tabColor } : {}),
+        ...(resumed.tabIcon ? { tabIcon: resumed.tabIcon } : {}),
+      });
+    }
     session.shellFallbackArmed = isAgentLaunch || undefined;
     session.resumeClaudeSessionId = undefined;
     this.paneEvidence?.markProcess(sessionId, { ptyPid: pty.pid, shell, isAgentLaunch });
@@ -1063,6 +1097,8 @@ export class SessionManager {
     name: string;
     customName: string | null;
     pinned: boolean;
+    tabColor?: TabColorId;
+    tabIcon?: TabIconId;
     isActive: boolean;
     isSplitPane: false;
     worktreeId?: string;
@@ -1077,6 +1113,8 @@ export class SessionManager {
       name: string;
       customName: string | null;
       pinned: boolean;
+      tabColor?: TabColorId;
+      tabIcon?: TabIconId;
       isActive: boolean;
       isSplitPane: false;
       worktreeId?: string;
@@ -1092,6 +1130,8 @@ export class SessionManager {
           name: s.name,
           customName: s.customName,
           pinned: s.pinned === true,
+          tabColor: s.tabColor,
+          tabIcon: s.tabIcon,
           isActive: s.isActive,
           isSplitPane: false,
           worktreeId: s.worktreeId,
@@ -1111,6 +1151,8 @@ export class SessionManager {
     name: string;
     customName: string | null;
     pinned: boolean;
+    tabColor?: TabColorId;
+    tabIcon?: TabIconId;
     isActive: boolean;
     isSplitPane: boolean;
     worktreeId?: string;
@@ -1125,6 +1167,8 @@ export class SessionManager {
       name: string;
       customName: string | null;
       pinned: boolean;
+      tabColor?: TabColorId;
+      tabIcon?: TabIconId;
       isActive: boolean;
       isSplitPane: boolean;
       worktreeId?: string;
@@ -1140,6 +1184,8 @@ export class SessionManager {
           name: s.name,
           customName: s.customName,
           pinned: s.pinned === true,
+          tabColor: s.tabColor,
+          tabIcon: s.tabIcon,
           isActive: s.isActive,
           isSplitPane: s.isSplitPane,
           worktreeId: s.worktreeId,
@@ -1305,6 +1351,33 @@ export class SessionManager {
     this.safePostMessage(session.webview, { type: "tabPinned", tabId: sessionId, pinned });
     this.snapshots.schedulePersist(sessionId);
     this.onPinnedChange?.();
+  }
+
+  /**
+   * Change a root tab's color and/or icon: a key left out keeps its value, null
+   * clears it. Same shape as {@link setPinned}: a silent no-op for unknown ids and
+   * split panes, then broadcast `tabAppearance` (both values, as they now stand)
+   * to the owning webview, persist with the snapshot, and tell the vault.
+   */
+  setTabAppearance(sessionId: string, change: { tabColor?: TabColorId | null; tabIcon?: TabIconId | null }): void {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.isSplitPane) {
+      return;
+    }
+    if (change.tabColor !== undefined) {
+      session.tabColor = change.tabColor ?? undefined;
+    }
+    if (change.tabIcon !== undefined) {
+      session.tabIcon = change.tabIcon ?? undefined;
+    }
+    this.safePostMessage(session.webview, {
+      type: "tabAppearance",
+      tabId: sessionId,
+      tabColor: session.tabColor ?? null,
+      tabIcon: session.tabIcon ?? null,
+    });
+    this.snapshots.schedulePersist(sessionId);
+    this.onTabAppearanceChange?.(sessionId);
   }
 
   /** Whether this session is a pinned root tab, which the close-tab door refuses. */

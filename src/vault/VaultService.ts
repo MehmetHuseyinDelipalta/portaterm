@@ -485,6 +485,8 @@ export class VaultService {
         ...(name ? { customName: name } : {}),
         ...(mark?.starred ? { starred: true } : {}),
         ...(mark?.tags ? { tags: [...mark.tags] } : {}),
+        ...(mark?.tabColor ? { tabColor: mark.tabColor } : {}),
+        ...(mark?.tabIcon ? { tabIcon: mark.tabIcon } : {}),
       };
     });
     return { entries, unreadable: result.unreadable };

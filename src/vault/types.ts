@@ -266,6 +266,9 @@ export interface VaultSessionEntry {
   starred?: boolean;
   /** The user's tags on this session, overlaid like `starred`. Absent when none. */
   tags?: string[];
+  /** Color and icon ids of the tab that last ran this session, overlaid like `starred`. Absent when none. */
+  tabColor?: string;
+  tabIcon?: string;
 }
 
 /**

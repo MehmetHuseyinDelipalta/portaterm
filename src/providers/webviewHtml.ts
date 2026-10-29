@@ -236,6 +236,26 @@ export function getTerminalHtml(
       opacity: 1 !important;
       background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1));
     }
+    /* Tab color (shared/tabAppearance.ts): a stripe along the top edge, drawn
+       as a background layer so it takes no space and leaves box-shadow to the
+       drop and broadcast marks; the icon wears it too. */
+    .tab-item.tab-colored {
+      background-image: linear-gradient(var(--tab-color), var(--tab-color));
+      background-size: 100% 2px;
+      background-position: top;
+      background-repeat: no-repeat;
+    }
+    .tab-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+    .tab-item.tab-colored .tab-icon {
+      color: var(--tab-color);
+    }
     /* Pinned tab: always-visible pin mark in the close button's 16px slot. */
     .tab-pin {
       display: flex;

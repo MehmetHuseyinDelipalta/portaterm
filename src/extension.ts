@@ -23,6 +23,7 @@ import { BROADCAST_COMMAND_IDS, createBroadcastCommands } from "./commands/broad
 import { CLOSE_COMMAND_IDS, createCloseCommands } from "./commands/closeCommands";
 import { exportBuffer, exportCommand, exportLastCommand, NO_FOCUS_TOAST } from "./commands/exportCommands";
 import { createPaneZoomCommands, PANE_ZOOM_COMMAND_IDS } from "./commands/paneZoomCommands";
+import { createTabAppearanceCommands, TAB_APPEARANCE_COMMAND_IDS } from "./commands/tabAppearanceCommands";
 import { CursorHookInstaller } from "./cursor/CursorHookInstaller";
 import { createWatcherPool } from "./providers/fsWatcherPool";
 import { createGitDecorationProvider } from "./providers/gitDecorationProvider";
@@ -2063,6 +2064,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       surface.refreshVaultAfterRename(false);
     }
   });
+  // A tab's color and icon are remembered on the session it runs, so a resume
+  // brings them back and the vault row shows them while no tab runs it.
+  sessionManager.appearanceForEntry = (entryId) => vaultMarks.get(entryId);
+  sessionManager.onTabAppearanceChange = (tabId) => {
+    const panes = sessionManager
+      .panesOfTab(tabId)
+      .map((paneId) => ({ paneId, vaultEntryId: sessionManager.getSession(paneId)?.vaultEntryId }));
+    const entryId = entryForTab(panes, runningEntryId);
+    const tab = sessionManager.getSession(tabId);
+    if (entryId !== undefined && tab) {
+      vaultMarks.setTabAppearance(entryId, { tabColor: tab.tabColor, tabIcon: tab.tabIcon });
+    }
+  };
   sessionManager.onTabRenamed = (tabId, customName) => {
     const panes = sessionManager
       .panesOfTab(tabId)
@@ -2090,6 +2104,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       TerminalEditorProvider.setVaultRenameNotifier(null);
       disposeVaultMarksListener();
       sessionManager.onTabRenamed = undefined;
+      sessionManager.onTabAppearanceChange = undefined;
+      sessionManager.appearanceForEntry = undefined;
       refreshPinnedVaultSessions = undefined;
       sessionManager.onPinnedChange = undefined;
       pinnedVaultPublisher.dispose();
@@ -2681,6 +2697,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
   context.subscriptions.push(registerPinCommand("portaterm.pinTab", true));
   context.subscriptions.push(registerPinCommand("portaterm.unpinTab", false));
+
+  // ─── Tab Color / Icon Commands ────────────────────────────────────
+  // On the tab's context menu and in the palette; target resolution is the
+  // rename chain. Each shows a QuickPick, and a choice lands in the session.
+
+  const tabAppearanceCommands = createTabAppearanceCommands({
+    resolveTabId: (ctx) =>
+      resolveRenameTargetTabId(
+        ctx,
+        () => TerminalEditorProvider.getActiveProvider(),
+        () => TerminalViewProvider.getLastFocusedProvider(),
+      ),
+    current: (tabId) => {
+      const session = sessionManager.getSession(tabId);
+      return session && !session.isSplitPane ? { tabColor: session.tabColor, tabIcon: session.tabIcon } : undefined;
+    },
+    apply: (tabId, change) => sessionManager.setTabAppearance(tabId, change),
+    pick: (items, placeHolder) => vscode.window.showQuickPick(items, { placeHolder }),
+    themeIcon: (codicon) => new vscode.ThemeIcon(codicon),
+    colorSwatch: (color) => vscode.Uri.joinPath(context.extensionUri, "media", "tab-colors", `${color}.svg`),
+  });
+  for (const id of TAB_APPEARANCE_COMMAND_IDS) {
+    context.subscriptions.push(vscode.commands.registerCommand(id, tabAppearanceCommands[id]));
+  }
 
   // ─── Configuration Change Listener ────────────────────────────────
   // Push updated config to all active webviews when relevant settings change.

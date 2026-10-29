@@ -555,6 +555,8 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         name: newSession.name,
         customName: newSession.customName,
         worktreeId: newSession.worktreeId,
+        tabColor: newSession.tabColor,
+        tabIcon: newSession.tabIcon,
       });
     }
   }

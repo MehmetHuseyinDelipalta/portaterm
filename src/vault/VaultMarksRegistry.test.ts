@@ -178,3 +178,50 @@ describe("VaultMarksRegistry", () => {
     expect(reg.knownTags()).toEqual(["Api", "beta", "zeta"]);
   });
 });
+
+describe("VaultMarksRegistry: tab color and icon", () => {
+  it("records both as they stand, beside the star, and clears what is left out", () => {
+    const fake = fakeStorage();
+    const reg = new VaultMarksRegistry(fake.storage);
+    const changed = vi.fn();
+    reg.onDidChange(changed);
+    reg.setStarred("claude:a", true);
+    reg.setTabAppearance("claude:a", { tabColor: "red", tabIcon: "rocket" });
+    expect(reg.get("claude:a")).toEqual({ starred: true, tabColor: "red", tabIcon: "rocket" });
+    expect(fake.written()).toEqual({ "claude:a": { starred: true, tabColor: "red", tabIcon: "rocket" } });
+
+    reg.setTabAppearance("claude:a", { tabIcon: "rocket" });
+    expect(reg.get("claude:a")).toEqual({ starred: true, tabIcon: "rocket" });
+    expect(changed).toHaveBeenCalledTimes(3);
+  });
+
+  it("drops an entry left with nothing, and a no-op change neither persists nor notifies", () => {
+    const fake = fakeStorage();
+    const reg = new VaultMarksRegistry(fake.storage);
+    reg.setTabAppearance("claude:a", { tabColor: "blue" });
+    const changed = vi.fn();
+    reg.onDidChange(changed);
+    const writes = fake.writes();
+    reg.setTabAppearance("claude:a", { tabColor: "blue" });
+    expect(fake.writes()).toBe(writes);
+    expect(changed).not.toHaveBeenCalled();
+
+    reg.setTabAppearance("claude:a", {});
+    expect(reg.get("claude:a")).toBeUndefined();
+    expect(fake.written()).toEqual({});
+  });
+
+  it("loads known ids from an earlier window and drops ids this build does not know", () => {
+    const fake = fakeStorage({
+      "portaterm.vaultMarks": {
+        "claude:a": { tabColor: "green", tabIcon: "bug" },
+        "claude:b": { tabColor: "plaid", tabIcon: 7 },
+        "claude:c": { starred: true, tabColor: "plaid" },
+      },
+    });
+    const reg = new VaultMarksRegistry(fake.storage);
+    expect(reg.get("claude:a")).toEqual({ tabColor: "green", tabIcon: "bug" });
+    expect(reg.get("claude:b")).toBeUndefined();
+    expect(reg.get("claude:c")).toEqual({ starred: true });
+  });
+});

@@ -109,6 +109,41 @@ describe("SessionManager debounced persistence", () => {
     sm.dispose();
   });
 
+  it("a color or icon change schedules a persist, and the index carries each only while set", async () => {
+    const fx = makeFactories();
+    const storage = makeStorageMock();
+    const sm = new SessionManager(undefined, {
+      restoreEnabled: true,
+      headlessFactory: fx.headless,
+      serializeAddonFactory: fx.serialize,
+      storage: storage as any,
+    });
+    const id = sm.createSession("sidebar", mockWebview());
+    mockPtySessions[0].onData?.("seed");
+    await vi.advanceTimersByTimeAsync(1000);
+    storage.commitIndexAsync.mockClear();
+    const lastEntry = () =>
+      (storage.commitIndexAsync.mock.calls.at(-1)?.[0] as SessionSnapshotsIndex | undefined)?.entries[id];
+
+    sm.setTabAppearance(id, { tabColor: "green", tabIcon: "rocket" });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(storage.commitIndexAsync).toHaveBeenCalledTimes(1);
+    expect(lastEntry()).toMatchObject({ tabColor: "green", tabIcon: "rocket" });
+
+    sm.setTabAppearance(id, { tabColor: null });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(storage.commitIndexAsync).toHaveBeenCalledTimes(2);
+    // Written only while set, so a cleared entry looks like an older one.
+    expect(lastEntry()).toBeDefined();
+    expect(lastEntry() && "tabColor" in lastEntry()!).toBe(false);
+    expect(lastEntry()?.tabIcon).toBe("rocket");
+
+    sm.setTabAppearance(id, { tabIcon: null });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(lastEntry() && "tabIcon" in lastEntry()!).toBe(false);
+    sm.dispose();
+  });
+
   it("a setCurrentCwd update schedules a persist", async () => {
     const fx = makeFactories();
     const storage = makeStorageMock();

@@ -575,6 +575,31 @@
   background: var(--vault-accent-cursor);
 }
 
+/* The color of the tab that last ran this session: a stripe down the row's left
+   edge, inside its padding so the grid does not move; the icon ahead of the
+   title wears it too. */
+.vault-row.has-tab-color::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--row-tab-color);
+  pointer-events: none;
+}
+.vault-row-tab-icon {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-right: 5px;
+  opacity: 0.85;
+}
+.vault-row.has-tab-color .vault-row-tab-icon {
+  color: var(--row-tab-color);
+  opacity: 1;
+}
+
 /* Title — single line, ellipsis. */
 .vault-row-title {
   color: inherit;

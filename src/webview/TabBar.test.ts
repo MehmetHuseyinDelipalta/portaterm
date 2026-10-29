@@ -1405,3 +1405,113 @@ describe("zoom mark", () => {
     expect(tab.getAttribute("aria-label")).toBe("Terminal 1");
   });
 });
+
+describe("tab color and icon", () => {
+  type FakeTab = { name: string; tabColor?: string; tabIcon?: string };
+
+  it("draws the color as the tab's --tab-color and the icon against the name", () => {
+    const terminals = new Map<string, FakeTab>([
+      ["tab-1", { name: "Terminal 1", tabColor: "red", tabIcon: "rocket" }],
+      ["tab-2", { name: "Terminal 2" }],
+    ]);
+    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-1" });
+    renderTabBar(deps);
+    const [first, second] = Array.from(deps.tabBarEl.querySelectorAll<HTMLElement>(".tab-item"));
+
+    expect(first!.classList.contains("tab-colored")).toBe(true);
+    expect(first!.dataset.tabColor).toBe("red");
+    expect(first!.style.getPropertyValue("--tab-color")).toBe("var(--vscode-terminal-ansiRed, #cd3131)");
+    const icon = first!.querySelector<HTMLElement>(".tab-icon")!;
+    expect(icon.hidden).toBe(false);
+    expect(icon.dataset.icon).toBe("rocket");
+    expect(icon.querySelector("svg")).not.toBeNull();
+    // First after the status dot; the mode marks keep their place against the name.
+    expect(icon.previousElementSibling?.classList.contains("tab-status")).toBe(true);
+    expect(icon.nextElementSibling?.classList.contains("tab-zoom-mark")).toBe(true);
+
+    expect(second!.classList.contains("tab-colored")).toBe(false);
+    expect(second!.style.getPropertyValue("--tab-color")).toBe("");
+    expect(second!.querySelector<HTMLElement>(".tab-icon")!.hidden).toBe(true);
+  });
+
+  it("keeps the color across the class rewrite of an active, pinned re-render", () => {
+    const terminals = new Map<string, FakeTab & { pinned?: boolean }>([
+      ["tab-1", { name: "Terminal 1", tabColor: "blue", pinned: true }],
+    ]);
+    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-1" });
+    renderTabBar(deps);
+    renderTabBar({ ...deps, activeTabId: null });
+    const tab = deps.tabBarEl.querySelector<HTMLElement>(".tab-item")!;
+    expect([...tab.classList]).toEqual(expect.arrayContaining(["tab-pinned", "tab-colored"]));
+  });
+
+  it("clears in place when the color and icon are removed", () => {
+    const terminals = new Map<string, FakeTab>([["tab-1", { name: "Terminal 1", tabColor: "green", tabIcon: "bug" }]]);
+    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-1" });
+    renderTabBar(deps);
+    const tab = deps.tabBarEl.querySelector<HTMLElement>(".tab-item")!;
+    terminals.set("tab-1", { name: "Terminal 1" });
+    renderTabBar(deps);
+
+    expect(deps.tabBarEl.querySelector(".tab-item")).toBe(tab);
+    expect(tab.classList.contains("tab-colored")).toBe(false);
+    expect(tab.style.getPropertyValue("--tab-color")).toBe("");
+    expect(tab.dataset.tabColor).toBeUndefined();
+    const icon = tab.querySelector<HTMLElement>(".tab-icon")!;
+    expect(icon.hidden).toBe(true);
+    expect(icon.innerHTML).toBe("");
+    expect(icon.dataset.icon).toBeUndefined();
+  });
+
+  it("switches the icon, and leaves the glyph's node alone while it is unchanged", () => {
+    const terminals = new Map<string, FakeTab>([["tab-1", { name: "Terminal 1", tabIcon: "bug" }]]);
+    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-1" });
+    renderTabBar(deps);
+    const icon = deps.tabBarEl.querySelector<HTMLElement>(".tab-icon")!;
+    const glyph = icon.firstElementChild;
+    renderTabBar(deps);
+    expect(icon.firstElementChild).toBe(glyph);
+
+    terminals.get("tab-1")!.tabIcon = "globe";
+    renderTabBar(deps);
+    expect(icon.dataset.icon).toBe("globe");
+    expect(icon.firstElementChild).not.toBe(glyph);
+  });
+
+  it("draws nothing for a color or icon id it does not know", () => {
+    const terminals = new Map<string, FakeTab>([
+      ["tab-1", { name: "Terminal 1", tabColor: "plaid", tabIcon: "unicorn" }],
+    ]);
+    const deps = createMockDeps({ terminals: terminals as never, activeTabId: "tab-1" });
+    renderTabBar(deps);
+    const tab = deps.tabBarEl.querySelector<HTMLElement>(".tab-item")!;
+    expect(tab.classList.contains("tab-colored")).toBe(false);
+    expect(tab.style.getPropertyValue("--tab-color")).toBe("");
+    expect(tab.querySelector<HTMLElement>(".tab-icon")!.hidden).toBe(true);
+  });
+
+  it("takes a split tab's color and icon from its root pane, not the focused one", () => {
+    const store = {
+      tabLayouts: new Map([["root", createBranch("horizontal", createLeaf("root"), createLeaf("child"))]]),
+      tabActivePaneIds: new Map([["root", "child"]]),
+      terminals: new Map([
+        ["root", { name: "root", tabColor: "cyan", tabIcon: "server" }],
+        ["child", { name: "child", tabColor: "red", tabIcon: "bug" }],
+      ]) as never,
+    };
+    const tab = buildTabBarData(store).tabs.get("root");
+    expect(tab?.tabColor).toBe("cyan");
+    expect(tab?.tabIcon).toBe("server");
+  });
+
+  it("carries a single tab's color and icon", () => {
+    const store = {
+      tabLayouts: new Map([["a", createLeaf("a")]]),
+      tabActivePaneIds: new Map<string, string>(),
+      terminals: new Map([["a", { name: "a", tabColor: "yellow", tabIcon: "code" }]]) as never,
+    };
+    const tab = buildTabBarData(store).tabs.get("a");
+    expect(tab?.tabColor).toBe("yellow");
+    expect(tab?.tabIcon).toBe("code");
+  });
+});

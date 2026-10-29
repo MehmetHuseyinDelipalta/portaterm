@@ -36,6 +36,13 @@ describe("entriesSignature", () => {
     expect(entriesSignature([entry({ canResume: true })])).not.toBe(disabled);
   });
 
+  it("changes when the remembered tab color or icon changes", () => {
+    const plain = entriesSignature([entry()]);
+    expect(entriesSignature([entry({ tabColor: "red" })])).not.toBe(plain);
+    expect(entriesSignature([entry({ tabIcon: "bug" })])).not.toBe(plain);
+    expect(entriesSignature([entry({ tabColor: "red" })])).not.toBe(entriesSignature([entry({ tabColor: "blue" })]));
+  });
+
   it("changes when cwd changes (affects the folder filter)", () => {
     expect(entriesSignature([entry({ cwd: "/a" })])).not.toBe(entriesSignature([entry({ cwd: "/b" })]));
   });

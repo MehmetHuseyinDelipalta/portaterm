@@ -39,6 +39,7 @@ import type {
   SplitPaneCreatedMessage,
   SplitPaneMessage,
   SubagentPreviewResponseMessage,
+  TabAppearanceMessage,
   TabCreatedMessage,
   TabPinnedMessage,
   TabRemovedMessage,
@@ -86,6 +87,7 @@ export interface MessageHandlers {
   onTabRemoved(msg: TabRemovedMessage): void;
   onTabRenamed(msg: TabRenamedMessage): void;
   onTabPinned(msg: TabPinnedMessage): void;
+  onTabAppearance(msg: TabAppearanceMessage): void;
   /** Optional: a webview that draws no tab bar has nothing to mark. */
   onAgentAttention?(msg: AgentAttentionMessage): void;
   onRestore(msg: RestoreMessage): void;
@@ -202,6 +204,9 @@ export function createMessageRouter(handlers: MessageHandlers): (msg: ExtensionT
         break;
       case "tabPinned":
         handlers.onTabPinned(msg);
+        break;
+      case "tabAppearance":
+        handlers.onTabAppearance(msg);
         break;
       case "agentAttention":
         handlers.onAgentAttention?.(msg);

@@ -388,3 +388,37 @@ describe("the preview header star", () => {
     expect(host.querySelector(".vault-preview-star")).toBeNull();
   });
 });
+
+describe("the color and icon of the tab that last ran a session", () => {
+  it("draws the color as a stripe down the row and the icon ahead of the title", () => {
+    const { host, panel } = mount();
+    panel.render(result([entry({ id: "claude:a", tabColor: "red", tabIcon: "rocket" }), entry({ id: "claude:b" })]));
+    const a = row(host, "claude:a")!;
+    expect(a.classList.contains("has-tab-color")).toBe(true);
+    expect(a.dataset.tabColor).toBe("red");
+    expect(a.style.getPropertyValue("--row-tab-color")).toBe("var(--vscode-terminal-ansiRed, #cd3131)");
+    const title = a.querySelector<HTMLElement>(".vault-row-title")!;
+    // Ahead of the title text, not after it.
+    const icon = title.firstChild as HTMLElement;
+    expect(icon.classList.contains("vault-row-tab-icon")).toBe(true);
+    expect(icon.dataset.icon).toBe("rocket");
+    expect(icon.querySelector("svg")).not.toBeNull();
+    expect(title.textContent).toBe("hello");
+
+    const b = row(host, "claude:b")!;
+    expect(b.classList.contains("has-tab-color")).toBe(false);
+    expect(b.style.getPropertyValue("--row-tab-color")).toBe("");
+    expect(b.querySelector(".vault-row-tab-icon")).toBeNull();
+  });
+
+  it("repaints when a list push brings a color, and draws nothing for an unknown id", () => {
+    const { host, panel } = mount();
+    panel.render(result([entry({ id: "claude:a" })]));
+    panel.render(result([entry({ id: "claude:a", tabColor: "green" })]));
+    expect(row(host, "claude:a")?.dataset.tabColor).toBe("green");
+
+    panel.render(result([entry({ id: "claude:a", tabColor: "plaid", tabIcon: "unicorn" })]));
+    expect(row(host, "claude:a")?.classList.contains("has-tab-color")).toBe(false);
+    expect(row(host, "claude:a")?.querySelector(".vault-row-tab-icon")).toBeNull();
+  });
+});

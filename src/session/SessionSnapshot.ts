@@ -16,6 +16,9 @@ export interface SessionSnapshotMetadata {
   customName: string | null;
   /** Pinned root tab. Optional for back-compat: older indexes lack it and read as unpinned. */
   pinned?: boolean;
+  /** Root tab color and icon ids. Optional for back-compat; an unknown id reads as none. */
+  tabColor?: string;
+  tabIcon?: string;
 
   shell: string;
   shellArgs: string[];
@@ -121,6 +124,8 @@ export const KNOWN_METADATA_KEYS: ReadonlySet<string> = new Set<keyof SessionSna
   "terminalNumber",
   "customName",
   "pinned",
+  "tabColor",
+  "tabIcon",
   "shell",
   "shellArgs",
   "cwd",

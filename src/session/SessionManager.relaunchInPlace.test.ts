@@ -108,3 +108,95 @@ describe("SessionManager.relaunchInPlace", () => {
     sm.dispose();
   });
 });
+
+describe("a resume wears what its vault entry remembers", () => {
+  const appearanceMessages = (webview: ReturnType<typeof mockWebview>) =>
+    (webview.postMessage as ReturnType<typeof vi.fn>).mock.calls
+      .map(([m]) => m as { type?: string })
+      .filter((m) => m.type === "tabAppearance");
+
+  it("a new tab for a resumed entry opens wearing its color and icon", () => {
+    const sm = new SessionManager();
+    sm.appearanceForEntry = (entryId) => (entryId === "claude:abc" ? { tabColor: "red", tabIcon: "bug" } : undefined);
+    const resumed = sm.createSession("sidebar", mockWebview(), { ...AGENT, vaultEntryId: "claude:abc" });
+    const other = sm.createSession("sidebar", mockWebview(), { ...AGENT, vaultEntryId: "claude:zzz" });
+    const fresh = sm.createSession("sidebar", mockWebview(), AGENT);
+    expect([sm.getSession(resumed)?.tabColor, sm.getSession(resumed)?.tabIcon]).toEqual(["red", "bug"]);
+    for (const id of [other, fresh]) {
+      expect(sm.getSession(id)?.tabColor).toBeUndefined();
+      expect(sm.getSession(id)?.tabIcon).toBeUndefined();
+    }
+    sm.dispose();
+  });
+
+  it("asks only for an agent launch, and never gives a split pane its own", () => {
+    const sm = new SessionManager();
+    const lookup = vi.fn(() => ({ tabColor: "red" as const }));
+    sm.appearanceForEntry = lookup;
+    const shell = sm.createSession("sidebar", mockWebview(), { vaultEntryId: "claude:abc" });
+    const pane = sm.createSession("sidebar", mockWebview(), {
+      ...AGENT,
+      vaultEntryId: "claude:abc",
+      isSplitPane: true,
+      rootTabId: shell,
+    });
+    expect(sm.getSession(shell)?.tabColor).toBeUndefined();
+    expect(sm.getSession(pane)?.tabColor).toBeUndefined();
+    expect(lookup).not.toHaveBeenCalled();
+    sm.dispose();
+  });
+
+  it("an in-place resume brings the entry's values and keeps the tab's own where the entry has none", () => {
+    const sm = new SessionManager();
+    sm.appearanceForEntry = () => ({ tabColor: "cyan" });
+    const webview = mockWebview();
+    const id = sm.createSession("sidebar", webview);
+    sm.setTabAppearance(id, { tabIcon: "rocket" });
+
+    expect(sm.relaunchInPlace(id, { ...AGENT, vaultEntryId: "claude:abc" })).toBe(true);
+
+    expect([sm.getSession(id)?.tabColor, sm.getSession(id)?.tabIcon]).toEqual(["cyan", "rocket"]);
+    expect(appearanceMessages(webview).at(-1)).toEqual({
+      type: "tabAppearance",
+      tabId: id,
+      tabColor: "cyan",
+      tabIcon: "rocket",
+    });
+    sm.dispose();
+  });
+
+  it("an in-place resume of an entry with only an icon keeps the tab's own color", () => {
+    const sm = new SessionManager();
+    sm.appearanceForEntry = () => ({ tabIcon: "bug" });
+    const id = sm.createSession("sidebar", mockWebview());
+    sm.setTabAppearance(id, { tabColor: "green" });
+    sm.relaunchInPlace(id, { ...AGENT, vaultEntryId: "claude:abc" });
+    expect([sm.getSession(id)?.tabColor, sm.getSession(id)?.tabIcon]).toEqual(["green", "bug"]);
+    sm.dispose();
+  });
+
+  it("an in-place resume of an entry with nothing remembered leaves the tab as it was", () => {
+    const sm = new SessionManager();
+    sm.appearanceForEntry = () => undefined;
+    const webview = mockWebview();
+    const id = sm.createSession("sidebar", webview);
+    sm.setTabAppearance(id, { tabColor: "green" });
+    const before = appearanceMessages(webview).length;
+    sm.relaunchInPlace(id, { ...AGENT, vaultEntryId: "claude:abc" });
+    expect(sm.getSession(id)?.tabColor).toBe("green");
+    expect(appearanceMessages(webview)).toHaveLength(before);
+    sm.dispose();
+  });
+
+  it("tells the vault after every change from the tab", () => {
+    const sm = new SessionManager();
+    const changed = vi.fn();
+    sm.onTabAppearanceChange = changed;
+    const id = sm.createSession("sidebar", mockWebview());
+    const pane = sm.createSession("sidebar", mockWebview(), { isSplitPane: true, rootTabId: id });
+    sm.setTabAppearance(id, { tabColor: "red" });
+    sm.setTabAppearance(pane, { tabColor: "red" });
+    expect(changed.mock.calls).toEqual([[id]]);
+    sm.dispose();
+  });
+});

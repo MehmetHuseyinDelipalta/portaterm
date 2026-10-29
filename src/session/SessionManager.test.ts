@@ -1450,6 +1450,63 @@ describe("SessionManager.setPinned", () => {
   });
 });
 
+describe("SessionManager.setTabAppearance", () => {
+  const appearanceMessages = (webview: ReturnType<typeof createMockWebview>) =>
+    webview.messages.filter((m) => (m as { type?: string }).type === "tabAppearance");
+
+  it("sets, keeps and clears each value, broadcasting both as they stand every time", () => {
+    const sm = new SessionManager();
+    const webview = createMockWebview();
+    const id = sm.createSession("sidebar", webview);
+    expect(sm.getSession(id)?.tabColor).toBeUndefined();
+    expect(sm.getSession(id)?.tabIcon).toBeUndefined();
+    webview.messages.length = 0;
+
+    sm.setTabAppearance(id, { tabColor: "red" });
+    sm.setTabAppearance(id, { tabIcon: "bug" });
+    sm.setTabAppearance(id, { tabColor: null });
+    sm.setTabAppearance(id, { tabIcon: null, tabColor: "blue" });
+
+    expect(appearanceMessages(webview)).toEqual([
+      { type: "tabAppearance", tabId: id, tabColor: "red", tabIcon: null },
+      { type: "tabAppearance", tabId: id, tabColor: "red", tabIcon: "bug" },
+      { type: "tabAppearance", tabId: id, tabColor: null, tabIcon: "bug" },
+      { type: "tabAppearance", tabId: id, tabColor: "blue", tabIcon: null },
+    ]);
+    expect(sm.getSession(id)?.tabColor).toBe("blue");
+    expect(sm.getSession(id)?.tabIcon).toBeUndefined();
+    sm.dispose();
+  });
+
+  it("reports the color and icon in the view's tab list and its session list", () => {
+    const sm = new SessionManager();
+    const webview = createMockWebview();
+    const styled = sm.createSession("sidebar", webview);
+    const plain = sm.createSession("sidebar", webview);
+    sm.setTabAppearance(styled, { tabColor: "cyan", tabIcon: "server" });
+    for (const list of [sm.getTabsForView("sidebar"), sm.getAllSessionsForView("sidebar")]) {
+      expect(list.find((t) => t.id === styled)).toMatchObject({ tabColor: "cyan", tabIcon: "server" });
+      expect(list.find((t) => t.id === plain)?.tabColor).toBeUndefined();
+      expect(list.find((t) => t.id === plain)?.tabIcon).toBeUndefined();
+    }
+    sm.dispose();
+  });
+
+  it("is a silent no-op on an unknown sessionId and on a split pane", () => {
+    const sm = new SessionManager();
+    const webview = createMockWebview();
+    sm.createSession("sidebar", webview);
+    const paneId = sm.createSession("sidebar", webview, { isSplitPane: true });
+    webview.messages.length = 0;
+    expect(() => sm.setTabAppearance("never-existed", { tabColor: "red" })).not.toThrow();
+    sm.setTabAppearance(paneId, { tabColor: "red", tabIcon: "bug" });
+    expect(sm.getSession(paneId)?.tabColor).toBeUndefined();
+    expect(sm.getSession(paneId)?.tabIcon).toBeUndefined();
+    expect(appearanceMessages(webview)).toEqual([]);
+    sm.dispose();
+  });
+});
+
 describe("SessionManager.renameSession: persistence", () => {
   it("upserts the normalized value into workspaceState keyed by terminal number", () => {
     const memento = createFakeMemento();

@@ -587,6 +587,8 @@ export class SnapshotPersistence {
       terminalNumber: session.number,
       customName: session.customName,
       ...(session.pinned ? { pinned: true } : {}),
+      ...(session.tabColor ? { tabColor: session.tabColor } : {}),
+      ...(session.tabIcon ? { tabIcon: session.tabIcon } : {}),
       shell: session.shell ?? "",
       shellArgs: session.shellArgs ?? [],
       cwd: session.initialCwd ?? "",

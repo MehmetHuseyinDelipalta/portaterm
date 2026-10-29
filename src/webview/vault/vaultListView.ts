@@ -6,9 +6,11 @@
 // Session-derived strings (title, cwd) are written via `textContent`; the only
 // SVG inserted is the agent's real brand icon from the closed icon map (D1).
 
+import { tabColorCss, toTabColor } from "../../shared/tabAppearance";
 import type { VaultSessionEntry } from "../../vault/types";
 import { setIcon } from "../shared/iconNode";
 import type { PaneAgentAttention } from "../state/WebviewStateStore";
+import { tabIconSvg } from "../tabIcons";
 import { getAgentAccent, getAgentIcon } from "./agentIcons";
 import { agentLabel, formatRelativeTime, leafSegment } from "./format";
 import type { GroupMode } from "./grouping";
@@ -132,11 +134,30 @@ export function renderRow(
     }
   }
 
+  // The color and icon of the tab that last ran this session: a stripe down the
+  // row's left edge, and the icon ahead of the title, so the row and its tab
+  // match at a glance. Known ids only, like the agent accent above.
+  const tabColor = toTabColor(entry.tabColor);
+  if (tabColor) {
+    row.classList.add("has-tab-color");
+    row.style.setProperty("--row-tab-color", tabColorCss(tabColor));
+    row.dataset.tabColor = tabColor;
+  }
+
   const titleEl = document.createElement("span");
   titleEl.className = "vault-row-title";
   // A user rename overrides the derived title (enhance-vault-sessions D1).
   const shownTitle = entry.customName || entry.title;
   titleEl.textContent = shownTitle || "(untitled session)";
+  const tabIcon = tabIconSvg(entry.tabIcon);
+  if (tabIcon) {
+    const iconEl = document.createElement("span");
+    iconEl.className = "vault-row-tab-icon";
+    iconEl.dataset.icon = entry.tabIcon;
+    iconEl.setAttribute("aria-hidden", "true");
+    setIcon(iconEl, tabIcon);
+    titleEl.prepend(iconEl);
+  }
   if (shownTitle) {
     titleEl.dataset.tip = shownTitle;
   }

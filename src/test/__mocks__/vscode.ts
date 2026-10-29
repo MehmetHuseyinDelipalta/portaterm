@@ -380,6 +380,13 @@ export class ThemeColor {
   constructor(public readonly id: string) {}
 }
 
+export class ThemeIcon {
+  constructor(
+    public readonly id: string,
+    public readonly color?: ThemeColor,
+  ) {}
+}
+
 export const window = {
   showInformationMessage: () => {},
   showErrorMessage: (_msg?: string) => Promise.resolve(undefined),
