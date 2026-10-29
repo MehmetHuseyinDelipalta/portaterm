@@ -22,6 +22,7 @@ import type {
   ThemeChangedMessage,
 } from "../types/messages";
 import { SETI_FONT_CSS } from "../vendor/seti/setiFontCss";
+import { applyBroadcastCommand, BroadcastInput } from "./broadcastInput";
 import { DragDropHandler } from "./DragDropHandler";
 import { mountEmptyScopeRegion } from "./emptyScopeRegion";
 import { FileTreeController } from "./fileTree/FileTreeController";
@@ -156,10 +157,13 @@ function clearWaitingOnCursorTitleLoss(tabId: string, title: string): void {
 }
 
 const flowControl = new FlowControl((msg) => vscode.postMessage(msg));
+/** Typed input mirrored to every pane of a tab — see broadcastInput.ts. */
+const broadcastInput = new BroadcastInput({ store, postMessage: (msg) => vscode.postMessage(msg) });
 const factory = new TerminalFactory({
   themeManager,
   store,
   postMessage: (msg) => vscode.postMessage(msg),
+  sendUserInput: (sessionId, data) => broadcastInput.send(sessionId, data),
   onTabBarUpdate: () => updateTabBar(),
   onTitleEvidence: (sessionId, rawTitle) => {
     paneEvidenceReporter.reportTitle(sessionId, rawTitle);
@@ -209,6 +213,7 @@ const splitRenderer = new SplitTreeRenderer({
   onPaneFocused: (paneId) => {
     navigationController.dispatch((catalog, state) => focusNavigationPane(catalog, state, paneId));
   },
+  isBroadcasting: (tabId) => broadcastInput.isBroadcasting(tabId),
 });
 
 /**
@@ -571,6 +576,9 @@ function reportPresentedPanes(): void {
 
 function updateTabBar(): void {
   reportPresentedPanes();
+  // A tab that closed or fell back to one pane stops broadcasting here, on the
+  // redraw every pane removal ends in, so the mark below is never stale.
+  broadcastInput.prune();
   // Every route a pane arrives or leaves by ends in a redraw: the region's own
   // offers, the `+` button, a split, a close, a tree push. Deciding the region at
   // selection alone left it standing over the terminal it had just opened. Ahead
@@ -591,6 +599,7 @@ function updateTabBar(): void {
     tabBarEl,
     terminals: data.tabs,
     scope: tabBarScope?.chip(data.hiddenWaiting),
+    broadcastTabIds: broadcastInput.broadcastingTabIds(),
     activeTabId: store.activeTabId,
     onTabClick: (tabId) => switchTab(tabId),
     onTabClose: (tabId) => vscode.postMessage({ type: "closeTab", tabId }),
@@ -971,6 +980,20 @@ const routeMessage = createMessageRouter({
     if (state.activeTabId && state.activePaneByTab[state.activeTabId] === msg.sourcePaneId) {
       requestSplitSession(msg.direction, state.activeTabId, msg.sourcePaneId);
     }
+  },
+  onSetBroadcastInput(msg) {
+    applyBroadcastCommand(broadcastInput, msg, {
+      refresh: (tabId) => {
+        splitRenderer.updateActivePaneVisual(tabId);
+        updateTabBar();
+      },
+      notify: (message) => {
+        const containerEl = document.getElementById("terminal-container");
+        if (containerEl) {
+          showBanner(containerEl, message, "info");
+        }
+      },
+    });
   },
   onCtxClear(msg) {
     const instance = msg.sessionId ? store.terminals.get(msg.sessionId) : factory.getActivePaneTerminal();
@@ -1638,9 +1661,12 @@ function bootstrap(): void {
         return;
       }
 
+      // These keys are typed input the shell would otherwise get from xterm, so
+      // they go where xterm's would: to every pane of a broadcasting tab.
+
       // Shift+Enter → ESC+CR
       if (e.key === "Enter" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        vscode.postMessage({ type: "input", tabId: targetId, data: "\x1b\r" });
+        broadcastInput.send(targetId, "\x1b\r");
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -1653,19 +1679,19 @@ function bootstrap(): void {
       // would otherwise never see the event).
       if (isMac && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
         if (e.key === "ArrowLeft") {
-          vscode.postMessage({ type: "input", tabId: targetId, data: "\x01" });
+          broadcastInput.send(targetId, "\x01");
           e.preventDefault();
           e.stopPropagation();
           return;
         }
         if (e.key === "ArrowRight") {
-          vscode.postMessage({ type: "input", tabId: targetId, data: "\x05" });
+          broadcastInput.send(targetId, "\x05");
           e.preventDefault();
           e.stopPropagation();
           return;
         }
         if (e.key === "Backspace") {
-          vscode.postMessage({ type: "input", tabId: targetId, data: "\x15" });
+          broadcastInput.send(targetId, "\x15");
           e.preventDefault();
           e.stopPropagation();
           return;
@@ -1673,7 +1699,7 @@ function bootstrap(): void {
       }
       // Non-mac: Ctrl+Backspace → kill-line (\x15). Same global routing.
       if (!isMac && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key === "Backspace") {
-        vscode.postMessage({ type: "input", tabId: targetId, data: "\x15" });
+        broadcastInput.send(targetId, "\x15");
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -1682,13 +1708,13 @@ function bootstrap(): void {
       // macOS: Option+Left → backward-word (\x1bb), Option+Right → forward-word (\x1bf)
       if (isMac && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
         if (e.key === "ArrowLeft") {
-          vscode.postMessage({ type: "input", tabId: targetId, data: "\x1bb" });
+          broadcastInput.send(targetId, "\x1bb");
           e.preventDefault();
           e.stopPropagation();
           return;
         }
         if (e.key === "ArrowRight") {
-          vscode.postMessage({ type: "input", tabId: targetId, data: "\x1bf" });
+          broadcastInput.send(targetId, "\x1bf");
           e.preventDefault();
           e.stopPropagation();
           return;

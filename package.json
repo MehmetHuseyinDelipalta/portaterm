@@ -308,6 +308,18 @@
         "title": "Unpin Tab"
       },
       {
+        "command": "portaterm.toggleBroadcastInput",
+        "title": "Portaterm: Toggle Broadcast Input to All Panes"
+      },
+      {
+        "command": "portaterm.ctx.startBroadcastInput",
+        "title": "Broadcast Input to All Panes"
+      },
+      {
+        "command": "portaterm.ctx.stopBroadcastInput",
+        "title": "Stop Broadcasting Input"
+      },
+      {
         "command": "portaterm.newTerminalInEditor",
         "title": "Portaterm: New Terminal in Editor"
       },
@@ -570,6 +582,16 @@
           "group": "split@3"
         },
         {
+          "command": "portaterm.ctx.startBroadcastInput",
+          "when": "webviewSection == 'splitPane' && paneSplit && !broadcastInput",
+          "group": "split@4"
+        },
+        {
+          "command": "portaterm.ctx.stopBroadcastInput",
+          "when": "webviewSection == 'splitPane' && broadcastInput",
+          "group": "split@4"
+        },
+        {
           "command": "portaterm.ctx.revealInFileTree",
           "when": "webviewSection == 'splitPane'",
           "group": "navigation@1"
@@ -693,6 +715,14 @@
         },
         {
           "command": "portaterm.unpinTab",
+          "when": "false"
+        },
+        {
+          "command": "portaterm.ctx.startBroadcastInput",
+          "when": "false"
+        },
+        {
+          "command": "portaterm.ctx.stopBroadcastInput",
           "when": "false"
         }
       ]

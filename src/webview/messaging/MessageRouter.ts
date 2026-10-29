@@ -31,6 +31,7 @@ import type {
   RestoreFromSnapshotMessage,
   RestoreMessage,
   RevealInFileTreeMessage,
+  SetBroadcastInputMessage,
   SetFileTreePositionMessage,
   SetPanelIdMessage,
   SplitPaneAtMessage,
@@ -94,6 +95,8 @@ export interface MessageHandlers {
   onCloseSplitPaneById(msg: CloseSplitPaneByIdMessage): void;
   onSplitPaneAt(msg: SplitPaneAtMessage): void;
   onCtxClear(msg: CtxClearMessage): void;
+  /** Optional: a webview without split panes has nothing to broadcast to. */
+  onSetBroadcastInput?(msg: SetBroadcastInputMessage): void;
   onError(msg: ErrorMessage): void;
   onInsertPathEffect(msg: InsertPathEffectMessage): void;
   onFilePreviewResult(msg: FilePreviewResultMessage): void;
@@ -223,6 +226,9 @@ export function createMessageRouter(handlers: MessageHandlers): (msg: ExtensionT
         break;
       case "ctxClear":
         handlers.onCtxClear(msg);
+        break;
+      case "setBroadcastInput":
+        handlers.onSetBroadcastInput?.(msg);
         break;
       case "error":
         handlers.onError(msg);

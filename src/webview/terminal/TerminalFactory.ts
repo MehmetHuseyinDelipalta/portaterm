@@ -27,6 +27,7 @@ import { createLeaf, getAllSessionIds } from "../SplitModel";
 import type { TerminalInstance, WebviewStateStore } from "../state/WebviewStateStore";
 import type { ThemeManager } from "../theme/ThemeManager";
 import { applyTitleChange } from "./titleSignature";
+import { trackUserInput } from "./userInputSignal";
 
 // ─── TerminalFactory ────────────────────────────────────────────────
 
@@ -58,6 +59,12 @@ export interface TerminalFactoryDeps {
    * See: asimov/changes/add-host-pane-evidence/design.md D7.
    */
   onTitleEvidence?: (sessionId: string, rawTitle: string) => void;
+  /**
+   * Where input the user typed into a pane goes — broadcast input fans it out
+   * to the pane's siblings. Replies xterm generates itself never come here.
+   * Absent: typed input goes to its own pane only.
+   */
+  sendUserInput?: (sessionId: string, data: string) => void;
 }
 
 /**
@@ -94,6 +101,7 @@ export class TerminalFactory {
   private readonly getHoverPreviewTheme: () => HoverPreviewThemeKind;
   private readonly getHoverPreviewSettings: () => HoverPreviewSettings;
   private readonly onTitleEvidence?: (sessionId: string, rawTitle: string) => void;
+  private readonly sendUserInput?: (sessionId: string, data: string) => void;
 
   /**
    * Active hover-preview controllers indexed by session id. main.ts routes
@@ -118,6 +126,7 @@ export class TerminalFactory {
     this.getHoverPreviewTheme = deps.getHoverPreviewTheme;
     this.getHoverPreviewSettings = deps.getHoverPreviewSettings;
     this.onTitleEvidence = deps.onTitleEvidence;
+    this.sendUserInput = deps.sendUserInput;
   }
 
   /**
@@ -186,7 +195,7 @@ export class TerminalFactory {
    * Uses the extracted InputHandler module for testability.
    * See: docs/design/keyboard-input.md#§2
    */
-  attachInputHandler(terminal: Terminal, tabId: string): void {
+  attachInputHandler(terminal: Terminal, tabId: string, container: HTMLElement): void {
     const handler = createKeyEventHandler({
       terminal,
       clipboard: this.getClipboardProvider(),
@@ -198,15 +207,26 @@ export class TerminalFactory {
 
     terminal.attachCustomKeyEventHandler(handler);
 
+    // Lives as long as the terminal and its container: both are disposed
+    // together, which takes the private subscription and the listeners with them.
+    const userInput = trackUserInput(terminal, container);
+
     // Wire terminal.onData -> send input to extension
     terminal.onData((data: string) => {
+      // Consumed first, unconditionally: the flag describes THIS chunk, and an
+      // early return must not leave it set for the next one.
+      const typed = userInput.consume();
       // Check if this terminal has exited — don't forward input
       const instance = this.store.terminals.get(tabId);
       if (instance?.exited) {
         return;
       }
 
-      this.postMessage({ type: "input", tabId, data });
+      if (typed && this.sendUserInput) {
+        this.sendUserInput(tabId, data);
+      } else {
+        this.postMessage({ type: "input", tabId, data });
+      }
     });
   }
 
@@ -453,7 +473,7 @@ export class TerminalFactory {
     });
 
     // Attach input handler (keyboard + clipboard + onData)
-    this.attachInputHandler(terminal, id);
+    this.attachInputHandler(terminal, id, container);
 
     const instance: TerminalInstance = {
       id,

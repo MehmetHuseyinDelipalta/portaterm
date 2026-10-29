@@ -2358,6 +2358,17 @@ export interface CtxClearMessage {
   sessionId?: string;
 }
 
+/**
+ * Turn broadcast input on or off for the tab holding `sessionId` — any pane of
+ * it names the tab. `enabled` absent toggles. The webview owns the state; the
+ * host only relays the command.
+ */
+export interface SetBroadcastInputMessage {
+  type: "setBroadcastInput";
+  sessionId: string;
+  enabled?: boolean;
+}
+
 /** Visual feedback: a file path was inserted into the terminal via context menu. */
 export interface InsertPathEffectMessage {
   type: "insertPathEffect";
@@ -3266,6 +3277,7 @@ export type ExtensionToWebViewMessage =
   | CloseSplitPaneByIdMessage
   | SplitPaneAtMessage
   | CtxClearMessage
+  | SetBroadcastInputMessage
   | InsertPathEffectMessage
   | FilePreviewResultMessage
   | ThemeChangedMessage

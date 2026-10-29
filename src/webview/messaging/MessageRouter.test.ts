@@ -105,6 +105,15 @@ describe("createMessageRouter", () => {
     }
   });
 
+  it("routes setBroadcastInput, and tolerates a webview that draws no split panes", () => {
+    const handlers = createMockHandlers();
+    const onSetBroadcastInput = vi.fn();
+    const msg = { type: "setBroadcastInput" as const, sessionId: "t1", enabled: true };
+    createMessageRouter({ ...handlers, onSetBroadcastInput })(msg);
+    expect(onSetBroadcastInput).toHaveBeenCalledWith(msg);
+    expect(() => createMessageRouter(handlers)(msg)).not.toThrow();
+  });
+
   it("does NOT route init messages (handled by main.ts bootstrap)", () => {
     const handlers = createMockHandlers();
     const dispatch = createMessageRouter(handlers);

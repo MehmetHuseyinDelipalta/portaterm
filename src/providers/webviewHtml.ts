@@ -246,6 +246,37 @@ export function getTerminalHtml(
       flex-shrink: 0;
       opacity: 0.7;
     }
+    /* Broadcast input. Red, not the warning amber a waiting tab uses: this is a
+       mode where a keystroke lands in several shells, the one state in which a
+       slip costs more than one terminal. The mark sits before the name so it is
+       read first, and stays on the tab while another tab is showing. */
+    .tab-broadcast-mark {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      margin-right: 4px;
+      flex-shrink: 0;
+      color: var(--vscode-charts-red, #f14c4c);
+    }
+    .tab-item.tab-broadcast {
+      box-shadow: inset 0 -2px 0 var(--vscode-charts-red, #f14c4c);
+    }
+    /* Every pane that hears the keystroke wears the frame — drawn over the
+       terminal (never in layout, so nothing resizes when it toggles) — and the
+       inactive ones dim less, since they are receiving input too. */
+    .broadcast-input .split-leaf::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border: 1px solid var(--vscode-charts-red, #f14c4c);
+      z-index: 9;
+    }
+    .broadcast-input .split-branch .split-leaf:not(.active-pane) {
+      opacity: 0.85;
+    }
     /* Outline never participates in sizing, so switching owner cannot contract the terminal. */
     body:has(#tab-bar[data-worktree-scope]) .terminal-area {
       outline: 1px solid var(--vscode-focusBorder, #007acc);

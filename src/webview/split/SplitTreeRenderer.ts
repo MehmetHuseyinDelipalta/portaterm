@@ -37,6 +37,8 @@ export interface SplitTreeRendererDeps {
   onTabBarUpdate: () => void;
   /** Fired when the user selects a different pane (click-to-focus). Optional. */
   onPaneFocused?: (sessionId: string) => void;
+  /** Whether a tab mirrors typed input to all its panes. Absent: never. */
+  isBroadcasting?: (tabId: string) => boolean;
 }
 
 /**
@@ -56,6 +58,7 @@ export class SplitTreeRenderer {
   private readonly postMessage: (msg: unknown) => void;
   private readonly onTabBarUpdate: () => void;
   private readonly onPaneFocused?: (sessionId: string) => void;
+  private readonly isBroadcasting: (tabId: string) => boolean;
 
   constructor(deps: SplitTreeRendererDeps) {
     this.store = deps.store;
@@ -64,6 +67,7 @@ export class SplitTreeRenderer {
     this.postMessage = deps.postMessage;
     this.onTabBarUpdate = deps.onTabBarUpdate;
     this.onPaneFocused = deps.onPaneFocused;
+    this.isBroadcasting = deps.isBroadcasting ?? (() => false);
   }
 
   /**
@@ -171,8 +175,33 @@ export class SplitTreeRenderer {
    * Update the visual active pane indicator for a tab.
    * Adds `.active-pane` class to the active leaf, removes from all others.
    * Only applies when the tab has 2+ panes (no indicator for single-pane tabs).
+   *
+   * Also the one place the broadcast-input mark and the panes' context-menu
+   * keys are refreshed, since every split, close and focus change ends here.
    */
   updateActivePaneVisual(tabId: string): void {
+    const layout = this.store.tabLayouts.get(tabId);
+    const hasSplits = layout?.type === "branch";
+    const broadcasting = this.isBroadcasting(tabId);
+
+    // `paneSplit` offers "Broadcast Input" only where there is a sibling to
+    // reach; `broadcastInput` swaps it for "Stop Broadcasting Input". Written on
+    // the terminal's own container (where a right-click lands) and, below, on
+    // its leaf, so the two never disagree about which entry to show.
+    const paneContext = (sessionId: string): string =>
+      JSON.stringify({
+        webviewSection: "splitPane",
+        paneSessionId: sessionId,
+        paneSplit: hasSplits,
+        broadcastInput: broadcasting,
+      });
+    for (const sessionId of layout ? getAllSessionIds(layout) : []) {
+      const instance = this.store.terminals.get(sessionId);
+      if (instance) {
+        instance.container.dataset.vscodeContext = paneContext(sessionId);
+      }
+    }
+
     const containerEl = document.getElementById("terminal-container");
     if (!containerEl) {
       return;
@@ -181,9 +210,12 @@ export class SplitTreeRenderer {
     if (!tabContainer) {
       return;
     }
-
-    const layout = this.store.tabLayouts.get(tabId);
-    const hasSplits = layout && layout.type === "branch";
+    tabContainer.classList.toggle("broadcast-input", broadcasting);
+    for (const leaf of Array.from(tabContainer.querySelectorAll<HTMLElement>(".split-leaf"))) {
+      if (leaf.dataset.sessionId) {
+        leaf.dataset.vscodeContext = paneContext(leaf.dataset.sessionId);
+      }
+    }
     const activePaneId = this.store.tabActivePaneIds.get(tabId) ?? tabId;
 
     // Remove active-pane from all leaves in this tab

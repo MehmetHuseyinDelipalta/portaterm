@@ -1313,3 +1313,43 @@ describe("isCloseTabShortcut", () => {
     expect(isCloseTabShortcut(key("q", { metaKey: true }), true)).toBe(false);
   });
 });
+
+describe("broadcast mark", () => {
+  it("marks only broadcasting tabs, before the name, and says so to a screen reader", () => {
+    const terminals = new Map<string, { name: string }>([
+      ["tab-1", { name: "Terminal 1" }],
+      ["tab-2", { name: "Terminal 2" }],
+    ]);
+    const deps = createMockDeps({
+      terminals: terminals as never,
+      activeTabId: "tab-2",
+      broadcastTabIds: new Set(["tab-1"]),
+    });
+    renderTabBar(deps);
+    const [first, second] = Array.from(deps.tabBarEl.querySelectorAll<HTMLElement>(".tab-item"));
+    expect(first!.classList.contains("tab-broadcast")).toBe(true);
+    const mark = first!.querySelector<HTMLElement>(".tab-broadcast-mark")!;
+    expect(mark.hidden).toBe(false);
+    expect(mark.nextElementSibling?.classList.contains("tab-name")).toBe(true);
+    expect(first!.getAttribute("aria-label")).toBe("Terminal 1 (broadcasting input to all panes)");
+    expect(second!.classList.contains("tab-broadcast")).toBe(false);
+    expect(second!.querySelector<HTMLElement>(".tab-broadcast-mark")!.hidden).toBe(true);
+    expect(second!.getAttribute("aria-label")).toBe("Terminal 2");
+  });
+
+  it("clears in place when broadcasting stops", () => {
+    const terminals = new Map<string, { name: string }>([["tab-1", { name: "Terminal 1" }]]);
+    const deps = createMockDeps({
+      terminals: terminals as never,
+      activeTabId: "tab-1",
+      broadcastTabIds: new Set(["tab-1"]),
+    });
+    renderTabBar(deps);
+    const tab = deps.tabBarEl.querySelector<HTMLElement>(".tab-item")!;
+    renderTabBar({ ...deps, broadcastTabIds: new Set() });
+    expect(deps.tabBarEl.querySelector(".tab-item")).toBe(tab);
+    expect(tab.classList.contains("tab-broadcast")).toBe(false);
+    expect(tab.querySelector<HTMLElement>(".tab-broadcast-mark")!.hidden).toBe(true);
+    expect(tab.getAttribute("aria-label")).toBe("Terminal 1");
+  });
+});

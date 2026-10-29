@@ -19,6 +19,7 @@ import {
 import { ClaudeHookInstaller } from "./agentHooks/install/ClaudeHookInstaller";
 import { installOpenCodePlugin } from "./agentHooks/opencodeConfigDir";
 import { ReportedSessions } from "./agentHooks/reportedSessions";
+import { BROADCAST_COMMAND_IDS, createBroadcastCommands } from "./commands/broadcastCommands";
 import { CLOSE_COMMAND_IDS, createCloseCommands } from "./commands/closeCommands";
 import { exportBuffer, exportCommand, exportLastCommand, NO_FOCUS_TOAST } from "./commands/exportCommands";
 import { CursorHookInstaller } from "./cursor/CursorHookInstaller";
@@ -2318,6 +2319,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // ─── Generic Commands (for keybindings — use getFocusedProvider) ──────
 
+  /** Post to the surface holding `sessionId` — sidebar, panel or editor alike. */
+  const postToSession = (sessionId: string, message: unknown): void => {
+    const webview = getWebviewForSession(sessionId);
+    if (webview) {
+      safePostMessage(webview, message as ExtensionToWebViewMessage);
+    }
+  };
+
   // The destructive four. Registration is a loop over the factory's own map, so
   // a door cannot exist without going through the gate it declares.
   const closeCommands = createCloseCommands({
@@ -2330,18 +2339,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     isSplitPane: (sessionId) =>
       (sessionManager.getSession(sessionId)?.isSplitPane ?? paneEvidence.read(sessionId)?.isSplitPane) === true,
     destroySession: (sessionId) => sessionManager.destroySession(sessionId),
-    postToSession: (sessionId, message) => {
-      const webview = getWebviewForSession(sessionId);
-      if (webview) {
-        safePostMessage(webview, message as ExtensionToWebViewMessage);
-      }
-    },
+    postToSession,
     focusedActiveSession: () => getFocusedProvider().getActiveSessionId(),
     surfaceActiveSession: (location) => providers[location].getActiveSessionId(),
     ctxActiveSession: (ctx) => getCtxProvider(ctx).getActiveSessionId(),
   });
   for (const id of CLOSE_COMMAND_IDS) {
     context.subscriptions.push(vscode.commands.registerCommand(id, closeCommands.byId[id]));
+  }
+
+  // Broadcast input: the webview holds the state; these only pick the surface
+  // and the tab. The palette door targets a focused editor-area terminal first,
+  // then the view the split keybindings act on — which, unlike the rename
+  // chain, still has an answer before the user has clicked into any view.
+  const broadcastCommands = createBroadcastCommands({
+    postToSession,
+    focusedTabId: () =>
+      TerminalEditorProvider.getActiveProvider()?.getActiveTabId() ?? getFocusedProvider().getActiveTabId(),
+  });
+  for (const id of BROADCAST_COMMAND_IDS) {
+    context.subscriptions.push(vscode.commands.registerCommand(id, broadcastCommands[id]));
   }
 
   context.subscriptions.push(

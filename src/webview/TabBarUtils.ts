@@ -220,6 +220,13 @@ const PIN_ICON =
   'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M10 1.75 14.25 6l-2.5 1-3.5 3.5-.5 3L3.5 9.25l3-.5 3.5-3.5z"/><path d="M5.75 10.25 1.75 14.25"/></svg>';
 
+/** Broadcast glyph — a source radiating both ways — for a tab mirroring typed input to all its panes. */
+const BROADCAST_ICON =
+  '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<circle cx="8" cy="8" r="1.25"/><path d="M5.25 5.25a3.9 3.9 0 0 0 0 5.5M10.75 5.25a3.9 3.9 0 0 1 0 5.5"/>' +
+  '<path d="M3 3a7.1 7.1 0 0 0 0 10M13 3a7.1 7.1 0 0 1 0 10"/></svg>';
+
 export interface TabInfo {
   /** Auto-derived name (default "Terminal N"; mutated by OSC title events). */
   name: string;
@@ -520,6 +527,12 @@ export interface RenderTabBarDeps {
    */
   onAfterRender?: () => void;
   /**
+   * Tabs whose typed input currently reaches every pane. Marked on the tab
+   * itself so a broadcast is visible even while another tab is on screen —
+   * the moment a user forgets one is on is the moment it does damage.
+   */
+  broadcastTabIds?: ReadonlySet<string>;
+  /**
    * Present exactly while this surface is scoped, which is why it is ONE field
    * rather than a boolean beside a label: the chip is the only thing on screen
    * saying the list is a subset, and a filter without it is the invisible filter
@@ -591,6 +604,7 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     onTabReorder,
     onAfterRender,
     scope,
+    broadcastTabIds,
   } = deps;
 
   if (scope) {
@@ -704,6 +718,16 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
       pinMark.hidden = true;
       tab.appendChild(pinMark);
 
+      // Ahead of the name, where it reads first. A mark, not a control: it is
+      // switched off from the pane's context menu or the command palette.
+      const broadcastMark = document.createElement("span");
+      broadcastMark.className = "tab-broadcast-mark";
+      broadcastMark.innerHTML = BROADCAST_ICON;
+      broadcastMark.title = "Broadcasting input to all panes";
+      broadcastMark.setAttribute("aria-hidden", "true");
+      broadcastMark.hidden = true;
+      tab.insertBefore(broadcastMark, nameSpan);
+
       tab.addEventListener("click", (event) => {
         // The second click of a native double-click is followed by `dblclick`.
         // Skip only that click; unlike the old timestamp heuristic, this cannot
@@ -732,10 +756,12 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     // Rebuilt from scratch each render, so the drag marks are carried over: a
     // re-render mid-drag (PTY activity, a title change) must not drop them.
     const dragMarks = ["tab-dragging", "tab-drop-before", "tab-drop-after"].filter((c) => tab!.classList.contains(c));
-    tab.className = `tab-item${id === activeTabId ? " active" : ""}${instance.exited ? " tab-exited" : ""}${pinned ? " tab-pinned" : ""}`;
+    const broadcasting = broadcastTabIds?.has(id) === true;
+    tab.className = `tab-item${id === activeTabId ? " active" : ""}${instance.exited ? " tab-exited" : ""}${pinned ? " tab-pinned" : ""}${broadcasting ? " tab-broadcast" : ""}`;
     tab.classList.add(...dragMarks);
     tab.querySelector<HTMLElement>(".tab-close")!.hidden = pinned;
     tab.querySelector<HTMLElement>(".tab-pin")!.hidden = !pinned;
+    tab.querySelector<HTMLElement>(".tab-broadcast-mark")!.hidden = !broadcasting;
     tab.dataset.tabId = id;
 
     // Custom name takes priority over the auto-derived (OSC-mutated) `name`.
@@ -764,12 +790,11 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     const statusSpan = tab.querySelector<HTMLElement>(".tab-status")!;
     statusSpan.className = `tab-status tab-status-${status}`;
     statusSpan.title = reason;
-    tab.setAttribute(
-      "aria-label",
+    const statusLabel =
       status === "waiting" || status === "question" || status === "unseen"
         ? `${renderedName}: ${reason}`
-        : renderedName,
-    );
+        : renderedName;
+    tab.setAttribute("aria-label", broadcasting ? `${statusLabel} (broadcasting input to all panes)` : statusLabel);
     tab.dataset.status = status;
   }
 
