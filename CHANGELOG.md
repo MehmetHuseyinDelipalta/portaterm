@@ -7,6 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.47.0] — 2026-10-29
+
+### Added
+
+- **Zoom a split pane.** Press `Cmd+Shift+Enter` (`Ctrl+Shift+Enter` on Windows and Linux), right-click a pane and choose **Zoom Pane**, or run **Portaterm: Toggle Pane Zoom**: that pane takes the whole tab, so a long log or an agent's output gets every column and row the tab has. The other panes keep running, hidden, and a zoom mark on the tab says they are there. Press the keys again or choose **Unzoom Pane** and the layout comes back exactly as it was — same panes, same sizes.
+  - The zoom ends by itself when you move focus to a hidden pane (which then shows), split, or close a pane. It is never restored after a reload.
+  - Text size does not change; the pane gets more room, not bigger letters.
+  - While broadcasting input, the red frame stays on the zoomed pane: the hidden panes still receive what you type.
+
 ## [0.46.0] — 2026-10-29
 
 ### Added
