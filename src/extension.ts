@@ -40,7 +40,15 @@ import { applyVaultRename, type VaultRenameListener, type VaultRenameSurface } f
 import { loadNodePty } from "./pty/PtyManager";
 import { createProcessTableSnapshot } from "./pty/processTableSnapshot";
 import { type AttentionPanes, attentionPhaseOf, createAgentAttention } from "./session/agentAttention";
-import { attentionTargets, describeAttention, summarizeAttention } from "./session/agentStatusBar";
+import {
+  AGENT_PICK_PLACEHOLDER,
+  agentPickItems,
+  focusViewCommand,
+  GO_TO_AGENT_COMMAND,
+  goToAgent,
+  OPEN_COMMAND,
+  summarizeAttention,
+} from "./session/agentStatusBar";
 import type { MessageSender } from "./session/OutputBuffer";
 import { createPaneEvidenceStore } from "./session/PaneEvidenceStore";
 import { SessionManager } from "./session/SessionManager";
@@ -1836,15 +1844,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   // One entry counting every agent in the window. It has an id, so the user
   // hides it from the status bar's own context menu rather than a setting.
+  // With no agent to count it stays as the bare name and opens Portaterm.
   const agentStatusItem = vscode.window.createStatusBarItem("portaterm.agentStatus", vscode.StatusBarAlignment.Left);
-  agentStatusItem.name = "Portaterm Agents";
-  agentStatusItem.command = "portaterm.goToAgent";
+  agentStatusItem.name = "Portaterm";
   const renderAgentStatus = (panes: AttentionPanes) => {
     const summary = summarizeAttention(panes, agentTabName);
-    if (summary === undefined) {
-      agentStatusItem.hide();
-      return;
-    }
+    agentStatusItem.command = summary.command;
     agentStatusItem.text = summary.text;
     agentStatusItem.tooltip = summary.tooltip;
     agentStatusItem.backgroundColor = summary.urgent
@@ -1890,30 +1895,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   });
   onAgentAttentionChange = (paneId) => agentAttention.update(paneId);
+  renderAgentStatus({});
   context.subscriptions.push(
     agentStatusItem,
-    vscode.commands.registerCommand("portaterm.goToAgent", async () => {
-      const targets = attentionTargets(agentAttention.snapshot()).flatMap((target) => {
-        const viewId = paneEvidence.read(target.paneId)?.viewId;
-        return viewId === undefined ? [] : [{ ...target, viewId }];
-      });
-      const picked =
-        targets.length <= 1
-          ? targets[0]
-          : (
-              await vscode.window.showQuickPick(
-                targets.map((target) => ({
-                  label: agentTabName(target.paneId) ?? "Terminal",
-                  description: `${target.agent} · ${describeAttention(target.state)}`,
-                  target,
-                })),
-                { placeHolder: "Go to an agent's tab" },
-              )
-            )?.target;
-      if (picked !== undefined) {
-        await worktreeActions.focusPane(picked.paneId, picked.viewId);
-      }
-    }),
+    vscode.commands.registerCommand(GO_TO_AGENT_COMMAND, () =>
+      goToAgent({
+        panes: () => agentAttention.snapshot(),
+        viewIdOf: (paneId) => paneEvidence.read(paneId)?.viewId,
+        tabName: agentTabName,
+        pick: async (entries) =>
+          (
+            await vscode.window.showQuickPick(agentPickItems(entries, vscode.QuickPickItemKind.Separator), {
+              placeHolder: AGENT_PICK_PLACEHOLDER,
+            })
+          )?.entry,
+        focusPane: (paneId, viewId) => worktreeActions.focusPane(paneId, viewId),
+        open: async () => {
+          await vscode.commands.executeCommand(OPEN_COMMAND);
+        },
+      }),
+    ),
   );
   // What the badge was counted from, pane by pane, for a badge that disagrees
   // with the tabs it names.
@@ -2730,6 +2731,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("portaterm.focusPanel", () => {
       void vscode.commands.executeCommand("portaterm.panel.focus");
     }),
+    // The status bar entry's click while no agent is counted: back to the view
+    // the user last worked in, the sidebar until they have used either.
+    vscode.commands.registerCommand(OPEN_COMMAND, () =>
+      vscode.commands.executeCommand(focusViewCommand(lastFocusedProvider.getViewId())),
+    ),
     vscode.commands.registerCommand("portaterm.moveToSecondary", async () => {
       await vscode.commands.executeCommand("portaterm.sidebar.focus");
       await vscode.commands.executeCommand("workbench.action.moveView");

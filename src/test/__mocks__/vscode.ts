@@ -374,6 +374,8 @@ let _activeColorTheme: { kind: number } = { kind: ColorThemeKind.Dark };
 
 export const StatusBarAlignment = { Left: 1, Right: 2 } as const;
 
+export const QuickPickItemKind = { Separator: -1, Default: 0 } as const;
+
 export class ThemeColor {
   constructor(public readonly id: string) {}
 }
