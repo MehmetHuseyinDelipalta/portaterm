@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.44.0] — 2026-10-29
+
+### Added
+
+- **Export a session as Markdown.** The preview header's new export button, or **Export as Markdown…** on a row's context menu, saves the session's timeline as a `.md` file — for sharing with your team or pasting into a PR description. It opens with a table of the session's details (agent, folder, branch, activity, tokens, cost, models), then each message with its time and model. Tool calls become lists; reasoning, compaction summaries and sub-agent prompts and results fold into `<details>` blocks; questions, teammate messages and workflow runs keep their shape. The save dialog starts in the session's own folder, and when it is done you can open the file or copy the Markdown straight to the clipboard.
+
 ## [0.43.0] — 2026-10-29
 
 ### Added
