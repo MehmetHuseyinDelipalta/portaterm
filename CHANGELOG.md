@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.46.0] — 2026-10-29
+
+### Added
+
+- **Broadcast input to split panes.** Right-click a pane in a split tab and choose **Broadcast Input to All Panes**, or run **Portaterm: Toggle Broadcast Input to All Panes**: what you type, paste or send with the line-editing shortcuts now reaches every pane of that tab at once — the same command on several servers, the same answer to several agents. A red frame on every pane and a broadcast mark on the tab say it is on, even while another tab is showing. **Stop Broadcasting Input** on the same menu turns it off.
+  - Only your input is mirrored. What a terminal answers on its own (cursor reports, mouse and focus events) and a path dropped onto one pane stay with that pane, so the other shells never receive stray keystrokes.
+  - Panes that have exited are skipped. When the tab closes down to one pane, broadcasting ends, and splitting again starts unmirrored. It is never restored after a reload.
+
 ## [0.45.0] — 2026-10-29
 
 ### Added
