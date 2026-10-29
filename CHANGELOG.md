@@ -7,6 +7,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.43.0] — 2026-10-29
+
+### Added
+
+- **Token use and cost in the session preview.** The Activity row now shows everything a session sent and received, and its cost where the agent records one — `1.3M tok · ~$1.01`. Hover the token count for a per-model breakdown: input, cache read, cache write, output, and cost. Claude Code's figure is its own and includes subagents and workflows; OpenCode's is the cost it priced each message at; Codex records tokens only.
+- **Which tools a session used.** Hover the tool count — `8 tools` — to list each tool with how often it ran.
+
+### Changed
+
+- **The token count means the whole session.** For Claude Code it used to be the output plus the last turn's context; it is now every token the session used, so the number is much larger than before.
+
+### Fixed
+
+- **Codex message token counts no longer count cached input twice.** The per-message `in` figure added cached tokens to an input total that already included them.
+
 ## [0.42.0] — 2026-10-29
 
 ### Changed

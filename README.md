@@ -69,7 +69,8 @@ Activate a supported transcript row to open a movable, content-rich floating pre
 
 ![Session preview](images/session-preview.png)
 
-- **The whole story** — first prompt, a recent-activity timeline of tool and sub-agent steps, the latest assistant message, and activity stats (messages · tokens · tools · sub-agents).
+- **The whole story** — first prompt, a recent-activity timeline of tool and sub-agent steps, the latest assistant message, and activity stats (messages · tokens · cost · tools · sub-agents).
+- **Where the tokens went** — the token count is everything the session sent and received. Hover it for a per-model breakdown (input, cache read, cache write, output) and cost, where the agent records one: Claude Code's own figure (subagents included) and OpenCode's. Hover the tool count to see which tools ran, and how often.
 - **Nested sub-agents** — spawned sub-agents render as highlighted, accent-bordered blocks with an `agent` badge, including Codex sub-agent threads nested under their parent.
 - **Questions & answers** — when a session uses the ask-the-user tool (Claude Code's `AskUserQuestion`, OpenCode's `question`, Codex's `request_user_input`), the preview shows the question, your choice, and a click-to-expand list of every option.
 - **Stays put** — remembers its size, position, and maximized state across reloads and restarts; drag the header to move it; a transient ↑ / ↓ control appears while scrolling.
