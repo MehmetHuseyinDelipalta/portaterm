@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.48.1] — 2026-10-29
+
+### Fixed
+
+- **Clicking a terminal clears its `done` mark.** In a tab with a single pane, clicking inside the terminal did not count as seeing a finished turn, so the mark stayed until you switched tabs or typed something. A click anywhere in the terminal now clears it. Switching back to the window still does not.
+
 ## [0.48.0] — 2026-10-29
 
 ### Added
