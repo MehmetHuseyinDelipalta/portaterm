@@ -125,6 +125,15 @@ async function activateExtension() {
 }
 
 describe("the agent status entry as activate wires it", () => {
+  // The entry exists only once `activate` runs. A workspace that never opened a
+  // Portaterm view or ran one of its commands would otherwise never activate it.
+  it("activates on startup, so the entry is there before any view has opened", () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8")) as {
+      activationEvents: string[];
+    };
+    expect(manifest.activationEvents).toContain("onStartupFinished");
+  });
+
   it("is shown from the start as the bare name, and a click on it opens Portaterm", async () => {
     const h = await activateExtension();
     expect(h.entry).toMatchObject({ name: "Portaterm", text: "Portaterm", command: OPEN_COMMAND, visible: true });
