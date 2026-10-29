@@ -1353,3 +1353,55 @@ describe("broadcast mark", () => {
     expect(tab.getAttribute("aria-label")).toBe("Terminal 1");
   });
 });
+
+describe("zoom mark", () => {
+  it("marks only zoomed tabs, outside the broadcast mark, and says so to a screen reader", () => {
+    const terminals = new Map<string, { name: string }>([
+      ["tab-1", { name: "Terminal 1" }],
+      ["tab-2", { name: "Terminal 2" }],
+    ]);
+    const deps = createMockDeps({
+      terminals: terminals as never,
+      activeTabId: "tab-1",
+      zoomedTabIds: new Set(["tab-1"]),
+    });
+    renderTabBar(deps);
+    const [first, second] = Array.from(deps.tabBarEl.querySelectorAll<HTMLElement>(".tab-item"));
+    const mark = first!.querySelector<HTMLElement>(".tab-zoom-mark")!;
+    expect(mark.hidden).toBe(false);
+    expect(mark.nextElementSibling?.classList.contains("tab-broadcast-mark")).toBe(true);
+    expect(first!.getAttribute("aria-label")).toBe("Terminal 1 (pane zoomed, other panes hidden)");
+    expect(second!.querySelector<HTMLElement>(".tab-zoom-mark")!.hidden).toBe(true);
+    expect(second!.getAttribute("aria-label")).toBe("Terminal 2");
+  });
+
+  it("names both modes when a zoomed tab is also broadcasting", () => {
+    const terminals = new Map<string, { name: string }>([["tab-1", { name: "Terminal 1" }]]);
+    const deps = createMockDeps({
+      terminals: terminals as never,
+      activeTabId: "tab-1",
+      zoomedTabIds: new Set(["tab-1"]),
+      broadcastTabIds: new Set(["tab-1"]),
+    });
+    renderTabBar(deps);
+    const tab = deps.tabBarEl.querySelector<HTMLElement>(".tab-item")!;
+    expect(tab.getAttribute("aria-label")).toBe(
+      "Terminal 1 (pane zoomed, other panes hidden; broadcasting input to all panes)",
+    );
+  });
+
+  it("clears in place when the zoom ends", () => {
+    const terminals = new Map<string, { name: string }>([["tab-1", { name: "Terminal 1" }]]);
+    const deps = createMockDeps({
+      terminals: terminals as never,
+      activeTabId: "tab-1",
+      zoomedTabIds: new Set(["tab-1"]),
+    });
+    renderTabBar(deps);
+    const tab = deps.tabBarEl.querySelector<HTMLElement>(".tab-item")!;
+    renderTabBar({ ...deps, zoomedTabIds: new Set() });
+    expect(deps.tabBarEl.querySelector(".tab-item")).toBe(tab);
+    expect(tab.querySelector<HTMLElement>(".tab-zoom-mark")!.hidden).toBe(true);
+    expect(tab.getAttribute("aria-label")).toBe("Terminal 1");
+  });
+});

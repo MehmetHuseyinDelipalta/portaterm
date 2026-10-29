@@ -148,6 +148,26 @@ describe("createKeyEventHandler", () => {
 
   // ─── Cmd+C ──────────────────────────────────────────────────────
 
+  describe("Toggle Pane Zoom keybinding", () => {
+    it("keeps Cmd+Shift+Enter (macOS) and Ctrl+Shift+Enter (elsewhere) from the shell", () => {
+      const mac = createKeyEventHandler(createDeps({ isMac: true }));
+      expect(mac(makeKeyEvent({ key: "Enter", metaKey: true, shiftKey: true }))).toBe(false);
+      const other = createKeyEventHandler(createDeps({ isMac: false }));
+      expect(other(makeKeyEvent({ key: "Enter", ctrlKey: true, shiftKey: true }))).toBe(false);
+    });
+
+    it("leaves every other Enter chord to xterm", () => {
+      const mac = createKeyEventHandler(createDeps({ isMac: true }));
+      expect(mac(makeKeyEvent({ key: "Enter", metaKey: true }))).toBe(true);
+      expect(mac(makeKeyEvent({ key: "Enter", metaKey: true, shiftKey: true, altKey: true }))).toBe(true);
+      expect(mac(makeKeyEvent({ key: "Enter", metaKey: true, shiftKey: true, ctrlKey: true }))).toBe(true);
+      expect(mac(makeKeyEvent({ key: "Enter", ctrlKey: true, shiftKey: true }))).toBe(true);
+      const other = createKeyEventHandler(createDeps({ isMac: false }));
+      expect(other(makeKeyEvent({ key: "Enter", ctrlKey: true }))).toBe(true);
+      expect(other(makeKeyEvent({ key: "Enter", ctrlKey: true, shiftKey: true, metaKey: true }))).toBe(true);
+    });
+  });
+
   describe("Cmd+C (copy / SIGINT)", () => {
     it("copies selection to clipboard when text is selected", () => {
       const terminal = createMockTerminal();

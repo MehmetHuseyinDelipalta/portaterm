@@ -34,6 +34,7 @@ import type {
   SetBroadcastInputMessage,
   SetFileTreePositionMessage,
   SetPanelIdMessage,
+  SetPaneZoomMessage,
   SplitPaneAtMessage,
   SplitPaneCreatedMessage,
   SplitPaneMessage,
@@ -97,6 +98,8 @@ export interface MessageHandlers {
   onCtxClear(msg: CtxClearMessage): void;
   /** Optional: a webview without split panes has nothing to broadcast to. */
   onSetBroadcastInput?(msg: SetBroadcastInputMessage): void;
+  /** Optional: a webview without split panes has nothing to zoom. */
+  onSetPaneZoom?(msg: SetPaneZoomMessage): void;
   onError(msg: ErrorMessage): void;
   onInsertPathEffect(msg: InsertPathEffectMessage): void;
   onFilePreviewResult(msg: FilePreviewResultMessage): void;
@@ -229,6 +232,9 @@ export function createMessageRouter(handlers: MessageHandlers): (msg: ExtensionT
         break;
       case "setBroadcastInput":
         handlers.onSetBroadcastInput?.(msg);
+        break;
+      case "setPaneZoom":
+        handlers.onSetPaneZoom?.(msg);
         break;
       case "error":
         handlers.onError(msg);

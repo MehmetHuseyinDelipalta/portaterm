@@ -39,6 +39,8 @@ export interface SplitTreeRendererDeps {
   onPaneFocused?: (sessionId: string) => void;
   /** Whether a tab mirrors typed input to all its panes. Absent: never. */
   isBroadcasting?: (tabId: string) => boolean;
+  /** The pane a tab is zoomed to, or null for its full layout. Absent: never zoomed. */
+  zoomedPane?: (tabId: string) => string | null;
 }
 
 /**
@@ -59,6 +61,7 @@ export class SplitTreeRenderer {
   private readonly onTabBarUpdate: () => void;
   private readonly onPaneFocused?: (sessionId: string) => void;
   private readonly isBroadcasting: (tabId: string) => boolean;
+  private readonly zoomedPane: (tabId: string) => string | null;
 
   constructor(deps: SplitTreeRendererDeps) {
     this.store = deps.store;
@@ -68,6 +71,7 @@ export class SplitTreeRenderer {
     this.onTabBarUpdate = deps.onTabBarUpdate;
     this.onPaneFocused = deps.onPaneFocused;
     this.isBroadcasting = deps.isBroadcasting ?? (() => false);
+    this.zoomedPane = deps.zoomedPane ?? (() => null);
   }
 
   /**
@@ -176,13 +180,15 @@ export class SplitTreeRenderer {
    * Adds `.active-pane` class to the active leaf, removes from all others.
    * Only applies when the tab has 2+ panes (no indicator for single-pane tabs).
    *
-   * Also the one place the broadcast-input mark and the panes' context-menu
-   * keys are refreshed, since every split, close and focus change ends here.
+   * Also the one place the broadcast-input mark, the pane zoom and the panes'
+   * context-menu keys are refreshed, since every split, close and focus change
+   * ends here.
    */
   updateActivePaneVisual(tabId: string): void {
     const layout = this.store.tabLayouts.get(tabId);
     const hasSplits = layout?.type === "branch";
     const broadcasting = this.isBroadcasting(tabId);
+    const zoomedPaneId = hasSplits ? this.zoomedPane(tabId) : null;
 
     // `paneSplit` offers "Broadcast Input" only where there is a sibling to
     // reach; `broadcastInput` swaps it for "Stop Broadcasting Input". Written on
@@ -194,6 +200,7 @@ export class SplitTreeRenderer {
         paneSessionId: sessionId,
         paneSplit: hasSplits,
         broadcastInput: broadcasting,
+        paneZoomed: zoomedPaneId !== null,
       });
     for (const sessionId of layout ? getAllSessionIds(layout) : []) {
       const instance = this.store.terminals.get(sessionId);
@@ -211,6 +218,7 @@ export class SplitTreeRenderer {
       return;
     }
     tabContainer.classList.toggle("broadcast-input", broadcasting);
+    this.applyZoom(tabId, tabContainer as HTMLElement, zoomedPaneId);
     for (const leaf of Array.from(tabContainer.querySelectorAll<HTMLElement>(".split-leaf"))) {
       if (leaf.dataset.sessionId) {
         leaf.dataset.vscodeContext = paneContext(leaf.dataset.sessionId);
@@ -230,6 +238,40 @@ export class SplitTreeRenderer {
       if (activeLeaf) {
         activeLeaf.classList.add("active-pane");
       }
+    }
+  }
+
+  /**
+   * Show only `zoomedPaneId` (null: the whole layout). Purely a class change —
+   * the split tree, its ratios and the hidden panes stay as they are — read by
+   * the `.pane-zoomed` rules in webviewHtml.ts: the zoomed leaf and the branches
+   * holding it fill the tab, everything else is `display: none`. A hidden pane
+   * measures 0×0, so fitting skips it and its shell keeps its size.
+   *
+   * The leaves are rebuilt on every render, so the marks are re-applied each
+   * call; the tab container survives renders, so it remembers what was last
+   * shown, and only a change refits the tab's panes.
+   */
+  private applyZoom(tabId: string, tabContainer: HTMLElement, zoomedPaneId: string | null): void {
+    // No leaf to show means no zoom: the rules would otherwise hide every pane.
+    const zoomedLeaf = zoomedPaneId
+      ? tabContainer.querySelector<HTMLElement>(`.split-leaf[data-session-id="${zoomedPaneId}"]`)
+      : null;
+    tabContainer.classList.toggle("pane-zoomed", zoomedLeaf !== null);
+    for (const leaf of Array.from(tabContainer.querySelectorAll(".split-leaf"))) {
+      leaf.classList.toggle("zoomed-pane", leaf === zoomedLeaf);
+    }
+    for (const branch of Array.from(tabContainer.querySelectorAll(".split-branch"))) {
+      branch.classList.toggle("zoom-path", zoomedLeaf !== null && branch.contains(zoomedLeaf));
+    }
+    const shown = zoomedLeaf?.dataset.sessionId ?? "";
+    if ((tabContainer.dataset.zoomedPane ?? "") !== shown) {
+      if (shown) {
+        tabContainer.dataset.zoomedPane = shown;
+      } else {
+        delete tabContainer.dataset.zoomedPane;
+      }
+      this.resizeCoordinator.debouncedFitAllLeaves(tabId);
     }
   }
 

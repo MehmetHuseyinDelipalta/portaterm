@@ -277,6 +277,29 @@ export function getTerminalHtml(
     .broadcast-input .split-branch .split-leaf:not(.active-pane) {
       opacity: 0.85;
     }
+    /* Pane zoom (paneZoom.ts). One leaf, and the branches that hold it, fill the
+       tab; every other pane and every handle leaves the layout. !important beats
+       the inline flex ratios SplitContainer writes: a lone child keeping
+       "flex: 0.5" would fill only half the tab. */
+    .pane-zoomed .split-handle,
+    .pane-zoomed .split-leaf:not(.zoomed-pane),
+    .pane-zoomed .split-branch:not(.zoom-path) {
+      display: none !important;
+    }
+    .pane-zoomed .split-branch.zoom-path,
+    .pane-zoomed .split-leaf.zoomed-pane {
+      flex: 1 1 100% !important;
+    }
+    .tab-zoom-mark {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      margin-right: 4px;
+      flex-shrink: 0;
+      opacity: 0.8;
+    }
     /* Outline never participates in sizing, so switching owner cannot contract the terminal. */
     body:has(#tab-bar[data-worktree-scope]) .terminal-area {
       outline: 1px solid var(--vscode-focusBorder, #007acc);

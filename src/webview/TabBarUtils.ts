@@ -227,6 +227,12 @@ const BROADCAST_ICON =
   '<circle cx="8" cy="8" r="1.25"/><path d="M5.25 5.25a3.9 3.9 0 0 0 0 5.5M10.75 5.25a3.9 3.9 0 0 1 0 5.5"/>' +
   '<path d="M3 3a7.1 7.1 0 0 0 0 10M13 3a7.1 7.1 0 0 1 0 10"/></svg>';
 
+/** Zoom glyph — corners pushed outward — for a tab showing one pane over its hidden siblings. */
+const ZOOM_ICON =
+  '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>';
+
 export interface TabInfo {
   /** Auto-derived name (default "Terminal N"; mutated by OSC title events). */
   name: string;
@@ -533,6 +539,11 @@ export interface RenderTabBarDeps {
    */
   broadcastTabIds?: ReadonlySet<string>;
   /**
+   * Tabs showing one zoomed pane with the rest hidden. Marked so a tab that
+   * looks like a single terminal still says it holds more.
+   */
+  zoomedTabIds?: ReadonlySet<string>;
+  /**
    * Present exactly while this surface is scoped, which is why it is ONE field
    * rather than a boolean beside a label: the chip is the only thing on screen
    * saying the list is a subset, and a filter without it is the invisible filter
@@ -605,6 +616,7 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     onAfterRender,
     scope,
     broadcastTabIds,
+    zoomedTabIds,
   } = deps;
 
   if (scope) {
@@ -728,6 +740,15 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
       broadcastMark.hidden = true;
       tab.insertBefore(broadcastMark, nameSpan);
 
+      const zoomMark = document.createElement("span");
+      zoomMark.className = "tab-zoom-mark";
+      zoomMark.innerHTML = ZOOM_ICON;
+      zoomMark.title = "Pane zoomed — other panes hidden";
+      zoomMark.setAttribute("aria-hidden", "true");
+      zoomMark.hidden = true;
+      // Outside the broadcast mark, which keeps its place against the name.
+      tab.insertBefore(zoomMark, broadcastMark);
+
       tab.addEventListener("click", (event) => {
         // The second click of a native double-click is followed by `dblclick`.
         // Skip only that click; unlike the old timestamp heuristic, this cannot
@@ -757,11 +778,13 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
     // re-render mid-drag (PTY activity, a title change) must not drop them.
     const dragMarks = ["tab-dragging", "tab-drop-before", "tab-drop-after"].filter((c) => tab!.classList.contains(c));
     const broadcasting = broadcastTabIds?.has(id) === true;
+    const zoomed = zoomedTabIds?.has(id) === true;
     tab.className = `tab-item${id === activeTabId ? " active" : ""}${instance.exited ? " tab-exited" : ""}${pinned ? " tab-pinned" : ""}${broadcasting ? " tab-broadcast" : ""}`;
     tab.classList.add(...dragMarks);
     tab.querySelector<HTMLElement>(".tab-close")!.hidden = pinned;
     tab.querySelector<HTMLElement>(".tab-pin")!.hidden = !pinned;
     tab.querySelector<HTMLElement>(".tab-broadcast-mark")!.hidden = !broadcasting;
+    tab.querySelector<HTMLElement>(".tab-zoom-mark")!.hidden = !zoomed;
     tab.dataset.tabId = id;
 
     // Custom name takes priority over the auto-derived (OSC-mutated) `name`.
@@ -794,7 +817,11 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
       status === "waiting" || status === "question" || status === "unseen"
         ? `${renderedName}: ${reason}`
         : renderedName;
-    tab.setAttribute("aria-label", broadcasting ? `${statusLabel} (broadcasting input to all panes)` : statusLabel);
+    const notes = [
+      ...(zoomed ? ["pane zoomed, other panes hidden"] : []),
+      ...(broadcasting ? ["broadcasting input to all panes"] : []),
+    ];
+    tab.setAttribute("aria-label", notes.length > 0 ? `${statusLabel} (${notes.join("; ")})` : statusLabel);
     tab.dataset.status = status;
   }
 

@@ -45,7 +45,13 @@ describe("SplitTreeRenderer broadcast visuals", () => {
     renderer.renderTabSplitTree("t1");
     expect(tabEl().classList.contains("broadcast-input")).toBe(false);
     for (const id of ["t1", "p2"]) {
-      const expected = { webviewSection: "splitPane", paneSessionId: id, paneSplit: true, broadcastInput: false };
+      const expected = {
+        webviewSection: "splitPane",
+        paneSessionId: id,
+        paneSplit: true,
+        broadcastInput: false,
+        paneZoomed: false,
+      };
       expect(contextOf(store.terminals.get(id)!.container)).toEqual(expected);
       expect(contextOf(leafOf(id))).toEqual(expected);
     }

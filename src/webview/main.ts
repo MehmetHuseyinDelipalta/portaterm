@@ -63,6 +63,7 @@ import {
   type TerminalNavigationState,
   type TerminalOwner,
 } from "./navigation/TerminalNavigationState";
+import { applyPaneZoomCommand, PaneZoom } from "./paneZoom";
 import { ResizeCoordinator } from "./resize/ResizeCoordinator";
 import { getAllSessionIds } from "./SplitModel";
 import { isFindStepShortcut, TerminalSearchWidget } from "./search/TerminalSearchWidget";
@@ -159,6 +160,8 @@ function clearWaitingOnCursorTitleLoss(tabId: string, title: string): void {
 const flowControl = new FlowControl((msg) => vscode.postMessage(msg));
 /** Typed input mirrored to every pane of a tab — see broadcastInput.ts. */
 const broadcastInput = new BroadcastInput({ store, postMessage: (msg) => vscode.postMessage(msg) });
+/** One pane of a split tab shown full size — see paneZoom.ts. */
+const paneZoom = new PaneZoom(store);
 const factory = new TerminalFactory({
   themeManager,
   store,
@@ -214,6 +217,7 @@ const splitRenderer = new SplitTreeRenderer({
     navigationController.dispatch((catalog, state) => focusNavigationPane(catalog, state, paneId));
   },
   isBroadcasting: (tabId) => broadcastInput.isBroadcasting(tabId),
+  zoomedPane: (tabId) => paneZoom.zoomedPane(tabId),
 });
 
 /**
@@ -579,6 +583,7 @@ function updateTabBar(): void {
   // A tab that closed or fell back to one pane stops broadcasting here, on the
   // redraw every pane removal ends in, so the mark below is never stale.
   broadcastInput.prune();
+  paneZoom.prune();
   // Every route a pane arrives or leaves by ends in a redraw: the region's own
   // offers, the `+` button, a split, a close, a tree push. Deciding the region at
   // selection alone left it standing over the terminal it had just opened. Ahead
@@ -600,6 +605,7 @@ function updateTabBar(): void {
     terminals: data.tabs,
     scope: tabBarScope?.chip(data.hiddenWaiting),
     broadcastTabIds: broadcastInput.broadcastingTabIds(),
+    zoomedTabIds: paneZoom.zoomedTabIds(),
     activeTabId: store.activeTabId,
     onTabClick: (tabId) => switchTab(tabId),
     onTabClose: (tabId) => vscode.postMessage({ type: "closeTab", tabId }),
@@ -983,6 +989,23 @@ const routeMessage = createMessageRouter({
   },
   onSetBroadcastInput(msg) {
     applyBroadcastCommand(broadcastInput, msg, {
+      refresh: (tabId) => {
+        splitRenderer.updateActivePaneVisual(tabId);
+        updateTabBar();
+      },
+      notify: (message) => {
+        const containerEl = document.getElementById("terminal-container");
+        if (containerEl) {
+          showBanner(containerEl, message, "info");
+        }
+      },
+    });
+  },
+  onSetPaneZoom(msg) {
+    applyPaneZoomCommand(paneZoom, msg, {
+      focusPane: (paneId) => {
+        navigationController.dispatch((catalog, state) => focusNavigationPane(catalog, state, paneId));
+      },
       refresh: (tabId) => {
         splitRenderer.updateActivePaneVisual(tabId);
         updateTabBar();

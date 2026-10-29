@@ -22,6 +22,7 @@ import { ReportedSessions } from "./agentHooks/reportedSessions";
 import { BROADCAST_COMMAND_IDS, createBroadcastCommands } from "./commands/broadcastCommands";
 import { CLOSE_COMMAND_IDS, createCloseCommands } from "./commands/closeCommands";
 import { exportBuffer, exportCommand, exportLastCommand, NO_FOCUS_TOAST } from "./commands/exportCommands";
+import { createPaneZoomCommands, PANE_ZOOM_COMMAND_IDS } from "./commands/paneZoomCommands";
 import { CursorHookInstaller } from "./cursor/CursorHookInstaller";
 import { createWatcherPool } from "./providers/fsWatcherPool";
 import { createGitDecorationProvider } from "./providers/gitDecorationProvider";
@@ -2359,6 +2360,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
   for (const id of BROADCAST_COMMAND_IDS) {
     context.subscriptions.push(vscode.commands.registerCommand(id, broadcastCommands[id]));
+  }
+
+  // Pane zoom: the webview holds the state, as with broadcast. The toggle has a
+  // keybinding, so it targets the terminal that holds keyboard focus first — an
+  // active editor terminal must not win over the sidebar the keys were pressed
+  // in — then falls back to the palette chain above.
+  const paneZoomCommands = createPaneZoomCommands({
+    postToSession,
+    focusedPaneId: () =>
+      (
+        [...TerminalEditorProvider.getProviders(), sidebarProvider, panelProvider].find((p) => p.hasFocus) ??
+        TerminalEditorProvider.getActiveProvider() ??
+        getFocusedProvider()
+      ).getActiveSessionId(),
+  });
+  for (const id of PANE_ZOOM_COMMAND_IDS) {
+    context.subscriptions.push(vscode.commands.registerCommand(id, paneZoomCommands[id]));
   }
 
   context.subscriptions.push(

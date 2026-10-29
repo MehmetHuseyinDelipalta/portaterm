@@ -114,6 +114,15 @@ describe("createMessageRouter", () => {
     expect(() => createMessageRouter(handlers)(msg)).not.toThrow();
   });
 
+  it("routes setPaneZoom, and tolerates a webview that draws no split panes", () => {
+    const handlers = createMockHandlers();
+    const onSetPaneZoom = vi.fn();
+    const msg = { type: "setPaneZoom" as const, sessionId: "p2", zoomed: true };
+    createMessageRouter({ ...handlers, onSetPaneZoom })(msg);
+    expect(onSetPaneZoom).toHaveBeenCalledWith(msg);
+    expect(() => createMessageRouter(handlers)(msg)).not.toThrow();
+  });
+
   it("does NOT route init messages (handled by main.ts bootstrap)", () => {
     const handlers = createMockHandlers();
     const dispatch = createMessageRouter(handlers);

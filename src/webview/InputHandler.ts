@@ -77,6 +77,12 @@ export function createKeyEventHandler(deps: KeyHandlerDeps): (event: KeyboardEve
       return true;
     }
 
+    // Cmd+Shift+Enter / Ctrl+Shift+Enter is the Toggle Pane Zoom keybinding,
+    // resolved by VS Code. Left to xterm it would also send a CR to the shell.
+    if (event.key === "Enter" && event.shiftKey && !event.altKey && !(isMac ? event.ctrlKey : event.metaKey)) {
+      return false;
+    }
+
     switch (event.key.toLowerCase()) {
       case "c":
         if (terminal.hasSelection()) {

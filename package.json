@@ -320,6 +320,18 @@
         "title": "Stop Broadcasting Input"
       },
       {
+        "command": "portaterm.togglePaneZoom",
+        "title": "Portaterm: Toggle Pane Zoom"
+      },
+      {
+        "command": "portaterm.ctx.zoomPane",
+        "title": "Zoom Pane"
+      },
+      {
+        "command": "portaterm.ctx.unzoomPane",
+        "title": "Unzoom Pane"
+      },
+      {
         "command": "portaterm.newTerminalInEditor",
         "title": "Portaterm: New Terminal in Editor"
       },
@@ -592,6 +604,16 @@
           "group": "split@4"
         },
         {
+          "command": "portaterm.ctx.zoomPane",
+          "when": "webviewSection == 'splitPane' && paneSplit && !paneZoomed",
+          "group": "split@5"
+        },
+        {
+          "command": "portaterm.ctx.unzoomPane",
+          "when": "webviewSection == 'splitPane' && paneZoomed",
+          "group": "split@5"
+        },
+        {
           "command": "portaterm.ctx.revealInFileTree",
           "when": "webviewSection == 'splitPane'",
           "group": "navigation@1"
@@ -724,6 +746,14 @@
         {
           "command": "portaterm.ctx.stopBroadcastInput",
           "when": "false"
+        },
+        {
+          "command": "portaterm.ctx.zoomPane",
+          "when": "false"
+        },
+        {
+          "command": "portaterm.ctx.unzoomPane",
+          "when": "false"
         }
       ]
     },
@@ -739,6 +769,12 @@
         "key": "ctrl+shift+\\",
         "mac": "cmd+shift+\\",
         "when": "focusedView == portaterm.sidebar || focusedView == portaterm.panel"
+      },
+      {
+        "command": "portaterm.togglePaneZoom",
+        "key": "ctrl+shift+enter",
+        "mac": "cmd+shift+enter",
+        "when": "focusedView == portaterm.sidebar || focusedView == portaterm.panel || activeWebviewPanelId == 'portaterm.editor'"
       }
     ]
   },

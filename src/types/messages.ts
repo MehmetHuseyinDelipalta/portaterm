@@ -2369,6 +2369,17 @@ export interface SetBroadcastInputMessage {
   enabled?: boolean;
 }
 
+/**
+ * Zoom a pane of a split tab to the tab's full area, or restore the layout.
+ * `zoomed: true` zooms `sessionId` (making it the active pane), `false` restores
+ * its tab, absent toggles. The webview owns the state; the host only relays.
+ */
+export interface SetPaneZoomMessage {
+  type: "setPaneZoom";
+  sessionId: string;
+  zoomed?: boolean;
+}
+
 /** Visual feedback: a file path was inserted into the terminal via context menu. */
 export interface InsertPathEffectMessage {
   type: "insertPathEffect";
@@ -3278,6 +3289,7 @@ export type ExtensionToWebViewMessage =
   | SplitPaneAtMessage
   | CtxClearMessage
   | SetBroadcastInputMessage
+  | SetPaneZoomMessage
   | InsertPathEffectMessage
   | FilePreviewResultMessage
   | ThemeChangedMessage

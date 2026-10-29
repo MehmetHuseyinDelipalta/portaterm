@@ -38,7 +38,7 @@ Portaterm uses its own extension ID (`mhd.portaterm`) and settings namespace (`p
 - 🧭 **Put the terminal anywhere** — sidebar, secondary sidebar, bottom panel, or editor tab
 - 🤖 **AI Coding Vault** — preview Claude Code / Codex / OpenCode / Cursor CLI / Cursor IDE history, with CLI-only Cursor Resume and provider-supported continuation
 - 🔗 **AI-CLI-aware** — clickable paths, file hover previews, and pasted-image previews in agent output
-- 🪟 **Tabs + recursive split panes** with drag-to-resize, and broadcast input to type into every pane at once
+- 🪟 **Tabs + recursive split panes** with drag-to-resize, pane zoom, and broadcast input to type into every pane at once
 - ♻️ **Survives reloads & restarts** — scrollback, names, cwd, and layout restore
 - 📤 **Export** any command or full scrollback to a file
 - 🎨 **Theme-aware, WebGL-rendered**, with an embedded file tree
@@ -105,6 +105,7 @@ The built-in terminal is awkward to reposition and can't live in the sidebar. Po
 
 - **Place it anywhere** — Primary Sidebar, Secondary Sidebar, Bottom Panel, or Editor Tab; each location remembers its own state.
 - **Tabs + split panes** — horizontal/vertical splits with drag-to-resize, recursive. With more tabs than fit, the active tab is always scrolled into view and a **+N** mark counts the tabs past the right edge.
+- **Pane zoom** — press `Cmd+Shift+Enter` (`Ctrl+Shift+Enter` on Windows/Linux), right-click a split pane → **Zoom Pane**, or run `Portaterm: Toggle Pane Zoom` to show one pane at the tab's full size. The other panes and their shells keep running, hidden; a mark on the tab shows it is zoomed. Press it again, or choose **Unzoom Pane**, to get the layout back exactly as it was — moving focus to another pane, splitting, or closing a pane also ends the zoom.
 - **Broadcast input** — right-click a split pane → **Broadcast Input to All Panes** (or `Portaterm: Toggle Broadcast Input to All Panes`) and what you type reaches every pane of that tab at once. A red frame on each pane and a mark on the tab show it is on; it stops when you turn it off or the tab is back to one pane.
 - **Real terminal** — `node-pty` backed, full shell support, adaptive flow control.
 - **GPU rendering** — WebGL, smooth on Retina.
