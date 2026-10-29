@@ -78,6 +78,7 @@ describe("vault context menu items", () => {
       "Reveal in Finder",
       "Copy File Path",
       "Copy Resume Command",
+      "Export as Markdown…",
       "Open Working Directory",
     ]);
   });
@@ -89,7 +90,9 @@ describe("vault context menu items", () => {
     expect(labels(host)).not.toContain("Reveal in Finder");
     expect(labels(host)).not.toContain("Copy File Path");
     // And the separators they sat between collapse rather than doubling up.
-    expect(host.querySelectorAll(".vault-context-menu hr")).toHaveLength(1);
+    expect(host.querySelectorAll(".vault-context-menu hr")).toHaveLength(2);
+    // Export reads the session through the host, so it stays without a file.
+    expect(labels(host)).toContain("Export as Markdown…");
   });
 
   it("omits both resume items for an entry the reader could not prove resumable", () => {
@@ -109,7 +112,13 @@ describe("vault context menu items", () => {
 
   it("posts entryId-only messages — the webview never sends a path", () => {
     const { menu, host, row, posts } = setup();
-    for (const label of ["Open", "Reveal in Finder", "Copy File Path", "Open Working Directory"]) {
+    for (const label of [
+      "Open",
+      "Reveal in Finder",
+      "Copy File Path",
+      "Export as Markdown…",
+      "Open Working Directory",
+    ]) {
       menu.open(entry(), EVENT, row);
       clickItem(host, label);
     }
@@ -117,6 +126,7 @@ describe("vault context menu items", () => {
       "vaultOpenSessionFile",
       "vaultRevealInOS",
       "vaultCopyFilePath",
+      "vaultExportMarkdown",
       "vaultOpenWorkingDir",
     ]);
     for (const post of posts) {

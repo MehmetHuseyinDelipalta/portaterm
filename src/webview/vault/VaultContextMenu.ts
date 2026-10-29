@@ -12,7 +12,16 @@
 import type { VaultSessionEntry } from "../../vault/types";
 import { type ContextMenuItem, ContextMenuShell } from "../shared/contextMenuShell";
 import { collapseSeparators } from "./format";
-import { ICON_COPY, ICON_FOLDER, ICON_OPEN, ICON_RENAME, ICON_RESUME, ICON_REVEAL, ICON_TERMINAL } from "./icons";
+import {
+  ICON_COPY,
+  ICON_EXPORT,
+  ICON_FOLDER,
+  ICON_OPEN,
+  ICON_RENAME,
+  ICON_RESUME,
+  ICON_REVEAL,
+  ICON_TERMINAL,
+} from "./icons";
 import type { VaultPanelPostMessage } from "./VaultPanel";
 import { canResumeVaultEntry } from "./vaultListView";
 
@@ -108,6 +117,12 @@ export class VaultContextMenu {
             },
           ]
         : []),
+      {
+        label: "Export as Markdown…",
+        icon: ICON_EXPORT,
+        act: () => this.postMessage({ type: "vaultExportMarkdown", entryId: entry.id }),
+      },
+      "sep",
       {
         label: "Open Working Directory",
         icon: ICON_FOLDER,

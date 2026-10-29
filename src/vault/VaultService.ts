@@ -408,6 +408,11 @@ export class VaultService {
     this.customNames?.set(entryId, name);
   }
 
+  /** The user custom name a served list would overlay on this entry, if any. */
+  customNameOf(entryId: string): string | undefined {
+    return this.customNames?.get(entryId);
+  }
+
   /**
    * Write a user-chosen title into the agent's OWN store for a SQLite agent
    * (opencode/codex), keyed off the entry id's agent (write-vault-rename-to-store

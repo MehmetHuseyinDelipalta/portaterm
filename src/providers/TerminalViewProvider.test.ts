@@ -1484,6 +1484,77 @@ describe("TerminalViewProvider: vaultCopyResumeCommand", () => {
   });
 });
 
+// ─── vaultExportMarkdown ────────────────────────────────────────────
+
+describe("TerminalViewProvider: vaultExportMarkdown", () => {
+  afterEach(() => {
+    delete (vscodeMockWindow as { showSaveDialog?: unknown }).showSaveDialog;
+  });
+
+  function wireExport(vaultService: Partial<VaultService>): {
+    sm: SessionManager;
+    send: (msg: unknown) => void;
+  } {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider(
+      { fsPath: "/mock/extension" } as vscode.Uri,
+      sm,
+      "sidebar",
+      null,
+      null,
+      vaultService as VaultService,
+    );
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    return {
+      sm,
+      send: (msg: unknown) => {
+        for (const handler of messageHandlers) {
+          handler(msg);
+        }
+      },
+    };
+  }
+
+  it("reads the full session and asks where to save it", async () => {
+    const showSaveDialog = vi.fn(async () => undefined);
+    (vscodeMockWindow as { showSaveDialog?: unknown }).showSaveDialog = showSaveDialog;
+    const getDetail = vi.fn(async () => ({
+      entryId: "claude:s1",
+      contentKind: "timeline" as const,
+      recentActivity: [],
+      timeline: [],
+      stats: { messageCount: 0, toolCount: 0, subagentCount: 0 },
+    }));
+    const { sm, send } = wireExport({
+      getEntry: vi.fn(async () => ({
+        id: "claude:s1",
+        agent: "claude",
+        sessionId: "s1",
+        title: "Fix login",
+        cwd: "/not/a/dir",
+        modified: 0,
+        flags: {},
+      })),
+      getDetail,
+      customNameOf: () => undefined,
+    });
+    send({ type: "vaultExportMarkdown", entryId: "claude:s1" });
+    await vi.waitFor(() => expect(showSaveDialog).toHaveBeenCalledTimes(1));
+    expect(getDetail).toHaveBeenCalledWith("claude:s1", 5000);
+    sm.dispose();
+  });
+
+  it("ignores a message without a string entry id", async () => {
+    const getEntry = vi.fn();
+    const { sm, send } = wireExport({ getEntry });
+    send({ type: "vaultExportMarkdown", entryId: 42 });
+    await Promise.resolve();
+    expect(getEntry).not.toHaveBeenCalled();
+    sm.dispose();
+  });
+});
+
 describe("TerminalViewProvider: committed navigation", () => {
   it("routes a retained split pane and clears tab and pane together", () => {
     const sm = new SessionManager();

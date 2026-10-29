@@ -685,6 +685,10 @@ export class PreviewController {
               },
             }
           : {}),
+        // Export writes the timeline, so a metadata-only view offers nothing to export.
+        ...(this.actionsAvailable && detail?.contentKind === "timeline"
+          ? { onExport: () => this.deps.postMessage({ type: "vaultExportMarkdown", entryId: entry.id }) }
+          : {}),
         onToggleMaximize: () => this.shell.floatingWindow.toggleMaximize(),
         onClose: () => this.closePreview(),
         ...(this.actionsAvailable ? { onRenameTitle: (titleEl: HTMLElement) => this.renameTitle(entry, titleEl) } : {}),

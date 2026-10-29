@@ -35,7 +35,7 @@ describe("buildPreviewHeader: vault shape", () => {
         title: "My session",
         meta: metaDl(),
       },
-      baseCb({ onResume: () => {} }),
+      baseCb({ onResume: () => {}, onExport: () => {} }),
     );
     const badge = element.querySelector(".vault-badge");
     expect(badge?.classList.contains("vault-badge--claude")).toBe(true);
@@ -45,7 +45,12 @@ describe("buildPreviewHeader: vault shape", () => {
     const actions = Array.from(element.querySelectorAll(".vault-preview-title-actions > button")).map((b) =>
       (b as HTMLElement).className.replace("vault-preview-icon-btn ", ""),
     );
-    expect(actions).toEqual(["vault-preview-resume", "vault-preview-maximize", "vault-preview-close"]);
+    expect(actions).toEqual([
+      "vault-preview-resume",
+      "vault-preview-export",
+      "vault-preview-maximize",
+      "vault-preview-close",
+    ]);
   });
 
   it("the title row carries no branch chip and no per-message navigation", () => {
@@ -85,6 +90,7 @@ describe("buildPreviewHeader: subagent shape", () => {
     expect(element.querySelector(".vault-preview-subagent-agent")?.textContent).toBe("@Explore");
     expect(element.querySelector(".vault-preview-title")?.textContent).toBe("Find the auth middleware");
     expect(element.querySelector(".vault-preview-resume")).toBeNull();
+    expect(element.querySelector(".vault-preview-export")).toBeNull();
     expect(element.querySelector(".vault-preview-nav-prev")).toBeNull();
     expect(element.querySelector(".vault-preview-nav-next")).toBeNull();
     expect(element.querySelector(".vault-preview-meta")).toBeNull();
@@ -115,16 +121,22 @@ describe("buildPreviewHeader: subagent shape", () => {
 });
 
 describe("buildPreviewHeader: callbacks", () => {
-  it("wires close, maximize, and resume", () => {
+  it("wires close, maximize, resume, and export", () => {
     const onClose = vi.fn();
     const onToggleMaximize = vi.fn();
     const onResume = vi.fn();
-    const { element } = buildPreviewHeader({ badge: {}, title: "x" }, baseCb({ onClose, onToggleMaximize, onResume }));
+    const onExport = vi.fn();
+    const { element } = buildPreviewHeader(
+      { badge: {}, title: "x" },
+      baseCb({ onClose, onToggleMaximize, onResume, onExport }),
+    );
     element.querySelector<HTMLButtonElement>(".vault-preview-close")?.click();
     element.querySelector<HTMLButtonElement>(".vault-preview-maximize")?.click();
     element.querySelector<HTMLButtonElement>(".vault-preview-resume")?.click();
+    element.querySelector<HTMLButtonElement>(".vault-preview-export")?.click();
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onToggleMaximize).toHaveBeenCalledTimes(1);
     expect(onResume).toHaveBeenCalledTimes(1);
+    expect(onExport).toHaveBeenCalledTimes(1);
   });
 });

@@ -38,6 +38,7 @@ import { handleInsertOsDropPaths } from "./osDropPaths";
 import { isValidPreviewRequest } from "./previewValidation";
 import { signalPaneEngaged, signalPaneInput, signalPanesPresented, signalSurfaceReady } from "./surfaceSignals";
 import type { VaultWatchClient, VaultWatchCoordinator } from "./VaultWatchCoordinator";
+import { exportVaultSessionMarkdown, vscodeVaultExportDeps } from "./vaultExportMarkdown";
 import type { WorktreeHost, WorktreeSurface } from "./WorktreeHost";
 import { getTerminalHtml } from "./webviewHtml";
 import {
@@ -1201,6 +1202,12 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         case "vaultCopyFilePath":
           if (typeof message.entryId === "string") {
             void this.handleVaultCopyFilePath(message.entryId);
+          }
+          break;
+
+        case "vaultExportMarkdown":
+          if (typeof message.entryId === "string" && this.vaultService) {
+            void exportVaultSessionMarkdown(message.entryId, vscodeVaultExportDeps(this.vaultService));
           }
           break;
 

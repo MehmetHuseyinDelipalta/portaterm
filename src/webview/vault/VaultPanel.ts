@@ -17,6 +17,7 @@ import type {
   VaultContinueSessionMessage,
   VaultCopyFilePathMessage,
   VaultCopyResumeCommandMessage,
+  VaultExportMarkdownMessage,
   VaultLaunchTargetsMessage,
   VaultMessageRecordResponseMessage,
   VaultOpenSessionFileMessage,
@@ -72,6 +73,7 @@ export type VaultPanelPostMessage = (
     | VaultOpenWorkingDirMessage
     | VaultCopyResumeCommandMessage
     | VaultCopyFilePathMessage
+    | VaultExportMarkdownMessage
     | VaultRenameSessionMessage
     | VaultWatchSessionMessage
     | OpenVaultSettingsMessage,

@@ -562,6 +562,15 @@ export interface VaultCopyFilePathMessage {
 }
 
 /**
+ * Webview → Extension: export the session's timeline to a Markdown file. The
+ * host re-reads the full timeline itself and asks where to save it.
+ */
+export interface VaultExportMarkdownMessage {
+  type: "vaultExportMarkdown";
+  entryId: string;
+}
+
+/**
  * Webview → Extension: set or clear a session's user custom name
  * (enhance-vault-sessions D1). An empty (after trim) `name` clears it, reverting
  * to the reader-derived title. Persisted in a sidecar registry — never in the
@@ -1919,6 +1928,7 @@ export type WebViewToExtensionMessage =
   | VaultOpenWorkingDirMessage
   | VaultCopyResumeCommandMessage
   | VaultCopyFilePathMessage
+  | VaultExportMarkdownMessage
   | VaultRenameSessionMessage
   | VaultWatchSessionMessage
   | OpenVaultSettingsMessage

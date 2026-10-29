@@ -767,7 +767,13 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
     panel.render(result([entry({ id: "opencode:a", agent: "opencode", sessionPath: undefined })]));
     const menu = openMenu(host);
     const labels = Array.from(menu?.querySelectorAll("button") ?? []).map((b) => b.textContent);
-    expect(labels).toEqual(["Resume", "Rename", "Copy Resume Command", "Open Working Directory"]);
+    expect(labels).toEqual([
+      "Resume",
+      "Rename",
+      "Copy Resume Command",
+      "Export as Markdown…",
+      "Open Working Directory",
+    ]);
     expect(labels).not.toContain("Open");
     expect(labels).not.toContain("Copy File Path");
   });
@@ -778,7 +784,7 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
     const panel = new VaultPanel({ host, postMessage: (m) => posted.push(m), getInitialCollapsed: () => false });
     panel.render(result([entry({ id: "cursor:a", agent: "cursor", canResume: false })]));
     const labels = Array.from(openMenu(host)?.querySelectorAll("button") ?? []).map((b) => b.textContent);
-    expect(labels).toEqual(["Rename", "Open Working Directory"]);
+    expect(labels).toEqual(["Rename", "Export as Markdown…", "Open Working Directory"]);
     expect(labels).not.toContain("Resume");
     expect(labels).not.toContain("Copy Resume Command");
     Array.from(host.querySelectorAll<HTMLButtonElement>(".vault-context-menu button"))
@@ -794,7 +800,14 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
     const row = host.querySelector<HTMLElement>(".vault-row");
     row?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
     const fileLabels = Array.from(host.querySelectorAll(".vault-context-menu button")).map((b) => b.textContent);
-    expect(fileLabels).toEqual(["Rename", "Open", "Reveal in Finder", "Copy File Path", "Open Working Directory"]);
+    expect(fileLabels).toEqual([
+      "Rename",
+      "Open",
+      "Reveal in Finder",
+      "Copy File Path",
+      "Export as Markdown…",
+      "Open Working Directory",
+    ]);
   });
 
   it("posts Copy Resume Command from the row context menu", () => {
@@ -884,6 +897,52 @@ describe("VaultPanel session preview (redesign 5_2)", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(host.querySelector(".vault-preview.is-open")).toBeNull();
     expect(sel("codex:b")).toBeNull();
+  });
+
+  it("offers Export as Markdown once a transcript is shown, posting only the entry id", () => {
+    const host = createHost();
+    const posted: { type: string; entryId?: string | null }[] = [];
+    const panel = new VaultPanel({ host, postMessage: (m) => posted.push(m), getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "claude:a" })]));
+    host.querySelector<HTMLElement>(".vault-row")?.click();
+    // Loading: nothing is known about the session yet, so nothing to export.
+    expect(host.querySelector(".vault-preview-export")).toBeNull();
+    panel.handleSessionDetailResponse({ type: "vaultSessionDetailResponse", entryId: "claude:a", detail: detail() });
+    const btn = host.querySelector<HTMLButtonElement>(".vault-preview-export");
+    expect(btn?.getAttribute("aria-label")).toBe("Export as Markdown");
+    btn?.click();
+    expect(posted.filter((m) => m.type === "vaultExportMarkdown")).toEqual([
+      { type: "vaultExportMarkdown", entryId: "claude:a" },
+    ]);
+  });
+
+  it("offers no Export for a metadata-only session, which has no timeline to write", () => {
+    const host = createHost();
+    const panel = new VaultPanel({ host, postMessage: () => {}, getInitialCollapsed: () => false });
+    panel.render(result([entry({ id: "claude:a" })]));
+    host.querySelector<HTMLElement>(".vault-row")?.click();
+    panel.handleSessionDetailResponse({
+      type: "vaultSessionDetailResponse",
+      entryId: "claude:a",
+      detail: detail({ contentKind: "metadata-only" }),
+    });
+    expect(host.querySelector(".vault-preview-header")).not.toBeNull();
+    expect(host.querySelector(".vault-preview-export")).toBeNull();
+  });
+
+  it("offers no Export on a surface that cannot perform vault actions", () => {
+    const host = createHost();
+    const panel = new VaultPanel({
+      host,
+      postMessage: () => {},
+      getInitialCollapsed: () => false,
+      actionsAvailable: false,
+    });
+    panel.render(result([entry({ id: "claude:a" })]));
+    panel.openPreviewById("claude:a");
+    panel.handleSessionDetailResponse({ type: "vaultSessionDetailResponse", entryId: "claude:a", detail: detail() });
+    expect(host.querySelector(".vault-preview-header")).not.toBeNull();
+    expect(host.querySelector(".vault-preview-export")).toBeNull();
   });
 
   it("expanding a capped run reveals its hidden steps in place (UI-2)", () => {

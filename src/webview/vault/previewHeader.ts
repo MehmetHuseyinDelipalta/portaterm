@@ -2,7 +2,7 @@
 // title + action buttons + optional meta). Stateless and consumer-agnostic: the
 // caller passes a normalized model + callbacks, so the vault session preview and
 // the subagent popup render through ONE builder and cannot drift. The vault-only
-// Resume action renders only when its callback is supplied.
+// Resume and Export actions render only when their callbacks are supplied.
 //
 // The title row is deliberately narrow: badge, title, actions. The session's git
 // branch now rides the meta block's Folder row instead, and per-message
@@ -10,7 +10,7 @@
 
 import { attachTooltip } from "../ui/Tooltip";
 import type { AgentIcon } from "./agentIcons";
-import { ICON_CLOSE, ICON_MAXIMIZE, ICON_RESTORE, ICON_RESUME } from "./icons";
+import { ICON_CLOSE, ICON_EXPORT, ICON_MAXIMIZE, ICON_RESTORE, ICON_RESUME } from "./icons";
 
 export interface PreviewHeaderModel {
   /** Brand badge: the resolved icon, or a text fallback when none. */
@@ -29,6 +29,8 @@ export interface PreviewHeaderCallbacks {
   onClose: () => void;
   /** Render the Resume button only when provided (vault only). */
   onResume?: () => void;
+  /** Render the Export as Markdown button only when provided (vault only). */
+  onExport?: () => void;
   /**
    * Double-click the title to rename. Vault only — the subagent popup supplies
    * nothing and so gets no listener at all. Double-click rather than click
@@ -86,6 +88,12 @@ export function buildPreviewHeader(
     resumeBtn.addEventListener("click", () => cb.onResume?.());
     actions.appendChild(resumeBtn);
     disposers.push(attachTooltip(resumeBtn));
+  }
+
+  if (cb.onExport) {
+    const exportBtn = iconButton("vault-preview-export", "Export as Markdown", ICON_EXPORT, cb.onExport);
+    actions.appendChild(exportBtn);
+    disposers.push(attachTooltip(exportBtn));
   }
 
   const maximized = cb.isMaximized();
