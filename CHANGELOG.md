@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.42.0] — 2026-10-29
+
+### Changed
+
+- **The status bar entry is a way back to Portaterm.** With no agent running it stays as `Portaterm`, and clicking it opens the Portaterm view you last worked in. While agents run it reads `Portaterm — 2 working · 1 waiting`. Clicking it, or running **Portaterm: Go to Agent**, now always opens a pick, even for one agent: the agents, most urgent first, then **Open Portaterm**.
+
 ## [0.41.0] — 2026-10-28
 
 ### Added
