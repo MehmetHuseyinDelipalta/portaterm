@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.48.2] — 2026-10-29
+
+### Fixed
+
+- **The `Portaterm` status bar entry shows in every workspace.** In a project where Portaterm had never been opened, the extension did not start until you opened its view or ran one of its commands, so the status bar entry was missing. Portaterm now starts once the window has loaded, and the entry is there from the start.
+
 ## [0.48.1] — 2026-10-29
 
 ### Fixed
