@@ -7,6 +7,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.45.0] — 2026-10-29
+
+### Added
+
+- **Star the sessions that matter.** Hover a Vault row and click its star, or use **Star** on the right-click menu or the star in the preview header. A tab pin lasts only while its tab runs the session; a star is your own mark on the session, so it stays when the tab closes, across windows and restarts. Starred sessions lead their group — after pinned ones, ahead of open ones — and are never hidden behind **Show more**.
+- **Starred only.** A star toggle beside **This folder only** narrows the list to your starred sessions, and is remembered.
+- **Tags.** **Edit Tags…** on a row's right-click menu opens a picker with every tag you already use, the session's own ones checked; type to add a new tag, a comma separating several. A row shows its first two tags as `#tag` chips (`+N` for the rest); click one to filter the list to that tag.
+- **`#tag` search.** A query starting with `#` matches tags only; a plain query now matches tags as well.
+
+Stars and tags are stored by Portaterm in VS Code's own storage, like custom names — never in an agent's session files.
+
+### Fixed
+
+- **Search finds a renamed session by its new name.** It used to match only the title the agent recorded.
+
 ## [0.44.0] — 2026-10-29
 
 ### Added
