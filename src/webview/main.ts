@@ -1913,7 +1913,13 @@ function bootstrap(): void {
     "pointerdown",
     (event) => {
       const target = event.target instanceof Element ? event.target : null;
-      const leafSessionId = target?.closest<HTMLElement>(".split-leaf")?.dataset.sessionId;
+      // A single-pane tab mounts its terminal with no split leaf around it, so
+      // the pane is the one whose terminal holds the click.
+      const leafSessionId =
+        target?.closest<HTMLElement>(".split-leaf")?.dataset.sessionId ??
+        (target === null
+          ? undefined
+          : [...store.terminals].find(([, instance]) => instance.container.contains(target))?.[0]);
       const tabId = target?.closest<HTMLElement>("[data-tab-id]")?.dataset.tabId;
       const layout = tabId === undefined ? undefined : store.tabLayouts.get(tabId);
       const paneIds = leafSessionId ? [leafSessionId] : layout ? getAllSessionIds(layout) : [];
