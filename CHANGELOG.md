@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.48.0] — 2026-10-29
+
+### Added
+
+- **Tab colors and icons.** Right-click a tab and choose **Change Tab Color…** or **Change Tab Icon…**, or run **Portaterm: Change Tab Color…** / **Portaterm: Change Tab Icon…** for the focused tab, to tell many open tabs apart at a glance. Six colors — red, green, yellow, blue, magenta, cyan — follow your theme's terminal colors and show as a stripe along the tab's top edge; ten icons (terminal, code, server, database, globe, bug, beaker, rocket, gear, branch) sit at the front of the tab, in the tab's color. **No Color** and **No Icon** take them off.
+  - Both survive reloads and restarts with the rest of the tab. A split tab has one color and icon, whichever pane is focused.
+  - **In the Vault too.** A session running in a colored tab shows the color as a stripe down its row's left edge and the icon ahead of its title, so a row and its tab match at a glance. The session keeps them after the tab closes, and **Resume** opens its new tab wearing them again.
+
 ## [0.47.0] — 2026-10-29
 
 ### Added
