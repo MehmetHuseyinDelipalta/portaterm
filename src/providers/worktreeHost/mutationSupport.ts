@@ -69,6 +69,9 @@ export function createMutationSupport(deps: MutationSupportDeps): WorktreeMutati
       }
       return {
         mainWorktree: repo.mainPath,
+        // The common dir: outside main under `--separate-git-dir`, and a folder
+        // around it holds every worktree's objects.
+        commonDir: repo.repoId,
         // LINKED only — a path inside main is where the default root lives.
         linkedWorktrees: repo.worktrees.filter((w) => w.id !== repo.mainPath).map((w) => w.id),
       };

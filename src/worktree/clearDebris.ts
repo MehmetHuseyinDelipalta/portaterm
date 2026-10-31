@@ -16,7 +16,7 @@ import { rm } from "node:fs/promises";
 import * as path from "node:path";
 import { isPathInside, normalizePathForCompare } from "../utils/pathBoundary";
 import { type ComponentWalk, identityOf, type LstatLike, walkComponentsSync } from "./createPath";
-import { type GitEntryProbe, probeGitEntry } from "./debrisClassification";
+import { findRepositoryWithin, type GitEntryProbe, probeGitEntry, type RepositoryScan } from "./debrisClassification";
 import { messageOf } from "./errorMessage";
 
 export interface ClearDebrisDeps {
@@ -82,6 +82,12 @@ export type ClearDebrisResult = { ok: true } | { ok: false; reason: string };
 export interface ClearDebrisContext {
   mainWorktree: string;
   linkedWorktrees: readonly string[];
+  /**
+   * The repository's git common dir. It is usually inside the main worktree,
+   * but `--separate-git-dir` or `core.worktree` can put it anywhere — and then
+   * a folder around it holds every worktree's objects.
+   */
+  commonDir?: string;
 }
 
 /**
@@ -115,9 +121,24 @@ export async function clearDebris(
   if (same(resolvedPath, ctx.mainWorktree)) {
     return { ok: false, reason: "That is the repository's main worktree, so it will not be cleared." };
   }
+  // The other direction: a folder that CONTAINS a worktree. It has no `.git`
+  // of its own, so every probe below passes, and the recursive removal takes
+  // the worktree with it.
+  if (ctx.commonDir !== undefined && isPathInside(ctx.commonDir, resolvedPath)) {
+    return { ok: false, reason: "That folder contains the repository's git directory, so it will not be cleared." };
+  }
+  if (isPathInside(ctx.mainWorktree, resolvedPath)) {
+    return { ok: false, reason: "That folder contains the repository's main worktree, so it will not be cleared." };
+  }
   for (const linked of ctx.linkedWorktrees) {
     if (same(resolvedPath, linked) || isPathInside(resolvedPath, linked)) {
       return { ok: false, reason: "That path is inside another worktree of this repository." };
+    }
+    if (isPathInside(linked, resolvedPath)) {
+      return {
+        ok: false,
+        reason: "That folder contains another worktree of this repository, so it will not be cleared.",
+      };
     }
   }
   // A null approval is not a wildcard. Where the platform supplies no identity,
@@ -163,6 +184,14 @@ export async function clearDebris(
       reason: `That directory changed since it was shown to you. New since then: ${appeared.join(", ")}.`,
     };
   }
+  // A repository anywhere beneath it — another clone, a worktree or the common
+  // dir of a repo this context does not know about, or a bare repository. The
+  // containment checks above only know this repository's worktrees.
+  const scan = findRepositoryWithin(resolvedPath, deps.lstat, deps.readdir, { rootEntries: present });
+  const scanRefusal = refuseScan(scan);
+  if (scanRefusal !== null) {
+    return { ok: false, reason: scanRefusal };
+  }
   try {
     await deps.remove(resolvedPath);
   } catch (error) {
@@ -199,6 +228,22 @@ function listShort(entries: readonly string[]): string {
   const shown = entries.slice(0, SURVIVOR_CAP).join(", ");
   const rest = entries.length - SURVIVOR_CAP;
   return rest > 0 ? `${shown} and ${rest} more.` : `${shown}.`;
+}
+
+/** Why a repository scan refuses the delete, or null where it found nothing. Shared with the offer. */
+export function refuseScan(scan: RepositoryScan): string | null {
+  switch (scan.kind) {
+    case "none":
+      return null;
+    case "repository":
+      return scan.at === "."
+        ? "That directory is a repository, so it will not be cleared."
+        : `“${scan.at}” inside that directory is a repository, so it will not be cleared.`;
+    case "unknown":
+      return `“${scan.at}” inside that directory could not be read, so it will not be cleared.`;
+    case "too-large":
+      return "That directory holds too many files to check for repositories, so it will not be cleared.";
+  }
 }
 
 /** Why the component walk refuses, or null where it found nothing to refuse. */

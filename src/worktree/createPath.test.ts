@@ -422,6 +422,52 @@ describe("the destination rule depends on what the mode needs", () => {
     expect(result).toMatchObject({ ok: false });
   });
 
+  it("refuses a debris destination that contains the main worktree", async () => {
+    // Debris is non-empty by definition, so the emptiness check that keeps a
+    // fresh create away from such a folder never runs for it.
+    const around = { mainWorktree: "/code/group/app", linkedWorktrees: [] };
+    const result = await validateCreatePath(
+      "/code/group",
+      around,
+      fsOf({ dirs: { "/code": ["group"], "/code/group": ["app"] } }),
+      { kind: "mustMatchDebrisAuthorization", authorization: { path: "/code/group", fingerprint: "f" } },
+    );
+    expect(result).toMatchObject({ ok: false, reason: "That folder contains the repository's main worktree." });
+  });
+
+  it("refuses a destination that contains the repository's separate git directory", async () => {
+    const ctx2 = { mainWorktree: "/code/app", linkedWorktrees: [], commonDir: "/code/group/app.git" };
+    const result = await validateCreatePath(
+      "/code/group",
+      ctx2,
+      fsOf({ dirs: { "/code": ["group"], "/code/group": ["app.git"] } }),
+      { kind: "mustMatchDebrisAuthorization", authorization: { path: "/code/group", fingerprint: "f" } },
+    );
+    expect(result).toMatchObject({ ok: false, reason: "That folder contains the repository's git directory." });
+  });
+
+  it("calls a destination EQUAL to a linked worktree inside it, not around it", async () => {
+    const ctx2 = { mainWorktree: "/repo", linkedWorktrees: ["/trees/wt"] };
+    const result = await validateCreatePath("/trees/wt", ctx2, fsOf({ dirs: { "/repo": [], "/trees/wt": ["x"] } }), {
+      kind: "mustBeExistingDirectory",
+    });
+    expect(result).toMatchObject({ ok: false, reason: "That path is inside another worktree of this repository." });
+  });
+
+  it("refuses a destination that contains a linked worktree, whatever the intent", async () => {
+    const around = { mainWorktree: "/repo", linkedWorktrees: ["/trees/group/wt"] };
+    const deps = fsOf({ dirs: { "/repo": [], "/trees": ["group"], "/trees/group": ["wt"] } });
+    for (const intent of [
+      { kind: "mustMatchDebrisAuthorization", authorization: { path: "/trees/group", fingerprint: "f" } },
+      { kind: "mustBeExistingDirectory" },
+    ] as const) {
+      expect(await validateCreatePath("/trees/group", around, deps, intent)).toMatchObject({
+        ok: false,
+        reason: "That folder contains another worktree of this repository.",
+      });
+    }
+  });
+
   it("still refuses a path inside another worktree, whatever the intent", async () => {
     // The containment barrier is not a property of the mode.
     const result = await validateCreatePath(

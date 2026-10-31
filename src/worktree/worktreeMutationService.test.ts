@@ -2098,6 +2098,8 @@ describe("clearing crash debris", () => {
       ino?: number;
       removed?: string[];
       git?: "present" | "absent" | "unknown";
+      /** What a `.git` one level down reads as — an entry that is itself a checkout. */
+      childGit?: "present" | "absent" | "unknown";
       /** What the destination probe says AFTER the removal. Absent = it went. */
       after?: "present" | "absent" | "unknown";
       /**
@@ -2106,19 +2108,30 @@ describe("clearing crash debris", () => {
        * is the whole subject of round-2 W4.
        */
       atBoundary?: readonly string[];
+      createContext?: MutationServiceDeps["createContext"];
     } = {},
   ) {
     const removed = over.removed ?? [];
     const store = createDebrisAuthorizationStore();
     const h = harness({
       debrisAuthorizations: store,
+      ...(over.createContext === undefined ? {} : { createContext: over.createContext }),
       clearDebrisDeps: {
         lstat: () => ({ isSymbolicLink: () => false, isDirectory: () => true, dev: 1, ino: over.ino ?? 7 }),
         // The boundary's own read of the CONTENTS, and after the removal the
         // question of what remains — both synchronous, because the window
         // between the last reading and the delete is what they guard.
-        readdir: () => over.remaining ?? over.atBoundary ?? over.entries ?? [],
-        probeEntry: (p) => (p.endsWith(".git") ? (over.git ?? "absent") : (over.after ?? "absent")),
+        // The destination lists its entries; `${DEBRIS}/app` holds a `.git`
+        // (childGit: present) or cannot be listed (unknown); all else is empty.
+        readdir: (p) =>
+          p === DEBRIS
+            ? (over.remaining ?? over.atBoundary ?? over.entries ?? [])
+            : p === `${DEBRIS}/app` && over.childGit === "present"
+              ? [".git"]
+              : p === `${DEBRIS}/app` && over.childGit === "unknown"
+                ? null
+                : [],
+        probeEntry: (p) => (p === `${DEBRIS}/.git` ? (over.git ?? "absent") : (over.after ?? "absent")),
         remove: async (p: string) => {
           removed.push(p);
         },
@@ -2315,6 +2328,60 @@ describe("clearing crash debris", () => {
   it("issues nothing for a path holding a .git, and says that is why", async () => {
     const h = debrisHarness({ git: "present" });
     expect(await h.service.issueDebrisAuthorization(DEBRIS)).toEqual({ ok: false, because: "notDebris" });
+  });
+
+  it("issues nothing for a folder whose immediate entry is a checkout", async () => {
+    // The folder has no `.git` of its own; its child does. The offer would list
+    // one entry and the recursive delete would take a whole repository.
+    const h = debrisHarness({ entries: ["app"], childGit: "present" });
+    expect(await h.service.issueDebrisAuthorization(DEBRIS)).toEqual({ ok: false, because: "notDebris" });
+  });
+
+  it("issues nothing, as unreadable, where an immediate entry's .git could not be read", async () => {
+    const h = debrisHarness({ entries: ["app"], childGit: "unknown" });
+    expect(await h.service.issueDebrisAuthorization(DEBRIS)).toEqual({ ok: false, because: "unreadable" });
+  });
+
+  it("removes nothing when an approved entry became a checkout after the token was issued", async () => {
+    // The issue-time read is several awaits old by the delete; the boundary
+    // re-asks one level down rather than trusting it.
+    const removed: string[] = [];
+    const { service, store, outcomes } = debrisHarness({ removed, entries: ["app"], childGit: "present" });
+    const token = store.issue(DEBRIS, { entries: ["app"], identity: "1:7" }, 0);
+
+    await service.createWorktree({
+      repoId: REPO,
+      path: DEBRIS,
+      afterCreate: { kind: "none" },
+      mode: { kind: "fresh", branch: "feat" },
+      disposition: { kind: "debris", authorization: { path: DEBRIS, fingerprint: token } },
+    });
+
+    expect(removed).toEqual([]);
+    expect(JSON.stringify(outcomes)).toContain("is a repository");
+  });
+
+  it("removes nothing for a debris destination that contains the main worktree", async () => {
+    // The reported case: create root /code, main checkout /code/group/app,
+    // destination /code/group — no `.git` at the top, one entry.
+    const removed: string[] = [];
+    const h = debrisHarness({
+      removed,
+      entries: ["app"],
+      createContext: () => ({ mainWorktree: `${DEBRIS}/app`, linkedWorktrees: [] }),
+    });
+    const token = h.store.issue(DEBRIS, { entries: ["app"], identity: "1:7" }, 0);
+
+    await h.service.createWorktree({
+      repoId: REPO,
+      path: DEBRIS,
+      afterCreate: { kind: "none" },
+      mode: { kind: "fresh", branch: "feat" },
+      disposition: { kind: "debris", authorization: { path: DEBRIS, fingerprint: token } },
+    });
+
+    expect(removed).toEqual([]);
+    expect(h.runner.run).not.toHaveBeenCalled();
   });
 
   it("[W1] tells an unreadable directory apart from one holding a repository", async () => {

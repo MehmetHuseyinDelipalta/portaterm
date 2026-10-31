@@ -42,7 +42,9 @@ export interface WorktreeMutationBindings {
    */
   observation(repoId: string): number | undefined;
   /** Where a create may go in this repo, and what already occupies it. */
-  createContext(repoId: string): { mainWorktree: string; linkedWorktrees: readonly string[] } | null;
+  createContext(
+    repoId: string,
+  ): { mainWorktree: string; linkedWorktrees: readonly string[]; commonDir?: string } | null;
   /**
    * The full blocker assessment for a removal target, from real state.
    *

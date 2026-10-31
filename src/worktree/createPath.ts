@@ -53,6 +53,8 @@ export interface CreatePathContext {
   mainWorktree: string;
   /** Linked worktrees only; a path inside MAIN is allowed. */
   linkedWorktrees: readonly string[];
+  /** The git common dir — outside main under `--separate-git-dir` (see ClearDebrisContext). */
+  commonDir?: string;
 }
 
 /**
@@ -199,10 +201,24 @@ export async function validateCreatePath(
     };
   }
 
-  // 4. Not the main worktree, and not inside a LINKED one. Inside MAIN is
+  // 4. Not the main worktree, not a folder around any worktree, and not inside a LINKED one. Inside MAIN is
   //    allowed — that is where the default root lives (worktree-rpc.md:202).
   if (normalized === ctx.mainWorktree) {
     return { ok: false, reason: "That is the repository's main worktree." };
+  }
+  //    Nor a folder that CONTAINS one. For a free-or-empty destination that is
+  //    already refused as non-empty, but debris is a non-empty directory by
+  //    definition — and the one destination a create deletes.
+  if (isPathInside(ctx.mainWorktree, normalized)) {
+    return { ok: false, reason: "That folder contains the repository's main worktree." };
+  }
+  if (ctx.commonDir !== undefined && isPathInside(ctx.commonDir, normalized)) {
+    return { ok: false, reason: "That folder contains the repository's git directory." };
+  }
+  // Equal to a linked worktree is "inside" it (the loop below), not "around" it.
+  const same = (a: string, b: string) => normalizePathForCompare(a) === normalizePathForCompare(b);
+  if (ctx.linkedWorktrees.some((linked) => !same(linked, normalized) && isPathInside(linked, normalized))) {
+    return { ok: false, reason: "That folder contains another worktree of this repository." };
   }
   for (const linked of ctx.linkedWorktrees) {
     if (normalizePathForCompare(normalized) === normalizePathForCompare(linked)) {

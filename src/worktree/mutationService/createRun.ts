@@ -15,6 +15,7 @@ import type { WorktreeCreateMode } from "../../types/messages";
 import { type ClearDebrisDeps, clearDebris } from "../clearDebris";
 import { identityOf, intentFor, validateCreatePath } from "../createPath";
 import { createDebrisAuthorizationStore, type DebrisAuthorizationStore } from "../debrisAuthorization";
+import { findRepositoryWithin } from "../debrisClassification";
 import { messageOf } from "../errorMessage";
 import type { MutationCoordinator } from "../mutationCoordinator";
 import { branchNameIsValid, type CreateSource, createWorktree } from "../worktreeMutations";
@@ -307,6 +308,18 @@ async function issueDebrisAuthorization(deps: CreateRuntimeDeps, path: string) {
   const entries = await deps.service.pathDeps.readdir(path);
   if (entries === null) {
     return { ok: false as const, because: "unreadable" as const };
+  }
+  // A folder with a repository anywhere beneath it is not debris, however bare
+  // it looks at the top: the offer would list a few entries and the delete
+  // would take a repo. The same scan the delete boundary repeats.
+  const scan = findRepositoryWithin(path, deps.clearDebrisDeps.lstat, deps.clearDebrisDeps.readdir, {
+    rootEntries: entries,
+  });
+  if (scan.kind !== "none") {
+    return {
+      ok: false as const,
+      because: scan.kind === "repository" ? ("notDebris" as const) : ("unreadable" as const),
+    };
   }
   return {
     ok: true as const,

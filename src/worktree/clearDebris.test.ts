@@ -14,14 +14,16 @@ function statLike(dev: number, ino: number, directory = true, link = false) {
  * exist here — which is the point: the deps' shape is what makes the no-await
  * window enforceable rather than merely intended (round-1 B4, B5).
  *
- * `lstat` answers for the path itself AND for every component walked above it;
- * by default every component is a plain directory.
+ * `lstat` answers for the path itself, for every component walked above it,
+ * and for the entries beneath it; by default each is a plain directory.
  */
 function deps(over: Partial<ClearDebrisDeps> & { removed?: string[]; after?: "absent" | "present" } = {}) {
   const present = over.after ?? "absent";
   const built: ClearDebrisDeps = {
-    lstat: over.lstat ?? ((p) => (p === PATH || !p.startsWith(PATH) ? statLike(1, 2) : null)),
-    readdir: over.readdir ?? (() => APPROVED.entries),
+    lstat:
+      over.lstat ?? ((p) => (p === PATH || p.startsWith(`${PATH}/`) || !p.startsWith(PATH) ? statLike(1, 2) : null)),
+    // The destination lists the approved entries; everything beneath it is empty.
+    readdir: over.readdir ?? ((p) => (p === PATH ? APPROVED.entries : [])),
     probeEntry:
       over.probeEntry ??
       ((p) => {
@@ -110,6 +112,130 @@ describe("clearDebris", () => {
     expect(removed).toEqual([]);
   });
 
+  // ── A folder AROUND a worktree: no `.git` of its own, so every probe passes ──
+
+  it("refuses a folder that contains the main worktree", async () => {
+    // Create root ~/code, main checkout ~/code/group/app: ~/code/group has no
+    // `.git`, and its one entry is the repository itself.
+    const removed: string[] = [];
+    const ctx = { mainWorktree: "/code/group/app", linkedWorktrees: [] };
+    const approval = { identity: "1:2", entries: ["app"] };
+    const result = await clearDebris(
+      "/code/group",
+      ctx,
+      approval,
+      deps({ removed, lstat: () => statLike(1, 2), readdir: (p) => (p === "/code/group" ? ["app"] : []) }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toContain("main worktree");
+    expect(removed).toEqual([]);
+  });
+
+  it("refuses a folder that contains another worktree of this repository", async () => {
+    const removed: string[] = [];
+    const result = await clearDebris(
+      "/trees",
+      CTX,
+      { identity: "1:2", entries: ["other"] },
+      deps({ removed, lstat: () => statLike(1, 2), readdir: (p) => (p === "/trees" ? ["other"] : []) }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toContain("contains another worktree");
+    expect(removed).toEqual([]);
+  });
+
+  it("refuses where a repository sits two levels down", async () => {
+    const removed: string[] = [];
+    const result = await clearDebris(
+      PATH,
+      CTX,
+      APPROVED,
+      deps({
+        removed,
+        readdir: (p) =>
+          p === PATH ? APPROVED.entries : p === `${PATH}/src` ? ["vendor"] : p === `${PATH}/src/vendor` ? [".git"] : [],
+      }),
+    );
+    expect(result.ok === false && result.reason).toContain("“src/vendor”");
+    expect(removed).toEqual([]);
+  });
+
+  it("refuses a folder that contains the repository's separate git directory", async () => {
+    // `--separate-git-dir`: the common dir lives outside the main worktree.
+    const removed: string[] = [];
+    const ctx = { mainWorktree: "/code/app", linkedWorktrees: [], commonDir: "/code/group/app.git" };
+    const result = await clearDebris(
+      "/code/group",
+      ctx,
+      { identity: "1:2", entries: ["app.git"] },
+      deps({ removed, lstat: () => statLike(1, 2), readdir: (p) => (p === "/code/group" ? ["app.git"] : []) }),
+    );
+    expect(result.ok === false && result.reason).toContain("git directory");
+    expect(removed).toEqual([]);
+  });
+
+  it("refuses where an immediate entry is a repository this context does not know", async () => {
+    const removed: string[] = [];
+    const result = await clearDebris(
+      PATH,
+      CTX,
+      APPROVED,
+      deps({ removed, readdir: (p) => (p === PATH ? APPROVED.entries : p === `${PATH}/src` ? [".git"] : []) }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toContain("“src”");
+    expect(removed).toEqual([]);
+  });
+
+  it("refuses where a directory beneath it could not be listed", async () => {
+    const removed: string[] = [];
+    const result = await clearDebris(
+      PATH,
+      CTX,
+      APPROVED,
+      deps({ removed, readdir: (p) => (p === PATH ? APPROVED.entries : p === `${PATH}/src` ? null : []) }),
+    );
+    expect(result.ok).toBe(false);
+    expect(removed).toEqual([]);
+  });
+
+  it("refuses where an immediate entry could not be read", async () => {
+    const removed: string[] = [];
+    const result = await clearDebris(
+      PATH,
+      CTX,
+      APPROVED,
+      deps({ removed, lstat: (p) => (p === `${PATH}/src` ? null : statLike(1, 2)) }),
+    );
+    expect(result.ok).toBe(false);
+    expect(removed).toEqual([]);
+  });
+
+  it("does not probe beneath an entry that is a symlink or a file", async () => {
+    // The removal does not follow a symlink, and a file holds no `.git` — a
+    // probe there would read ENOTDIR as "unknown" and refuse ordinary debris.
+    const removed: string[] = [];
+    const result = await clearDebris(
+      PATH,
+      CTX,
+      APPROVED,
+      deps({
+        removed,
+        lstat: (p) =>
+          p === `${PATH}/node_modules`
+            ? statLike(1, 2, true, true)
+            : p === `${PATH}/src`
+              ? statLike(1, 2, false)
+              : statLike(1, 2),
+        probeEntry: (p) => (p === PATH || p.endsWith("/repo-feat/.git") ? "absent" : "present"),
+        // A repository behind the symlink and "inside" the file: neither is walked into.
+        readdir: (p) => (p === PATH ? APPROVED.entries : [".git"]),
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+    expect(removed).toEqual([PATH]);
+  });
+
   // ── round-1 B4: the approved CONTENTS, re-read at the boundary ──
 
   it("[B4] refuses where an entry appeared since the authorization was issued", async () => {
@@ -121,7 +247,7 @@ describe("clearDebris", () => {
       PATH,
       CTX,
       APPROVED,
-      deps({ removed, readdir: () => ["node_modules", "src", "UNSAVED-WORK.md"] }),
+      deps({ removed, readdir: (p) => (p === PATH ? ["node_modules", "src", "UNSAVED-WORK.md"] : []) }),
     );
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.reason).toContain("UNSAVED-WORK.md");
@@ -130,7 +256,12 @@ describe("clearDebris", () => {
 
   it("[B4] proceeds where an approved entry disappeared — fewer is still covered", async () => {
     const removed: string[] = [];
-    const result = await clearDebris(PATH, CTX, APPROVED, deps({ removed, readdir: () => ["src"] }));
+    const result = await clearDebris(
+      PATH,
+      CTX,
+      APPROVED,
+      deps({ removed, readdir: (p) => (p === PATH ? ["src"] : []) }),
+    );
     expect(result).toEqual({ ok: true });
     expect(removed).toEqual([PATH]);
   });
@@ -199,7 +330,7 @@ describe("clearDebris", () => {
     // alone tells the user a delete failed and not what it left behind.
     const result = await clearDebris(PATH, CTX, APPROVED, {
       ...deps(),
-      readdir: () => ["node_modules"],
+      readdir: (p) => (p === PATH ? ["node_modules"] : []),
       remove: async () => {
         throw new Error("EPERM");
       },
@@ -239,9 +370,9 @@ describe("clearDebris", () => {
         order.push(p.endsWith(".git") ? "git" : "gone?");
         return "absent";
       },
-      readdir: () => {
-        order.push("readdir");
-        return APPROVED.entries;
+      readdir: (p) => {
+        order.push(`readdir:${p}`);
+        return p === PATH ? APPROVED.entries : [];
       },
       remove: async (p: string) => {
         order.push(`remove:${p}`);
@@ -252,7 +383,12 @@ describe("clearDebris", () => {
       `lstat:${PATH}`,
       `lstat:${PATH}`,
       "git",
-      "readdir",
+      `readdir:${PATH}`,
+      // The repository scan, still before the removal and still synchronous.
+      `lstat:${PATH}/node_modules`,
+      `lstat:${PATH}/src`,
+      `readdir:${PATH}/node_modules`,
+      `readdir:${PATH}/src`,
       `remove:${PATH}`,
       "gone?",
     ]);
