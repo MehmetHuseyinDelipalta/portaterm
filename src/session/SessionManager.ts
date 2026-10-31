@@ -697,7 +697,7 @@ export class SessionManager {
     });
 
     // Wire PTY events (extracted so respawnFallbackShell can re-wire a fresh PTY).
-    this.wirePty(session, pty, webview);
+    this.wirePty(session, pty);
 
     // The tab was running Claude by hand when the window went away: carry the
     // id forward and type the resume into the restored shell (mode permitting).
@@ -758,7 +758,7 @@ export class SessionManager {
    * `respawnFallbackShell` swaps the buffer. Used by createSession and the
    * shell-fallback respawn.
    */
-  private wirePty(session: TerminalSession, pty: PtySession, webview: MessageSender): void {
+  private wirePty(session: TerminalSession, pty: PtySession): void {
     const id = session.id;
     pty.onData = (data: string) => {
       // A closing pane's process keeps printing through PtySession's 250 ms
@@ -794,7 +794,7 @@ export class SessionManager {
       if (session.shellFallbackArmed && !this.terminalBeingKilled.has(id)) {
         session.shellFallbackArmed = false;
         try {
-          this.respawnFallbackShell(session, webview);
+          this.respawnFallbackShell(session);
           return;
         } catch (err) {
           console.error(`[Portaterm] shell-fallback respawn failed for ${id}:`, err);
@@ -824,7 +824,9 @@ export class SessionManager {
       // the user closes it, and the worktree row must say the same thing.
       this.paneEvidence?.markExited(id, true);
       this.cleanupSession(id);
-      this.safePostMessage(webview, { type: "exit", tabId: id, code });
+      // `session.webview`, read now: the view may have been re-created since
+      // this PTY was wired, and the closure's webview would be the dead one.
+      this.safePostMessage(session.webview, { type: "exit", tabId: id, code });
     };
   }
 
@@ -839,7 +841,7 @@ export class SessionManager {
    * therefore only applies while the agent is still live: reload-with-agent-running
    * re-resumes it; reload-after-exit restores the shell. See respawn UX bug.
    */
-  private respawnFallbackShell(session: TerminalSession, webview: MessageSender): void {
+  private respawnFallbackShell(session: TerminalSession): void {
     const id = session.id;
     const detected = PtyManager.detectShell();
     const shell = detected.shell;
@@ -848,7 +850,7 @@ export class SessionManager {
 
     // Base env only: the fallback is a plain shell, so the vault's per-session
     // env (CLAUDE_CONFIG_DIR / auth allowlist) must not leak into it.
-    const pty = this.swapPty(session, webview, { shell, args, cwd });
+    const pty = this.swapPty(session, { shell, args, cwd });
     // Flip the persisted identity (+ cwd) so a reload restores THIS shell, not
     // the agent the user already quit.
     session.shell = shell;
@@ -932,7 +934,7 @@ export class SessionManager {
     session.untouched = undefined;
     let pty: PtySession;
     try {
-      pty = this.swapPty(session, session.webview, { shell, args, cwd, env: options.env });
+      pty = this.swapPty(session, { shell, args, cwd, env: options.env });
     } catch (err) {
       console.error(`[Portaterm] in-place launch failed for ${sessionId}:`, err);
       return false;
@@ -978,7 +980,6 @@ export class SessionManager {
    */
   private swapPty(
     session: TerminalSession,
-    webview: MessageSender,
     spec: { shell: string; args: string[]; cwd: string; env?: Record<string, string> },
   ): PtySession {
     const id = session.id;
@@ -1023,7 +1024,11 @@ export class SessionManager {
     const wasOutputPaused = session.outputBuffer.isOutputPaused;
     session.outputBuffer.dispose(wasOutputPaused ? { flush: false } : undefined);
     session.pty = pty;
-    const nextBuffer = new OutputBuffer(id, webview, pty, (tabId, at) => this.paneEvidence?.markOutput(tabId, at));
+    // The session's CURRENT webview: `updateWebviewForView` keeps it in step
+    // with a re-created view, where a webview captured at wiring time would not.
+    const nextBuffer = new OutputBuffer(id, session.webview, pty, (tabId, at) =>
+      this.paneEvidence?.markOutput(tabId, at),
+    );
     if (wasOutputPaused) {
       nextBuffer.pauseOutput();
     }
@@ -1032,7 +1037,7 @@ export class SessionManager {
     // than in `wirePty`: that runs for a restored read-only tab too, where
     // clearing it would resurrect a pane whose process is genuinely gone.
     this.paneEvidence?.markExited(id, false);
-    this.wirePty(session, pty, webview);
+    this.wirePty(session, pty);
     return pty;
   }
 
