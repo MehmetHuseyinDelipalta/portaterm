@@ -384,7 +384,9 @@ export class SnapshotPersistence {
     // sync; overwrite with literal empty bytes.
     const metadata = this.generateSnapshotMetadata(id)?.metadata;
     try {
-      this.storage.commitBufferSync(id, "");
+      // An erase: a write still in flight with the pre-clear buffer must not
+      // bring the cleared content back (SessionStorage.commitBufferAsync).
+      this.storage.commitBufferSync(id, "", { erase: true });
     } catch (err) {
       console.error("[Portaterm] commitClearSnapshot commitBufferSync failed:", err);
       return;

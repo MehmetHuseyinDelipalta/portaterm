@@ -35,6 +35,20 @@ export interface FsLike {
   };
 }
 
+type FileIdentity = { dev: number | bigint; ino: number | bigint };
+
+/**
+ * What the snapshot store needs beyond `FsLike`: a file's identity, which tells
+ * the file an async writer renamed into place from one a sync writer renamed
+ * over it (see `unlinkIfStillOurs`). Its own type so `FsLike`'s other users
+ * are not asked for it.
+ */
+export type SessionStorageFs = FsLike & {
+  promises: FsLike["promises"] & {
+    stat: (file: string, options: { bigint: true }) => Promise<FileIdentity>;
+  };
+};
+
 const INDEX_DEBOUNCE_MS = 1000;
 
 /**
@@ -69,6 +83,14 @@ export class SessionStorage {
    */
   private sidecarGen = 0;
   /**
+   * The buffer generation of the last ERASE per session — a drop, or a clear
+   * (`commitBufferSync(…, { erase: true })`). An async writer that loses its
+   * race removes a canonical it recreated only when an erase happened after it
+   * started: then its data is content the user had removed. After an ordinary
+   * sync write its data is merely older, and an older snapshot beats none.
+   */
+  private bufferErasedGen: Map<string, number> = new Map();
+  /**
    * Monotonic temp-id counter — each in-flight write picks a unique temp
    * path so concurrent async writers cannot clobber each other's spool.
    */
@@ -77,7 +99,7 @@ export class SessionStorage {
   constructor(
     private readonly workspaceState: vscode.Memento,
     readonly storageUri: vscode.Uri,
-    private readonly fs: FsLike,
+    private readonly fs: SessionStorageFs,
   ) {
     this.snapshotsDir = path.join(storageUri.fsPath, "snapshots");
   }
@@ -308,9 +330,12 @@ export class SessionStorage {
    * async writer sees the mismatch on its post-write check and unlinks only
    * its temp.
    */
-  commitBufferSync(sessionId: string, data: string): void {
+  commitBufferSync(sessionId: string, data: string, options: { erase?: boolean } = {}): void {
     const canonical = this.bufferFilePath(sessionId);
-    this.bumpBufferGen(sessionId);
+    const gen = this.bumpBufferGen(sessionId);
+    if (options.erase) {
+      this.bufferErasedGen.set(sessionId, gen);
+    }
     this.ensureSnapshotsDir();
     const temp = this.tempPath(canonical, this.nextTempId());
     this.fs.writeFileSync(temp, data, { mode: SNAPSHOT_FILE_MODE });
@@ -337,6 +362,7 @@ export class SessionStorage {
     await this.fs.promises.mkdir(this.snapshotsDir, { recursive: true, mode: SNAPSHOT_DIR_MODE });
     const temp = this.tempPath(canonical, this.nextTempId());
     await this.fs.promises.writeFile(temp, data, { mode: SNAPSHOT_FILE_MODE });
+    const ours = await this.identityOf(temp);
     // Post-write, pre-rename check: a sync writer / drop may have run
     // during our await. Mismatch → clean up the temp and bail; never
     // overwrite the canonical with our stale data.
@@ -357,10 +383,8 @@ export class SessionStorage {
     // (orphan recovery will see a missing buffer instead of a stale one).
     // Privacy boundary takes priority over data preservation.
     if ((this.bufferGens.get(sessionId) ?? 0) !== capturedGen) {
-      try {
-        await this.fs.promises.unlink(canonical);
-      } catch {
-        /* best-effort */
+      if ((this.bufferErasedGen.get(sessionId) ?? 0) > capturedGen) {
+        await this.unlinkIfStillOurs(canonical, ours);
       }
       return "stale-post-rename";
     }
@@ -373,7 +397,7 @@ export class SessionStorage {
    * R5.B1 race where the async stale unlink targeted the canonical path.
    */
   dropBuffer(sessionId: string): void {
-    this.bumpBufferGen(sessionId);
+    this.bufferErasedGen.set(sessionId, this.bumpBufferGen(sessionId));
     let canonical: string;
     try {
       canonical = this.bufferFilePath(sessionId);
@@ -421,18 +445,55 @@ export class SessionStorage {
       return "stale-post-write";
     }
     await this.fs.promises.rename(temp, canonical);
-    // Post-rename TOCTOU recheck (R6.W1): same race as commitBufferAsync —
-    // sync sidecar writer may have completed during our libuv-pool rename.
-    // Detect + unlink to surface as "missing sidecar" rather than stale.
+    // Post-rename recheck (R6.W1): a sync sidecar write ran during our rename.
+    // Nothing is removed. If our rename landed last, the sidecar is a slightly
+    // older index — and the next commit replaces it; removing it instead left
+    // no index at all, which restores no tab.
     if (this.sidecarGen !== capturedGen) {
-      try {
-        await this.fs.promises.unlink(canonical);
-      } catch {
-        /* best-effort */
-      }
       return "stale-post-rename";
     }
     return "renamed";
+  }
+
+  /** The identity of a file just written, or `null` where it cannot be read. */
+  /**
+   * The identity of a file just written, or `null` where it cannot be read.
+   * Read as bigint so a 64-bit NTFS file id does not lose precision and
+   * collide. (A filesystem reporting inode 0 makes every file look like ours,
+   * which here means removal after an erase — the privacy-first answer the
+   * unreadable case gives anyway.)
+   */
+  private async identityOf(file: string): Promise<FileIdentity | null> {
+    try {
+      const { dev, ino } = await this.fs.promises.stat(file, { bigint: true });
+      return { dev: BigInt(dev), ino: BigInt(ino) };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * After an ERASE (drop or clear) raced this async write: remove `canonical`
+   * unless it is provably someone else's file.
+   *
+   * The race has two orders. If the erase ran first and our rename landed on
+   * top of it, canonical holds content the user removed — so it goes. If our
+   * rename landed first and a later write replaced it, canonical is not ours
+   * and is left alone. Where our identity could not be read, the two cannot
+   * be told apart, and removal — the privacy-first answer — stands.
+   */
+  private async unlinkIfStillOurs(canonical: string, ours: FileIdentity | null): Promise<void> {
+    if (ours !== null) {
+      const current = await this.identityOf(canonical);
+      if (current === null || current.dev !== ours.dev || current.ino !== ours.ino) {
+        return;
+      }
+    }
+    try {
+      await this.fs.promises.unlink(canonical);
+    } catch {
+      /* best-effort */
+    }
   }
 
   /**

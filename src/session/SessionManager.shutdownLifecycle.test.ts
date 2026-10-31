@@ -531,7 +531,8 @@ describe("R-7 invariant + fault-injection tests (D18)", () => {
     storage.commitBufferSync.mockClear();
     sm.clearScrollback(live);
     // Mirror path: commitBufferSync with empty data.
-    expect(storage.commitBufferSync).toHaveBeenCalledWith(live, "");
+    // As an ERASE, so a write already in flight cannot bring the cleared buffer back.
+    expect(storage.commitBufferSync).toHaveBeenCalledWith(live, "", { erase: true });
 
     // No-mirror path: a restored exited session.
     const exited = sm.createSession("sidebar", mockWebview(), {

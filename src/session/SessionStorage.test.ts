@@ -7,7 +7,7 @@ import {
   type SessionSnapshotMetadata,
   type SessionSnapshotsIndex,
 } from "./SessionSnapshot";
-import { type FsLike, SessionStorage } from "./SessionStorage";
+import { SessionStorage, type SessionStorageFs } from "./SessionStorage";
 
 function makeFakeMemento(initial: Record<string, unknown> = {}) {
   const store = new Map<string, unknown>(Object.entries(initial));
@@ -28,13 +28,28 @@ function makeFakeMemento(initial: Record<string, unknown> = {}) {
 function makeFakeFs() {
   const files = new Map<string, string>();
   const dirs = new Set<string>();
+  // A file's identity, as an inode: minted per write, carried by a rename.
+  const inodes = new Map<string, number>();
+  let nextInode = 1;
+  const minted = (f: string): void => {
+    inodes.set(f, nextInode++);
+  };
+  const moved = (from: string, to: string): void => {
+    const ino = inodes.get(from);
+    inodes.delete(from);
+    if (ino !== undefined) {
+      inodes.set(to, ino);
+    }
+  };
   const writeFileSync = vi.fn((f: string, d: string, _opts?: { mode?: number }) => {
     files.set(f, d);
+    minted(f);
   });
   const writeFile = vi.fn(async (f: string, d: string, _opts?: { mode?: number }) => {
     files.set(f, d);
+    minted(f);
   });
-  const fs: FsLike = {
+  const fs: SessionStorageFs = {
     writeFileSync,
     readFileSync: (f) => {
       const v = files.get(f);
@@ -49,6 +64,7 @@ function makeFakeFs() {
     existsSync: (f: string) => files.has(f) || dirs.has(f),
     unlinkSync: vi.fn((f: string) => {
       files.delete(f);
+      inodes.delete(f);
     }),
     readdirSync: (d: string) => {
       const prefix = d.endsWith("/") ? d : `${d}/`;
@@ -72,6 +88,7 @@ function makeFakeFs() {
       }
       files.set(to, v);
       files.delete(from);
+      moved(from, to);
     }),
     promises: {
       writeFile,
@@ -88,6 +105,7 @@ function makeFakeFs() {
       }),
       unlink: vi.fn(async (f) => {
         files.delete(f);
+        inodes.delete(f);
       }),
       rename: vi.fn(async (from: string, to: string) => {
         const v = files.get(from);
@@ -96,7 +114,15 @@ function makeFakeFs() {
         }
         files.set(to, v);
         files.delete(from);
+        moved(from, to);
       }),
+      stat: async (f: string) => {
+        const ino = inodes.get(f);
+        if (ino === undefined || !files.has(f)) {
+          throw Object.assign(new Error(`ENOENT: ${f}`), { code: "ENOENT" });
+        }
+        return { dev: 1, ino };
+      },
     },
   };
   return { fs, files, dirs, writeFileSync, writeFile };
@@ -550,51 +576,160 @@ describe("SessionStorage", () => {
       expect(allFiles.filter((k) => k.includes(".tmp."))).toEqual([]);
     });
 
-    it("post-rename TOCTOU: stale async rename that lost the race against a sync writer unlinks canonical (R6.W1)", async () => {
-      const mem = makeFakeMemento();
-      const { fs, files } = makeFakeFs();
-      const s = new SessionStorage(mem as unknown as vscode.Memento, STORAGE_URI, fs);
-
-      // Simulate the libuv race: rename runs LATE — after the post-write
-      // gen check passes, a sync commitBufferSync runs THEN the async
-      // rename finally executes. The post-rename gen recheck must catch
-      // this and unlink canonical.
+    /** An async buffer commit whose rename runs only after `between` has run. */
+    async function lateRename(
+      s: SessionStorage,
+      fs: SessionStorageFs,
+      data: string,
+      between: () => void,
+    ): Promise<string> {
       const realRename = fs.promises.rename;
-      let asyncRenameStarted = false;
-      let releaseAsyncRename: () => void = () => {};
+      let started = false;
+      let release: () => void = () => {};
       fs.promises.rename = vi.fn(async (from: string, to: string) => {
-        if (!asyncRenameStarted) {
-          asyncRenameStarted = true;
+        if (!started) {
+          started = true;
           await new Promise<void>((resolve) => {
-            releaseAsyncRename = resolve;
+            release = resolve;
           });
         }
         return realRename(from, to);
       });
+      const commit = s.commitBufferAsync("alpha", data, s.currentBufferGen("alpha"));
+      await vi.waitFor(() => expect(started).toBe(true));
+      between();
+      release();
+      return commit;
+    }
 
-      const capturedGen = s.currentBufferGen("alpha");
-      const asyncCommit = s.commitBufferAsync("alpha", "ASYNC_STALE", capturedGen);
-
-      // Let the async writer pass its pre-write + post-write gen checks
-      // and reach the rename await (held).
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-
-      // Sync writer fires DURING the held async rename — bumps gen, writes
-      // its own data via temp+renameSync.
-      s.commitBufferSync("alpha", "SYNC_FRESH");
-      expect(files.get(bufferFile("alpha"))).toBe("SYNC_FRESH");
-
-      // Release the async rename. It overwrites canonical with stale data,
-      // then the post-rename gen check detects the race + unlinks canonical.
-      releaseAsyncRename();
-      const outcome = await asyncCommit;
+    it("post-rename (R6.W1): a stale rename landing on a sync WRITE leaves the older snapshot, not nothing", async () => {
+      // The sync writer's data is gone either way — our rename overwrote it.
+      // Removing canonical too lost the tab on restore; the older snapshot is
+      // still the session's, and the next commit replaces it.
+      const { fs, files } = makeFakeFs();
+      const s = new SessionStorage(makeFakeMemento() as unknown as vscode.Memento, STORAGE_URI, fs);
+      const outcome = await lateRename(s, fs, "ASYNC_OLDER", () => s.commitBufferSync("alpha", "SYNC_FRESH"));
       expect(outcome).toBe("stale-post-rename");
+      expect(files.get(bufferFile("alpha"))).toBe("ASYNC_OLDER");
+    });
 
-      // Canonical is gone (unlinked by the recovery path). Privacy
-      // boundary intact: stale data does NOT persist.
-      expect(files.get(bufferFile("alpha"))).toBeUndefined();
+    it("post-rename (R6.W1): a stale rename landing on a CLEAR is removed — cleared content stays gone", async () => {
+      const { fs, files } = makeFakeFs();
+      const s = new SessionStorage(makeFakeMemento() as unknown as vscode.Memento, STORAGE_URI, fs);
+      const outcome = await lateRename(s, fs, "SECRET", () => s.commitBufferSync("alpha", "", { erase: true }));
+      expect(outcome).toBe("stale-post-rename");
+      expect(files.has(bufferFile("alpha"))).toBe(false);
+    });
+
+    it("post-rename: with no usable file identity (inode 0), an erase still removes, a write still keeps", async () => {
+      for (const [between, expected] of [
+        [(st: SessionStorage) => st.commitBufferSync("alpha", "", { erase: true }), undefined],
+        [(st: SessionStorage) => st.commitBufferSync("alpha", "SYNC"), "ASYNC"],
+      ] as const) {
+        const { fs, files } = makeFakeFs();
+        fs.promises.stat = async () => ({ dev: 0, ino: 0 });
+        const s = new SessionStorage(makeFakeMemento() as unknown as vscode.Memento, STORAGE_URI, fs);
+        await lateRename(s, fs, "ASYNC", () => between(s));
+        expect(files.get(bufferFile("alpha"))).toBe(expected);
+      }
+    });
+
+    it("post-rename: a stale sidecar landing on a sync sidecar is kept — an older index beats none", async () => {
+      const { fs, files } = makeFakeFs();
+      const s = new SessionStorage(makeFakeMemento() as unknown as vscode.Memento, STORAGE_URI, fs);
+      const realRename = fs.promises.rename;
+      let release: () => void = () => {};
+      let started = false;
+      fs.promises.rename = vi.fn(async (from: string, to: string) => {
+        if (!started) {
+          started = true;
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        }
+        return realRename(from, to);
+      });
+      const older: SessionSnapshotsIndex = { version: 1, entries: { s1: makeMeta("s1") } };
+      const commit = s.commitIndexAsync(older, s.currentSidecarGen());
+      await vi.waitFor(() => expect(started).toBe(true));
+      s.commitIndexSync({ version: 1, entries: { s2: makeMeta("s2") } });
+      release();
+      expect(await commit).toBe("stale-post-rename");
+      expect(JSON.parse(files.get(`${SNAPS_DIR}/index.json`) ?? "{}")).toEqual(older);
+    });
+
+    // The other order of the same race: the async rename lands on disk FIRST,
+    // and a sync writer's rename replaces it before the async await returns.
+    // Canonical then holds the sync writer's NEWER data, and the post-rename
+    // recheck unlinked it anyway — the tab vanished on the next restore.
+    function renameThatLandsThenWaits(fs: SessionStorageFs): () => void {
+      const realRename = fs.promises.rename;
+      let release: () => void = () => {};
+      let held = false;
+      fs.promises.rename = vi.fn(async (from: string, to: string) => {
+        await realRename(from, to); // on disk now
+        if (!held) {
+          held = true;
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        }
+      });
+      return () => release();
+    }
+
+    it("keeps a sync writer's buffer that replaced the async rename after it landed", async () => {
+      const { fs, files } = makeFakeFs();
+      const s = new SessionStorage(makeFakeMemento() as unknown as vscode.Memento, STORAGE_URI, fs);
+      const release = renameThatLandsThenWaits(fs);
+
+      const asyncCommit = s.commitBufferAsync("alpha", "ASYNC_OLDER", s.currentBufferGen("alpha"));
+      await vi.waitFor(() => expect(files.get(bufferFile("alpha"))).toBe("ASYNC_OLDER"));
+      s.commitBufferSync("alpha", "SYNC_FRESH");
+      release();
+
+      expect(await asyncCommit).toBe("stale-post-rename");
+      expect(files.get(bufferFile("alpha"))).toBe("SYNC_FRESH");
+    });
+
+    it("keeps a sync sidecar that replaced the async rename after it landed", async () => {
+      const { fs, files } = makeFakeFs();
+      const s = new SessionStorage(makeFakeMemento() as unknown as vscode.Memento, STORAGE_URI, fs);
+      const release = renameThatLandsThenWaits(fs);
+      const sidecar = `${SNAPS_DIR}/index.json`;
+
+      const older: SessionSnapshotsIndex = { version: 1, entries: { s1: makeMeta("s1") } };
+      const asyncCommit = s.commitIndexAsync(older, s.currentSidecarGen());
+      await vi.waitFor(() => expect(files.has(sidecar)).toBe(true));
+      const fresh: SessionSnapshotsIndex = { version: 1, entries: { s2: makeMeta("s2") } };
+      s.commitIndexSync(fresh);
+      const freshText = files.get(sidecar);
+      release();
+
+      expect(await asyncCommit).toBe("stale-post-rename");
+      expect(files.get(sidecar)).toBe(freshText);
+    });
+
+    it("still removes a dropped session's buffer that the async rename recreated", async () => {
+      // Privacy: a drop (or a clear) must not be undone by a write already in flight.
+      const { fs, files } = makeFakeFs();
+      const s = new SessionStorage(makeFakeMemento() as unknown as vscode.Memento, STORAGE_URI, fs);
+      const realRename = fs.promises.rename;
+      let release: () => void = () => {};
+      fs.promises.rename = vi.fn(async (from: string, to: string) => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        await realRename(from, to);
+      });
+
+      const asyncCommit = s.commitBufferAsync("alpha", "SECRET", s.currentBufferGen("alpha"));
+      await vi.waitFor(() => expect(fs.promises.rename).toHaveBeenCalled());
+      s.dropBuffer("alpha");
+      release();
+
+      expect(await asyncCommit).toBe("stale-post-rename");
+      expect(files.has(bufferFile("alpha"))).toBe(false);
     });
 
     it("cleanupOrphanTemps removes leftover *.tmp.* files from a prior crashed write", () => {
