@@ -5,6 +5,9 @@
 // string first is what turns an unusually-encoded path into an unparseable one.
 
 import { execFile } from "node:child_process";
+import { constants as fsConstants } from "node:fs";
+import { access, stat } from "node:fs/promises";
+import { messageOf } from "./errorMessage";
 
 /** docs/DESIGN.md § 10 — git command timeout, read-only listings. */
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -18,6 +21,16 @@ export interface GitCommandResult {
   timedOut: boolean;
   /** The executable could not be spawned — git absent or not executable. */
   failedToSpawn: boolean;
+  /**
+   * Set when the spawn failed because of the working directory, not the
+   * executable. Node reports a missing `cwd` as ENOENT and one it may not
+   * enter as EACCES — the same codes as a missing or non-executable git — so
+   * without this a deleted or locked worktree folder read as "no usable git".
+   * `missing`: not there, or not a directory. `unreadable`: there, but this
+   * process cannot open it (or could not even look). `failedToSpawn` stays
+   * true alongside it: it is still a command that never ran.
+   */
+  cwdProblem?: { path: string; kind: "missing" | "unreadable" };
 }
 
 /** Per-call overrides. Without these a mutation cannot have its own budget. */
@@ -85,7 +98,29 @@ export function createGitCommandRunner(options: GitCommandRunnerOptions = {}): G
           // cannot be the user's. PATH and the rest of the environment stay.
           env: { ...process.env, LC_ALL: "C", LANG: "C" },
         };
-        const child = execFile(executable, [...args], options, (error, stdout, stderr) => {
+        let child: ReturnType<typeof execFile>;
+        try {
+          child = execFile(executable, [...args], options, onExit);
+        } catch (err) {
+          // Some spawn refusals throw instead of calling back — a `cwd` that is
+          // a file throws ENOTDIR. The runner never rejects, so this is a
+          // command that did not run, reported the way the callback would.
+          const code = (err as NodeJS.ErrnoException).code;
+          const spawnFailure: GitCommandResult = {
+            code: -1,
+            stdout: Buffer.alloc(0),
+            stderr: messageOf(err),
+            timedOut: false,
+            failedToSpawn: true,
+          };
+          if (code === "ENOTDIR" || code === "ENOENT" || code === "EACCES") {
+            resolveWithCwdCheck(spawnFailure);
+          } else {
+            resolve(spawnFailure);
+          }
+          return;
+        }
+        function onExit(error: Error | null, stdout: Buffer | string, stderr: Buffer | string): void {
           const out = Buffer.isBuffer(stdout) ? stdout : Buffer.alloc(0);
           const errText = (Buffer.isBuffer(stderr) ? stderr : Buffer.alloc(0)).toString();
           if (!error) {
@@ -94,7 +129,7 @@ export function createGitCommandRunner(options: GitCommandRunnerOptions = {}): G
           }
           const failure = error as ExecFileFailure;
           const overflowed = failure.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
-          resolve({
+          const result: GitCommandResult = {
             code: typeof failure.code === "number" ? failure.code : -1,
             stdout: out,
             stderr: errText || failure.message,
@@ -104,8 +139,21 @@ export function createGitCommandRunner(options: GitCommandRunnerOptions = {}): G
             // has already changed an unknown amount of state (design.md D11).
             timedOut: !overflowed && (failure.killed === true || failure.code === "ABORT_ERR"),
             failedToSpawn: failure.code === "ENOENT" || failure.code === "EACCES" || failure.code === "EPERM",
-          });
-        });
+          };
+          if (failure.code !== "ENOENT" && failure.code !== "EACCES") {
+            resolve(result);
+            return;
+          }
+          resolveWithCwdCheck(result);
+        }
+        // ENOENT/ENOTDIR/EACCES name the executable OR the working directory.
+        // Only on this failure path is the folder looked at, so a healthy call
+        // pays nothing for the distinction.
+        function resolveWithCwdCheck(failed: GitCommandResult): void {
+          void diagnoseCwd(cwd).then((problem) =>
+            resolve(problem === null ? failed : { ...failed, cwdProblem: { path: cwd, kind: problem } }),
+          );
+        }
         if (runOptions?.input !== undefined) {
           // A child can exit before the write completes; its command result is
           // still reported by the callback, so EPIPE must not escape the runner.
@@ -115,4 +163,27 @@ export function createGitCommandRunner(options: GitCommandRunnerOptions = {}): G
       });
     },
   };
+}
+
+/**
+ * What is wrong with `cwd`, if anything: `missing` (absent or not a
+ * directory), `unreadable` (there but not enterable, or not even
+ * inspectable), or `null` when it is a usable directory — so the failure was
+ * the executable's.
+ */
+async function diagnoseCwd(cwd: string): Promise<"missing" | "unreadable" | null> {
+  try {
+    if (!(await stat(cwd)).isDirectory()) {
+      return "missing";
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === "ENOENT" || code === "ENOTDIR" ? "missing" : "unreadable";
+  }
+  try {
+    await access(cwd, fsConstants.R_OK | fsConstants.X_OK);
+    return null;
+  } catch {
+    return "unreadable";
+  }
 }

@@ -1,5 +1,6 @@
 import * as os from "node:os";
 import { describe, expect, it } from "vitest";
+import { describeGitFailure } from "./describeGitFailure";
 import { createGitCommandRunner } from "./gitCommandRunner";
 
 // `node` stands in for `git`: always present wherever this suite runs, and it
@@ -111,4 +112,68 @@ describe("createGitCommandRunner — per-call output ceiling", () => {
     expect(result.code).toBe(0);
     expect(result.stdout.length).toBe(4096);
   });
+});
+
+// ─── A folder that is not there is not a missing git ───────────────
+// execFile reports a non-existent cwd as ENOENT, the same code as a missing
+// executable, so a deleted worktree folder used to read as "No usable `git`
+// executable was found." — sending the user to reinstall git.
+
+describe("createGitCommandRunner — a missing working directory", () => {
+  it("says the folder is missing, not that git is", async () => {
+    const gone = `${cwd}/definitely-not-here-${process.pid}`;
+    const result = await nodeRunner().run(["-e", "0"], gone);
+    expect(result.failedToSpawn).toBe(true); // still a failure every guard catches
+    expect(result.cwdProblem).toEqual({ path: gone, kind: "missing" });
+    expect(describeGitFailure(result, "git status")).toBe(`The folder \`${gone}\` does not exist.`);
+  });
+
+  it("still blames the executable when the folder is there", async () => {
+    const result = await createGitCommandRunner({ executable: "definitely-not-a-binary-xyz" }).run(["x"], cwd);
+    expect(result.failedToSpawn).toBe(true);
+    expect(result.cwdProblem).toBeUndefined();
+    expect(describeGitFailure(result, "git status")).toBe("No usable `git` executable was found.");
+  });
+
+  it("treats a cwd that is a file as missing too", async () => {
+    const result = await nodeRunner().run(["-e", "0"], __filename);
+    expect(result.failedToSpawn).toBe(true);
+    expect(result.cwdProblem).toEqual({ path: __filename, kind: "missing" });
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "says a folder it may not enter cannot be opened — not that git is missing, and not that it is gone",
+    async () => {
+      const { mkdtempSync, chmodSync, rmSync } = await import("node:fs");
+      const locked = mkdtempSync(`${cwd}/portaterm-locked-`);
+      chmodSync(locked, 0o000);
+      try {
+        const result = await nodeRunner().run(["-e", "0"], locked);
+        expect(result.failedToSpawn).toBe(true);
+        expect(result.cwdProblem).toEqual({ path: locked, kind: "unreadable" });
+        expect(describeGitFailure(result, "git status")).toBe(`The folder \`${locked}\` cannot be opened.`);
+      } finally {
+        chmodSync(locked, 0o700);
+        rmSync(locked, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "says a folder under a parent it cannot search cannot be opened, not that it does not exist",
+    async () => {
+      const { mkdtempSync, mkdirSync, chmodSync, rmSync } = await import("node:fs");
+      const parent = mkdtempSync(`${cwd}/portaterm-parent-`);
+      const child = `${parent}/inner`;
+      mkdirSync(child);
+      chmodSync(parent, 0o000);
+      try {
+        const result = await nodeRunner().run(["-e", "0"], child);
+        expect(result.cwdProblem).toEqual({ path: child, kind: "unreadable" });
+      } finally {
+        chmodSync(parent, 0o700);
+        rmSync(parent, { recursive: true, force: true });
+      }
+    },
+  );
 });

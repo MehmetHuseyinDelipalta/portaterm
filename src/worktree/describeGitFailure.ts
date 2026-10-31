@@ -12,6 +12,12 @@ export function describeGitFailure(result: GitCommandResult, command: string): s
   if (result.timedOut) {
     return `\`${command}\` timed out.`;
   }
+  // Before the spawn failure it is reported as: a folder that is gone is not a
+  // missing git, and saying it is sends the user to reinstall git.
+  if (result.cwdProblem !== undefined) {
+    const { path, kind } = result.cwdProblem;
+    return kind === "missing" ? `The folder \`${path}\` does not exist.` : `The folder \`${path}\` cannot be opened.`;
+  }
   if (result.failedToSpawn) {
     return "No usable `git` executable was found.";
   }
