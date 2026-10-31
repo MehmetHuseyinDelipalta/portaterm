@@ -20,6 +20,13 @@ import type { ShellIntegrationEvent, ShellIntegrationSink } from "./ShellIntegra
  */
 const MAX_PENDING = 4096;
 
+/**
+ * The cap for a partial OSC 633. Its `E` marker carries the whole command line
+ * the user ran, which a pasted script or a long pipeline takes past 4 KB; under
+ * the general cap that command line was lost.
+ */
+const MAX_PENDING_SHELL_INTEGRATION = 65_536;
+
 /** Pure-state OSC parser. One instance per PtySession. */
 export interface OscParser {
   /** Feed a chunk of PTY output. Invokes `onEvent` once per recognised escape sequence. */
@@ -45,6 +52,42 @@ export interface OscParser {
 export function createOscParser(): OscParser {
   let pending = "";
   let nonce: string | undefined;
+  // Inside an OSC too long to keep: its bytes are dropped until it ends. Without
+  // this state the parser fell back to ground and the rest of the payload — the
+  // base64 of an OSC 52 copy or an OSC 1337 image — came out as text.
+  let discarding = false;
+  // The previous chunk ended on an ESC while discarding: it may be half of ST.
+  let discardEsc = false;
+
+  /**
+   * Consume the end of an OSC being discarded. Returns what follows it, or
+   * `null` when the whole chunk was still inside it. BEL and ST end it (and are
+   * consumed); any other ESC aborts it the way a terminal's parser does, and is
+   * kept, so a lost terminator cannot swallow the sequence after it.
+   */
+  const leaveDiscard = (chunk: string): string | null => {
+    let s = chunk;
+    if (discardEsc) {
+      discardEsc = false;
+      s = `\x1b${s}`;
+    }
+    for (let k = 0; k < s.length; k++) {
+      const c = s[k];
+      if (c === "\x07") {
+        discarding = false;
+        return s.slice(k + 1);
+      }
+      if (c === "\x1b") {
+        if (k + 1 >= s.length) {
+          discardEsc = true;
+          return null;
+        }
+        discarding = false;
+        return s[k + 1] === "\\" ? s.slice(k + 2) : s.slice(k);
+      }
+    }
+    return null;
+  };
 
   return {
     setNonce(n: string | undefined): void {
@@ -55,7 +98,15 @@ export function createOscParser(): OscParser {
       // current chunk into a single working buffer. We process this buffer
       // end-to-end in this call and save only any trailing partial OSC (or a
       // lone trailing ESC that might start one) back to `pending`.
-      const buf = pending + chunk;
+      let input = chunk;
+      if (discarding) {
+        const rest = leaveDiscard(chunk);
+        if (rest === null) {
+          return;
+        }
+        input = rest;
+      }
+      const buf = pending + input;
       pending = "";
 
       let i = 0;
@@ -67,13 +118,17 @@ export function createOscParser(): OscParser {
         }
       };
 
-      // Save the partial OSC at `escIdx` for the next feed. Drop entirely
-      // when it exceeds MAX_PENDING — a partial that long is assumed garbage.
+      // Save the partial OSC at `escIdx` for the next feed. Past its cap it is
+      // dropped, and so is the rest of it: the parser discards until the OSC
+      // ends instead of reading its remaining bytes as text.
       const retainPartial = (escIdx: number): void => {
         const partial = buf.slice(escIdx);
-        if (partial.length > MAX_PENDING) {
-          // Drop the partial; preceding text was already emitted by the caller.
+        const cap = partial.startsWith("\x1b]633;") ? MAX_PENDING_SHELL_INTEGRATION : MAX_PENDING;
+        if (partial.length > cap) {
+          // Preceding text was already emitted by the caller.
           pending = "";
+          discarding = true;
+          discardEsc = partial.charCodeAt(partial.length - 1) === 0x1b;
         } else {
           pending = partial;
         }
@@ -133,6 +188,7 @@ export function createOscParser(): OscParser {
 
         let termIdx = -1;
         let termLen = 0;
+        let abortIdx = -1;
         let q = payloadStart;
         let needMore = false;
         while (q < buf.length) {
@@ -152,8 +208,22 @@ export function createOscParser(): OscParser {
               termLen = 2;
               break;
             }
+            // Any other ESC aborts the OSC, as a terminal's parser does. Read
+            // as payload instead, an unterminated OSC swallowed the output
+            // after it — and the next marker — up to the first BEL anywhere.
+            abortIdx = q;
+            break;
           }
           q++;
+        }
+
+        if (abortIdx !== -1) {
+          // The aborted OSC's bytes are dropped (a terminal shows nothing for
+          // them); scanning resumes AT the ESC, which starts the next sequence.
+          emitText(textStart, escIdx);
+          i = abortIdx;
+          textStart = abortIdx;
+          continue;
         }
 
         if (needMore || termIdx === -1) {

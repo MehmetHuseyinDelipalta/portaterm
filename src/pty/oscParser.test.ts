@@ -603,3 +603,111 @@ describe("oscParser: text-segment emission ([B1])", () => {
     expect(events).toEqual([{ kind: "text", text: "prefix" }]);
   });
 });
+
+// ─── An OSC longer than the partial buffer ─────────────────────────
+// OSC 52 (clipboard) and OSC 1337 (inline image) carry base64 payloads far past
+// the 4 KB partial cap. Dropping the partial and returning to ground state made
+// the REST of the payload arrive as text in the next chunk — base64 in the
+// tracked command's output and in "Export Command…".
+
+const textOf = (events: ShellIntegrationEvent[]) =>
+  events
+    .filter((e): e is Extract<ShellIntegrationEvent, { kind: "text" }> => e.kind === "text")
+    .map((e) => e.text)
+    .join("");
+
+describe("oscParser: an OSC longer than the partial cap", () => {
+  it("discards the rest of an oversized OSC 52 that ends in a later chunk", () => {
+    const parser = createOscParser();
+    const events: ShellIntegrationEvent[] = [];
+    parser.feed(`before\x1b]52;c;${"A".repeat(6000)}`, eventsOf(events));
+    parser.feed(`${"B".repeat(4000)}\x07after`, eventsOf(events));
+    expect(textOf(events)).toBe("beforeafter");
+  });
+
+  it("discards across several chunks until the terminator", () => {
+    const parser = createOscParser();
+    const events: ShellIntegrationEvent[] = [];
+    parser.feed(`x\x1b]1337;File=inline=1:${"Q".repeat(5000)}`, eventsOf(events));
+    parser.feed("R".repeat(5000), eventsOf(events));
+    parser.feed("S".repeat(5000), eventsOf(events));
+    parser.feed("T\x07y", eventsOf(events));
+    expect(textOf(events)).toBe("xy");
+  });
+
+  it("recognises an ST terminator split across chunks while discarding", () => {
+    const parser = createOscParser();
+    const events: ShellIntegrationEvent[] = [];
+    parser.feed(`\x1b]52;c;${"A".repeat(6000)}`, eventsOf(events));
+    parser.feed(`${"A".repeat(10)}\x1b`, eventsOf(events));
+    parser.feed("\\after", eventsOf(events));
+    expect(textOf(events)).toBe("after");
+  });
+
+  it("recognises ST when the overflowing chunk itself ends on its ESC", () => {
+    const parser = createOscParser();
+    const events: ShellIntegrationEvent[] = [];
+    parser.feed(`\x1b]52;c;${"A".repeat(6000)}\x1b`, eventsOf(events));
+    parser.feed("\\after", eventsOf(events));
+    expect(textOf(events)).toBe("after");
+  });
+
+  it("ends the discard at an ESC that starts another sequence, as a terminal would", () => {
+    // ESC inside an OSC string aborts it. A lost terminator must not swallow
+    // the next sequence — here a cwd report — or everything after it.
+    const parser = createOscParser();
+    const events: ShellIntegrationEvent[] = [];
+    parser.feed(`\x1b]52;c;${"A".repeat(6000)}`, eventsOf(events));
+    parser.feed(`AAA${osc7("file:///next")}tail`, eventsOf(events));
+    expect(events.filter((e) => e.kind === "cwd")).toEqual([{ kind: "cwd", cwd: "/next" }]);
+    expect(textOf(events)).toBe("tail");
+  });
+
+  it("keeps an OSC 633;E command line longer than 4 KB", () => {
+    const parser = createOscParser();
+    const events: ShellIntegrationEvent[] = [];
+    const command = `echo ${"x".repeat(10_000)}`;
+    const wire = osc633(`E;${command}`);
+    parser.feed(wire.slice(0, 3000), eventsOf(events));
+    parser.feed(wire.slice(3000, 7000), eventsOf(events));
+    parser.feed(`${wire.slice(7000)}done`, eventsOf(events));
+    expect(events.filter((e) => e.kind === "commandLine")).toEqual([
+      { kind: "commandLine", commandLine: command, nonceValid: false },
+    ]);
+    expect(textOf(events)).toBe("done");
+  });
+
+  it("still bounds an OSC 633 that never ends, without leaking it", () => {
+    const parser = createOscParser();
+    const events: ShellIntegrationEvent[] = [];
+    parser.feed(`\x1b]633;E;${"z".repeat(70_000)}`, eventsOf(events));
+    parser.feed(`${"z".repeat(100)}\x07ok`, eventsOf(events));
+    expect(textOf(events)).toBe("ok");
+    expect(events.filter((e) => e.kind === "commandLine")).toEqual([]);
+  });
+});
+
+describe("oscParser: an OSC aborted by an ESC that is not ST", () => {
+  // A terminal aborts an OSC string at any ESC that does not start ST. Read as
+  // payload instead, an unterminated OSC swallowed the output after it and the
+  // next shell-integration marker, up to the first BEL anywhere.
+  it("does not swallow the output and the marker after an unterminated OSC", () => {
+    const parser = createOscParser();
+    const events: ShellIntegrationEvent[] = [];
+    parser.feed("\x1b]0;title", eventsOf(events));
+    parser.feed("out\x1b[31mred", eventsOf(events));
+    parser.feed("\x1b]633;D;0\x07prompt", eventsOf(events));
+    // "title" and "out" were the aborted OSC's payload; the CSI after it is output.
+    expect(textOf(events)).toBe("\x1b[31mredprompt");
+    expect(events.some((e) => e.kind === "commandEnd")).toBe(true);
+  });
+
+  it("still accepts ST, and an ESC split from its backslash across chunks", () => {
+    const parser = createOscParser();
+    const events: ShellIntegrationEvent[] = [];
+    parser.feed("\x1b]7;file:///a\x1b", eventsOf(events));
+    parser.feed("\\after", eventsOf(events));
+    expect(events.filter((e) => e.kind === "cwd")).toEqual([{ kind: "cwd", cwd: "/a" }]);
+    expect(textOf(events)).toBe("after");
+  });
+});
