@@ -7,6 +7,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.49.0] — 2026-10-31
+
+### Fixed
+
+- **Shell integration works in bash.** Portaterm starts bash as a login shell, and a login bash skipped the integration script entirely, so in bash no command was tracked, **Export Last Command Output** / **Export Command** had nothing to export and the working directory was never reported. The script now loads and reads your login profile itself, as VS Code's terminal does — also with `-il` in your shell arguments.
+- **Inserted and dropped paths arrive intact.** **Insert Path in Portaterm** and dropping files onto a terminal removed characters such as `#`, `$` and `!` and doubled backslashes, so `C#/notes.md` arrived as `C/notes.md`. Paths now reach the shell exactly as they are, quoted the way that terminal's shell reads them: bash and zsh, fish, PowerShell and cmd each get their own quoting, so a path with spaces stays one word on Windows too.
+- **Clearing a leftover folder before creating a worktree can no longer delete a repository.** The offer to clear a half-made worktree folder now refuses any folder that holds a repository anywhere inside it — this one's worktrees or git directory, another clone, a bare repository — and any folder too large to check.
+- **Closing a tab while an agent runs leaves nothing behind.** The agent's exit arrived after the tab was gone and opened a fresh shell no tab owned. The same happened at window close.
+- **A terminal no longer freezes after its view moves.** After moving a view to another sidebar or panel, heavy output could pause the shell for good. Its `[Process exited]` line and an agent's follow-up shell now also show in the moved view instead of a blank pane.
+- **Closing the first pane of a split tab keeps the tab.** The tab keeps its name, pin, color and icon, its **×** still closes it (and still refuses while pinned), and it comes back after a reload. Before, a two-pane tab vanished from the tab bar, and closing the tab left the other pane's shell running.
+- **Keys typed into text fields stay there.** In the tab rename box, the Vault search or the worktree prompt, `Shift+Enter`, `Cmd`/`Ctrl+Backspace`, word and line jumps went to the shell, `Cmd+W` closed the tab you were renaming, and an image pasted into a field went to the terminal.
+- **`Ctrl+Tab` switches tabs from a focused terminal**, in the tab bar's order and only through the tabs it shows. It used to send a Tab to the shell, and from a split tab it could stop moving.
+- **Cursor's `hooks.json` is left alone when nothing changed.** It was rewritten in every window, reformatting it and reordering your own hooks after Portaterm's.
+- **Reopening a closed editor terminal from the warning works again**, and its agent no longer keeps running unseen after the grace period, when another editor terminal was restored in the meantime.
+- **Long escape sequences no longer leak into exported command output.** A clipboard copy (OSC 52) or an inline image could leave base64 text in **Export Command**, and an unterminated sequence could swallow the output after it. Command lines longer than 4 KB are tracked too.
+- **The Vault no longer freezes the window while it reads a large session store**, such as OpenCode's.
+- **A restored tab keeps a newer snapshot** when two saves of it overlap; the tab could go missing on the next restore.
+- **Two windows no longer delete each other's Vault cache writes.**
+- **A missing or locked worktree folder is reported as such**, instead of as "No usable git executable was found".
+- **Split layouts are restored against the panes that are still running**: a pane that died while the window was away no longer leaves an empty gap, and a running pane the layout lost is put back in its tab.
+
+### Changed
+
+- **Reveal Working Directory** (Vault right-click menu, formerly *Open Working Directory*) shows the session's folder in Finder / Explorer instead of opening it, so a path read from a transcript can never launch an app.
+- The `portaterm.agentHooks.claudeConfigDir` setting's description now says that changing it leaves the hook in the previous `settings.json`.
+
 ## [0.48.2] — 2026-10-29
 
 ### Fixed
