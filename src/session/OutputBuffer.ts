@@ -262,9 +262,24 @@ export class OutputBuffer {
   /**
    * Update the webview reference. Used when a webview is re-created
    * but the session (and its OutputBuffer) survives.
+   *
+   * The flow-control count starts over with the new page. What the old page was
+   * handed but had not acked — output still in flight when it went away, plus up
+   * to one 5000-char ack batch it was still accumulating — will never be acked:
+   * that page's `FlowControl` is gone, and the new one starts from zero. Carried
+   * over, it is a floor the count can never fall below; once that floor reaches
+   * the low watermark, the next burst pauses the PTY for good and the terminal
+   * freezes. A PTY already paused here is resumed for the same reason — the acks
+   * that would have resumed it are not coming.
    */
   updateWebview(webview: MessageSender): void {
     this._webview = webview;
+    // After `dispose` both are already reset, so this is a no-op there.
+    this._unackedCharCount = 0;
+    if (this._isPaused) {
+      this._isPaused = false;
+      this._pty.resume();
+    }
   }
 
   /**

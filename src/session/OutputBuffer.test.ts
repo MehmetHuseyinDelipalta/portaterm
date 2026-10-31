@@ -2,6 +2,7 @@
 // See: specs/output-buffer/spec.md
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FlowControl } from "../webview/flow/FlowControl";
 import type { FlowControllable, MessageSender } from "./OutputBuffer";
 import { OutputBuffer } from "./OutputBuffer";
 
@@ -564,6 +565,106 @@ describe("OutputBuffer pause/resume output", () => {
     expect(sender1.messages).toHaveLength(1); // No new messages to sender1
 
     buffer.dispose();
+  });
+});
+
+// ─── Webview re-creation (flow control) ────────────────────────────
+
+/**
+ * A webview page as the real one acks: each `output` it is handed is written
+ * later (xterm parses asynchronously), and only then counted by the webview's
+ * own `FlowControl`, which acks in batches of 5000 back to the buffer — the
+ * loop the panel runs. `drain()` is that later write. A page being torn down
+ * never drains: what was posted to it is never written, so never acked.
+ */
+function ackingPage(buffer: () => OutputBuffer) {
+  const flow = new FlowControl((msg) => {
+    buffer().handleAck((msg as { charCount: number }).charCount);
+  });
+  const received: Array<{ tabId: string; length: number }> = [];
+  return {
+    postMessage(message: unknown): Thenable<boolean> {
+      const { tabId, data } = message as { tabId: string; data: string };
+      received.push({ tabId, length: data.length });
+      return Promise.resolve(true);
+    },
+    drain(): void {
+      for (const { tabId, length } of received.splice(0)) {
+        flow.ackChars(length, tabId);
+      }
+    },
+  };
+}
+
+describe("OutputBuffer across a webview re-creation", () => {
+  it("does not stay paused on characters the old page will never ack", () => {
+    const pty = createMockPty();
+    let buffer!: OutputBuffer;
+    const oldPage = ackingPage(() => buffer);
+    buffer = new OutputBuffer("recreate-1", oldPage, pty);
+
+    // In flight to the old page when the view moved: posted, never written.
+    buffer.append("y".repeat(20_000));
+    vi.advanceTimersByTime(16);
+    expect(buffer.unackedCharCount).toBe(20_000);
+
+    const newPage = ackingPage(() => buffer);
+    buffer.updateWebview(newPage);
+
+    // A burst on the new page: past the high watermark, so the PTY pauses...
+    buffer.append("x".repeat(101_000));
+    expect(pty.pauseCalls).toBe(1);
+    // ...and the new page writes and acks every byte it received. Left holding
+    // the old page's 20k, the count could never drop below the low watermark.
+    newPage.drain();
+    expect(buffer.isPaused).toBe(false);
+    expect(pty.resumeCalls).toBe(1);
+
+    buffer.dispose();
+  });
+
+  it("resumes a PTY that was paused when the view was re-created", () => {
+    const pty = createMockPty();
+    let buffer!: OutputBuffer;
+    buffer = new OutputBuffer(
+      "recreate-2",
+      ackingPage(() => buffer),
+      pty,
+    );
+    buffer.append("x".repeat(101_000));
+    expect(buffer.isPaused).toBe(true);
+
+    buffer.updateWebview(ackingPage(() => buffer));
+
+    // Nothing will ack the old page's output, so nothing else would resume it.
+    expect(buffer.isPaused).toBe(false);
+    expect(buffer.unackedCharCount).toBe(0);
+    expect(pty.resumeCalls).toBe(1);
+    buffer.dispose();
+  });
+
+  it("does not call resume on a rebind when the PTY was flowing", () => {
+    const pty = createMockPty();
+    const buffer = new OutputBuffer("recreate-3", createMockSender(), pty);
+    buffer.append("x".repeat(3_000));
+    vi.advanceTimersByTime(16);
+
+    buffer.updateWebview(createMockSender());
+
+    expect(buffer.unackedCharCount).toBe(0);
+    expect(pty.resumeCalls).toBe(0);
+    buffer.dispose();
+  });
+
+  it("ignores a rebind after dispose", () => {
+    const pty = createMockPty();
+    const buffer = new OutputBuffer("recreate-4", createMockSender(), pty);
+    buffer.append("x".repeat(101_000));
+    buffer.dispose();
+
+    buffer.updateWebview(createMockSender());
+
+    expect(pty.resumeCalls).toBe(0);
   });
 });
 

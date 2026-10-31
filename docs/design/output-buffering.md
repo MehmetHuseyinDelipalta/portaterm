@@ -199,6 +199,7 @@ stateDiagram-v2
 
     Flowing --> Paused: unacked > 100 000 (:333)
     Paused --> Flowing: unacked < 5 000 (:203)
+    Paused --> Flowing: webview re-created (updateWebview)
 
     note right of Flowing
         Every flush adds its length
@@ -207,7 +208,8 @@ stateDiagram-v2
 
     note right of Paused
         node-pty stops emitting (:335).
-        Only an ack can leave this state.
+        An ack leaves this state, or a
+        rebind to a re-created webview.
     end note
 ```
 
@@ -338,7 +340,7 @@ Constructed per session from a tab id, a message sender, and the PTY (`:62`,
 | `flush` | `:181` | Force a flush now |
 | `handleAck` | `:189` | Backpressure credit from the webview |
 | `pauseOutput` / `resumeOutput` | `:214` / `:231` | View visibility |
-| `updateWebview` | `:247` | Rebind after a webview is re-created |
+| `updateWebview` | `:247` | Rebind after a webview is re-created; resets the unacked count and resumes a paused PTY, since the old page's unacked output will never be acked |
 | `dispose` | `:257` | Teardown; an optional flag discards instead of flushing |
 | `unackedCharCount`, `bufferSize`, `isPaused`, `isOutputPaused` | `:87`–`:102` | Read-only observers |
 
