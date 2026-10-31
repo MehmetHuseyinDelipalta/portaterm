@@ -60,7 +60,7 @@ Claude Code, Codex, OpenCode, and Cursor Agent all keep local session data in di
 - **Star and tag what matters** — star a session from its row (hover), its right-click menu, or the preview header; unlike a tab pin, a star stays when the tab closes and across restarts, and starred sessions lead their group. **Edit Tags…** on the right-click menu picks from the tags you already use or adds new ones; tags show as `#tag` chips on the row. Stars and tags are kept by Portaterm, never written into an agent's files.
 - **Find it fast** — client-side search over titles, your renames, folders, agents and tags (type `#tag` to match tags only, or click a row's chip), plus a **Starred only** toggle and a **"This folder only"** filter, on by default, scoped to the focused terminal's working directory. When that folder has no sessions, **Show all sessions** turns the filter off.
 - **Settings one click away** — the gear next to search opens VS Code's Settings filtered to Portaterm.
-- **Right-click for more** — provider-supported actions such as Resume, Reveal in Finder/Explorer, Copy File Path or Resume Command, and Open Working Directory.
+- **Right-click for more** — provider-supported actions such as Resume, Reveal in Finder/Explorer, Copy File Path or Resume Command, and Reveal Working Directory.
 - **Cross-platform** — store locations resolve per-OS (honoring `CLAUDE_CONFIG_DIR`, `CODEX_HOME` / `CODEX_SQLITE_HOME`, `XDG_DATA_HOME`); falls back to a built-in SQLite engine when the `sqlite3` CLI is missing (typically Windows). A missing store degrades to an empty list, never an error.
 
 > **Privacy:** the panel reads each tool's own local store. For instant open it keeps a small, **owner-only metadata cache** (bounded titles, working directories, source labels, and freshness stamps) under VS Code storage — non-authoritative, never the source of truth. Cursor transcript detail is decoded only after an explicit preview request, locally, read-only, and under strict per-record and total bounds. Raw SQLite/protobuf blobs, keys, private database fields, raw hook payloads, account data, and shell output are never sent to the webview, persisted in the Vault cache, or logged. Unsupported or changed schemas fall back to metadata-only detail. **Nothing is sent off your machine.**
@@ -116,7 +116,7 @@ The built-in terminal is awkward to reposition and can't live in the sidebar. Po
 - **Find in the terminal** — `Cmd+F` / `Ctrl+F` highlights every match in the scrollback, with a match counter, previous/next, and match case, whole word and regular expression toggles.
 - **Smart clipboard** — `Cmd+C` / `Cmd+V`, selection-aware, with `Ctrl+C` fallback.
 - **Clickable URLs** — `Cmd+Click` with confirmation.
-- **Drop files to insert their path** — hold `Shift` and drop files from the Explorer or, on macOS, from Finder onto a terminal to type their quoted paths; or right-click a file in the Explorer, an editor tab or inside an open editor → **Insert Path in Portaterm**.
+- **Drop files to insert their path** — hold `Shift` and drop files from the Explorer or, on macOS, from Finder onto a terminal to type their paths, quoted for that terminal's shell (bash/zsh, fish, PowerShell, cmd); or right-click a file in the Explorer, an editor tab or inside an open editor → **Insert Path in Portaterm**.
 - **Embedded file tree** — browse the workspace alongside the terminal, with VS Code-style git decorations, live filesystem sync, in-panel search, and drag-a-row-into-a-pane to insert a path. Right-click a row for Reveal in Finder, Copy Path, Copy Relative Path, or Delete.
 
 ## Shortcuts
@@ -128,6 +128,7 @@ The built-in terminal is awkward to reposition and can't live in the sidebar. Po
 | `Cmd+F` | Find in the terminal — `Enter` / `Shift+Enter` (or `Cmd+G` / `Shift+Cmd+G`; `F3` / `Shift+F3` on Windows/Linux) step through matches, `Escape` closes |
 | `Cmd+Backspace` | Kill input line |
 | `Shift+Enter` | Insert newline |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab, in the tab bar's order |
 | `Cmd+W` (Windows/Linux: `Ctrl+Shift+W`) | Close the active tab — only while a Portaterm view has focus |
 
 Rename a root tab by double-clicking its label, choosing **Rename Tab…** from the tab context menu, or running **Portaterm: Rename Tab…** from the Command Palette. The box opens with the name the tab shows. Renaming a tab that runs an agent session also renames that session in the AI Vault. No default rename keybinding is shipped.
@@ -207,7 +208,7 @@ Per-command export ("Export Last Command Output" and "Export Command") relies on
 | pwsh / pwsh.exe | ✓ | ✓ | ✓ |
 | sh / dash / cmd / nushell / custom | not supported — export buffer still works | | |
 
-If you launch the shell with `bash --noprofile --norc` or `pwsh -NoProfile`, the injection is skipped — the per-command commands then surface an info toast pointing here, and you can still use "Export Buffer to File…".
+If you launch the shell with `bash --norc`, `bash --login --noprofile` or `pwsh -NoProfile`, the injection is skipped (bash reads no init file there) — the per-command commands then surface an info toast pointing here, and you can still use "Export Buffer to File…".
 
 **Privacy**: the per-session UUID nonce that the parser uses to validate command-line metadata is set as the `VSCODE_NONCE` environment variable on the spawned shell only.
 
