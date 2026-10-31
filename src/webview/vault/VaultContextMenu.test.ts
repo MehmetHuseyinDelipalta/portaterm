@@ -81,7 +81,7 @@ describe("vault context menu items", () => {
       "Copy File Path",
       "Copy Resume Command",
       "Export as Markdown…",
-      "Open Working Directory",
+      "Reveal Working Directory",
     ]);
   });
 
@@ -119,7 +119,7 @@ describe("vault context menu items", () => {
       "Reveal in Finder",
       "Copy File Path",
       "Export as Markdown…",
-      "Open Working Directory",
+      "Reveal Working Directory",
     ]) {
       menu.open(entry(), EVENT, row);
       clickItem(host, label);

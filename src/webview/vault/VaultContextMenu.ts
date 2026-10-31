@@ -137,7 +137,7 @@ export class VaultContextMenu {
       },
       "sep",
       {
-        label: "Open Working Directory",
+        label: "Reveal Working Directory",
         icon: ICON_FOLDER,
         act: () => this.postMessage({ type: "vaultOpenWorkingDir", entryId: entry.id }),
       },

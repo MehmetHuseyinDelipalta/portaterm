@@ -779,7 +779,7 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
       "Edit Tags…",
       "Copy Resume Command",
       "Export as Markdown…",
-      "Open Working Directory",
+      "Reveal Working Directory",
     ]);
     expect(labels).not.toContain("Open");
     expect(labels).not.toContain("Copy File Path");
@@ -791,11 +791,11 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
     const panel = new VaultPanel({ host, postMessage: (m) => posted.push(m), getInitialCollapsed: () => false });
     panel.render(result([entry({ id: "cursor:a", agent: "cursor", canResume: false })]));
     const labels = Array.from(openMenu(host)?.querySelectorAll("button") ?? []).map((b) => b.textContent);
-    expect(labels).toEqual(["Rename", "Star", "Edit Tags…", "Export as Markdown…", "Open Working Directory"]);
+    expect(labels).toEqual(["Rename", "Star", "Edit Tags…", "Export as Markdown…", "Reveal Working Directory"]);
     expect(labels).not.toContain("Resume");
     expect(labels).not.toContain("Copy Resume Command");
     Array.from(host.querySelectorAll<HTMLButtonElement>(".vault-context-menu button"))
-      .find((b) => b.textContent === "Open Working Directory")
+      .find((b) => b.textContent === "Reveal Working Directory")
       ?.click();
     expect(posted).toContainEqual({ type: "vaultOpenWorkingDir", entryId: "cursor:a" });
     expect(posted.some((m) => m.type === "vaultResume" || m.type === "vaultCopyResumeCommand")).toBe(false);
@@ -815,7 +815,7 @@ describe("VaultPanel context menu (redesign 5_1)", () => {
       "Reveal in Finder",
       "Copy File Path",
       "Export as Markdown…",
-      "Open Working Directory",
+      "Reveal Working Directory",
     ]);
   });
 

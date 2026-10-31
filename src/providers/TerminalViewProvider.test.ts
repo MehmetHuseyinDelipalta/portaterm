@@ -975,6 +975,38 @@ describe("TerminalViewProvider: insertPaths", () => {
   });
 });
 
+// ─── Reveal Working Directory ───────────────────────────────────────
+
+describe("TerminalViewProvider: Reveal Working Directory", () => {
+  it("reveals the recorded directory in the file manager, and never opens it as a program", async () => {
+    // The cwd comes from a transcript. `openExternal(file:)` hands it to the OS
+    // to OPEN — a `.app` bundle or a `.command` file at that path would run.
+    // `revealFileInOS` only shows it, the same as the context menu's door.
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar", null, null, {
+      getEntry: async () => ({ cwd: "/Users/me/Downloads/Evil.app" }),
+    } as unknown as VaultService);
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    const executed = vi.spyOn(vscodeMockCommands, "executeCommand");
+    const openExternal = vi.fn(async () => true);
+    const realOpen = (vscodeMockEnv as { openExternal?: unknown }).openExternal;
+    (vscodeMockEnv as { openExternal?: unknown }).openExternal = openExternal;
+    try {
+      for (const handler of messageHandlers) {
+        handler({ type: "vaultOpenWorkingDir", entryId: "claude:x" });
+      }
+      await vi.waitFor(() => expect(executed).toHaveBeenCalledWith("revealFileInOS", expect.anything()));
+      const [, uri] = executed.mock.calls.find(([c]) => c === "revealFileInOS")!;
+      expect((uri as vscode.Uri).fsPath).toBe("/Users/me/Downloads/Evil.app");
+      expect(openExternal).not.toHaveBeenCalled();
+    } finally {
+      (vscodeMockEnv as { openExternal?: unknown }).openExternal = realOpen;
+      sm.dispose();
+    }
+  });
+});
+
 // ─── session-detail requestId echo (round-6 W15) ────────────────────
 
 describe("TerminalViewProvider: session-detail requestId echo", () => {

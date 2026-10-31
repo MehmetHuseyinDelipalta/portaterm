@@ -865,13 +865,20 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Open the session's recorded working directory in the OS file manager. */
+  /**
+   * Show the session's recorded working directory in the OS file manager.
+   *
+   * Revealed, not opened: the path comes from a transcript, and
+   * `openExternal(file:)` asks the OS to OPEN it — a `.app` bundle or a
+   * `.command` file there would run. The context menu's "Reveal Working
+   * Directory" door does the same (`extension.ts` `revealSessionCwd`).
+   */
   private async handleVaultOpenWorkingDir(entryId: string): Promise<void> {
     const cwd = (await this.resolveVaultEntry(entryId))?.cwd;
     if (!cwd) {
       return;
     }
-    await vscode.env.openExternal(vscode.Uri.file(cwd));
+    await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(cwd));
   }
 
   /** Build the session's resume command and copy it to the clipboard (host-side). */
