@@ -46,29 +46,20 @@ export class TerminalPanelSerializer implements vscode.WebviewPanelSerializer<{ 
     const viewId = `editor-${panelId}`;
 
     if (stateMissing) {
-      // No panelId in state means we cannot match this revival to any prior
-      // identity: `cancelScheduledDestroy` won't find the right grace timer
-      // (the original viewId is unknown — it lives under the lost panelId),
-      // and `consumeSnapshotsForPanel(freshUUID)` returns nothing. The grace-
-      // period destroy from the prior instance WILL fire ~5s after this
-      // revive and kill the PTY. Surface a warning so the silent failure
-      // is at least visible in dev logs. See .reviews/round-4.md [W2].
+      // No panelId in state: this revival cannot be matched to a prior
+      // identity, so it gets a fresh viewId and fresh sessions. Nothing is
+      // cancelled. Every pending `editor-*` destroy belongs to a viewId this
+      // panel will never adopt — cancelling one (as this branch once did for
+      // all of them) left its sessions running with no panel that could ever
+      // show them, and broke the undo of a panel the user had just closed
+      // (`reopen` claims the grace window by cancelling exactly that timer).
+      // The prior instance's own sessions are unreachable under the lost id;
+      // its timer reaping them is the correct outcome.
       console.warn(
-        "[Portaterm] Editor panel revived without prior panelId state — " +
-          "scheduled destroy from prior instance may fire and kill the new PTY; " +
-          "persisted snapshot for the original panelId stays orphaned and will be " +
-          "swept by the next activate's hydrate.",
+        "[Portaterm] Editor panel revived without prior panelId state — starting fresh; " +
+          "the prior instance's sessions are reaped by their own grace timer, and its " +
+          "persisted snapshot stays orphaned until the next activate's hydrate sweeps it.",
       );
-      // Best-effort: sweep any pending editor-* destroys older than the
-      // grace window. If we just constructed a fresh viewId, no other live
-      // panel can claim it — safer to cancel ALL pending editor destroys
-      // than to let one fire on our newly-spawned PTY. Conservative: only
-      // cancel if no live editor panel currently owns each one.
-      for (const pendingId of this.sessionManager.getPendingDestroyViewIds()) {
-        if (pendingId.startsWith("editor-") && !TerminalEditorProvider.findByViewId(pendingId)) {
-          this.sessionManager.cancelScheduledDestroy(pendingId);
-        }
-      }
     } else {
       // Cancel the grace-period destroy BEFORE constructing the new provider so
       // surviving PTYs from the prior instance aren't killed mid-revive.

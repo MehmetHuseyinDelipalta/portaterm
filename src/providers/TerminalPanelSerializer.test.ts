@@ -66,4 +66,56 @@ describe("TerminalPanelSerializer.deserializeWebviewPanel", () => {
     (panel as any).dispose();
     sm.dispose();
   });
+
+  it("leaves another closed panel's grace window alone when reviving a legacy panel", async () => {
+    // Panel A was closed with an agent running: its destroy waits out the grace
+    // window, and the toast's undo claims it by cancelling exactly that timer.
+    // A legacy panel (no panelId) revived meanwhile gets a FRESH viewId — it can
+    // never adopt A's sessions — so cancelling A's timer only left A's agent
+    // running headless for good and broke the undo.
+    vi.useFakeTimers();
+    try {
+      const ctx = createMockContext();
+      const sm = new SessionManager();
+      const destroyAll = vi.spyOn(sm, "destroyAllForView");
+      sm.scheduleDestroyForView("editor-A", 30_000);
+
+      const vscode = await import("vscode");
+      const createSpy = vi.spyOn(vscode.window, "createWebviewPanel");
+      TerminalEditorProvider.createPanel(ctx, sm);
+      const panel = createSpy.mock.results[0].value;
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      await new TerminalPanelSerializer(ctx, sm, null, null).deserializeWebviewPanel(panel, null);
+
+      expect(sm.getPendingDestroyViewIds()).toContain("editor-A");
+      vi.advanceTimersByTime(30_000);
+      expect(destroyAll).toHaveBeenCalledWith("editor-A");
+
+      (panel as any).dispose();
+      sm.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the undo working for a panel closed before a legacy revive", async () => {
+    const ctx = createMockContext();
+    const sm = new SessionManager();
+    sm.scheduleDestroyForView("editor-A", 30_000);
+    const vscode = await import("vscode");
+    const createSpy = vi.spyOn(vscode.window, "createWebviewPanel");
+    TerminalEditorProvider.createPanel(ctx, sm);
+    const panel = createSpy.mock.results[0].value;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await new TerminalPanelSerializer(ctx, sm, null, null).deserializeWebviewPanel(panel, null);
+
+    // `reopen` claims the grace window by cancelling it; a cancelled-away timer
+    // made it refuse.
+    expect(TerminalEditorProvider.reopen(ctx, sm, "A")).toBeDefined();
+
+    (panel as any).dispose();
+    sm.dispose();
+  });
 });
