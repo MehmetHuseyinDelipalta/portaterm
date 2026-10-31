@@ -730,7 +730,7 @@ export class SessionManager {
       return;
     }
     const mode = this.resumeClaudeOnRestore;
-    if (mode === "off" || (mode === "pinned" && this.sessions.get(session.rootTabId ?? session.id)?.pinned !== true)) {
+    if (mode === "off" || (mode === "pinned" && this.getTabSession(session.rootTabId ?? session.id)?.pinned !== true)) {
       return;
     }
     session.pty.write(`claude --resume ${pending.sessionId}\r`);
@@ -1231,12 +1231,14 @@ export class SessionManager {
    * from its own state. The webview holds the same fact in its split layout,
    * but that is untrusted input and cannot be checked for completeness; this
    * cannot be short of a pane. Returns `[]` for an unknown tab.
+   *
+   * The root session is NOT required: Close Pane on a tab's root leaf destroys
+   * that session while the tab lives on under its id, holding the splits. Those
+   * splits still name it as `rootTabId`, and closing the tab still destroys
+   * them — so they are still what a kill confirmation has to weigh.
    */
   panesOfTab(tabId: string): string[] {
-    if (!this.sessions.has(tabId)) {
-      return [];
-    }
-    const panes: string[] = [tabId];
+    const panes: string[] = this.sessions.has(tabId) ? [tabId] : [];
     for (const [id, session] of this.sessions) {
       if (id !== tabId && session.rootTabId === tabId) {
         panes.push(id);
@@ -1305,9 +1307,69 @@ export class SessionManager {
    *   same name — unless the rename came FROM the vault (`fromVault`), which
    *   would only echo the name back to where it started.
    */
+  /**
+   * The session holding `tabId`'s tab-level facts — pin, custom name, color,
+   * icon: the tab's root pane, or, once that pane was closed and the tab lives
+   * on with its splits, the first surviving split, which inherited them
+   * (`handTabFactsToSurvivor`). `undefined` for an unknown tab, and for a split
+   * pane's own id — a leaf is not a tab.
+   */
+  getTabSession(tabId: string): TerminalSession | undefined {
+    const own = this.sessions.get(tabId);
+    if (own?.isSplitPane) {
+      return undefined;
+    }
+    if (own && own.state !== "destroying") {
+      return own;
+    }
+    // The root is gone — or queued to go, still in the map until its destroy
+    // runs; a write to it in that window would be lost with it.
+    for (const session of this.sessions.values()) {
+      if (session.id !== tabId && session.rootTabId === tabId && session.state !== "destroying") {
+        return session;
+      }
+    }
+    return own;
+  }
+
+  /**
+   * Close Pane on a tab's ROOT leaf keeps the tab, under the root's id, with
+   * its splits — but pin, name, color and icon lived on the root session. Hand
+   * them to the split that now represents the tab, before the root goes, so
+   * the pin still guards the tab's close and its name and look survive (and
+   * persist with that split). The webview is told under the TAB id, which it
+   * resolves to the same pane.
+   */
+  private handTabFactsToSurvivor(root: TerminalSession): void {
+    let survivor: TerminalSession | undefined;
+    for (const session of this.sessions.values()) {
+      if (session.id !== root.id && session.rootTabId === root.id && session.state !== "destroying") {
+        survivor = session;
+        break;
+      }
+    }
+    if (!survivor) {
+      return;
+    }
+    survivor.pinned = root.pinned;
+    survivor.customName = root.customName;
+    survivor.tabColor = root.tabColor;
+    survivor.tabIcon = root.tabIcon;
+    const tabId = root.id;
+    this.safePostMessage(survivor.webview, { type: "tabPinned", tabId, pinned: root.pinned === true });
+    this.safePostMessage(survivor.webview, { type: "tabRenamed", tabId, customName: root.customName ?? null });
+    this.safePostMessage(survivor.webview, {
+      type: "tabAppearance",
+      tabId,
+      tabColor: root.tabColor ?? null,
+      tabIcon: root.tabIcon ?? null,
+    });
+    this.snapshots.schedulePersist(survivor.id);
+  }
+
   renameSession(sessionId: string, input: string | null, options: { fromVault?: boolean } = {}): void {
-    const session = this.sessions.get(sessionId);
-    if (!session || session.isSplitPane) {
+    const session = this.getTabSession(sessionId);
+    if (!session) {
       return;
     }
 
@@ -1327,7 +1389,7 @@ export class SessionManager {
     if (!options.fromVault && !session.isAgentLaunch) {
       this.customNames.setForNumber(session.number, normalized);
     }
-    this.snapshots.schedulePersist(sessionId);
+    this.snapshots.schedulePersist(session.id);
     if (!options.fromVault) {
       this.onTabRenamed?.(sessionId, normalized);
     }
@@ -1343,11 +1405,11 @@ export class SessionManager {
    * cleared its title leaves the tab on its fallback, and so does this.
    */
   displayedName(tabId: string): string | undefined {
-    const session = this.sessions.get(tabId);
+    const session = this.getTabSession(tabId);
     if (!session) {
       return undefined;
     }
-    return session.customName ?? (stripDecorations(this.paneEvidence?.read(tabId)?.title) || session.name);
+    return session.customName ?? (stripDecorations(this.paneEvidence?.read(session.id)?.title) || session.name);
   }
 
   /**
@@ -1356,13 +1418,13 @@ export class SessionManager {
    * broadcast `tabPinned` to the owning webview and persist with the snapshot.
    */
   setPinned(sessionId: string, pinned: boolean): void {
-    const session = this.sessions.get(sessionId);
-    if (!session || session.isSplitPane) {
+    const session = this.getTabSession(sessionId);
+    if (!session) {
       return;
     }
     session.pinned = pinned;
     this.safePostMessage(session.webview, { type: "tabPinned", tabId: sessionId, pinned });
-    this.snapshots.schedulePersist(sessionId);
+    this.snapshots.schedulePersist(session.id);
     this.onPinnedChange?.();
   }
 
@@ -1373,8 +1435,8 @@ export class SessionManager {
    * to the owning webview, persist with the snapshot, and tell the vault.
    */
   setTabAppearance(sessionId: string, change: { tabColor?: TabColorId | null; tabIcon?: TabIconId | null }): void {
-    const session = this.sessions.get(sessionId);
-    if (!session || session.isSplitPane) {
+    const session = this.getTabSession(sessionId);
+    if (!session) {
       return;
     }
     if (change.tabColor !== undefined) {
@@ -1389,13 +1451,13 @@ export class SessionManager {
       tabColor: session.tabColor ?? null,
       tabIcon: session.tabIcon ?? null,
     });
-    this.snapshots.schedulePersist(sessionId);
+    this.snapshots.schedulePersist(session.id);
     this.onTabAppearanceChange?.(sessionId);
   }
 
   /** Whether this session is a pinned root tab, which the close-tab door refuses. */
   isPinned(sessionId: string): boolean {
-    return this.sessions.get(sessionId)?.pinned === true;
+    return this.getTabSession(sessionId)?.pinned === true;
   }
 
   /**
@@ -1409,7 +1471,7 @@ export class SessionManager {
       if (session.state !== "live") {
         continue;
       }
-      const root = this.sessions.get(session.rootTabId ?? session.id);
+      const root = this.getTabSession(session.rootTabId ?? session.id);
       if (root?.pinned !== true) {
         continue;
       }
@@ -1647,6 +1709,10 @@ export class SessionManager {
 
   /** Destroy a session (queued, serialized via operation queue). */
   destroySession(sessionId: string): void {
+    const closing = this.sessions.get(sessionId);
+    if (closing && !closing.isSplitPane && closing.state !== "destroying") {
+      this.handTabFactsToSurvivor(closing);
+    }
     const pendingResume = this.pendingResumes.get(sessionId);
     if (pendingResume) {
       clearTimeout(pendingResume.fallback);

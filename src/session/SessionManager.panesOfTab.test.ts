@@ -57,6 +57,27 @@ describe("SessionManager.panesOfTab", () => {
     sm.dispose();
   });
 
+  it("still names the splits of a tab whose ROOT pane was closed", async () => {
+    // Close Pane on the root leaf destroys the root session; the tab lives on
+    // under its id and closing it destroys the split, so the split is still
+    // what a confirmation has to weigh.
+    const sm = new SessionManager();
+    const webview = makeWebview();
+    const rootId = sm.createSession("sidebar", webview, { shell: "/bin/zsh" });
+    const splitId = sm.createSession("sidebar", webview, {
+      shell: "/bin/zsh",
+      isSplitPane: true,
+      rootTabId: rootId,
+    });
+
+    sm.destroySession(rootId);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sm.getSession(rootId)).toBeUndefined();
+
+    expect(sm.panesOfTab(rootId)).toEqual([splitId]);
+    sm.dispose();
+  });
+
   it("answers empty for a tab it does not hold", () => {
     // Empty is not "no panes to worry about" — the caller treats an unknown tab
     // as the id itself rather than as nothing to weigh.

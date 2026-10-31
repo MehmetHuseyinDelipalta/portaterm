@@ -2072,7 +2072,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       .panesOfTab(tabId)
       .map((paneId) => ({ paneId, vaultEntryId: sessionManager.getSession(paneId)?.vaultEntryId }));
     const entryId = entryForTab(panes, runningEntryId);
-    const tab = sessionManager.getSession(tabId);
+    const tab = sessionManager.getTabSession(tabId);
     if (entryId !== undefined && tab) {
       vaultMarks.setTabAppearance(entryId, { tabColor: tab.tabColor, tabIcon: tab.tabIcon });
     }
@@ -2661,7 +2661,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!tabId) {
         return;
       }
-      const session = sessionManager.getSession(tabId);
+      // The tab's facts: its root, or the split that inherited them when the
+      // root pane was closed.
+      const session = sessionManager.getTabSession(tabId);
       if (!session) {
         return;
       }
@@ -2710,8 +2712,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => TerminalViewProvider.getLastFocusedProvider(),
       ),
     current: (tabId) => {
-      const session = sessionManager.getSession(tabId);
-      return session && !session.isSplitPane ? { tabColor: session.tabColor, tabIcon: session.tabIcon } : undefined;
+      const session = sessionManager.getTabSession(tabId);
+      return session ? { tabColor: session.tabColor, tabIcon: session.tabIcon } : undefined;
     },
     apply: (tabId, change) => sessionManager.setTabAppearance(tabId, change),
     pick: (items, placeHolder) => vscode.window.showQuickPick(items, { placeHolder }),

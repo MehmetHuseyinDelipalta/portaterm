@@ -77,6 +77,7 @@ import {
   renderTabBar,
   revealActiveTab,
   revealTab,
+  tabFactsOf,
 } from "./TabBarUtils";
 import { type TabBarScopeWiring, wireTabBarScope } from "./tabBarScopeWiring";
 import { hideRenameOverlay, repositionRenameOverlay, showRenameOverlay } from "./tabRenameOverlay";
@@ -731,7 +732,11 @@ function activatePaneById(paneId: string): boolean {
 
 function removeTerminal(id: string): void {
   const instance = store.terminals.get(id);
-  if (!instance) {
+  // A tab whose ROOT pane was closed keeps its layout under the root's id with
+  // no terminal of its own (see split/tabDisplay.ts). Returning on the missing
+  // terminal left the split's xterm, layout and PTY behind when such a tab was
+  // closed, so the layout is enough to tear the tab down.
+  if (!instance && !store.tabLayouts.has(id)) {
     return;
   }
   const closedActiveTab = navigationController.getState().activeTabId === id;
@@ -740,8 +745,10 @@ function removeTerminal(id: string): void {
     () => {
       factory.disposeSubagentPopup();
       factory.disposeHoverController(id);
-      instance.terminal.dispose();
-      instance.container.remove();
+      if (instance) {
+        instance.terminal.dispose();
+        instance.container.remove();
+      }
       store.terminals.delete(id);
       cursorHookIdentity.delete(id);
       activityTracker.delete(id);
@@ -847,7 +854,7 @@ const routeMessage = createMessageRouter({
     // overlay is still mounted for THIS tab (e.g. a parallel rename completed
     // via context menu / F2 while the overlay was open), dismount the overlay
     // so the rendered label updates cleanly.
-    const instance = store.terminals.get(msg.tabId);
+    const instance = tabFactsOf(store, msg.tabId);
     if (instance) {
       instance.customName = msg.customName;
     }
@@ -858,7 +865,7 @@ const routeMessage = createMessageRouter({
     updateTabBar();
   },
   onTabPinned(msg) {
-    const instance = store.terminals.get(msg.tabId);
+    const instance = tabFactsOf(store, msg.tabId);
     if (instance) {
       instance.pinned = msg.pinned;
     }
@@ -870,7 +877,7 @@ const routeMessage = createMessageRouter({
     }
   },
   onTabAppearance(msg) {
-    const instance = store.terminals.get(msg.tabId);
+    const instance = tabFactsOf(store, msg.tabId);
     if (instance) {
       instance.tabColor = msg.tabColor ?? undefined;
       instance.tabIcon = msg.tabIcon ?? undefined;

@@ -276,6 +276,33 @@ export function inScope(scope: TabBarScope | undefined, _paneId: string, stableO
   return scope ? stableOwner === scope.worktreeId : stableOwner === undefined;
 }
 
+/**
+ * The instance holding `tabId`'s tab-level facts (custom name, pin, color,
+ * icon): the tab's own terminal, or — once its root pane was closed and the
+ * tab lives on under the root's id — its first live leaf, which the host
+ * handed those facts to (SessionManager.getTabSession).
+ */
+export function tabFactsOf<T>(
+  store: { terminals: ReadonlyMap<string, T>; tabLayouts: ReadonlyMap<string, SplitNode> },
+  tabId: string,
+): T | undefined {
+  const own = store.terminals.get(tabId);
+  if (own !== undefined) {
+    return own;
+  }
+  const layout = store.tabLayouts.get(tabId);
+  if (!layout) {
+    return undefined;
+  }
+  for (const leaf of getAllSessionIds(layout)) {
+    const instance = store.terminals.get(leaf);
+    if (instance !== undefined) {
+      return instance;
+    }
+  }
+  return undefined;
+}
+
 function ownerOf(store: TabBarDataSource, paneId: string): string | undefined {
   return store.terminals.get(paneId)?.worktreeId;
 }
@@ -358,7 +385,7 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
       // panes: any non-exited leaf still producing output lights the tab.
       const activePaneId = store.tabActivePaneIds.get(tabId) ?? tabId;
       const activeInstance = store.terminals.get(activePaneId);
-      const rootInstance = store.terminals.get(tabId);
+      const rootInstance = tabFactsOf(store, tabId);
       // Split children inherit their source owner's stable id. Membership is
       // still checked per live leaf so collapsed layouts keep their owner.
       const sessionIds = getAllSessionIds(layout);
@@ -388,10 +415,12 @@ export function buildTabBarData(store: TabBarDataSource, scope?: TabBarScope): T
       // Single pane tab. The scope decision is keyed by the LEAF's session id, not
       // the tab id: collapsing a split leaves the tab keyed by its original pane
       // while the surviving leaf carries another, and judging the dead id hid the
-      // live pane from the filter entirely (round-2 W3). The name lookup below is
-      // pre-existing and stays keyed by the tab.
+      // live pane from the filter entirely (round-2 W3). The instance falls back
+      // to the leaf for the same reason: when the ROOT pane was the one closed,
+      // nothing is left under the tab id, and a lookup keyed on it alone dropped
+      // the tab from the bar while its surviving pane stayed on screen.
       const paneId = layout.sessionId;
-      const instance = store.terminals.get(tabId);
+      const instance = tabFactsOf(store, tabId);
       const presented = inScope(scope, paneId, ownerOf(store, paneId));
       if (instance && presented) {
         tabTerminals.set(tabId, {

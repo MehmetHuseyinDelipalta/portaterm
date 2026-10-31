@@ -737,6 +737,44 @@ describe("buildTabBarData", () => {
     expect(buildTabBarData(store).tabs.get("tab-1")?.agentAttention).toBeUndefined();
   });
 
+  it("keeps a tab whose root pane was closed down to its split, shown through the surviving pane", () => {
+    // Close Pane on a two-pane tab's ROOT leaf keeps the tab under the root's id
+    // with a single leaf — the split. There is no terminal under the tab id any
+    // more, and keying the lookup on it dropped the tab from the bar entirely,
+    // leaving the pane with no tab to switch to or close.
+    const store = source({
+      tabLayouts: new Map([["tab-1", createLeaf("pane-b")]]),
+      tabActivePaneIds: new Map([["tab-1", "pane-b"]]),
+      terminals: new Map([["pane-b", { name: "Codex", exited: false, activityStatus: "running" }]]) as never,
+    });
+
+    expect(buildTabBarData(store).tabs.get("tab-1")).toMatchObject({ name: "Codex", activityStatus: "running" });
+  });
+
+  it("reads a split tab's facts from its first live leaf once its root pane is gone", () => {
+    const store = source({
+      tabLayouts: new Map([["tab-1", createBranch("horizontal", createLeaf("pane-b"), createLeaf("pane-c"))]]),
+      tabActivePaneIds: new Map([["tab-1", "pane-c"]]),
+      terminals: new Map([
+        [
+          "pane-b",
+          { name: "B", customName: "build", pinned: true, tabColor: "red", exited: false, activityStatus: "idle" },
+        ],
+        ["pane-c", { name: "C", exited: false, activityStatus: "idle" }],
+      ]) as never,
+    });
+    expect(buildTabBarData(store).tabs.get("tab-1")).toMatchObject({
+      customName: "build",
+      pinned: true,
+      tabColor: "red",
+    });
+  });
+
+  it("drops a single-leaf tab whose only pane has no terminal at all", () => {
+    const store = source({ tabLayouts: new Map([["tab-1", createLeaf("pane-b")]]) });
+    expect(buildTabBarData(store).tabs.has("tab-1")).toBe(false);
+  });
+
   it("counts a hidden tab whose agent is blocked, but not one merely unseen", () => {
     const store = source({
       tabLayouts: new Map([

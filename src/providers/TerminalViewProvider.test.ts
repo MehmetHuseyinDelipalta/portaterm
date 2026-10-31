@@ -579,6 +579,90 @@ describe("TerminalViewProvider: requestFilePreview dispatch", () => {
     sm.dispose();
   });
 
+  it("closeTab on a tab whose root pane was closed weighs its split, then tears the tab down", async () => {
+    // The tab lives on under the destroyed root's id. Before, `panesOfTab` came
+    // back empty, the warning never named the agent running in the split, and
+    // the close went through on nothing.
+    const sm = new SessionManager();
+    const webview = { postMessage: vi.fn(async () => true) };
+    const rootId = sm.createSession("portaterm.sidebar", webview, { shell: "/bin/zsh" });
+    const splitId = sm.createSession("portaterm.sidebar", webview, {
+      shell: "claude",
+      isSplitPane: true,
+      rootTabId: rootId,
+    });
+    sm.destroySession(rootId);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const evidence = createPaneEvidenceStore();
+    evidence.create(splitId, { viewId: "sidebar", shell: "claude", isAgentLaunch: true });
+    evidence.reportTurn(splitId, { state: "working", stateStartedAt: 0, subagents: [] });
+    const asked: string[] = [];
+    const realWarn = vscodeMockWindow.showWarningMessage;
+    vscodeMockWindow.showWarningMessage = ((message: string, ...items: unknown[]) => {
+      asked.push(message);
+      // Accept: the first non-option item is the confirming button.
+      return Promise.resolve(items.find((i) => typeof i === "string"));
+    }) as never;
+
+    const provider = new TerminalViewProvider(
+      { fsPath: "/mock/extension" } as vscode.Uri,
+      sm,
+      "sidebar",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      evidence,
+    );
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "closeTab", tabId: rootId });
+    }
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(asked).toEqual(["Close this terminal tab?"]);
+    expect(webviewView.webview.postMessage).toHaveBeenCalledWith({ type: "tabRemoved", tabId: rootId });
+
+    vscodeMockWindow.showWarningMessage = realWarn;
+    sm.dispose();
+  });
+
+  it("still refuses closeTab on a pinned tab after its root pane was closed", async () => {
+    // The pin moved to the surviving split with the tab; before, it died with
+    // the root and the tab's × closed a pinned tab unasked.
+    const sm = new SessionManager();
+    const webview = { postMessage: vi.fn(async () => true) };
+    const rootId = sm.createSession("portaterm.sidebar", webview, { shell: "/bin/zsh" });
+    sm.createSession("portaterm.sidebar", webview, { shell: "/bin/zsh", isSplitPane: true, rootTabId: rootId });
+    sm.setPinned(rootId, true);
+    sm.destroySession(rootId);
+    await new Promise((r) => setTimeout(r, 20));
+    const destroy = vi.spyOn(sm, "destroySession");
+    const told: string[] = [];
+    const realInfo = vscodeMockWindow.showInformationMessage;
+    vscodeMockWindow.showInformationMessage = ((message: string) => {
+      told.push(message);
+      return Promise.resolve(undefined);
+    }) as never;
+
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    for (const handler of messageHandlers) {
+      handler({ type: "closeTab", tabId: rootId });
+    }
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(told).toEqual([PINNED_TAB_CLOSE_REFUSED]);
+    expect(destroy).not.toHaveBeenCalled();
+    vscodeMockWindow.showInformationMessage = realInfo;
+    sm.dispose();
+  });
+
   it("cancels the in-flight preview token when closeTab arrives for the same session", async () => {
     const sm = new SessionManager();
     stubSession(sm);
