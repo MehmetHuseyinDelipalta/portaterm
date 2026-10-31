@@ -46,10 +46,6 @@
 .file-tree-row.git-deleted {
   color: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-foreground));
 }
-/* Strike through the filename only — VS Code Explorer leaves the icon clean. */
-.file-tree-row.git-deleted .name {
-  text-decoration: line-through;
-}
 .file-tree-row.git-renamed {
   color: var(--vscode-gitDecoration-renamedResourceForeground, var(--vscode-foreground));
 }
@@ -240,6 +236,11 @@
   outline: none;
 }
 
+/* Anchors the export flash's `::after` overlay (see "Split pane — export flash"). */
+.split-leaf {
+  position: relative;
+}
+
 /* Active-pane indicator — dim the inactive panes instead of highlighting
  * the active one. Mirrors cmux / iTerm2 / tmux's `pane-active-border` UX
  * minus the border noise: the focused pane stays at full opacity, every
@@ -264,10 +265,6 @@
  * "Export" against from the title bar (single message: flashPane).
  * `position: relative` is required so the ::after pseudo can sit
  * over the xterm canvas without disturbing layout. ============================================================ */
-
-.split-leaf {
-  position: relative;
-}
 
 .split-leaf.export-flash::after {
   content: "";
@@ -395,6 +392,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Strike through the filename only — VS Code Explorer leaves the icon clean. */
+.file-tree-row.git-deleted .name {
+  text-decoration: line-through;
 }
 
 /* Actions cluster — fixed-width buttons on the right. */

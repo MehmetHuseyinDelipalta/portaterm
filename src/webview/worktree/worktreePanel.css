@@ -587,10 +587,6 @@
 .wt-hist.wt-hist-live {
   border-left-color: color-mix(in srgb, var(--vscode-charts-blue) 55%, transparent);
 }
-.wt-hist-live > .wt-hist-label {
-  color: var(--vscode-charts-blue);
-  opacity: 0.95;
-}
 /* Section state — reading, empty, unreadable, or "not all of it". Muted and
    un-rowed, so it is never read as a delegation that happened. */
 .wt-hist-note {
@@ -608,6 +604,10 @@
   text-transform: uppercase;
   color: var(--vscode-descriptionForeground);
   opacity: 0.7;
+}
+.wt-hist-live > .wt-hist-label {
+  color: var(--vscode-charts-blue);
+  opacity: 0.95;
 }
 .wt-srow {
   display: grid;

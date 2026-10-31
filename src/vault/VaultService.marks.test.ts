@@ -21,7 +21,13 @@ function docWith(entries: VaultSessionEntry[]): VaultListCacheFileV1 {
 
 function memStorage() {
   const store = new Map<string, unknown>();
-  return { get: (k: string) => store.get(k), update: (k: string, v: unknown) => (store.set(k, v), Promise.resolve()) };
+  return {
+    get: (k: string) => store.get(k),
+    update: (k: string, v: unknown) => {
+      store.set(k, v);
+      return Promise.resolve();
+    },
+  };
 }
 
 function service(doc: VaultListCacheFileV1, withNames = false) {

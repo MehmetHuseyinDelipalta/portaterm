@@ -1053,9 +1053,6 @@ body:has(#tab-bar.visible) .vault-preview--max {
   align-items: center;
   gap: 8px;
 }
-.vault-preview-header .vault-preview-meta {
-  cursor: default;
-}
 /* Maximized fills the viewport — moving is disabled, so no move cursor. */
 .vault-preview--max .vault-preview-header {
   cursor: default;
@@ -1150,6 +1147,9 @@ body:has(#tab-bar.visible) .vault-preview--max {
   margin: 0;
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
+}
+.vault-preview-header .vault-preview-meta {
+  cursor: default;
 }
 .vault-preview-meta dt {
   text-transform: uppercase;

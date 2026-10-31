@@ -510,11 +510,11 @@ export class SnapshotPersistence {
     // The map stores only the tail Promise — the chain itself stays
     // bounded because each `.then(() => writePromise)` returns a single
     // Promise (no nesting).
+    const mirror = session.headless;
     const prior = this.writeBarriers.get(session.id) ?? Promise.resolve();
     const writePromise = new Promise<void>((resolve) => {
       try {
-        // biome-ignore lint/style/noNonNullAssertion: just constructed above
-        session.headless!.write(data, () => resolve());
+        mirror.write(data, () => resolve());
       } catch (err) {
         console.error("[Portaterm] Headless mirror write failed:", err);
         resolve();
