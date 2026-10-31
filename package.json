@@ -161,7 +161,7 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Absolute path to the directory holding the Claude settings.json to install hooks into. A relative path is ignored. Leave empty to use CLAUDE_CONFIG_DIR, or ~/.claude when that is unset."
+          "description": "Absolute path to the directory holding the Claude settings.json to install hooks into. A relative path is ignored. Leave empty to use CLAUDE_CONFIG_DIR, or ~/.claude when that is unset. Changing it does not remove the hook from the previous settings.json — another VS Code may still use that file; run \"Portaterm: Remove Current Agent Hooks\" before changing it, or remove the entry there yourself."
         },
         "portaterm.opencode.hooks.enabled": {
           "type": "boolean",
