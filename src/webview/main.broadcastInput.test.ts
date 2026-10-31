@@ -55,6 +55,7 @@ const xterm = vi.hoisted(() => {
     open(container: HTMLElement) {
       this.element = document.createElement("div");
       this.textarea = document.createElement("textarea");
+      this.textarea.className = "xterm-helper-textarea"; // what real xterm calls its input
       this.element.appendChild(this.textarea);
       container.appendChild(this.element);
       this.handle.container = container;

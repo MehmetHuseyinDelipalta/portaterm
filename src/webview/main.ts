@@ -24,6 +24,7 @@ import type {
 import { SETI_FONT_CSS } from "../vendor/seti/setiFontCss";
 import { applyBroadcastCommand, BroadcastInput } from "./broadcastInput";
 import { DragDropHandler } from "./DragDropHandler";
+import { isEditableTarget } from "./editableTarget";
 import { mountEmptyScopeRegion } from "./emptyScopeRegion";
 import { FileTreeController } from "./fileTree/FileTreeController";
 import { FlowControl } from "./flow/FlowControl";
@@ -1684,6 +1685,17 @@ function bootstrap(): void {
         }
         return;
       }
+      // A text field (tab rename, vault search, worktree prompt, a dialog) owns
+      // its own editing keys: what follows would type them into the shell.
+      // Cmd+W is still kept from VS Code, which would close the editor, but it
+      // closes nothing — not a tab the user is in the middle of renaming.
+      if (isEditableTarget(e.target)) {
+        if (isCloseTabShortcut(e, isMac)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
       const tabId = store.activeTabId;
       const targetId = tabId ? (store.tabActivePaneIds.get(tabId) ?? tabId) : null;
       if (!targetId) {
@@ -1803,7 +1815,9 @@ function bootstrap(): void {
   document.addEventListener(
     "keydown",
     (e: KeyboardEvent) => {
-      if (!isPasteShortcut(e, isMac)) {
+      // A paste into a text field is that field's; probing for the active
+      // pane would hand the clipboard's image to the terminal instead.
+      if (!isPasteShortcut(e, isMac) || isEditableTarget(e.target)) {
         return;
       }
       imagePasteDeduper.reset();
@@ -1852,6 +1866,10 @@ function bootstrap(): void {
   document.addEventListener(
     "paste",
     (e: ClipboardEvent) => {
+      // Native paste into the field — text or image — not the terminal.
+      if (isEditableTarget(e.target)) {
+        return;
+      }
       const items = e.clipboardData?.items;
       const blob = items ? extractImageBlobFromClipboardItems(items) : null;
       const tabId = store.activeTabId;

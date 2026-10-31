@@ -14,6 +14,8 @@ Anything none of them claims falls through to xterm → `onData` → `postMessag
 
 Layer 1 exists because xterm's handler only sees events routed to its own textarea. When DOM focus sits on the file tree or the vault, the terminal shortcuts must still work — and because a capture-phase listener runs before xterm's, it also lets us override keys xterm would otherwise bind (`main.ts:1062-1076`).
 
+Layer 1 stands aside for a **text field** — an `<input>`, `<textarea>`, `<select>` or `contenteditable` other than xterm's own `.xterm-helper-textarea` (`src/webview/editableTarget.ts`). There, the line-editing keys and the image-paste probe belong to the field; Cmd+W / Ctrl+Shift+W is still prevented (so VS Code does not close the editor) but closes nothing. The `paste` listener stands aside the same way.
+
 ### Reference Sources
 - VS Code: `terminalInstance.ts` (custom key handler, bracketed paste)
 - xterm.js: `attachCustomKeyEventHandler`, `terminal.modes.bracketedPasteMode`
@@ -205,7 +207,7 @@ Dead-key sequences (Option+e then a → á) go through the same `compositionstar
 
 ## 7b. Tab-Rename Overlay — a temporary fourth consumer
 
-While the tab-rename input is open (double-click a tab), it becomes an **absolute key sink**: its `keydown` listener calls `stopPropagation()` on *every* key, so nothing reaches the document capture handler, xterm, or the tab-cycling listener (`src/webview/tabRenameOverlay.ts:94-108`).
+While the tab-rename input is open (double-click a tab), its `keydown` listener calls `stopPropagation()` on *every* key, so nothing reaches xterm or the tab-cycling listener (`src/webview/tabRenameOverlay.ts:94-108`). It does **not** keep keys from the layer-1 capture handler, which runs on `document` before the event reaches the input; that handler skips the input because it is a text field (§1), which is what keeps Shift+Enter out of the shell and Cmd+W from closing the tab mid-rename.
 
 | Key | Behaviour | Cite |
 |---|---|---|
@@ -336,7 +338,7 @@ There are **no** `anywhereTerminal.macOption*` settings. Both macOS Option-key b
 Pasted text flows through xterm's native paste → `onData` → `postMessage` → `pty.write()`. It is subject to the normal per-session flow control (see `output-buffering.md`); no special handling is needed. Pasted **images** are capped — see `flow-clipboard.md`.
 
 ### 3. Focus is not on the terminal
-Layer 1 is on `document` in capture phase, so Shift+Enter and the readline motions still reach the active pane while the file tree or vault has DOM focus (`main.ts:1097-1101`).
+Layer 1 is on `document` in capture phase, so Shift+Enter and the readline motions still reach the active pane while the file tree or vault has DOM focus (`main.ts:1097-1101`) — unless focus is in a text field, whose keys stay in the field (§1).
 
 ### 4. Split panes and `Cmd+K`
 `createKeyEventHandler` receives `getActiveTabId: () => this.store.activeTabId` (`TerminalFactory.ts:180`) — the **root tab** id, not the active pane id. `terminal.clear()` correctly affects the focused pane's own terminal (the handler is per-instance), but the accompanying `{type:'clear', tabId}` names the root tab, so the host clears the root session's scrollback cache (`TerminalViewProvider.ts:1138-1142`). In a split, this is a mismatch. See §12.
