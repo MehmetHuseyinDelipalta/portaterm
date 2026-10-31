@@ -11,7 +11,7 @@
 import { execFile } from "node:child_process";
 import * as path from "node:path";
 import { promisify } from "node:util";
-import { escapePathForShell } from "../utils/shellEscape";
+import { quotePathsForShell } from "../utils/shellEscape";
 
 const execFileAsync = promisify(execFile);
 
@@ -79,12 +79,14 @@ export async function handleInsertOsDropPaths(
   tabId: string,
   names: readonly string[],
   write: (tabId: string, data: string) => void,
+  /** The target pane's shell executable, which decides the quoting. */
+  shell: string | undefined,
   platform: NodeJS.Platform = process.platform,
 ): Promise<boolean> {
   const paths = matchDropPaths(await readOsDragPaths(platform), names);
   if (!paths) {
     return false;
   }
-  write(tabId, `${paths.map(escapePathForShell).join(" ")} `);
+  write(tabId, quotePathsForShell(paths, shell));
   return true;
 }

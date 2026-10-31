@@ -11,6 +11,13 @@ import { mockPtySessions } from "../test/sessionMocks";
 
 vi.mock("../pty/PtyManager", async () => (await import("../test/sessionMocks")).ptyManagerMock());
 vi.mock("../pty/PtySession", async () => (await import("../test/sessionMocks")).ptySessionMock());
+// The OS-drop path reads the pasteboard through osascript; only its wiring
+// (which shell the provider hands it) is asserted here — osDropPaths.test.ts
+// owns the rest.
+vi.mock("./osDropPaths", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./osDropPaths")>()),
+  handleInsertOsDropPaths: vi.fn(async () => true),
+}));
 vi.mock("../session/OutputBuffer", async () => (await import("../test/sessionMocks")).outputBufferMock());
 
 vi.mock("./openFileLink", () => ({
@@ -22,6 +29,7 @@ import { SessionManager } from "../session/SessionManager";
 import { mockExtensionContext } from "../test/providerTestUtils";
 import { FileTreeHost } from "./fileTreeHost";
 import { openFileLink } from "./openFileLink";
+import { handleInsertOsDropPaths } from "./osDropPaths";
 import { TerminalEditorProvider } from "./TerminalEditorProvider";
 
 // ─── Test Setup ─────────────────────────────────────────────────────
@@ -170,6 +178,39 @@ describe("TerminalEditorProvider.createPanel", () => {
     // Dispose the panel — should not throw
     expect(() => panel.dispose()).not.toThrow();
 
+    sm.dispose();
+  });
+
+  it("quotes paths dropped on an editor terminal for its shell", async () => {
+    const ctx = createMockContext();
+    const sm = new SessionManager();
+    const vscode = await import("vscode");
+    const createSpy = vi.spyOn(vscode.window, "createWebviewPanel");
+    TerminalEditorProvider.createPanel(ctx, sm);
+    const panel = createSpy.mock.results[0].value;
+    const postMessageSpy = vi.spyOn(panel.webview, "postMessage");
+    for (const handler of panel.__messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const init = postMessageSpy.mock.calls
+      .map(([m]) => m as { type: string; tabs?: Array<{ id: string }> })
+      .find((m) => m.type === "init");
+    const tabId = init!.tabs![0].id;
+    sm.getSession(tabId)!.shell = "/usr/bin/fish";
+    const write = vi.spyOn(sm, "writeToSession");
+
+    for (const handler of panel.__messageHandlers) {
+      handler({ type: "insertPaths", tabId, paths: ["/x/it's"] });
+    }
+
+    expect(write).toHaveBeenCalledWith(tabId, "'/x/it\\'s' ");
+
+    // And an OS drop is handed the same pane's shell.
+    for (const handler of panel.__messageHandlers) {
+      handler({ type: "insertOsDropPaths", tabId, names: ["it's"] });
+    }
+    expect(handleInsertOsDropPaths).toHaveBeenCalledWith(tabId, ["it's"], expect.any(Function), "/usr/bin/fish");
+    panel.dispose();
     sm.dispose();
   });
 

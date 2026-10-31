@@ -11,6 +11,13 @@ vi.mock("./openFileLink", () => ({
   openFileLink: vi.fn(async () => {}),
 }));
 
+// The OS-drop path reads the pasteboard through osascript; only its wiring
+// (which shell the provider hands it) is asserted here — osDropPaths.test.ts
+// owns the rest.
+vi.mock("./osDropPaths", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./osDropPaths")>()),
+  handleInsertOsDropPaths: vi.fn(async () => true),
+}));
 vi.mock("./previewFileLink", () => ({
   previewFileLink: vi.fn(async () => ({
     type: "filePreviewResult",
@@ -34,6 +41,7 @@ import type { VaultLauncher } from "../vault/VaultLauncher";
 import type { VaultService } from "../vault/VaultService";
 import { FileTreeHost } from "./fileTreeHost";
 import { openFileLink } from "./openFileLink";
+import { handleInsertOsDropPaths } from "./osDropPaths";
 import { previewFileLink } from "./previewFileLink";
 import { TerminalViewProvider } from "./TerminalViewProvider";
 import type { VaultWatchCoordinator } from "./VaultWatchCoordinator";
@@ -824,6 +832,61 @@ describe("TerminalViewProvider: vault fresh-response supersession (F4)", () => {
     // The newer list still reaches the webview.
     expect(r2Posts.length).toBeGreaterThanOrEqual(1);
 
+    sm.dispose();
+  });
+});
+
+// ─── Dropped paths ──────────────────────────────────────────────────
+
+describe("TerminalViewProvider: insertPaths", () => {
+  function wired(shell: string) {
+    const sm = new SessionManager();
+    const webview = { postMessage: vi.fn(async () => true) };
+    const tabId = sm.createSession("portaterm.sidebar", webview, { shell });
+    const write = vi.spyOn(sm, "writeToSession");
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar");
+    const { webviewView, messageHandlers } = createMockWebviewView();
+    provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+    const send = (msg: unknown) => {
+      for (const handler of messageHandlers) {
+        handler(msg);
+      }
+    };
+    return { sm, tabId, write, send };
+  }
+
+  it("quotes dropped paths for the pane's shell and types them into that pane", () => {
+    for (const [shell, expected] of [
+      ["/bin/zsh", "'/a b/it'\\''s' "],
+      ["/usr/local/bin/pwsh", "'/a b/it''s' "],
+      ["C:\\Windows\\System32\\cmd.exe", '"/a b/it\'s" '],
+    ] as const) {
+      const { sm, tabId, write, send } = wired(shell);
+      send({ type: "insertPaths", tabId, paths: ["/a b/it's"] });
+      expect(write).toHaveBeenCalledWith(tabId, expected);
+      sm.dispose();
+    }
+  });
+
+  it("hands an OS drop the target pane's shell, which decides the quoting", () => {
+    const { sm, tabId, send } = wired("/usr/local/bin/pwsh");
+    send({ type: "insertOsDropPaths", tabId, names: ["a b.txt"] });
+    expect(handleInsertOsDropPaths).toHaveBeenCalledWith(
+      tabId,
+      ["a b.txt"],
+      expect.any(Function),
+      "/usr/local/bin/pwsh",
+    );
+    sm.dispose();
+  });
+
+  it("ignores a malformed request", () => {
+    const { sm, tabId, write, send } = wired("/bin/zsh");
+    send({ type: "insertPaths", tabId, paths: [] });
+    send({ type: "insertPaths", tabId, paths: [1] });
+    send({ type: "insertPaths", tabId: 3, paths: ["/a"] });
+    send({ type: "insertPaths", tabId, paths: "/a" });
+    expect(write).not.toHaveBeenCalled();
     sm.dispose();
   });
 });

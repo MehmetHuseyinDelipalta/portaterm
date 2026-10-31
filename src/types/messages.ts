@@ -107,6 +107,19 @@ export interface InsertOsDropPathsMessage {
   names: string[];
 }
 
+/**
+ * Paths dropped onto a pane (file tree, VS Code Explorer). Sent as paths, not
+ * as typed text: the host quotes them for the pane's shell, which the webview
+ * does not know.
+ */
+export interface InsertPathsMessage {
+  type: "insertPaths";
+  /** Target terminal session ID */
+  tabId: string;
+  /** Absolute paths, in drop order */
+  paths: string[];
+}
+
 /** Terminal viewport resized (e.g., sidebar dragged, window resized). */
 export interface ResizeMessage {
   type: "resize";
@@ -1905,6 +1918,7 @@ export type WebViewToExtensionMessage =
   | ReadyMessage
   | InputMessage
   | InsertOsDropPathsMessage
+  | InsertPathsMessage
   | ResizeMessage
   | CreateTabMessage
   | SwitchTabMessage

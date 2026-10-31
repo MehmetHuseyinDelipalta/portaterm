@@ -85,7 +85,7 @@ import {
   type ResolvedPathInsideDeps,
 } from "./utils/resolvedPathBoundary";
 import { createTrackedPathResolver, ResolvedPathMemo } from "./utils/resolvedPathMemo";
-import { escapePathForShell } from "./utils/shellEscape";
+import { quotePathsForShell } from "./utils/shellEscape";
 import {
   createClaudeProcessLookup,
   createPinnedVaultPublisher,
@@ -2788,9 +2788,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           return;
         }
 
-        // Escape each path and join with spaces, append trailing space
-        const escaped = targets.map((u) => escapePathForShell(u.fsPath)).join(" ");
-
         // Route to the focused sidebar/panel provider's active pane session.
         // getActiveSessionId() correctly resolves split panes (via webview state).
         // NOTE: Editor terminals are not targeted by this command — they don't
@@ -2802,7 +2799,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           return;
         }
 
-        sessionManager.writeToSession(activeSessionId, `${escaped} `);
+        // Quoted for THIS pane's shell: cmd, PowerShell and fish do not read
+        // POSIX single quotes the same way.
+        const quoted = quotePathsForShell(
+          targets.map((u) => u.fsPath),
+          sessionManager.getSession(activeSessionId)?.shell,
+        );
+        sessionManager.writeToSession(activeSessionId, quoted);
 
         // Send visual feedback to the webview (brief flash effect)
         const view = provider.view;

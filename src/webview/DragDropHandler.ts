@@ -11,7 +11,6 @@
 //
 // See: docs/design/message-protocol.md, research/drag-drop-terminal.md
 
-import { escapePathForShell } from "../utils/shellEscape";
 import { FILE_TREE_DRAG_MIME } from "./fileTree/ReadOnlyFileRenderer";
 import { TAB_DRAG_MIME } from "./TabBarUtils";
 
@@ -288,11 +287,8 @@ export class DragDropHandler {
       if (!targetSessionId) {
         return;
       }
-      this.postMessage({
-        type: "input",
-        tabId: targetSessionId,
-        data: `${escapePathForShell(path)} `,
-      });
+      // Paths, not typed text: the host quotes them for this pane's shell.
+      this.postMessage({ type: "insertPaths", tabId: targetSessionId, paths: [path] });
       return;
     }
 
@@ -317,10 +313,7 @@ export class DragDropHandler {
       return;
     }
 
-    // Escape each path and join with spaces, append trailing space
-    const escaped = paths.map(escapePathForShell).join(" ");
-
-    this.postMessage({ type: "input", tabId: sessionId, data: `${escaped} ` });
+    this.postMessage({ type: "insertPaths", tabId: sessionId, paths });
   };
 
   // ─── Overlay Management ─────────────────────────────────────────

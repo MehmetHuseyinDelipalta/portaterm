@@ -67,14 +67,33 @@ describe("handleInsertOsDropPaths", () => {
   it("writes the shell-escaped paths with a trailing space", async () => {
     osascriptReturns('["/Users/me/a b.txt","/Users/me/c.txt"]');
     const write = vi.fn();
-    expect(await handleInsertOsDropPaths("s1", ["a b.txt", "c.txt"], write, "darwin")).toBe(true);
+    expect(await handleInsertOsDropPaths("s1", ["a b.txt", "c.txt"], write, "/bin/zsh", "darwin")).toBe(true);
     expect(write).toHaveBeenCalledWith("s1", "'/Users/me/a b.txt' '/Users/me/c.txt' ");
+  });
+
+  it("writes each Finder path quoted as itself — no character dropped or doubled", async () => {
+    osascriptReturns(JSON.stringify(["/Users/me/C#/notes.md", "/Users/me/report$1.txt", "/Users/me/a\\b"]));
+    const write = vi.fn();
+    expect(await handleInsertOsDropPaths("s1", ["notes.md", "report$1.txt", "a\\b"], write, "/bin/zsh", "darwin")).toBe(
+      true,
+    );
+    expect(write).toHaveBeenCalledWith(
+      "s1",
+      String.raw`'/Users/me/C#/notes.md' '/Users/me/report$1.txt' '/Users/me/a\b' `,
+    );
+  });
+
+  it("quotes for the target pane's shell — cmd reads double quotes, not single", async () => {
+    osascriptReturns('["/Users/me/a b.txt"]');
+    const write = vi.fn();
+    await handleInsertOsDropPaths("s1", ["a b.txt"], write, "cmd.exe", "darwin");
+    expect(write).toHaveBeenCalledWith("s1", '"/Users/me/a b.txt" ');
   });
 
   it("writes nothing when the pasteboard does not match the drop", async () => {
     osascriptReturns('["/Users/me/other.txt"]');
     const write = vi.fn();
-    expect(await handleInsertOsDropPaths("s1", ["a.txt"], write, "darwin")).toBe(false);
+    expect(await handleInsertOsDropPaths("s1", ["a.txt"], write, "/bin/zsh", "darwin")).toBe(false);
     expect(write).not.toHaveBeenCalled();
   });
 });

@@ -4,6 +4,7 @@
 // Tests path escaping, DataTransfer extraction, and drag-drop handler lifecycle.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { quotePathsForShell } from "../utils/shellEscape";
 import { DragDropHandler, extractPathsFromDrop } from "./DragDropHandler";
 import { FILE_TREE_DRAG_MIME } from "./fileTree/ReadOnlyFileRenderer";
 import { TAB_DRAG_MIME } from "./TabBarUtils";
@@ -208,9 +209,9 @@ describe("DragDropHandler", () => {
     expect(container.querySelector(".terminal-drop-overlay")).toBeNull();
     // postMessage called with escaped path + trailing space, using session ID
     expect(postMessage).toHaveBeenCalledWith({
-      type: "input",
+      type: "insertPaths",
       tabId: "session-1",
-      data: "'/Users/me/file.txt' ",
+      paths: ["/Users/me/file.txt"],
     });
   });
 
@@ -277,9 +278,23 @@ describe("DragDropHandler", () => {
     });
     container.dispatchEvent(makeDragEvent("drop", { dataTransfer: dt, shiftKey: true }));
     expect(postMessage).toHaveBeenCalledWith({
-      type: "input",
+      type: "insertPaths",
       tabId: "session-1",
-      data: "'/Users/me/a.txt' '/Users/me/b.txt' ",
+      paths: ["/Users/me/a.txt", "/Users/me/b.txt"],
+    });
+  });
+
+  it("posts each dropped path quoted as itself, including URI-encoded characters", () => {
+    // `#` and `$` arrive percent-encoded in a file URI; what reaches the shell
+    // must be the decoded path, single-quoted, with nothing stripped.
+    const dt = mockDataTransfer({
+      ResourceURLs: JSON.stringify(["file:///proj/C%23/notes.md", "file:///proj/report%241.txt"]),
+    });
+    container.dispatchEvent(makeDragEvent("drop", { dataTransfer: dt, shiftKey: true }));
+    expect(postMessage).toHaveBeenCalledWith({
+      type: "insertPaths",
+      tabId: "session-1",
+      paths: ["/proj/C#/notes.md", "/proj/report$1.txt"],
     });
   });
 
@@ -324,9 +339,9 @@ describe("DragDropHandler", () => {
 
     expect(customPostMessage).toHaveBeenCalledTimes(1);
     expect(customPostMessage).toHaveBeenCalledWith({
-      type: "input",
+      type: "insertPaths",
       tabId: "leaf-under-pointer",
-      data: "'/repo/src/main.ts' ",
+      paths: ["/repo/src/main.ts"],
     });
     customContainer.remove();
   });
@@ -350,11 +365,33 @@ describe("DragDropHandler", () => {
     fallbackContainer.dispatchEvent(makeDragEvent("drop", { dataTransfer: dt, shiftKey: false }));
 
     expect(fallbackPostMessage).toHaveBeenCalledWith({
-      type: "input",
+      type: "insertPaths",
       tabId: "active-session",
-      data: "'/repo/a.ts' ",
+      paths: ["/repo/a.ts"],
     });
     fallbackContainer.remove();
+  });
+
+  it("file-tree drop posts the path quoted as itself — no character dropped or doubled", () => {
+    const treePostMessage = vi.fn();
+    const treeContainer = document.createElement("div");
+    document.body.appendChild(treeContainer);
+    new DragDropHandler({
+      postMessage: treePostMessage,
+      getActiveSessionId: () => "active-session",
+      getTerminalExited: () => false,
+      resolveLeafAtPoint: () => "leaf",
+    }).setup(treeContainer);
+
+    const dt = mockDataTransfer({ [FILE_TREE_DRAG_MIME]: String.raw`/repo/C#/a\b $x!.ts` });
+    treeContainer.dispatchEvent(makeDragEvent("drop", { dataTransfer: dt, shiftKey: false }));
+
+    expect(treePostMessage).toHaveBeenCalledWith({
+      type: "insertPaths",
+      tabId: "leaf",
+      paths: [String.raw`/repo/C#/a\b $x!.ts`],
+    });
+    treeContainer.remove();
   });
 
   it("overlay text drops the 'Hold Shift' prompt during a file-tree drag", () => {
@@ -394,14 +431,17 @@ describe("injection regression guard", () => {
   });
 
   it("never emits payload text terminated by Enter when a path is dropped", () => {
+    // The webview sends paths; the host quotes them for the pane's shell and
+    // writes the result. That written text must never submit itself — not
+    // even for a path holding a newline.
     const container2 = document.createElement("div");
     document.body.appendChild(container2);
-    const posted: string[] = [];
+    const sent: string[][] = [];
     const guarded = new DragDropHandler({
       postMessage: (msg) => {
-        const data = (msg as { type?: string; data?: string }).data;
-        if ((msg as { type?: string }).type === "input" && typeof data === "string") {
-          posted.push(data);
+        const m = msg as { type?: string; paths?: string[] };
+        if (m.type === "insertPaths" && Array.isArray(m.paths)) {
+          sent.push(m.paths);
         }
       },
       getActiveSessionId: () => "session-1",
@@ -409,11 +449,15 @@ describe("injection regression guard", () => {
     });
     guarded.setup(container2);
 
-    const dt = mockDataTransfer({ "text/plain": "/Users/me/file.txt" });
-    container2.dispatchEvent(makeDragEvent("drop", { dataTransfer: dt, shiftKey: true }));
+    container2.dispatchEvent(
+      makeDragEvent("drop", { dataTransfer: mockDataTransfer({ "text/plain": "/Users/me/file.txt" }), shiftKey: true }),
+    );
+    sent.push(["/Users/me/new\nline.txt"]);
 
-    expect(posted.length).toBeGreaterThan(0);
-    expect(posted.filter(submitsTextInOneWrite)).toEqual([]);
+    expect(sent.length).toBeGreaterThan(1);
+    for (const shell of ["/bin/zsh", "/usr/bin/fish", "pwsh", "cmd.exe"]) {
+      expect(sent.map((paths) => quotePathsForShell(paths, shell)).filter(submitsTextInOneWrite)).toEqual([]);
+    }
     container2.remove();
   });
 });

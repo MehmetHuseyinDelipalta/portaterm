@@ -98,13 +98,16 @@ Each strategy MUST be wrapped in try/catch to handle malformed data gracefully. 
 
 ### Requirement: posix-path-escaping
 
-The system SHALL escape file paths for POSIX shells (bash, zsh) using single-quote wrapping, compatible with VS Code's `escapeNonWindowsPath()` behavior:
+Paths are quoted by the extension host for the target pane's shell (the webview sends raw paths in an `insertPaths` message). fish, PowerShell and cmd get their own quoting (`src/utils/shellEscape.ts` `quotePathForShell`); every other shell gets the POSIX form this requirement specifies.
+
+The system SHALL quote each file path as ONE shell word that a POSIX shell (sh, bash, zsh) reads back as exactly the original path. The quoted text is typed into a live shell, so any change to the path points the user's command at a different file.
 
 - Paths MUST be wrapped in single quotes: `'/path/to/file'`
-- Single quotes within paths MUST be escaped: `'` → `'\''`
-- Dangerous shell metacharacters (`` ` $ | & > ~ # ! ^ * ; < ``) MUST be stripped before quoting
-- Backslashes MUST be escaped: `\` → `\\`
-- Paths containing both single and double quotes MUST use `$'...'` ANSI-C quoting with `\'` for single quotes
+- Single quotes within paths MUST be written as `'\''`
+- No other character may be removed, doubled or rewritten — inside single quotes `` ` $ | & > ~ # ! ^ * ; < `` and `\` are already literal
+- Paths containing a control character (U+0000–U+001F, U+007F) MUST use ANSI-C `$'...'` quoting with each control written as `\xHH`, `\` as `\\` and `'` as `\'`, so that no raw control byte is typed into the terminal
+
+Earlier revisions stripped the metacharacters above and doubled backslashes. Both corrupted real paths (`C#/notes.md` → `C/notes.md`, `a\b` → `a\\b`) and were removed.
 
 #### Scenario: Simple path with no special characters
 - Input: `/Users/me/project/file.txt`
@@ -118,13 +121,21 @@ The system SHALL escape file paths for POSIX shells (bash, zsh) using single-quo
 - Input: `/Users/me/it's a file.txt`
 - Output: `'/Users/me/it'\''s a file.txt'`
 
-#### Scenario: Path with dangerous shell characters
+#### Scenario: Path with shell metacharacters
 - Input: `/Users/me/file$(echo evil).txt`
-- Output: `'/Users/me/file(echo evil).txt'` (dangerous chars stripped)
+- Output: `'/Users/me/file$(echo evil).txt'` (literal inside single quotes; nothing runs)
+
+#### Scenario: Path with a hash or a backslash
+- Input: `/proj/C#/a\b.md`
+- Output: `'/proj/C#/a\b.md'`
 
 #### Scenario: Path with both single and double quotes
 - Input: `/Users/me/it's a "file".txt`
-- Output: `$'/Users/me/it\'s a "file".txt'`
+- Output: `'/Users/me/it'\''s a "file".txt'`
+
+#### Scenario: Path with a control character
+- Input: `/tmp/a` + ESC + `b`
+- Output: `$'/tmp/a\x1bb'`
 
 ### Requirement: drag-visual-feedback
 

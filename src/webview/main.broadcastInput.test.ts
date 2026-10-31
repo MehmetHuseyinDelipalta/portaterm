@@ -366,7 +366,11 @@ describe("broadcast input in the shipped webview", () => {
       },
     });
     document.getElementById("terminal-container")!.dispatchEvent(drop);
-    expect(inputs()).toEqual([{ to: "p2", data: "'/repo/src/a.ts' " }]);
+    // One pane only: the paths go to p2's host write, never through the broadcast.
+    expect(inputs()).toEqual([]);
+    expect(posted.filter((m) => m.type === "insertPaths")).toEqual([
+      { type: "insertPaths", tabId: "p2", paths: ["/repo/src/a.ts"] },
+    ]);
   });
 
   it("stops when the host turns it off", async () => {

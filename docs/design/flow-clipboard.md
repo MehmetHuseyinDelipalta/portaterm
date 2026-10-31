@@ -265,13 +265,14 @@ Both branches no-op when the target terminal has exited (`DragDropHandler.ts:256
 
 ### 4.3 Escaping
 
-Both branches send `postMessage({type:'input', tabId: targetSessionId, data: escapePathForShell(path) + " "})` — the escaped path plus a trailing space.
+Both branches send `postMessage({type:'insertPaths', tabId: targetSessionId, paths})` — the raw paths. The host quotes them for that pane's shell (`quotePathsForShell`, from the session's shell executable) and writes the result plus a trailing space; the webview does not know the shell.
 
-`escapePathForShell()` — `src/utils/shellEscape.ts:22-48`, shared with the host-side "Insert Path" command:
+`quotePathForShell(path, kind)` — `src/utils/shellEscape.ts`, used by drops, the "Insert Path" command and OS drops (`osDropPaths.ts`). `shellKindOf(shell)` picks the family: fish, PowerShell (`pwsh`/`powershell`), cmd, else POSIX. fish escapes `\` and `'` inside single quotes and writes controls as `\xHH` outside them; PowerShell doubles `'` (and the typographic single quotes); cmd uses double quotes (known limit: `%NAME%` still expands there). The POSIX form, `escapePathForShell()`:
 
-1. `\` → `\\`
-2. Strip `` ` $ | & > ~ # ! ^ * ; < `` (`BANNED_CHARS`, `shellEscape.ts:7`)
-3. Quote: both quote kinds → ANSI-C `$'…'` with `\'`; only `'` → POSIX break-and-escape `'…'\''…'`; otherwise a plain single-quote wrap
+1. No control character → `posixShellQuote`: single-quote wrap, `'` → `'\''`. Every other byte is literal inside single quotes, so nothing is stripped or doubled.
+2. A control character (U+0000–U+001F, U+007F) → ANSI-C `$'…'` with `\xHH`, `\\` and `\'`, so no raw control byte is typed into the PTY.
+
+`src/utils/shellEscape.test.ts` round-trips paths through real `sh`/`bash`/`zsh`. Known limit: fish reads `\\` and `\'` inside single quotes as escapes.
 
 ### 4.4 Overlay
 
@@ -333,7 +334,7 @@ The platform modifier is chosen once from `navigator.platform.includes("Mac")` (
 | `src/webview/main.ts:1154-1285` | Keydown probe + `paste` listener wiring |
 | `src/webview/DragDropHandler.ts` | Drop overlay, path extraction, pane targeting |
 | `src/webview/links/PastedImageStore.ts` | Per-session preview cache |
-| `src/utils/shellEscape.ts` | `escapePathForShell()` — shared with the host |
+| `src/utils/shellEscape.ts` | `quotePathForShell()` / `quotePathsForShell()` — per-shell quoting, host-side |
 | `src/shared/imagePasteTrigger.ts` | `MAX_PASTE_IMAGE_BYTES` + the PTY trigger table |
 | `src/providers/clipboardImageSync.ts` | Host-side OS clipboard read/write + trigger emission |
 

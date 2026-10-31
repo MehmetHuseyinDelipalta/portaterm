@@ -1,48 +1,118 @@
-// src/utils/shellEscape.ts — POSIX shell path escaping utility
+// src/utils/shellEscape.ts — Quote a filesystem path as ONE shell word.
 //
-// Shared between Extension Host (context menu command) and WebView (drag-drop handler).
-// Escapes a filesystem path for safe insertion into a POSIX shell (bash/zsh).
+// Shared between the Extension Host ("Insert Path in Portaterm", OS drops) and
+// the WebView (drag-and-drop). The result is typed into a live shell, so it
+// must name exactly the file the user picked: a quoted path that the shell
+// reads back as a different path points `rm` or an editor at the wrong file.
+//
+// Inside POSIX single quotes NOTHING is special, so the only character that
+// needs handling is the single quote itself. This used to strip
+// `` ` $ | & > ~ # ! ^ * ; < `` and double every backslash "for safety" —
+// both unnecessary inside single quotes, and both turned real paths into
+// different ones (`C#/notes.md` → `C/notes.md`, `a\b` → `a\\b`).
 
-/** Characters considered dangerous for shell injection — stripped before quoting. */
-const BANNED_CHARS = /[`$|&>~#!^*;<]/g;
+import { posixShellQuote } from "./posixShellQuote";
+
+/** C0 controls and DEL — bytes that act as keystrokes when typed into a PTY. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point
+const ANSI_C_ESCAPED = /[\\'\u0000-\u001f\u007f]/g;
 
 /**
- * Escape a filesystem path for safe insertion into a POSIX shell (bash/zsh).
+ * Quote `path` so a POSIX shell (sh, bash, zsh) reads it back byte for byte.
  *
- * Inspired by VS Code's `escapeNonWindowsPath()` but uses correct POSIX escaping.
+ * - Ordinary paths → single-quoted, with `'` written as `'\''`. Every other
+ *   byte — `$`, `` ` ``, `#`, `!`, `*`, `~`, `\`, spaces, double quotes —
+ *   is literal inside single quotes.
+ * - Paths holding a control character → ANSI-C `$'...'` with each control
+ *   written as `\xHH`. The text is typed into a terminal, and a raw ESC, ^C or
+ *   ^U there is a keystroke the line editor acts on, not part of the word.
  *
- * Rules:
- * 1. Escape backslashes: `\` → `\\`
- * 2. Strip dangerous metacharacters: `` ` $ | & > ~ # ! ^ * ; < ``
- * 3. Quote based on content:
- *    - Both `'` and `"` → ANSI-C quoting: `$'...'` with `\'` for single quotes
- *    - Only `'` → POSIX break-and-escape: `'text'\''more'`
- *    - Otherwise → simple single-quote wrap
+ * This is the POSIX form. Where the target shell is known, use
+ * `quotePathForShell` — fish, PowerShell and cmd read quotes differently.
  */
 export function escapePathForShell(path: string): string {
-  let escaped = path;
-
-  // Step 1: Escape backslashes
-  if (escaped.includes("\\")) {
-    escaped = escaped.replace(/\\/g, "\\\\");
+  if (!CONTROL_CHARS.test(path)) {
+    return posixShellQuote(path);
   }
+  const body = path.replace(ANSI_C_ESCAPED, (c) => {
+    if (c === "\\") {
+      return "\\\\";
+    }
+    if (c === "'") {
+      return "\\'";
+    }
+    return `\\x${c.charCodeAt(0).toString(16).padStart(2, "0")}`;
+  });
+  return `$'${body}'`;
+}
 
-  // Step 2: Strip dangerous shell metacharacters (preserve quotes for step 3)
-  escaped = escaped.replace(BANNED_CHARS, "");
+/** The quoting families an inserted path has to be written for. */
+export type ShellKind = "posix" | "fish" | "powershell" | "cmd";
 
-  // Step 3: Apply shell-appropriate quoting
-  const hasSingleQuote = escaped.includes("'");
-  const hasDoubleQuote = escaped.includes('"');
-
-  if (hasSingleQuote && hasDoubleQuote) {
-    // Both quote types → ANSI-C quoting: $'...' with \' for single quotes
-    return `$'${escaped.replace(/'/g, "\\'")}'`;
+/**
+ * Which quoting `shellPath` reads, from its executable name. Anything not
+ * recognised (bash, zsh, sh, dash, ksh — and agent CLIs, nu, xonsh) gets the
+ * POSIX form, which is also what the line editors of those read.
+ */
+export function shellKindOf(shellPath: string | undefined): ShellKind {
+  const base = (shellPath ?? "").replace(/\\/g, "/").split("/").pop()?.toLowerCase() ?? "";
+  const name = base.endsWith(".exe") ? base.slice(0, -4) : base;
+  if (name === "fish") {
+    return "fish";
   }
-  if (hasSingleQuote) {
-    // Only single quotes → POSIX break-and-escape pattern:
-    // End current quote, insert escaped quote, restart quote: '\''
-    return `'${escaped.replace(/'/g, "'\\''")}'`;
+  if (name === "pwsh" || name === "powershell") {
+    return "powershell";
   }
-  // No single quotes (may have double quotes) → simple single-quote wrap
-  return `'${escaped}'`;
+  if (name === "cmd") {
+    return "cmd";
+  }
+  return "posix";
+}
+
+/** PowerShell reads the typographic single quotes as quotes too, so each is doubled like `'`. */
+const POWERSHELL_QUOTES = /['\u2018\u2019\u201a\u201b]/g;
+
+/**
+ * Quote `path` as ONE word for a shell of `kind`, so it reads back as exactly
+ * that path.
+ *
+ * - posix: `escapePathForShell`.
+ * - fish: single quotes, where fish still honours `\\` and `\'` — so both are
+ *   escaped; a control character is written outside the quotes as `\xHH`,
+ *   which fish reads there (it has no `$'…'`).
+ * - powershell: single quotes, a quote doubled (`''`), typographic ones too.
+ * - cmd: double quotes. A Windows file name cannot contain `"`. Known limit:
+ *   interactive cmd still expands `%NAME%` inside quotes when NAME is set, and
+ *   there is no escape for it there.
+ */
+export function quotePathForShell(path: string, kind: ShellKind): string {
+  switch (kind) {
+    case "posix":
+      return escapePathForShell(path);
+    case "fish": {
+      let out = "'";
+      for (const c of path) {
+        if (c === "\\" || c === "'") {
+          out += `\\${c}`;
+        } else if (CONTROL_CHARS.test(c)) {
+          out += `'\\x${c.charCodeAt(0).toString(16).padStart(2, "0")}'`;
+        } else {
+          out += c;
+        }
+      }
+      return `${out}'`;
+    }
+    case "powershell":
+      return `'${path.replace(POWERSHELL_QUOTES, (q) => q + q)}'`;
+    case "cmd":
+      return `"${path}"`;
+  }
+}
+
+/** Several paths for one shell, space-separated with a trailing space — what an insert types. */
+export function quotePathsForShell(paths: readonly string[], shellPath: string | undefined): string {
+  const kind = shellKindOf(shellPath);
+  return `${paths.map((p) => quotePathForShell(p, kind)).join(" ")} `;
 }

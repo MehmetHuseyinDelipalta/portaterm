@@ -18,6 +18,7 @@ import type {
 } from "../types/messages";
 import { isWorktreeMessage } from "../types/messages";
 import { createTrackedPathResolver, type ResolvedPathMemo } from "../utils/resolvedPathMemo";
+import { quotePathsForShell } from "../utils/shellEscape";
 import { buildContinuationPrompt } from "../vault/ContinuationPrompt";
 import type { VaultRefreshHint } from "../vault/cacheTypes";
 import { MAX_CONTINUATION_INSTRUCTION } from "../vault/continuationLimits";
@@ -989,9 +990,27 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
             Array.isArray(message.names) &&
             message.names.every((n: unknown) => typeof n === "string")
           ) {
-            void handleInsertOsDropPaths(message.tabId, message.names, (tabId, data) =>
-              this.sessionManager.writeToSession(tabId, data),
+            void handleInsertOsDropPaths(
+              message.tabId,
+              message.names,
+              (tabId, data) => this.sessionManager.writeToSession(tabId, data),
+              this.sessionManager.getSession(message.tabId)?.shell,
             );
+          }
+          break;
+
+        case "insertPaths":
+          // A drop from the file tree or VS Code's Explorer: the webview sends
+          // the paths, and they are quoted here, where the pane's shell is known.
+          if (
+            typeof message.tabId === "string" &&
+            Array.isArray(message.paths) &&
+            message.paths.length > 0 &&
+            message.paths.every((p: unknown) => typeof p === "string")
+          ) {
+            const data = quotePathsForShell(message.paths, this.sessionManager.getSession(message.tabId)?.shell);
+            this.sessionManager.writeToSession(message.tabId, data);
+            signalPaneInput(message.tabId, data);
           }
           break;
 
