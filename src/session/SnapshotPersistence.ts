@@ -489,6 +489,12 @@ export class SnapshotPersistence {
     if (session.shellExited) {
       return;
     }
+    // A pane being destroyed has its snapshot dropped, and a disposed one has
+    // already released its mirror: lazily constructing one below would leak a
+    // terminal nobody disposes.
+    if (session.state === "destroying" || session.state === "disposed") {
+      return;
+    }
     if (!session.headless) {
       try {
         session.headless = this.headlessFactory(session.cols, session.rows);

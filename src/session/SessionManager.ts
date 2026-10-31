@@ -761,6 +761,12 @@ export class SessionManager {
   private wirePty(session: TerminalSession, pty: PtySession, webview: MessageSender): void {
     const id = session.id;
     pty.onData = (data: string) => {
+      // A closing pane's process keeps printing through PtySession's 250 ms
+      // flush window. `detachPty` drops this handler first; this is the guard
+      // for anything that still holds it (see `isGoingAway`).
+      if (this.isGoingAway(session)) {
+        return;
+      }
       session.outputBuffer.append(data);
       this.appendToScrollback(session, data);
       this.snapshots.recordData(session, data);
@@ -772,6 +778,13 @@ export class SessionManager {
     };
 
     pty.onExit = (code: number) => {
+      // The pane is being destroyed, or is gone, or the manager is: the destroy
+      // or dispose path owns cleanup, and a graceful kill's exit arrives AFTER
+      // it ran. Reaching the fallback below from here opened a login shell no
+      // tab owned, with hook authority minted for a dead id.
+      if (this.isGoingAway(session)) {
+        return;
+      }
       // Shell-fallback: a vault agent that owns the terminal (the PTY root) just
       // exited on its own (Ctrl+C / done). Replace it with a fresh shell in the
       // SAME tab so the user keeps an input prompt, instead of a dead terminal.
@@ -1801,6 +1814,9 @@ export class SessionManager {
       } catch {
         /* best-effort */
       }
+      // Same as performDestroy: the graceful kill's exit arrives after this
+      // loop has finished, and must not respawn an agent tab's fallback shell.
+      this.detachPty(session);
       try {
         session.pty.kill();
       } catch {
@@ -1846,6 +1862,29 @@ export class SessionManager {
 
   // ─── Private: Destroy Implementation ────────────────────────────
 
+  /**
+   * Whether `session`'s PTY events no longer belong to a pane: the user is
+   * closing it ("destroying"), it is gone ("disposed"), or the manager itself
+   * was disposed (window close / deactivate, which never changes session state).
+   */
+  private isGoingAway(session: TerminalSession): boolean {
+    return this._disposed || session.state === "destroying" || session.state === "disposed";
+  }
+
+  /**
+   * Drop the session's handlers from its PTY before the PTY is killed.
+   *
+   * `PtySession.kill()` is graceful — output for up to 250 ms of silence, then
+   * SIGHUP, the exit after that — so its events outlive `cleanupSession`. Left
+   * attached, output rebuilt the headless mirror of a dropped session and the
+   * exit ran the agent shell-fallback for a tab that was closed. The process
+   * itself is still killed; PtySession keeps its own listeners for that.
+   */
+  private detachPty(session: TerminalSession): void {
+    session.pty.onData = undefined;
+    session.pty.onExit = undefined;
+  }
+
   /** Perform the actual destruction of a session. Called from the operation queue — serial. */
   private async performDestroy(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
@@ -1863,14 +1902,17 @@ export class SessionManager {
       /* best-effort */
     }
 
-    // Kill the PTY (graceful shutdown)
+    // Detach, then kill (graceful shutdown). The kill waits for 250 ms of
+    // output silence before it signals, so the exit lands long after the
+    // cleanup below — nothing the process emits from here belongs to a pane.
+    this.detachPty(session);
     try {
       session.pty.kill();
     } catch {
       /* best-effort */
     }
 
-    // Wait a tick for onExit to fire (it will be skipped due to terminalBeingKilled)
+    // One tick before cleanup. The exit is NOT awaited: it is detached above.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
     // Clean up maps
