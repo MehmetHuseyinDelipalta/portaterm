@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { chmod, lstat, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { posix, win32 } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { CURSOR_HOOK_EVENTS } from "../agentHooks/agents/cursor";
 import { LockedFile } from "../agentHooks/install/lockedJsonFile";
 import { isNotFound } from "../utils/fsPresence";
@@ -129,6 +130,13 @@ export class CursorHookInstaller {
           const hooks = document.hooks as Record<string, CursorConfigObject[]>;
           for (const event of CURSOR_HOOK_EVENTS) {
             const entries = hooks[event] ?? [];
+            const owned = entries.filter((entry) => isOwnedEntry(entry, ownedCommands));
+            // Already there, once, with today's command: left where it is. Moving
+            // it to the end each time reordered it behind hooks the user added
+            // later — and made every no-op install a rewrite.
+            if (owned.length === 1 && owned[0].command === managedCommand) {
+              continue;
+            }
             hooks[event] = [
               ...entries.filter((entry) => !isOwnedEntry(entry, ownedCommands)),
               ownedEntry(managedCommand),
@@ -299,7 +307,11 @@ export class CursorHookInstaller {
         return source ? "unsupported" : "failed";
       }
       const desired = structuredClone(source.document);
-      if (!change(desired, managedCommand, ownedCommands)) {
+      // Nothing to change is not a rewrite. Compared as documents, not as text,
+      // so the user's own formatting does not count as a difference: the install
+      // runs in every window since activation moved to startup, and replacing
+      // the file each time reformatted it and made Cursor reload its hooks.
+      if (!change(desired, managedCommand, ownedCommands) || isDeepStrictEqual(desired, source.document)) {
         return "success";
       }
       const serialized = `${JSON.stringify(desired, null, 2)}\n`;

@@ -256,6 +256,82 @@ describe("CursorHookInstaller", () => {
     expect(await config(paths.configPath)).toMatchObject(original);
   });
 
+  // The extension activates at startup (0.48.2), so install runs in every window.
+  // A no-op install must leave hooks.json alone: rewriting it reformats the
+  // user's file, moves our entry behind hooks they added after it, and bumps the
+  // mtime that makes Cursor reload every hook.
+  it("leaves an already-installed configuration byte-for-byte alone, in the user's own formatting", async () => {
+    const paths = await fixture();
+    const owned = { command: CURSOR_HOOK_COMMAND, timeout: 2 };
+    const hooks: Record<string, unknown[]> = {};
+    for (const event of CURSOR_HOOK_EVENTS) {
+      hooks[event] = [owned];
+    }
+    // A user hook added AFTER ours, and the user's own compact formatting.
+    hooks.beforeSubmitPrompt = [owned, { command: "user-after", timeout: 5 }];
+    const userText = `${JSON.stringify({ version: 1, hooks })}\n`;
+    await writeFile(paths.configPath, userText);
+    const before = await stat(paths.configPath);
+    const installer = new CursorHookInstaller(paths);
+
+    await new Promise((resolve) => setTimeout(resolve, 20)); // an mtime change would be visible
+    await expect(installer.install()).resolves.toMatchObject({ installed: true });
+
+    expect(await readFile(paths.configPath, "utf8")).toBe(userText);
+    expect((await stat(paths.configPath)).mtimeMs).toBe(before.mtimeMs);
+    expect((await stat(paths.configPath)).ino).toBe(before.ino); // not replaced by rename
+  });
+
+  it("does not rewrite on a second install after its own first one", async () => {
+    const paths = await fixture();
+    await writeFile(paths.configPath, JSON.stringify({ version: 1, hooks: { stop: [{ command: "user-stop" }] } }));
+    const installer = new CursorHookInstaller(paths);
+    await installer.install();
+    const first = await stat(paths.configPath);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await expect(installer.install()).resolves.toMatchObject({ installed: true });
+
+    const second = await stat(paths.configPath);
+    expect([second.ino, second.mtimeMs]).toEqual([first.ino, first.mtimeMs]);
+  });
+
+  it("still rewrites when an event lacks its entry, keeping the user's hooks in place", async () => {
+    const paths = await fixture();
+    const owned = { command: CURSOR_HOOK_COMMAND, timeout: 2 };
+    const hooks: Record<string, unknown[]> = {};
+    for (const event of CURSOR_HOOK_EVENTS) {
+      hooks[event] = [owned, { command: `user-${event}` }];
+    }
+    const missing = CURSOR_HOOK_EVENTS[0];
+    hooks[missing] = [{ command: "user-only" }];
+    await writeFile(paths.configPath, JSON.stringify({ version: 1, hooks }));
+
+    await expect(new CursorHookInstaller(paths).install()).resolves.toMatchObject({ installed: true });
+
+    const written = (await config(paths.configPath)).hooks as Record<string, unknown[]>;
+    expect(written[missing]).toEqual([{ command: "user-only" }, owned]);
+    // Events that already had it keep the user's order: ours first, theirs after.
+    const other = CURSOR_HOOK_EVENTS[1];
+    expect(written[other]).toEqual([owned, { command: `user-${other}` }]);
+  });
+
+  it("replaces a duplicated or stale owned entry rather than keeping it", async () => {
+    const paths = await fixture();
+    const owned = { command: CURSOR_HOOK_COMMAND, timeout: 2 };
+    const hooks: Record<string, unknown[]> = {};
+    for (const event of CURSOR_HOOK_EVENTS) {
+      hooks[event] = [owned];
+    }
+    hooks[CURSOR_HOOK_EVENTS[0]] = [owned, { command: "user" }, owned];
+    await writeFile(paths.configPath, JSON.stringify({ version: 1, hooks }));
+
+    await new CursorHookInstaller(paths).install();
+
+    const written = (await config(paths.configPath)).hooks as Record<string, unknown[]>;
+    expect(written[CURSOR_HOOK_EVENTS[0]]).toEqual([{ command: "user" }, owned]);
+  });
+
   it("retains the released POSIX wrapper while a preserved custom event references it", async () => {
     const paths = await fixture();
     const wrapperPath = join(paths.storagePath, "cursor-hook-observer.sh");
