@@ -98,6 +98,25 @@ describe("createKeyEventHandler", () => {
     });
   });
 
+  describe("Ctrl+Tab", () => {
+    // Declined so xterm does not turn it into a Tab byte and swallow it: the
+    // document's tab-cycling listener has to receive it.
+    it.each([
+      [{ shiftKey: false }, "Ctrl+Tab"],
+      [{ shiftKey: true }, "Ctrl+Shift+Tab"],
+    ])("declines %s on every platform (%s)", (mods) => {
+      for (const isMac of [true, false]) {
+        const handler = createKeyEventHandler(createDeps({ isMac }));
+        expect(handler(makeKeyEvent({ key: "Tab", ctrlKey: true, ...mods }))).toBe(false);
+      }
+    });
+
+    it("leaves plain Tab to the shell", () => {
+      const handler = createKeyEventHandler(createDeps());
+      expect(handler(makeKeyEvent({ key: "Tab" }))).toBe(true);
+    });
+  });
+
   describe("no-modifier passthrough", () => {
     it("returns true for regular keys without modifier", () => {
       const deps = createDeps();

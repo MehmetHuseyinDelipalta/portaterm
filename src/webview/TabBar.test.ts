@@ -334,7 +334,7 @@ describe("renderTabBar", () => {
 describe("handleTabKeyboardShortcut", () => {
   function createKeyboardDeps(overrides: Partial<TabKeyboardDeps> = {}): TabKeyboardDeps {
     return {
-      terminals: new Map(),
+      tabIds: () => [],
       activeTabId: null,
       switchTab: vi.fn(),
       ...overrides,
@@ -350,62 +350,56 @@ describe("handleTabKeyboardShortcut", () => {
     };
   }
 
-  it("returns false for non-Ctrl+Tab events", () => {
-    const deps = createKeyboardDeps();
+  it("returns false for non-Ctrl+Tab events, without building the tab list", () => {
+    const tabIds = vi.fn(() => ["tab-1", "tab-2"]);
+    const deps = createKeyboardDeps({ tabIds });
     expect(handleTabKeyboardShortcut(makeKeyEvent({ ctrlKey: false }), deps)).toBe(false);
     expect(handleTabKeyboardShortcut(makeKeyEvent({ key: "a" }), deps)).toBe(false);
+    expect(tabIds).not.toHaveBeenCalled();
   });
 
   it("is no-op when single tab exists", () => {
-    const terminals = new Map<string, { name: string }>([["tab-1", { name: "Terminal 1" }]]);
-    const deps = createKeyboardDeps({ terminals: terminals as never, activeTabId: "tab-1" });
+    const tabIds = ["tab-1"];
+    const deps = createKeyboardDeps({ tabIds: () => tabIds, activeTabId: "tab-1" });
     const result = handleTabKeyboardShortcut(makeKeyEvent(), deps);
     expect(result).toBe(true); // Handled
     expect(deps.switchTab).not.toHaveBeenCalled();
   });
 
   it("cycles forward with Ctrl+Tab", () => {
-    const terminals = new Map<string, { name: string }>([
-      ["tab-1", { name: "Terminal 1" }],
-      ["tab-2", { name: "Terminal 2" }],
-      ["tab-3", { name: "Terminal 3" }],
-    ]);
-    const deps = createKeyboardDeps({ terminals: terminals as never, activeTabId: "tab-1" });
+    const tabIds = ["tab-1", "tab-2", "tab-3"];
+    const deps = createKeyboardDeps({ tabIds: () => tabIds, activeTabId: "tab-1" });
     handleTabKeyboardShortcut(makeKeyEvent(), deps);
     expect(deps.switchTab).toHaveBeenCalledWith("tab-2");
   });
 
   it("wraps around forward with Ctrl+Tab", () => {
-    const terminals = new Map<string, { name: string }>([
-      ["tab-1", { name: "Terminal 1" }],
-      ["tab-2", { name: "Terminal 2" }],
-      ["tab-3", { name: "Terminal 3" }],
-    ]);
-    const deps = createKeyboardDeps({ terminals: terminals as never, activeTabId: "tab-3" });
+    const tabIds = ["tab-1", "tab-2", "tab-3"];
+    const deps = createKeyboardDeps({ tabIds: () => tabIds, activeTabId: "tab-3" });
     handleTabKeyboardShortcut(makeKeyEvent(), deps);
     expect(deps.switchTab).toHaveBeenCalledWith("tab-1");
   });
 
   it("cycles backward with Ctrl+Shift+Tab", () => {
-    const terminals = new Map<string, { name: string }>([
-      ["tab-1", { name: "Terminal 1" }],
-      ["tab-2", { name: "Terminal 2" }],
-      ["tab-3", { name: "Terminal 3" }],
-    ]);
-    const deps = createKeyboardDeps({ terminals: terminals as never, activeTabId: "tab-2" });
+    const tabIds = ["tab-1", "tab-2", "tab-3"];
+    const deps = createKeyboardDeps({ tabIds: () => tabIds, activeTabId: "tab-2" });
     handleTabKeyboardShortcut(makeKeyEvent({ shiftKey: true }), deps);
     expect(deps.switchTab).toHaveBeenCalledWith("tab-1");
   });
 
   it("wraps around backward with Ctrl+Shift+Tab", () => {
-    const terminals = new Map<string, { name: string }>([
-      ["tab-1", { name: "Terminal 1" }],
-      ["tab-2", { name: "Terminal 2" }],
-      ["tab-3", { name: "Terminal 3" }],
-    ]);
-    const deps = createKeyboardDeps({ terminals: terminals as never, activeTabId: "tab-1" });
+    const tabIds = ["tab-1", "tab-2", "tab-3"];
+    const deps = createKeyboardDeps({ tabIds: () => tabIds, activeTabId: "tab-1" });
     handleTabKeyboardShortcut(makeKeyEvent({ shiftKey: true }), deps);
     expect(deps.switchTab).toHaveBeenCalledWith("tab-3");
+  });
+
+  it("cycles through tabs only, never into a split pane, in the order given", () => {
+    // The order the bar shows (a reordered bar), not creation order; a split
+    // tab is one entry however many panes it has.
+    const deps = createKeyboardDeps({ tabIds: () => ["tab-3", "tab-1", "tab-2"], activeTabId: "tab-1" });
+    handleTabKeyboardShortcut(makeKeyEvent(), deps);
+    expect(deps.switchTab).toHaveBeenCalledWith("tab-2");
   });
 
   it("is no-op when 0 terminals exist", () => {

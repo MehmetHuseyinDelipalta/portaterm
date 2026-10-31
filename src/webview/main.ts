@@ -1778,7 +1778,9 @@ function bootstrap(): void {
     true,
   );
   document.addEventListener("keydown", (e: KeyboardEvent) => {
-    if (handleTabKeyboardShortcut(e, { terminals: store.terminals, activeTabId: store.activeTabId, switchTab })) {
+    // The tabs the bar shows, in its order and under its scope.
+    const tabIds = () => [...buildTabBarData(store, tabBarScope?.effectiveScope()).tabs.keys()];
+    if (handleTabKeyboardShortcut(e, { tabIds, activeTabId: store.activeTabId, switchTab })) {
       e.preventDefault();
     }
   });

@@ -970,7 +970,13 @@ export function renderTabBar(deps: RenderTabBarDeps): void {
 
 /** Dependencies for tab keyboard shortcut handler. */
 export interface TabKeyboardDeps {
-  terminals: Map<string, TabInfo>;
+  /**
+   * The tabs the bar shows, in its order — `buildTabBarData(...).tabs`. Not the
+   * terminal map: that holds every split PANE as well, so cycling landed on a
+   * pane id `switchTab` cannot open and stuck there, and it ignored both the
+   * bar's order and the worktree scope that hides tabs from it.
+   */
+  tabIds: () => readonly string[];
   activeTabId: string | null;
   switchTab: (tabId: string) => void;
 }
@@ -989,7 +995,8 @@ export function handleTabKeyboardShortcut(
     return false;
   }
 
-  const tabIds = Array.from(deps.terminals.keys());
+  // Read only now that the key is Ctrl+Tab: building it runs per keydown otherwise.
+  const tabIds = deps.tabIds();
   if (tabIds.length <= 1) {
     return true; // Handled but no-op (single tab)
   }

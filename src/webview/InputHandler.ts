@@ -57,6 +57,15 @@ export function createKeyEventHandler(deps: KeyHandlerDeps): (event: KeyboardEve
       return true;
     }
 
+    // Ctrl+Tab / Ctrl+Shift+Tab cycle tabs (TabBarUtils.handleTabKeyboardShortcut,
+    // a document listener). Left to xterm, the key became a Tab byte — shell
+    // completion — and xterm stopped the event, so cycling only ever worked
+    // with focus outside the terminal. Declined here, xterm leaves the event
+    // alone and it reaches the document.
+    if (event.key === "Tab" && event.ctrlKey && !event.metaKey && !event.altKey) {
+      return false;
+    }
+
     // Escape key: clear selection if present, otherwise pass through to shell
     if (event.key === "Escape") {
       if (terminal.hasSelection()) {
