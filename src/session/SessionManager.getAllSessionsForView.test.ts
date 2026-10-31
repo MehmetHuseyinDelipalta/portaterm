@@ -56,6 +56,18 @@ describe("SessionManager.getAllSessionsForView", () => {
     sm.dispose();
   });
 
+  it("names a split pane's tab, so the webview can put a pane its layout lost back into it", () => {
+    const sm = new SessionManager();
+    const webview = makeWebview();
+    const rootId = sm.createSession("v", webview, { shell: "/bin/zsh" });
+    const splitId = sm.createSession("v", webview, { shell: "/bin/zsh", isSplitPane: true, rootTabId: rootId });
+
+    const all = sm.getAllSessionsForView("v");
+    expect(all.find((s) => s.id === splitId)?.rootTabId).toBe(rootId);
+    expect(all.find((s) => s.id === rootId)).not.toHaveProperty("rootTabId");
+    sm.dispose();
+  });
+
   it("returns just the root when the view has no splits (matches getTabsForView for the !isSplitPane subset)", () => {
     const sm = new SessionManager();
     const viewId = "portaterm.sidebar";

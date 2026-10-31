@@ -2129,6 +2129,12 @@ export interface InitMessage {
      * design.md D12 + round-1 W10 (locked the contract — now required).
      */
     isSplitPane: boolean;
+    /**
+     * For a split pane, the tab it belongs to. Lets the webview put a live pane
+     * back into its tab when the persisted layout no longer mentions it —
+     * otherwise that pane was a live PTY no tab could show.
+     */
+    rootTabId?: string;
   }>;
   /** Terminal configuration from user settings */
   config: TerminalConfig;

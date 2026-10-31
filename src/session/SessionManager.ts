@@ -1174,6 +1174,7 @@ export class SessionManager {
     isActive: boolean;
     isSplitPane: boolean;
     worktreeId?: string;
+    rootTabId?: string;
   }> {
     const viewSessionIds = this.viewSessions.get(viewId);
     if (!viewSessionIds) {
@@ -1190,6 +1191,7 @@ export class SessionManager {
       isActive: boolean;
       isSplitPane: boolean;
       worktreeId?: string;
+      rootTabId?: string;
     };
     return viewSessionIds
       .map((sid): SessionInfo | undefined => {
@@ -1207,6 +1209,7 @@ export class SessionManager {
           isActive: s.isActive,
           isSplitPane: s.isSplitPane,
           worktreeId: s.worktreeId,
+          ...(s.isSplitPane && s.rootTabId !== undefined ? { rootTabId: s.rootTabId } : {}),
         };
       })
       .filter((info): info is SessionInfo => info !== undefined);

@@ -68,6 +68,7 @@ import { applyPaneZoomCommand, PaneZoom } from "./paneZoom";
 import { ResizeCoordinator } from "./resize/ResizeCoordinator";
 import { getAllSessionIds } from "./SplitModel";
 import { isFindStepShortcut, TerminalSearchWidget } from "./search/TerminalSearchWidget";
+import { adoptOrphanPanes, reconcileRestoredLayouts } from "./split/restoreLayouts";
 import { SplitTreeRenderer } from "./split/SplitTreeRenderer";
 import { resolveTabDisplayPane } from "./split/tabDisplay";
 import { WebviewStateStore } from "./state/WebviewStateStore";
@@ -1336,18 +1337,26 @@ function handleInit(msg: InitMessage): void {
   vaultWorkspaceRoot = msg.workspaceRoot ?? null; // folder-filter fallback scope
   const savedCheckpoint = store.getNavigationCheckpoint();
   const legacyWorktreeScope = store.getLegacyWorktreeScope();
-  const validTabIds = new Set(msg.tabs.map((t) => t.id));
-
-  const restoredLayouts = store.restore();
-  for (const [tabId, layout] of restoredLayouts) {
-    if (validTabIds.has(tabId)) {
-      store.tabLayouts.set(tabId, layout);
-    }
+  // Persisted layouts are judged by their LEAVES against the sessions the host
+  // says are alive: a dead leaf is pruned rather than rendered empty, and a tab
+  // whose root pane was closed (no longer a live id itself) keeps its layout
+  // while its split lives. See split/restoreLayouts.ts.
+  const liveSessionIds = new Set(msg.tabs.map((t) => t.id));
+  const reconciled = reconcileRestoredLayouts(store.restore(), store.tabActivePaneIds, liveSessionIds);
+  // And the other way round: a live split pane the persisted layouts lost
+  // goes back into its tab, which the host names (split/restoreLayouts.ts).
+  adoptOrphanPanes(
+    reconciled.layouts,
+    reconciled.activePanes,
+    msg.tabs.filter((t) => t.isSplitPane).map((t) => ({ id: t.id, rootTabId: t.rootTabId })),
+    new Set(msg.tabs.filter((t) => !t.isSplitPane).map((t) => t.id)),
+  );
+  for (const [tabId, layout] of reconciled.layouts) {
+    store.tabLayouts.set(tabId, layout);
   }
-  for (const tabId of store.tabActivePaneIds.keys()) {
-    if (!validTabIds.has(tabId)) {
-      store.tabActivePaneIds.delete(tabId);
-    }
+  store.tabActivePaneIds.clear();
+  for (const [tabId, paneId] of reconciled.activePanes) {
+    store.tabActivePaneIds.set(tabId, paneId);
   }
   // Create xterm instances for every session. For split-pane children we pass
   // `isSplitPane: true` so the factory skips the per-tab side effects (no new
