@@ -6,7 +6,7 @@
 //   asimov/changes/export-terminal-session/design.md D3
 //
 // Mirrors VS Code's `src/vs/platform/terminal/node/terminalEnvironment.ts`:
-//   bash → --init-file <temp>/shellIntegration.bash
+//   bash → --init-file <temp>/shellIntegration.bash (login flag → VSCODE_SHELL_LOGIN=1)
 //   zsh  → ZDOTDIR=<temp>, USER_ZDOTDIR=<original> with 4 sourced scripts
 //   fish → --init-command "source <ext>/shellIntegration.fish"
 //   pwsh → -noexit -command ". '<ext>/shellIntegration.ps1'"
@@ -87,8 +87,16 @@ export function injectShellIntegration(
   const argsMutable = [...baseArgs];
 
   if (shellName === "bash") {
-    if (hasArg(argsMutable, "--noprofile") && hasArg(argsMutable, "--norc")) {
-      // User explicitly disabled rc loading — respect that.
+    // `--norc` also disables `--init-file` (bash reads neither), so injecting
+    // would leave the user with NO startup files at all — not even the login
+    // profile they asked for. Their args are left exactly as given.
+    if (hasArg(argsMutable, "--norc")) {
+      return null;
+    }
+    // A login shell with `--noprofile` reads nothing. The vendored script
+    // cannot express "nothing" (without VSCODE_SHELL_LOGIN it sources
+    // ~/.bashrc), so this combination is not injected either.
+    if (isBashLogin(argsMutable) && hasArg(argsMutable, "--noprofile")) {
       return null;
     }
     return injectBash(argsMutable, baseEnv, ctx);
@@ -136,16 +144,60 @@ function scrubLeakedEnv(baseEnv: Readonly<Record<string, string>>): Record<strin
 
 // ─── bash ───────────────────────────────────────────────────────────
 
+/** A cluster of single-letter bash options, e.g. `-il`. */
+const SHORT_OPTION_CLUSTER = /^-[a-zA-Z]+$/;
+
+/** Whether `arg` makes bash a login shell — `--login`, `-l`, or `l` in a cluster such as `-il`. */
+function isBashLoginArg(arg: string): boolean {
+  return arg === "--login" || (SHORT_OPTION_CLUSTER.test(arg) && arg.includes("l"));
+}
+
+function isBashLogin(args: readonly string[]): boolean {
+  return args.some(isBashLoginArg);
+}
+
+/**
+ * `args` without the login flag. `--login` and `-l` go; a cluster keeps its
+ * other letters (`-il` → `-i`). A login bash never reads `--init-file`, so
+ * any spelling of the flag left in place disables the integration.
+ */
+function withoutBashLogin(args: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const arg of args) {
+    if (!isBashLoginArg(arg)) {
+      out.push(arg);
+    } else if (arg !== "--login") {
+      const rest = arg.replaceAll("l", "");
+      if (rest !== "-") {
+        out.push(rest);
+      }
+    }
+  }
+  return out;
+}
+
 function injectBash(args: string[], baseEnv: Readonly<Record<string, string>>, ctx: InjectionContext): InjectionResult {
   const nonce = ctx.generateId();
   const tempDir = path.join(ctx.tmpRoot, `at-bash-${ctx.generateId()}`);
   ctx.fs.mkdirSync(tempDir, { recursive: true, mode: 0o700 });
   const initFile = path.join(tempDir, "shellIntegration.bash");
   ctx.fs.copyFileSync(path.join(ctx.scriptsDir, "shellIntegration-bash.sh"), initFile);
-  const newArgs = ["--init-file", initFile, ...args];
+  // A login bash never reads `--init-file` (it reads the profile files
+  // instead), so passing `--login` / `-l` through would silently disable the
+  // whole integration. Mirror VS Code: drop the login flag and tell the
+  // vendored script to imitate a login shell itself — with
+  // `VSCODE_SHELL_LOGIN=1` it sources /etc/profile and the first of
+  // ~/.bash_profile, ~/.bash_login, ~/.profile instead of ~/.bashrc.
+  // (Login + `--noprofile`, and `--norc`, never reach here — see the caller.)
+  const newArgs = ["--init-file", initFile, ...withoutBashLogin(args)];
+  const env: Record<string, string> = { ...scrubLeakedEnv(baseEnv), VSCODE_NONCE: nonce, VSCODE_INJECTION: "1" };
+  delete env.VSCODE_SHELL_LOGIN;
+  if (isBashLogin(args)) {
+    env.VSCODE_SHELL_LOGIN = "1";
+  }
   return {
     args: newArgs,
-    env: { ...scrubLeakedEnv(baseEnv), VSCODE_NONCE: nonce, VSCODE_INJECTION: "1" },
+    env,
     nonce,
     cleanup: makeTempDirCleanup(ctx, tempDir),
   };

@@ -56,8 +56,13 @@ describe("ShellIntegrationInjector: bash", () => {
     expect(result!.nonce).toBe(ids[0]);
     const expectedDir = `/tmp/at-bash-${ids[1]}`;
     const expectedInit = `${expectedDir}/shellIntegration.bash`;
-    expect(result!.args).toEqual(["--init-file", expectedInit, "-l"]);
-    expect(result!.env).toEqual({ HOME: "/u/h", VSCODE_NONCE: ids[0], VSCODE_INJECTION: "1" });
+    expect(result!.args).toEqual(["--init-file", expectedInit]);
+    expect(result!.env).toEqual({
+      HOME: "/u/h",
+      VSCODE_NONCE: ids[0],
+      VSCODE_INJECTION: "1",
+      VSCODE_SHELL_LOGIN: "1",
+    });
     expect(calls).toContainEqual({ op: "mkdir", path: expectedDir, opts: { recursive: true, mode: 0o700 } });
     expect(calls).toContainEqual({
       op: "copy",
@@ -78,14 +83,60 @@ describe("ShellIntegrationInjector: bash", () => {
     expect(rmCountAfter).toBe(rmCountBefore); // Second call is a no-op
   });
 
+  // A login bash ignores --init-file, so a login flag must never reach argv:
+  // the vendored script imitates login itself when VSCODE_SHELL_LOGIN=1.
+  it.each([["--login"], ["-l"]])("drops %s from argv and sets VSCODE_SHELL_LOGIN=1", (flag) => {
+    const { ctx, ids } = fakeCtx();
+    const result = injectShellIntegration("/bin/bash", [flag, "-i"], {}, ctx);
+    expect(result!.args).toEqual(["--init-file", `/tmp/at-bash-${ids[1]}/shellIntegration.bash`, "-i"]);
+    expect(result!.env.VSCODE_SHELL_LOGIN).toBe("1");
+  });
+
+  it("does not set VSCODE_SHELL_LOGIN without a login flag", () => {
+    const { ctx } = fakeCtx();
+    const result = injectShellIntegration("/bin/bash", ["-i"], {}, ctx);
+    expect(result!.args.slice(2)).toEqual(["-i"]);
+    expect(result!.env).not.toHaveProperty("VSCODE_SHELL_LOGIN");
+  });
+
+  it("scrubs an inherited VSCODE_SHELL_LOGIN for a non-login bash", () => {
+    const { ctx } = fakeCtx();
+    const result = injectShellIntegration("/bin/bash", [], { VSCODE_SHELL_LOGIN: "1" }, ctx);
+    expect(result!.env).not.toHaveProperty("VSCODE_SHELL_LOGIN");
+  });
+
+  it.each([["-il"], ["-li"], ["-lie"]])("strips the login letter from a combined cluster %s", (cluster) => {
+    // `bash --init-file x -il` reads only the profile: the cluster is as fatal as `-l`.
+    const { ctx } = fakeCtx();
+    const result = injectShellIntegration("/bin/bash", [cluster], {}, ctx);
+    expect(result!.args.slice(2)).toEqual([cluster.replaceAll("l", "")]);
+    expect(result!.env.VSCODE_SHELL_LOGIN).toBe("1");
+  });
+
+  it("leaves a cluster without the login letter alone", () => {
+    const { ctx } = fakeCtx();
+    const result = injectShellIntegration("/bin/bash", ["-ie"], {}, ctx);
+    expect(result!.args.slice(2)).toEqual(["-ie"]);
+    expect(result!.env).not.toHaveProperty("VSCODE_SHELL_LOGIN");
+  });
+
+  it("does not inject a login shell with --noprofile, which reads no startup file at all", () => {
+    // The script cannot express "nothing": without VSCODE_SHELL_LOGIN it sources ~/.bashrc.
+    const { ctx } = fakeCtx();
+    expect(injectShellIntegration("/bin/bash", ["--login", "--noprofile"], {}, ctx)).toBeNull();
+    expect(injectShellIntegration("/bin/bash", ["-il", "--noprofile"], {}, ctx)).toBeNull();
+  });
+
   it("skips when both --noprofile AND --norc are passed", () => {
     const { ctx } = fakeCtx();
     expect(injectShellIntegration("/bin/bash", ["--noprofile", "--norc"], {}, ctx)).toBeNull();
   });
 
-  it("does NOT skip with only --norc", () => {
+  it("skips with only --norc, which disables --init-file as well", () => {
+    // Injected, `-l --norc` lost its login profile AND got no integration.
     const { ctx } = fakeCtx();
-    expect(injectShellIntegration("/bin/bash", ["--norc"], {}, ctx)).not.toBeNull();
+    expect(injectShellIntegration("/bin/bash", ["--norc"], {}, ctx)).toBeNull();
+    expect(injectShellIntegration("/bin/bash", ["-l", "--norc"], {}, ctx)).toBeNull();
   });
 });
 
