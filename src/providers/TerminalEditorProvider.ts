@@ -261,7 +261,9 @@ export class TerminalEditorProvider {
    * Create a new terminal panel in the editor area.
    *
    * Each invocation creates an independent terminal with its own PTY.
-   * The returned Disposable kills the PTY and disposes the panel on cleanup.
+   * Returns the panel: disposing it kills the PTY (via `onDidDispose`), and a
+   * holder can watch the same `onDidDispose` to let go of it when the user
+   * closes the tab.
    */
   static createPanel(
     context: vscode.ExtensionContext,
@@ -274,7 +276,7 @@ export class TerminalEditorProvider {
     /** Revival goes through `revive`, so BOTH paths take it — a memo wired only
      *  here would leave every restored editor comparing lexically (round-2 B1). */
     pathMemo: ResolvedPathMemo | null = null,
-  ): vscode.Disposable {
+  ): vscode.WebviewPanel {
     const panel = TerminalEditorProvider.newPanel(context);
 
     const provider = new TerminalEditorProvider(
@@ -297,12 +299,7 @@ export class TerminalEditorProvider {
     TerminalEditorProvider._instances.set(panel, provider);
     sessionManager.registerEditorPanel(provider._panelId);
 
-    // Return a disposable that cleans up via panel dispose (which triggers onDidDispose → destroyAllForView)
-    return {
-      dispose: () => {
-        panel.dispose();
-      },
-    };
+    return panel;
   }
 
   /**
@@ -366,7 +363,7 @@ export class TerminalEditorProvider {
     paneEvidence: PaneEvidenceStore | null = null,
     vaultService: VaultService | null = null,
     pathMemo: ResolvedPathMemo | null = null,
-  ): vscode.Disposable | undefined {
+  ): vscode.WebviewPanel | undefined {
     // The cancellation is the CLAIM on the grace window, so it is checked. Once
     // the timer has fired the sessions are gone or going, and building a panel
     // around them would hand back an empty tab in the name of the agent the

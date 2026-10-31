@@ -2114,20 +2114,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   });
 
+  // An editor terminal's panel is held by the extension so a deactivate tears
+  // it down — and let go of when the user closes the tab. Pushed onto
+  // `context.subscriptions` and never taken off, that list grew with every
+  // panel for the life of the window. Spliced off it from `onDidDispose`, it
+  // broke the shutdown instead: VS Code disposes that LIVE array in place, a
+  // panel's dispose fires `onDidDispose` synchronously, and the splice shifted
+  // the next entry under the walk, which then skipped it. So the panels live
+  // in their own set, which the subscriptions hold ONE disposable for.
+  const heldEditorPanels = new Set<vscode.WebviewPanel>();
+  context.subscriptions.push({
+    dispose: () => {
+      // Deleting the current entry while iterating a Set is safe in JS.
+      for (const panel of heldEditorPanels) {
+        panel.dispose();
+      }
+      heldEditorPanels.clear();
+    },
+  });
+  const holdEditorPanel = (panel: vscode.WebviewPanel): void => {
+    heldEditorPanels.add(panel);
+    panel.onDidDispose(() => heldEditorPanels.delete(panel));
+  };
+
   // Editor terminal command — each invocation creates an independent editor tab terminal
   context.subscriptions.push(
     vscode.commands.registerCommand("portaterm.newTerminalInEditor", () => {
-      const panelDisposable = TerminalEditorProvider.createPanel(
-        context,
-        sessionManager,
-        gitDecorationProvider,
-        fsWatcherPool,
-        worktreeHost,
-        paneEvidence,
-        vaultService,
-        pathMemo,
+      holdEditorPanel(
+        TerminalEditorProvider.createPanel(
+          context,
+          sessionManager,
+          gitDecorationProvider,
+          fsWatcherPool,
+          worktreeHost,
+          paneEvidence,
+          vaultService,
+          pathMemo,
+        ),
       );
-      context.subscriptions.push(panelDisposable);
     }),
   );
 
@@ -2165,7 +2189,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           pathMemo,
         );
         if (reopened) {
-          context.subscriptions.push(reopened);
+          holdEditorPanel(reopened);
           return;
         }
         // The window elapsed while the toast sat there. Say so rather than
