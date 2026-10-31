@@ -33,6 +33,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
+import { Worker } from "node:worker_threads";
 import { type FsPresence, presenceFromAccessError } from "../utils/fsPresence";
 import { messageOf } from "../worktree/errorMessage";
 import { type BorrowOptions, type SnapshotLease, SnapshotPool } from "./snapshotPool";
@@ -216,12 +217,170 @@ function probeNodeSqlite(deps: SqliteDeps): Promise<boolean> {
 }
 
 /**
- * Run `sql` against the copied DB using `node:sqlite`. The copy is a disposable
+ * How long a worker's connection waits on a lock. One snapshot is read by
+ * several workers at once (a detail read fans out its queries), and the first
+ * to open a WAL-mode copy briefly holds it exclusively to set up its shared
+ * memory; without a busy timeout the others failed with "database is locked".
+ */
+const QUERY_BUSY_TIMEOUT_MS = 5000;
+
+const QUERY_WORKER_SOURCE = `
+const { parentPort, workerData } = require("node:worker_threads");
+let DatabaseSync;
+try {
+  DatabaseSync = require("node:sqlite").DatabaseSync;
+} catch (err) {
+  parentPort.postMessage({ ok: false, unavailable: true, error: String(err && err.message ? err.message : err) });
+}
+if (DatabaseSync) {
+  let db;
+  try {
+    db = new DatabaseSync(workerData.file);
+    db.exec("PRAGMA busy_timeout = " + workerData.busyTimeoutMs);
+    parentPort.postMessage({ ok: true, rows: db.prepare(workerData.sql).all() });
+  } catch (err) {
+    parentPort.postMessage({ ok: false, error: err && err.message ? err.message : String(err) });
+  } finally {
+    try { if (db) db.close(); } catch {}
+  }
+}
+`;
+
+type QueryWorkerData = { file: string; sql: string; busyTimeoutMs: number };
+
+export interface OffThreadQueryOptions {
+  /**
+   * Answer `query-error` after this many ms. Off by default: `node:sqlite`
+   * has no interrupt, so a deadline cannot stop the statement — the thread
+   * runs it to its end regardless, holding the snapshot file open — and the
+   * in-process read this replaced had none either.
+   */
+  timeoutMs?: number;
+  /** Start the worker. Tests replace it to model a runtime without workers. */
+  createWorker?: (source: string, workerData: QueryWorkerData) => Worker;
+}
+
+/** Set once a worker fails to start, so later reads stop trying. */
+let workersUnavailable = false;
+
+/** Reset the worker-availability memo — tests only. */
+export function __resetQueryWorkerCache(): void {
+  workersUnavailable = false;
+}
+
+/** Whether reads fell back to in-process — tests only (the host lane asks it). */
+export function __queryWorkersUnavailable(): boolean {
+  return workersUnavailable;
+}
+
+const defaultCreateWorker = (source: string, workerData: QueryWorkerData): Worker =>
+  new Worker(source, { eval: true, workerData });
+
+/**
+ * Run `sql` against the snapshot at `file` with `node:sqlite`, on a worker
+ * thread.
+ *
+ * `DatabaseSync` is synchronous: run on the extension host's thread, a query
+ * over a large store (OpenCode's passes 1 GB; its session list is correlated
+ * subqueries and a LIKE scan) froze every PTY relay and webview message until
+ * it returned. The worker owns the connection, and only the rows cross back.
+ *
+ * A runtime that cannot START a worker gets the old in-process read rather
+ * than none, and stops trying; a worker that started and then failed (a query
+ * that ran out of memory, say) fails that query only.
+ * Never throws.
+ */
+export function runNodeQueryOffThread(
+  file: string,
+  sql: string,
+  options: OffThreadQueryOptions = {},
+): Promise<SqliteResult> {
+  if (workersUnavailable) {
+    return runNodeQueryInProcess(file, sql);
+  }
+  let worker: Worker;
+  try {
+    worker = (options.createWorker ?? defaultCreateWorker)(QUERY_WORKER_SOURCE, {
+      file,
+      sql,
+      busyTimeoutMs: QUERY_BUSY_TIMEOUT_MS,
+    });
+  } catch {
+    workersUnavailable = true;
+    return runNodeQueryInProcess(file, sql);
+  }
+  const timeoutMs = options.timeoutMs;
+  return new Promise<SqliteResult>((resolve) => {
+    let settled = false;
+    let online = false;
+    const finish = (result: SqliteResult | Promise<SqliteResult>): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      void worker.terminate().catch(() => {});
+      resolve(result);
+    };
+    const timer =
+      timeoutMs === undefined
+        ? undefined
+        : setTimeout(
+            () => finish({ rows: [], status: "query-error", error: `query exceeded ${timeoutMs}ms` }),
+            timeoutMs,
+          );
+    worker.once("online", () => {
+      online = true;
+    });
+    worker.once(
+      "message",
+      (msg: { ok: true; rows: Record<string, unknown>[] } | { ok: false; error: string; unavailable?: boolean }) => {
+        if (msg.ok) {
+          finish({ rows: msg.rows.map(normalizeRow), status: "ok" });
+        } else if (msg.unavailable) {
+          // The engine does not load in a worker on this runtime.
+          workersUnavailable = true;
+          finish(runNodeQueryInProcess(file, sql));
+        } else {
+          finish({ rows: [], status: "query-error", error: msg.error });
+        }
+      },
+    );
+    // The script catches everything a query can throw, and reports an engine
+    // that will not load as `unavailable`. An `error` before the worker came
+    // online is the runtime refusing workers: read in process, and stop
+    // starting them. After it, the worker itself died (out of memory, say) and
+    // that is this query's failure — rerunning it on the host thread would
+    // bring back the freeze, and could exhaust the host's heap instead.
+    worker.once("error", (err) => {
+      if (!online) {
+        workersUnavailable = true;
+        finish(runNodeQueryInProcess(file, sql));
+        return;
+      }
+      finish({ rows: [], status: "query-error", error: messageOf(err) });
+    });
+    worker.once("exit", (code) => {
+      finish({ rows: [], status: "query-error", error: `query worker exited with code ${code}` });
+    });
+  });
+}
+
+/** The default `runNodeQuery`: off the extension host's thread. */
+function defaultRunNodeQuery(dbCopy: string, sql: string): Promise<SqliteResult> {
+  return runNodeQueryOffThread(dbCopy, sql);
+}
+
+/**
+ * Run `sql` against the copied DB using `node:sqlite`, in process — the
+ * fallback where no worker can be started. The copy is a disposable
  * temp file, so we open it read-WRITE: that lets SQLite replay the copied
  * `-wal` sidecar (read-only opens can fail when the `-shm` can't be created)
  * without ever touching the user's live store. Never throws.
  */
-async function defaultRunNodeQuery(dbCopy: string, sql: string): Promise<SqliteResult> {
+async function runNodeQueryInProcess(dbCopy: string, sql: string): Promise<SqliteResult> {
   try {
     const { DatabaseSync } = await import("node:sqlite");
     const db = new DatabaseSync(dbCopy);
