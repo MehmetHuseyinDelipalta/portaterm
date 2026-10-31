@@ -9,6 +9,7 @@
 // follows the cached render with a source-of-truth refresh, so a discarded or
 // stale cache only costs one slower open, never correctness.
 
+import { statSync } from "node:fs";
 import * as path from "node:path";
 import type * as vscode from "vscode";
 import type { FsLike } from "../session/SessionStorage";
@@ -193,6 +194,37 @@ const CACHE_FILE_MODE = 0o600;
 /** Owner-only directory mode (POSIX only — see {@link CACHE_FILE_MODE}). */
 const CACHE_DIR_MODE = 0o700;
 
+/** A temp older than this cannot still be a write in flight — a save takes milliseconds. */
+const ORPHAN_TEMP_MIN_AGE_MS = 10 * 60 * 1000;
+
+/** What `cleanupOrphanTemps` asks before deleting another writer's temp. */
+export interface TempReaperDeps {
+  /** Whether a process with this pid exists. */
+  isProcessAlive(pid: number): boolean;
+  /** Milliseconds since `file` was last written, or `null` when it cannot be read. */
+  ageMs(file: string): number | null;
+}
+
+export const defaultTempReaper: TempReaperDeps = {
+  isProcessAlive: (pid) => {
+    try {
+      // Signal 0 delivers nothing; it only asks whether the pid exists.
+      process.kill(pid, 0);
+      return true;
+    } catch (err) {
+      // EPERM: it exists, it just is not ours to signal.
+      return (err as NodeJS.ErrnoException).code === "EPERM";
+    }
+  },
+  ageMs: (file) => {
+    try {
+      return Date.now() - statSync(file).mtimeMs;
+    } catch {
+      return null;
+    }
+  },
+};
+
 export class VaultCacheStore {
   private readonly cacheDir: string;
   private readonly cacheFile: string;
@@ -202,6 +234,7 @@ export class VaultCacheStore {
   constructor(
     globalStorageUri: vscode.Uri,
     private readonly fs: FsLike,
+    private readonly reaper: TempReaperDeps = defaultTempReaper,
   ) {
     this.cacheDir = path.join(globalStorageUri.fsPath, "vault-cache");
     this.cacheFile = path.join(this.cacheDir, "list.json");
@@ -294,7 +327,14 @@ export class VaultCacheStore {
    * Best-effort reaping of `list.json.tmp.*` files orphaned by a crash between
    * write and rename (or by a lost cross-window rename race). Each orphan is an
    * owner-readable file holding titles+cwds, so leaving them to accumulate widens
-   * the at-rest footprint. Call once on activate. Mirrors SessionStorage.
+   * the at-rest footprint. Call once on activate.
+   *
+   * Only ORPHANS. The directory is shared by every VS Code window, so a temp can
+   * be another window's save in flight — deleting it made that window's rename
+   * fail and its cache write was lost. A temp names its writer's pid
+   * (`list.json.tmp.<pid>.<n>`): one whose writer is gone is reaped, one whose
+   * writer is alive is left — unless it is too old to be in flight, which is
+   * what a reused pid looks like. A legacy temp with no pid is reaped on age.
    */
   cleanupOrphanTemps(): void {
     try {
@@ -302,16 +342,31 @@ export class VaultCacheStore {
         return;
       }
       for (const name of this.fs.readdirSync(this.cacheDir)) {
-        if (name.startsWith("list.json.tmp.")) {
-          try {
-            this.fs.unlinkSync(path.join(this.cacheDir, name));
-          } catch {
-            /* best-effort */
-          }
+        const match = /^list\.json\.tmp\.(?:(\d+)\.)?\d+$/.exec(name);
+        if (!match) {
+          continue;
+        }
+        const file = path.join(this.cacheDir, name);
+        if (!this.isOrphan(file, match[1] === undefined ? undefined : Number(match[1]))) {
+          continue;
+        }
+        try {
+          this.fs.unlinkSync(file);
+        } catch {
+          /* best-effort */
         }
       }
     } catch {
       /* best-effort */
     }
+  }
+
+  private isOrphan(file: string, pid: number | undefined): boolean {
+    const age = this.reaper.ageMs(file);
+    const old = age !== null && age > ORPHAN_TEMP_MIN_AGE_MS;
+    if (pid === undefined) {
+      return old;
+    }
+    return old || !this.reaper.isProcessAlive(pid);
   }
 }

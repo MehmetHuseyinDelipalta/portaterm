@@ -463,3 +463,83 @@ describe("VaultCacheStore", () => {
     });
   });
 });
+
+// ─── Reaping orphaned temps ────────────────────────────────────────
+// `globalStorageUri` is shared by every VS Code window. A window activating
+// while another is mid-save used to delete that window's in-flight temp, and
+// its rename then failed — the other window's cache write was lost.
+
+describe("VaultCacheStore.cleanupOrphanTemps", () => {
+  const DIR = "/gs/vault-cache";
+
+  function dirFs(names: string[]) {
+    const files = new Set(names.map((n) => `${DIR}/${n}`));
+    const fs = {
+      existsSync: (p: string) => p === DIR || files.has(p),
+      readFileSync: () => "",
+      writeFileSync: () => undefined,
+      mkdirSync: () => undefined,
+      unlinkSync: (p: string) => void files.delete(p),
+      readdirSync: () => [...files].map((p) => p.slice(DIR.length + 1)),
+      renameSync: () => undefined,
+      promises: {
+        mkdir: async () => undefined,
+        writeFile: async () => undefined,
+        readFile: async () => "",
+        unlink: async () => undefined,
+        rename: async () => undefined,
+      },
+    };
+    return { fs, left: () => [...files].map((p) => p.slice(DIR.length + 1)).sort() };
+  }
+
+  const live = new Set([process.pid, 4242]);
+  const ages = new Map<string, number>();
+  const reaper = {
+    isProcessAlive: (pid: number) => live.has(pid),
+    ageMs: (file: string) => ages.get(file.slice(DIR.length + 1)) ?? 1_000,
+  };
+
+  it("leaves a live window's in-flight temp, and reaps a dead window's", () => {
+    const { fs, left } = dirFs(["list.json", "list.json.tmp.4242.3", "list.json.tmp.99999991.1"]);
+    new VaultCacheStore({ fsPath: "/gs" } as vscode.Uri, fs as never, reaper).cleanupOrphanTemps();
+    expect(left()).toEqual(["list.json", "list.json.tmp.4242.3"]);
+  });
+
+  it("leaves this process's own temp", () => {
+    const own = `list.json.tmp.${process.pid}.1`;
+    const { fs, left } = dirFs([own]);
+    new VaultCacheStore({ fsPath: "/gs" } as vscode.Uri, fs as never, reaper).cleanupOrphanTemps();
+    expect(left()).toEqual([own]);
+  });
+
+  it("reaps a temp whose pid is alive but far too old to be in flight (a reused pid)", () => {
+    ages.set("list.json.tmp.4242.9", 60 * 60 * 1000);
+    const { fs, left } = dirFs(["list.json.tmp.4242.9"]);
+    new VaultCacheStore({ fsPath: "/gs" } as vscode.Uri, fs as never, reaper).cleanupOrphanTemps();
+    expect(left()).toEqual([]);
+    ages.clear();
+  });
+
+  it("reaps a legacy pid-less temp only once it is old", () => {
+    ages.set("list.json.tmp.7", 60 * 60 * 1000);
+    const { fs, left } = dirFs(["list.json.tmp.7", "list.json.tmp.8"]);
+    new VaultCacheStore({ fsPath: "/gs" } as vscode.Uri, fs as never, reaper).cleanupOrphanTemps();
+    expect(left()).toEqual(["list.json.tmp.8"]);
+    ages.clear();
+  });
+
+  it("never touches anything that is not one of its temps", () => {
+    const { fs, left } = dirFs(["list.json", "other.tmp.1", "list.json.bak"]);
+    new VaultCacheStore({ fsPath: "/gs" } as vscode.Uri, fs as never, reaper).cleanupOrphanTemps();
+    expect(left()).toEqual(["list.json", "list.json.bak", "other.tmp.1"]);
+  });
+});
+
+describe("VaultCacheStore's default liveness probe", () => {
+  it("knows this process is alive and a free pid is not", async () => {
+    const { defaultTempReaper } = await import("./VaultCacheStore");
+    expect(defaultTempReaper.isProcessAlive(process.pid)).toBe(true);
+    expect(defaultTempReaper.isProcessAlive(2_147_483_000)).toBe(false);
+  });
+});
