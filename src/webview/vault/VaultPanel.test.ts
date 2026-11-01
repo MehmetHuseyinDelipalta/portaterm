@@ -7,10 +7,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VaultListResult, VaultSessionEntry } from "../../vault/types";
 import { resetTooltipForTests } from "../ui/Tooltip";
-import { VaultPanel } from "./VaultPanel";
+import { VAULT_SEARCH_DEBOUNCE_MS, VaultPanel } from "./VaultPanel";
 
 afterEach(() => {
   // Each createHost() appends a host to document.body and tests never remove it.
@@ -22,6 +22,18 @@ afterEach(() => {
   document.body.replaceChildren();
   vi.unstubAllGlobals();
 });
+
+/** Type into the search box and let the debounced apply (VAULT_SEARCH_DEBOUNCE_MS) run. */
+function typeQuery(input: HTMLInputElement, value: string): void {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    input.value = value;
+    input.dispatchEvent(new Event("input"));
+    vi.advanceTimersByTime(VAULT_SEARCH_DEBOUNCE_MS);
+  } finally {
+    vi.useRealTimers();
+  }
+}
 
 function createHost(): HTMLElement {
   const host = document.createElement("div");
@@ -410,8 +422,7 @@ describe("VaultPanel grouping + states (redesign 4_2)", () => {
     panel.render(result([entry({ id: "a", title: "hello world" })]));
     const input = host.querySelector<HTMLInputElement>(".vault-search-input");
     if (input) {
-      input.value = "zzzznomatch";
-      input.dispatchEvent(new Event("input"));
+      typeQuery(input, "zzzznomatch");
     }
     const empty = host.querySelector(".vault-empty-title");
     expect(empty?.textContent).toBe("No matching sessions");
@@ -727,8 +738,7 @@ describe("VaultPanel header search toggle", () => {
     searchBtn(host)?.click(); // enter search
     const input = host.querySelector<HTMLInputElement>(".vault-search-input");
     if (input) {
-      input.value = "alpha";
-      input.dispatchEvent(new Event("input"));
+      typeQuery(input, "alpha");
     }
     expect(host.querySelectorAll(".vault-row")).toHaveLength(1);
 
@@ -747,6 +757,108 @@ describe("VaultPanel header search toggle", () => {
     input?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(searchBar(host)?.style.display).toBe("none");
     expect(host.querySelector(".vault-header")?.classList.contains("is-searching")).toBe(false);
+  });
+});
+
+describe("VaultPanel search debounce", () => {
+  const searchBtn = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".vault-header__search-btn");
+
+  function mount() {
+    const host = createHost();
+    const queries: string[] = [];
+    const panel = new VaultPanel({
+      host,
+      postMessage: () => {},
+      getInitialCollapsed: () => false,
+      onWorktreeQuery: (q) => queries.push(q),
+    });
+    panel.render(
+      result([
+        entry({ id: "a", title: "alpha", tags: ["backend"] }),
+        entry({ id: "b", title: "alps" }),
+        entry({ id: "c", title: "beta" }),
+      ]),
+    );
+    const renders = vi.spyOn(panel as unknown as { renderList: () => void }, "renderList");
+    searchBtn(host)?.click();
+    const input = host.querySelector<HTMLInputElement>(".vault-search-input");
+    if (!input) {
+      throw new Error("search input missing");
+    }
+    const type = (value: string) => {
+      input.value = value;
+      input.dispatchEvent(new Event("input"));
+    };
+    const rows = () => host.querySelectorAll(".vault-row").length;
+    return { host, panel, queries, renders, input, type, rows };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("coalesces a burst of keystrokes into one list rebuild and one worktree query", () => {
+    const { queries, renders, type, rows } = mount();
+
+    type("a");
+    vi.advanceTimersByTime(VAULT_SEARCH_DEBOUNCE_MS - 1);
+    type("al");
+    vi.advanceTimersByTime(VAULT_SEARCH_DEBOUNCE_MS - 1);
+    type("alp");
+    vi.advanceTimersByTime(VAULT_SEARCH_DEBOUNCE_MS - 1);
+    expect(renders).not.toHaveBeenCalled();
+    expect(queries).toEqual([]);
+    expect(rows()).toBe(3);
+
+    vi.advanceTimersByTime(1);
+    expect(renders).toHaveBeenCalledTimes(1);
+    expect(queries).toEqual(["alp"]);
+    expect(rows()).toBe(2);
+  });
+
+  it("skips the rebuild when a burst ends where it started", () => {
+    const { queries, renders, type } = mount();
+    type("al");
+    vi.advanceTimersByTime(VAULT_SEARCH_DEBOUNCE_MS);
+    expect(queries).toEqual(["al"]);
+
+    type("alp");
+    type("al ");
+    vi.advanceTimersByTime(VAULT_SEARCH_DEBOUNCE_MS);
+    expect(queries).toEqual(["al"]);
+    expect(renders).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a pending apply when Escape closes the search inside the window", () => {
+    const { queries, renders, input, type, rows } = mount();
+    type("beta");
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    vi.advanceTimersByTime(VAULT_SEARCH_DEBOUNCE_MS * 3);
+    expect(queries).toEqual([]);
+    expect(renders).not.toHaveBeenCalled();
+    expect(rows()).toBe(3);
+  });
+
+  it("lets a tag-chip filter win over a still-pending typed query", () => {
+    const { panel, queries, input, type, rows } = mount();
+    type("zzz");
+    panel.filterByTag("backend");
+    vi.advanceTimersByTime(VAULT_SEARCH_DEBOUNCE_MS * 3);
+    expect(input.value).toBe("#backend");
+    expect(queries).toEqual(["#backend"]);
+    expect(rows()).toBe(1);
+  });
+
+  it("drops a pending apply on dispose", () => {
+    const { panel, queries, renders, type } = mount();
+    type("beta");
+    panel.dispose();
+    vi.advanceTimersByTime(VAULT_SEARCH_DEBOUNCE_MS * 3);
+    expect(queries).toEqual([]);
+    expect(renders).not.toHaveBeenCalled();
   });
 });
 
@@ -3952,8 +4064,7 @@ describe("VaultPanel 'This folder only' filter", () => {
     panel.render(result([entry({ id: "a", cwd: "/work/repo", title: "alpha" })]));
     const input = host.querySelector<HTMLInputElement>(".vault-search-input");
     if (input) {
-      input.value = "zzz";
-      input.dispatchEvent(new Event("input"));
+      typeQuery(input, "zzz");
     }
     expect(host.querySelector(".vault-empty-title")?.textContent).toBe("No matching sessions");
     expect(host.querySelector(".vault-empty-action")).toBeNull();
@@ -4579,8 +4690,7 @@ describe("worktree segment", () => {
       throw new Error("search input missing");
     }
     expect(input.placeholder).toBe("Search worktrees…");
-    input.value = "Feat";
-    input.dispatchEvent(new Event("input"));
+    typeQuery(input, "Feat");
     expect(queries).toEqual(["feat"]);
   });
 

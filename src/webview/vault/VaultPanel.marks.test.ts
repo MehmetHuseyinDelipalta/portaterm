@@ -9,13 +9,25 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WebViewToExtensionMessage } from "../../types/messages";
 import type { VaultListResult, VaultSessionEntry } from "../../vault/types";
 import { resetTooltipForTests } from "../ui/Tooltip";
-import { VaultPanel } from "./VaultPanel";
+import { VAULT_SEARCH_DEBOUNCE_MS, VaultPanel } from "./VaultPanel";
 
 afterEach(() => {
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   resetTooltipForTests();
   document.body.replaceChildren();
 });
+
+/** Type into the search box and let the debounced apply (VAULT_SEARCH_DEBOUNCE_MS) run. */
+function typeQuery(input: HTMLInputElement, value: string): void {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    input.value = value;
+    input.dispatchEvent(new Event("input"));
+    vi.advanceTimersByTime(VAULT_SEARCH_DEBOUNCE_MS);
+  } finally {
+    vi.useRealTimers();
+  }
+}
 
 const MODIFIED = Date.now();
 
@@ -216,8 +228,7 @@ describe("search over marks and names", () => {
     if (!input) {
       throw new Error("no search input");
     }
-    input.value = value;
-    input.dispatchEvent(new Event("input"));
+    typeQuery(input, value);
   }
 
   it("matches a plain query against tags", () => {
@@ -337,8 +348,7 @@ describe("the Starred only filter", () => {
     host.querySelector<HTMLButtonElement>(".vault-header__search-btn")?.click();
     const input = host.querySelector<HTMLInputElement>(".vault-search-input");
     if (input) {
-      input.value = "zzz";
-      input.dispatchEvent(new Event("input"));
+      typeQuery(input, "zzz");
     }
     expect(host.querySelector(".vault-status")?.textContent).toContain("No matching sessions");
   });

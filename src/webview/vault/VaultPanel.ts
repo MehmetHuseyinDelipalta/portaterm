@@ -87,6 +87,13 @@ export type VaultPanelPostMessage = (
 
 /** Rows shown per group before a "Show more" affordance keeps the list scannable. */
 const MAX_VISIBLE_PER_GROUP = 10;
+/**
+ * Keystrokes typed inside this window coalesce into one list rebuild and one
+ * worktree re-filter. Every keystroke used to `replaceChildren` the whole list
+ * and repaint the worktree view, so a fast typist rebuilt both several times
+ * per word.
+ */
+export const VAULT_SEARCH_DEBOUNCE_MS = 80;
 
 /**
  * Which BODY the panel shows. Deliberately a sibling of `GroupMode` rather than a
@@ -224,6 +231,8 @@ export class VaultPanel {
    *  folder / group) never re-flashes rows that didn't actually update. */
   private pendingFreshIds: Set<string> | null = null;
   private query = "";
+  /** The trailing search-input apply still waiting out VAULT_SEARCH_DEBOUNCE_MS. */
+  private searchTimer: ReturnType<typeof setTimeout> | undefined;
   private collapsed = true;
   /** Whether the inline header search is open. Transient — never persisted. */
   private searchActive = false;
@@ -372,9 +381,11 @@ export class VaultPanel {
     this.searchInput.placeholder = "Search sessions…";
     this.searchInput.setAttribute("aria-label", "Search sessions");
     this.searchInput.addEventListener("input", () => {
-      this.query = this.searchInput.value.trim().toLowerCase();
-      this.onWorktreeQuery?.(this.query);
-      this.renderList();
+      this.cancelPendingSearch();
+      this.searchTimer = setTimeout(() => {
+        this.searchTimer = undefined;
+        this.applySearchInput();
+      }, VAULT_SEARCH_DEBOUNCE_MS);
     });
     this.searchInput.addEventListener("keydown", (ev) => {
       ev.stopPropagation();
@@ -809,6 +820,31 @@ export class VaultPanel {
     this.searchBtnEl.setAttribute("aria-label", "Close search");
     this.searchInput.value = "";
     this.searchInput.focus();
+  }
+
+  /**
+   * Apply what the search box holds NOW — the end of a debounced burst. Read at
+   * fire time, not captured per keystroke, so a path that rewrote the box and
+   * the query together while the timer ran (Escape clears both, a tag chip sets
+   * both to `#tag`) is matched here and left alone.
+   */
+  private applySearchInput(): void {
+    const next = this.searchInput.value.trim().toLowerCase();
+    // Also covers a burst that came back to where it started ("a" → "ab" → "a").
+    if (next === this.query) {
+      return;
+    }
+    this.query = next;
+    this.onWorktreeQuery?.(this.query);
+    this.renderList();
+  }
+
+  /** Drop a pending search apply — a disposed panel must not rebuild its list. */
+  private cancelPendingSearch(): void {
+    if (this.searchTimer !== undefined) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = undefined;
+    }
   }
 
   /** Close search and clear any active query. */
@@ -1350,6 +1386,7 @@ export class VaultPanel {
   /** Release every owned resource: the context menu, preview controller, and
    * header tooltip. */
   dispose(): void {
+    this.cancelPendingSearch();
     this.contextMenu.close();
     this.preview.dispose();
     for (const dispose of this.disposers) {
