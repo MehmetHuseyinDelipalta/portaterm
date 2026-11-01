@@ -29,12 +29,13 @@ import darkPlus from "@shikijs/themes/dark-plus";
 import githubDark from "@shikijs/themes/github-dark";
 import githubLight from "@shikijs/themes/github-light";
 import lightPlus from "@shikijs/themes/light-plus";
-import { createHighlighterCore } from "shiki/core";
+import { createHighlighterCore, hastToHtml } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 
 import { SHIKI_GLOBAL, type ShikiBundle } from "./shikiGlobal";
 
 export const shikiBundle: ShikiBundle = {
+  hastToHtml: (root) => hastToHtml(root),
   createHighlighter: () =>
     createHighlighterCore({
       engine: createJavaScriptRegexEngine(),

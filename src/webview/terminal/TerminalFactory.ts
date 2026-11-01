@@ -304,10 +304,9 @@ export class TerminalFactory {
     // See: asimov/changes/add-hover-file-preview/design.md "Architecture", D10
     const syntaxRenderer = createSyntaxRenderer({ getTheme: this.getHoverPreviewTheme });
     const markdownRenderer = createMarkdownRenderer({ getTheme: this.getHoverPreviewTheme });
-    // Schedule a re-render once the Shiki highlighter finishes loading. The
-    // initial render at first-hover falls back to plain `<pre>` when the
-    // singleton isn't yet ready (round-1 W4); this wrapper re-injects styled
-    // HTML once Shiki resolves, only if the element is still in the DOM.
+    // Code shows plain lines until its highlighted HTML is ready — Shiki still
+    // loading (round-1 W4), or a long file highlighted in slices — and the
+    // renderer swaps that in while the element is still in the DOM.
     //
     // `onAsyncRefresh` (round-2 W5) is invoked AFTER innerHTML replacement so
     // the popup can re-apply the active-line highlight + scroll. Without it,
@@ -318,22 +317,7 @@ export class TerminalFactory {
       languageId: string,
       theme: HoverPreviewThemeKind,
       onAsyncRefresh?: () => void,
-    ): HTMLElement => {
-      const el = syntaxRenderer.renderElement(content, languageId, theme);
-      if (!isHighlighterReady()) {
-        void whenHighlighterReady().then(() => {
-          if (el.isConnected) {
-            el.innerHTML = syntaxRenderer.renderElement(content, languageId, theme).innerHTML;
-            try {
-              onAsyncRefresh?.();
-            } catch {
-              // Best-effort — popup's reapply must never throw out of here.
-            }
-          }
-        });
-      }
-      return el;
-    };
+    ): HTMLElement => syntaxRenderer.renderLive(content, languageId, theme, onAsyncRefresh);
     const renderMarkdownWithRefresh = (
       content: string,
       theme: HoverPreviewThemeKind,

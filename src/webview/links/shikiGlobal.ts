@@ -7,6 +7,8 @@ import type { HighlighterCore } from "shiki/core";
 /** What `media/shiki.js` publishes on `globalThis[SHIKI_GLOBAL]` once it has run. */
 export interface ShikiBundle {
   createHighlighter(): Promise<HighlighterCore>;
+  /** Shiki's own serializer, for HTML assembled from highlighted slices. */
+  hastToHtml(root: ReturnType<HighlighterCore["codeToHast"]>): string;
 }
 
 /** The global `media/shiki.js` publishes itself under. */

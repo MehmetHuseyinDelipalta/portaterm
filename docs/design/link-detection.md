@@ -360,10 +360,17 @@ Rendering: the popup is a body-mounted fixed overlay so it can extend past the t
 over the vault or file tree (`HoverPreviewPopup.ts:1-4`), sized 640 px by default, up to
 1000 wide and 360 tall, never below 280 × 120 (`:28`, `:34`, `:36`, `:38-39`).
 Highlighting uses a **statically imported** 20-language, 4-theme Shiki bundle — a runtime
-import would break the CSP nonce (`syntaxRenderer.ts:1-8`, `:43`). Markdown is rendered
-with HTML disabled, linkification disabled, and every href stripped, using a fresh
-instance per render so concurrent theme-differing renders cannot bleed
-(`markdownRenderer.ts:27-42`).
+import would break the CSP nonce (`syntaxRenderer.ts:1-8`, `:43`). Tokenizing runs on the
+webview's one thread — about 180 ms for a 1000-line TypeScript file — so content up to
+`SYNC_HIGHLIGHT_CHARS` (6000) is highlighted at once, and longer content shows as plain
+lines (one `span.line` each, so the gutter and active line work) while
+`highlightInSlices` tokenizes `SLICE_LINES` (50) lines per task, yielding before each and
+carrying Shiki's grammar state across, which yields exactly the one-pass HTML. Finished
+renders are remembered by theme, grammar and content (16, least recently used dropped),
+so hovering a file again costs nothing. Markdown is rendered with HTML disabled,
+linkification disabled, and every href stripped, using one instance per theme — never a
+shared one with a mutable theme — so concurrent theme-differing renders cannot bleed; its
+finished renders are remembered too (8), once Shiki has loaded.
 
 ---
 

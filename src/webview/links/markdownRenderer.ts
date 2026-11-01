@@ -15,14 +15,13 @@
 
 import MarkdownIt from "markdown-it";
 import type { HoverPreviewThemeKind } from "./HoverPreviewController";
-import { renderHtml as renderCodeHtml } from "./syntaxRenderer";
+import { isHighlighterReady, renderHtml as renderCodeHtml } from "./syntaxRenderer";
 
 /**
- * Build a fresh MarkdownIt instance whose `highlight` callback closes over
- * the supplied theme. No module-scope mutable state — concurrent renders for
- * different terminals with different themes cannot bleed (review round-1 W2).
- * The cost is one extra `new MarkdownIt(...)` per render; tiny, and avoids
- * the fragility of sharing a singleton with a mutable theme variable.
+ * Build a MarkdownIt instance whose `highlight` callback closes over the
+ * supplied theme. One per theme, never a singleton with a mutable theme
+ * variable — concurrent renders for different terminals with different themes
+ * cannot bleed (review round-1 W2).
  */
 function buildMd(theme: HoverPreviewThemeKind): MarkdownIt {
   const md = new MarkdownIt({
@@ -41,10 +40,41 @@ function buildMd(theme: HoverPreviewThemeKind): MarkdownIt {
   return md;
 }
 
-/** Render markdown content as an HTMLElement. Pure — no module-scope writes. */
-export function renderMarkdownElement(content: string, theme: HoverPreviewThemeKind): HTMLElement {
-  const md = buildMd(theme);
+/** The instance for each theme, built on its first render. */
+const instances = new Map<HoverPreviewThemeKind, MarkdownIt>();
+
+/** Finished renders remembered, least recently used dropped first. */
+export const MAX_REMEMBERED_MARKDOWN = 8;
+/** HTML by theme and content; a Map iterates in insertion order, oldest first. */
+const remembered = new Map<string, string>();
+
+function renderMarkdownHtml(content: string, theme: HoverPreviewThemeKind): string {
+  const key = `${theme}\0${content}`;
+  const known = remembered.get(key);
+  if (known !== undefined) {
+    remembered.delete(key);
+    remembered.set(key, known);
+    return known;
+  }
+  let md = instances.get(theme);
+  if (!md) {
+    md = buildMd(theme);
+    instances.set(theme, md);
+  }
   const html = md.render(content);
+  // Code blocks rendered before Shiki loaded are plain: render those again later.
+  if (isHighlighterReady()) {
+    remembered.set(key, html);
+    if (remembered.size > MAX_REMEMBERED_MARKDOWN) {
+      remembered.delete(remembered.keys().next().value as string);
+    }
+  }
+  return html;
+}
+
+/** Render markdown content as an HTMLElement. */
+export function renderMarkdownElement(content: string, theme: HoverPreviewThemeKind): HTMLElement {
+  const html = renderMarkdownHtml(content, theme);
   const wrapper = document.createElement("div");
   wrapper.className = "anywhere-hover-preview-md";
   wrapper.innerHTML = html;
