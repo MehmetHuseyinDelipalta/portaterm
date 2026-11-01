@@ -24,7 +24,17 @@ Reads SHALL be tolerant of unknown extra fields. Reads MUST validate `version ==
 
 ### Requirement: Snapshot persistence cadence — debounced + two-step sync flush on deactivate
 
-`SessionManager` SHALL coalesce snapshot writes via a single 1000 ms debounce. Hot loops of `pty.onData` events MUST result in at most one buffer-file write per session per debounce window.
+`SessionManager` SHALL coalesce snapshot writes via a single trailing debounce: a write SHALL run 1000 ms after the most recent change, and no later than 10 000 ms after the first change that has not yet been written. Hot loops of `pty.onData` events MUST result in at most one buffer-file write per session per debounce window, and a session that keeps producing output MUST NOT be written more than once per 10 000 ms.
+
+#### Scenario: A pane that never goes quiet is written once per max wait
+
+- **WHEN** a session produces output continuously, with no gap of 1000 ms
+- **THEN** its snapshot SHALL be written once 10 000 ms after the first change, and SHALL NOT be written once a second
+
+#### Scenario: A burst is written once it settles
+
+- **WHEN** a session produces a burst of output and then goes quiet
+- **THEN** its snapshot SHALL be written 1000 ms after the last change of the burst
 
 `extension.deactivate()` MUST perform the following in order:
 

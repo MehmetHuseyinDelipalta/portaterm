@@ -12,6 +12,7 @@ vi.mock("./OutputBuffer", async () => (await import("../test/sessionMocks")).out
 
 import { SessionManager } from "./SessionManager";
 import type { SessionSnapshotsIndex } from "./SessionSnapshot";
+import { SNAPSHOT_PERSIST_DEBOUNCE_MS, SNAPSHOT_PERSIST_MAX_WAIT_MS } from "./SnapshotPersistence";
 
 const makeStorageMock = () => sessionStorageMock();
 // The addon index is fixed per addon, so `BUF#n` is captured per addon exactly
@@ -349,5 +350,122 @@ describe("SessionManager debounced persistence", () => {
     expect(storage.commitBufferAsync).not.toHaveBeenCalled();
     expect(storage.commitIndexAsync).not.toHaveBeenCalled();
     sm.dispose();
+  });
+
+  describe("trailing debounce with a maximum wait (A1)", () => {
+    function restoringManager() {
+      const fx = makeFactories();
+      const storage = makeStorageMock();
+      const sm = new SessionManager(undefined, {
+        restoreEnabled: true,
+        headlessFactory: fx.headless,
+        serializeAddonFactory: fx.serialize,
+        storage: storage as any,
+      });
+      const id = sm.createSession("sidebar", mockWebview());
+      return { sm, storage, id, emit: (data: string) => mockPtySessions[0].onData?.(data) };
+    }
+
+    it("writes a pane that never goes quiet once per max wait, not once a second", async () => {
+      // An agent TUI redrawing its spinner: output every 500 ms, forever. The old
+      // throttle wrote it — serialize, buffer file, whole index — every second.
+      const { sm, storage, emit } = restoringManager();
+      for (let elapsed = 0; elapsed < SNAPSHOT_PERSIST_MAX_WAIT_MS * 2.5; elapsed += 500) {
+        emit("spinner frame");
+        await vi.advanceTimersByTimeAsync(500);
+      }
+
+      expect(storage.commitBufferAsync).toHaveBeenCalledTimes(2);
+      expect(storage.commitIndexAsync).toHaveBeenCalledTimes(2);
+      sm.dispose();
+    });
+
+    it("writes the first time at the max wait, measured from the first unwritten change", async () => {
+      const { sm, storage, emit } = restoringManager();
+      for (let elapsed = 0; elapsed < SNAPSHOT_PERSIST_MAX_WAIT_MS - 500; elapsed += 500) {
+        emit("x");
+        await vi.advanceTimersByTimeAsync(500);
+      }
+      emit("x");
+      await vi.advanceTimersByTimeAsync(499);
+      expect(storage.commitBufferAsync).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(storage.commitBufferAsync).toHaveBeenCalledTimes(1);
+      sm.dispose();
+    });
+
+    it("writes a burst once it has been quiet for the debounce after its LAST change", async () => {
+      const { sm, storage, emit } = restoringManager();
+      emit("a");
+      await vi.advanceTimersByTimeAsync(600);
+      emit("b");
+      await vi.advanceTimersByTimeAsync(600);
+      emit("c"); // t=1200; a throttle would already have written at t=1000
+      await vi.advanceTimersByTimeAsync(SNAPSHOT_PERSIST_DEBOUNCE_MS - 1);
+      expect(storage.commitBufferAsync).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(storage.commitBufferAsync).toHaveBeenCalledTimes(1);
+      expect(storage.commitIndexAsync).toHaveBeenCalledTimes(1);
+      sm.dispose();
+    });
+
+    it("starts a new max-wait window after each write", async () => {
+      const { sm, storage, emit } = restoringManager();
+      emit("first burst");
+      await vi.advanceTimersByTimeAsync(SNAPSHOT_PERSIST_DEBOUNCE_MS);
+      expect(storage.commitBufferAsync).toHaveBeenCalledTimes(1);
+
+      // Quiet for a while, then a short burst: it waits only for its own quiet
+      // period, not for a max-wait clock left over from the last burst.
+      await vi.advanceTimersByTimeAsync(SNAPSHOT_PERSIST_MAX_WAIT_MS * 2);
+      expect(storage.commitBufferAsync).toHaveBeenCalledTimes(1);
+      emit("second burst");
+      await vi.advanceTimersByTimeAsync(SNAPSHOT_PERSIST_DEBOUNCE_MS);
+      expect(storage.commitBufferAsync).toHaveBeenCalledTimes(2);
+      sm.dispose();
+    });
+
+    it("leaves no timer behind once a synchronous flush has written everything", async () => {
+      const { sm, storage, emit } = restoringManager();
+      emit("x");
+      sm.flushSnapshotsSync();
+      expect(storage.commitBufferSync).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(SNAPSHOT_PERSIST_MAX_WAIT_MS * 2);
+      expect(storage.commitBufferAsync).not.toHaveBeenCalled();
+      sm.dispose();
+    });
+
+    it("an immediate flush cancels both timers rather than writing twice", async () => {
+      const { sm, storage, id, emit } = restoringManager();
+      emit("x");
+      await vi.advanceTimersByTimeAsync(500);
+      emit("y");
+      await sm.flushSessionImmediate(id);
+      expect(storage.commitBufferAsync).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(SNAPSHOT_PERSIST_MAX_WAIT_MS * 2);
+      expect(storage.commitBufferAsync).toHaveBeenCalledTimes(1);
+      sm.dispose();
+    });
+
+    it("turning restore off cancels a pending write and its max wait", async () => {
+      const { sm, storage, emit } = restoringManager();
+      emit("x");
+      sm.setRestoreEnabled(false);
+      await vi.advanceTimersByTimeAsync(SNAPSHOT_PERSIST_MAX_WAIT_MS * 2);
+      expect(storage.commitBufferAsync).not.toHaveBeenCalled();
+      expect(storage.commitIndexAsync).not.toHaveBeenCalled();
+      sm.dispose();
+    });
+
+    it("disposal cancels a pending write and its max wait", async () => {
+      const { sm, storage, emit } = restoringManager();
+      emit("x");
+      sm.dispose();
+      await vi.advanceTimersByTimeAsync(SNAPSHOT_PERSIST_MAX_WAIT_MS * 2);
+      expect(storage.commitBufferAsync).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });

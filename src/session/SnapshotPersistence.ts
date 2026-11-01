@@ -24,8 +24,22 @@ const SERIALIZE_OPTIONS = { scrollback: 1000, excludeAltBuffer: true, excludeMod
 /** Hard cap for the serialized buffer attached to a single snapshot. See design.md D5. */
 const SNAPSHOT_BUFFER_MAX_BYTES = 1_048_576;
 
-/** Debounce for coalescing high-frequency pty.onData events into one snapshot write. See design.md D6. */
-const SNAPSHOT_PERSIST_DEBOUNCE_MS = 1000;
+/**
+ * Quiet period before a snapshot write: a write lands this long after the LAST
+ * change, not the first. See design.md D6.
+ */
+export const SNAPSHOT_PERSIST_DEBOUNCE_MS = 1000;
+
+/**
+ * Longest a change waits for that quiet period. A pane that never goes quiet — an
+ * agent TUI redrawing its spinner, a build streaming output — is still written,
+ * once per this interval. Before it, a throttle wrote every busy pane once a
+ * second: a serialize of 1000 lines, a buffer file of up to 1 MB and a rewrite of
+ * the whole index, hidden panes included. A clean shutdown writes everything
+ * synchronously anyway (`flushSnapshotsSync`), so this bounds only what a crash
+ * can lose.
+ */
+export const SNAPSHOT_PERSIST_MAX_WAIT_MS = 10_000;
 
 /**
  * Default factory: dynamically loads `@xterm/headless` and constructs a
@@ -104,8 +118,10 @@ export class SnapshotPersistence {
   private storage: SessionStorage | null;
   private restoreEnabled: boolean;
 
-  /** Debounce timer for coalesced snapshot persistence. Null when idle. */
+  /** Trailing quiet-period timer for coalesced snapshot persistence. Null when idle. */
   private _persistTimer: NodeJS.Timeout | null = null;
+  /** Max-wait timer, armed by the first change of a burst. Null when idle. */
+  private _persistMaxTimer: NodeJS.Timeout | null = null;
 
   /** Sessions with buffer changes since the last flush. Drained per tick. */
   private _pendingSessions = new Set<string>();
@@ -167,10 +183,7 @@ export class SnapshotPersistence {
     // after this teardown completes.
     this._persistGeneration++;
     if (!enabled) {
-      if (this._persistTimer) {
-        clearTimeout(this._persistTimer);
-        this._persistTimer = null;
-      }
+      this.cancelPersistTimers();
       this._pendingSessions.clear();
       this.writeBarriers.clear();
       // Dispose every mirror + cached addon. The session itself stays alive;
@@ -631,9 +644,11 @@ export class SnapshotPersistence {
   // ─── Scheduling + flush ─────────────────────────────────────────
 
   /**
-   * Mark a session for snapshot persistence. Hot loops are coalesced via a
-   * single 1000ms debounce. No-op when restoreEnabled === false or no
-   * SessionStorage is configured. See design.md D6.
+   * Mark a session for snapshot persistence. Writes are coalesced by a trailing
+   * debounce: every change pushes the write back to SNAPSHOT_PERSIST_DEBOUNCE_MS
+   * after it, bounded by SNAPSHOT_PERSIST_MAX_WAIT_MS from the first change of the
+   * burst. No-op when restoreEnabled === false or no SessionStorage is configured.
+   * See design.md D6.
    */
   schedulePersist(sessionId: string): void {
     if (!this.restoreEnabled || !this.storage) {
@@ -641,12 +656,27 @@ export class SnapshotPersistence {
     }
     this._pendingSessions.add(sessionId);
     if (this._persistTimer) {
-      return;
+      clearTimeout(this._persistTimer);
     }
-    this._persistTimer = setTimeout(() => {
+    this._persistTimer = setTimeout(() => this.firePersist(), SNAPSHOT_PERSIST_DEBOUNCE_MS);
+    this._persistMaxTimer ??= setTimeout(() => this.firePersist(), SNAPSHOT_PERSIST_MAX_WAIT_MS);
+  }
+
+  /** One of the two timers came due: end the burst and write it. */
+  private firePersist(): void {
+    this.cancelPersistTimers();
+    void this.flushPending();
+  }
+
+  private cancelPersistTimers(): void {
+    if (this._persistTimer) {
+      clearTimeout(this._persistTimer);
       this._persistTimer = null;
-      void this.flushPending();
-    }, SNAPSHOT_PERSIST_DEBOUNCE_MS);
+    }
+    if (this._persistMaxTimer) {
+      clearTimeout(this._persistMaxTimer);
+      this._persistMaxTimer = null;
+    }
   }
 
   /**
@@ -659,10 +689,7 @@ export class SnapshotPersistence {
       return;
     }
     this._pendingSessions.add(sessionId);
-    if (this._persistTimer) {
-      clearTimeout(this._persistTimer);
-      this._persistTimer = null;
-    }
+    this.cancelPersistTimers();
     await this.flushPending();
   }
 
@@ -724,10 +751,7 @@ export class SnapshotPersistence {
     if (this._disposed || !this.restoreEnabled || !this.storage) {
       return;
     }
-    if (this._persistTimer) {
-      clearTimeout(this._persistTimer);
-      this._persistTimer = null;
-    }
+    this.cancelPersistTimers();
     this._pendingSessions.clear();
     for (const id of liveSessionIds) {
       const session = this.getSession(id);
@@ -1007,10 +1031,7 @@ export class SnapshotPersistence {
       return;
     }
     this._disposed = true;
-    if (this._persistTimer) {
-      clearTimeout(this._persistTimer);
-      this._persistTimer = null;
-    }
+    this.cancelPersistTimers();
     this._pendingSessions.clear();
     // Disposal of per-session mirrors is performed by SessionManager via
     // dropSession / releaseRuntimeOnly during cleanupSession + dispose
