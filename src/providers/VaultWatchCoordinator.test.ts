@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
 import type { VaultSessionDetail } from "../vault/types";
-import type { VaultWatchTarget } from "../vault/VaultService";
+import { VaultService, type VaultWatchTarget } from "../vault/VaultService";
 import type { WatcherPool } from "./fsWatcherPool";
 import { VaultWatchCoordinator } from "./VaultWatchCoordinator";
 
@@ -15,7 +15,7 @@ function uri(fsPath: string): vscode.Uri {
   return { fsPath } as vscode.Uri;
 }
 
-function createHarness() {
+function createPool() {
   const subscriptions: Array<{
     baseDir: string;
     glob: string;
@@ -29,6 +29,11 @@ function createHarness() {
       return { dispose };
     }),
   } as unknown as Pick<WatcherPool, "subscribePattern">;
+  return { watcherPool, subscriptions };
+}
+
+function createHarness() {
+  const { watcherPool, subscriptions } = createPool();
   const detail = { entryId: "claude:s1", timeline: [] } as unknown as VaultSessionDetail;
   const vaultService = {
     getStoreWatchTargets: vi.fn((): VaultWatchTarget[] => [
@@ -159,6 +164,52 @@ describe("VaultWatchCoordinator", () => {
     expect(refreshList).toHaveBeenCalledWith({
       agent: "cursor",
       paths: ["/cursor-projects/a/agent-transcripts/chat.jsonl", "/cursor-ide/state.vscdb-wal"],
+    });
+    coordinator.dispose();
+  });
+
+  it("routes the real Codex and OpenCode store targets to their own reader, never a full refresh", () => {
+    // Uses VaultService's real target list, not the harness fixture: the
+    // unrouted Codex/OpenCode targets made every write of either agent re-read
+    // all four stores, the multi-GB Cursor IDE db included, once a second.
+    vi.useFakeTimers();
+    const { watcherPool, subscriptions } = createPool();
+    const coordinator = new VaultWatchCoordinator({
+      watcherPool,
+      vaultService: {
+        getStoreWatchTargets: () => new VaultService().getStoreWatchTargets(),
+        resolveSessionWatchTargets: vi.fn(async () => []),
+        getDetail: vi.fn(async () => null),
+      },
+    });
+    const refreshList = vi.fn();
+    coordinator.attach({ refreshList, postFollowDetail: vi.fn() });
+    const sub = (match: (s: (typeof subscriptions)[number]) => boolean) => {
+      const found = subscriptions.find(match);
+      if (!found) {
+        throw new Error("missing real store subscription");
+      }
+      return found;
+    };
+    const codexDb = sub((s) => s.glob === "state_5.sqlite*");
+    const codexRollouts = sub((s) => s.glob === "**/*.jsonl" && /sessions$/.test(s.baseDir));
+    const opencodeDb = sub((s) => s.glob === "opencode.db*");
+
+    codexDb.handlers.change?.(uri(`${codexDb.baseDir}/state_5.sqlite-wal`));
+    codexRollouts.handlers.change?.(uri(`${codexRollouts.baseDir}/2026/11/01/rollout-x.jsonl`));
+    vi.advanceTimersByTime(300);
+    expect(refreshList).toHaveBeenCalledTimes(1);
+    expect(refreshList).toHaveBeenLastCalledWith({
+      agent: "codex",
+      paths: [`${codexDb.baseDir}/state_5.sqlite-wal`, `${codexRollouts.baseDir}/2026/11/01/rollout-x.jsonl`],
+    });
+
+    opencodeDb.handlers.change?.(uri(`${opencodeDb.baseDir}/opencode.db-wal`));
+    vi.advanceTimersByTime(300);
+    expect(refreshList).toHaveBeenCalledTimes(2);
+    expect(refreshList).toHaveBeenLastCalledWith({
+      agent: "opencode",
+      paths: [`${opencodeDb.baseDir}/opencode.db-wal`],
     });
     coordinator.dispose();
   });

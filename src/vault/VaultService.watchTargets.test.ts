@@ -22,9 +22,11 @@ describe("VaultService.getStoreWatchTargets", () => {
     expect(other).toEqual([
       // Routed to the Claude reader, so a Claude write never re-reads every store.
       { baseDir: expect.stringContaining(path.join(".claude", "projects")), glob: "**/*.jsonl", agent: "claude" },
-      { baseDir: expect.any(String), glob: "state_5.sqlite*" },
-      { baseDir: expect.stringMatching(/sessions$/), glob: "**/*.jsonl" },
-      { baseDir: expect.stringMatching(/opencode$/), glob: "opencode.db*" },
+      // Codex and OpenCode write their stores on every turn; unrouted, each
+      // write re-read all four stores (the Cursor IDE db included).
+      { baseDir: expect.any(String), glob: "state_5.sqlite*", agent: "codex" },
+      { baseDir: expect.stringMatching(/sessions$/), glob: "**/*.jsonl", agent: "codex" },
+      { baseDir: expect.stringMatching(/opencode$/), glob: "opencode.db*", agent: "opencode" },
     ]);
     expect(targets).toHaveLength(8);
   });

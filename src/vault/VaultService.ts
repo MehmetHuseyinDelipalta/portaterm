@@ -223,11 +223,14 @@ const defaultAdapters = {
     entry: (sessionId) => lookupCodexEntry(sessionId),
     record: (sessionId, msgRef) => readCodexMessageRecord(sessionId, msgRef),
     renameNative: (sessionId, name) => renameCodexThread(sessionId, name),
+    // Routed to the Codex reader alone, like Claude above: Codex rewrites its
+    // index db (and the -wal beside it) on every turn, and an unrouted event
+    // re-read all four stores — the Cursor IDE db included — once a second.
     storeWatchTargets: () => {
       const { dbPath, sessionsDir } = codexStoreDirs();
       return [
-        { baseDir: path.dirname(dbPath), glob: `${path.basename(dbPath)}*` },
-        { baseDir: sessionsDir, glob: "**/*.jsonl" },
+        { baseDir: path.dirname(dbPath), glob: `${path.basename(dbPath)}*`, agent: "codex" },
+        { baseDir: sessionsDir, glob: "**/*.jsonl", agent: "codex" },
       ];
     },
     sessionWatchTargets: async (sessionId) => {
@@ -247,9 +250,10 @@ const defaultAdapters = {
     entry: (sessionId) => lookupOpenCodeEntry(sessionId),
     record: (sessionId, msgRef) => readOpenCodeMessageRecord(sessionId, msgRef),
     renameNative: (sessionId, name) => renameOpenCodeSession(sessionId, name),
+    // Routed for the same reason as Codex: OpenCode writes its db while it runs.
     storeWatchTargets: () => {
       const { dbPath } = opencodeStoreDirs();
-      return [{ baseDir: path.dirname(dbPath), glob: `${path.basename(dbPath)}*` }];
+      return [{ baseDir: path.dirname(dbPath), glob: `${path.basename(dbPath)}*`, agent: "opencode" }];
     },
     sessionWatchTargets: async (sessionId) => {
       if (!isGlobSafeId(sessionId)) {
