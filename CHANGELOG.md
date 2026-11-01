@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.49.2] — 2026-11-01
+
+### Fixed
+
+- **The Vault no longer copies Cursor's multi-GB IDE database while you work in Cursor.** Cursor writes that database constantly, and each write made the Vault take a fresh copy of it to read the IDE chat list — seconds of disk activity every time, even with the panel hidden. The Vault now checks whether the chat list actually changed and copies the database only when it did, and reads it at most every 30 seconds.
+- **Busy terminals no longer save their restore snapshot every second.** A tab with constant output — an agent's spinner, a long build, a hidden tab — was saved once a second for as long as it ran. Snapshots are now saved once output pauses, and at least every 10 seconds while it keeps running; closing the window still saves everything.
+- **Saving a snapshot no longer rewrites every tab's command history.** The output of tracked commands (used by **Export Command…**) was stored with the tab list and rewritten on every save; each tab's commands now have their own file, written only when a command finishes or the terminal is cleared.
+
 ## [0.49.1] — 2026-11-01
 
 ### Fixed

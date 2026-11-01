@@ -175,7 +175,7 @@ Terminals attempt to survive two distinct interruptions:
 
 Persistence is workspace-scoped (when a workspace folder is open): snapshots from workspace A are not surfaced in workspace B. Storage is capped at 20 snapshots per workspace, 1 MB per snapshot, and 7 days of age — whichever comes first. Disable the entire pipeline via `portaterm.sessionRestore.enabled` if you don't want any state written to disk; toggling the setting off also purges existing snapshots. When no workspace folder is open, persistence is disabled for that window (the no-folder global directory could otherwise leak snapshots between unrelated no-folder windows).
 
-> **What's persisted**: the serialized xterm scrollback buffer is written verbatim to disk. **Anything echoed or displayed in the terminal — passwords typed at a prompt, `cat`'d `.env` files, `aws configure` output, API tokens pasted to verify, kubeconfigs printed via `kubectl config view`, etc. — is stored in plaintext** under VS Code's per-extension storage directory until evicted by the caps above. The clear-screen command (`Cmd+K` / right-click → Clear) now also clears the persisted buffer, so use it as a privacy boundary before screen-share or hand-off. If your shell often surfaces secrets and you don't want any of them on disk, set `portaterm.sessionRestore.enabled` to `false`.
+> **What's persisted**: the serialized xterm scrollback buffer is written verbatim to disk, and so is the output of each tab's tracked commands (used by **Export Command…**). **Anything echoed or displayed in the terminal — passwords typed at a prompt, `cat`'d `.env` files, `aws configure` output, API tokens pasted to verify, kubeconfigs printed via `kubectl config view`, etc. — is stored in plaintext** under VS Code's per-extension storage directory until evicted by the caps above. The clear-screen command (`Cmd+K` / right-click → Clear) also clears the persisted buffer and tracked commands, so use it as a privacy boundary before screen-share or hand-off. If your shell often surfaces secrets and you don't want any of them on disk, set `portaterm.sessionRestore.enabled` to `false`.
 
 > Process revive (the actual shell process surviving a full restart) is out of scope for this release. A future opt-in path may integrate `tmux` / `screen` / `zellij` for users who need that.
 
@@ -212,7 +212,7 @@ If you launch the shell with `bash --norc`, `bash --login --noprofile` or `pwsh 
 
 **Privacy**: the per-session UUID nonce that the parser uses to validate command-line metadata is set as the `VSCODE_NONCE` environment variable on the spawned shell only.
 
-After a window reload, tracked commands reset to empty — the scrollback is restored from snapshot but the command list is not persisted. You'll see the same "no tracked commands yet" toast as if shell integration were off; just run one command and the list rebuilds.
+Tracked commands survive a window reload and a full restart with the rest of the session restore: each tab's completed commands are kept on disk next to its scrollback snapshot, so **Export Last Command Output** and **Export Command…** still offer them afterwards. A command that was still running when the window went away is not kept. Clearing the terminal (`Cmd+K`) also clears its tracked commands, on disk too.
 
 ## Requirements
 
