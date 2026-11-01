@@ -19,14 +19,18 @@ import type { VaultPreviewGeometry } from "../state/WebviewState";
 import { getAgentAccent, getAgentIcon, VAULT_ACCENTS } from "./agentIcons";
 import { type ContinueDialogResult, openContinueDialog } from "./ContinueDialog";
 import { FloatingPreviewShell } from "./FloatingPreviewShell";
+import { mergeFollowTimeline } from "./followMerge";
 import type { ForkPoint } from "./forkPoint";
 import { agentLabel } from "./format";
 import { mountMessageActions } from "./messageActions";
 import { buildPreviewHeader as buildPreviewHeaderDom, syncPreviewStar } from "./previewHeader";
 import {
   type BoardSelection,
+  continueTimelineInto,
+  lastUnitStart,
   type NestedInvocationFallback,
   type PreviewTimelineBag,
+  type RenderedTimeline,
   renderNestedInto,
   renderNestedInvocationFallback,
   renderTimelineInto,
@@ -106,6 +110,8 @@ export class PreviewController {
   >();
   /** The detail currently shown — kept so "show more" can re-render in place. */
   private activePreviewDetail: VaultSessionDetail | null = null;
+  /** The root transcript as drawn, so a live-follow push can extend it in place. */
+  private renderedTimeline: RenderedTimeline | null = null;
   /** Keys (`<prefix>#<runIndex>`) of AI-runs expanded past the per-run cap. */
   private readonly expandedRuns = new Set<string>();
   /** Timeline-item limit for the open preview (grows when older msgs are loaded). */
@@ -531,27 +537,34 @@ export class PreviewController {
         }
       }
     }
-    this.renderPreviewDetail(this.activePreviewEntry, msg.detail);
     if (this.previewScrollToTopPending) {
       // A "scroll to first message" gesture is walking older windows. Keep loading
       // while the timeline still GROWS; stop once fully loaded OR the host stops
       // returning more (it clamps at MAX_DETAIL_LIMIT, so a >cap session stays
       // `truncated` forever — without the growth check this would loop). Then jump
       // to the very top instantly (a smooth scroll across full history would be jarring).
-      const count = this.activePreviewDetail?.timeline?.length ?? 0;
+      const count = msg.detail.timeline?.length ?? 0;
       const grew = count > this.previewScrollToTopLastCount;
       this.previewScrollToTopLastCount = count;
-      if (this.activePreviewDetail?.truncated && grew) {
+      if (msg.detail.truncated && grew) {
+        // Not drawn: every step used to rebuild the whole transcript, only for the
+        // next step to replace it — up to a dozen full renders of a growing
+        // timeline. The walk draws once, when it stops.
+        this.activePreviewDetail = msg.detail;
         this.requestMorePreview();
-      } else {
-        this.previewScrollToTopPending = false;
-        this.previewScrollToTopLastCount = 0;
-        const bodyAfter = this.shell.el.querySelector<HTMLElement>(".vault-preview-body");
-        if (bodyAfter) {
-          bodyAfter.scrollTop = 0;
-        }
+        return;
       }
-    } else if (fromBottom !== null) {
+      this.renderPreviewDetail(this.activePreviewEntry, msg.detail);
+      this.previewScrollToTopPending = false;
+      this.previewScrollToTopLastCount = 0;
+      const bodyAfter = this.shell.el.querySelector<HTMLElement>(".vault-preview-body");
+      if (bodyAfter) {
+        bodyAfter.scrollTop = 0;
+      }
+      return;
+    }
+    this.renderPreviewDetail(this.activePreviewEntry, msg.detail);
+    if (fromBottom !== null) {
       const bodyAfter = this.shell.el.querySelector<HTMLElement>(".vault-preview-body");
       if (bodyAfter) {
         bodyAfter.scrollTop = Math.max(0, bodyAfter.scrollHeight - fromBottom);
@@ -591,14 +604,17 @@ export class PreviewController {
     const prevCount = this.activePreviewDetail?.timeline?.length ?? 0;
     const newCount = detail.timeline?.length ?? 0;
 
-    // The reader is up in loaded history and this bounded re-read would return a
-    // SHORTER window (they had loaded older messages) — leave their view intact;
-    // they'll catch up when they scroll back down.
-    if (!atBottom && newCount < prevCount) {
-      return;
+    let delta = this.continueFollow(this.activePreviewEntry, detail, body);
+    if (delta === null) {
+      // The reader is up in loaded history and this bounded re-read would return a
+      // SHORTER window (they had loaded older messages) — leave their view intact;
+      // they'll catch up when they scroll back down.
+      if (!atBottom && newCount < prevCount) {
+        return;
+      }
+      this.renderPreviewDetail(this.activePreviewEntry, detail); // updates followTailFingerprint
+      delta = newCount - prevCount;
     }
-
-    this.renderPreviewDetail(this.activePreviewEntry, detail); // updates followTailFingerprint
     const bodyAfter = this.shell.el.querySelector<HTMLElement>(".vault-preview-body");
     // The tail genuinely changed → flash the newest message so a new reply is easy
     // to spot without stealing focus. Only on this live-follow path — never on the
@@ -616,10 +632,65 @@ export class PreviewController {
       if (bodyAfter) {
         bodyAfter.scrollTop = prevScrollTop;
       }
-      const delta = newCount - prevCount;
       this.followPillCount += delta > 0 ? delta : 1; // content changed even at equal length
       this.shell.scrollNav.setNewMessages(this.followPillCount, () => this.scrollFollowToLatest());
     }
+  }
+
+  /**
+   * Draw a live-follow push by extending the transcript on screen instead of
+   * rebuilding it: when the push agrees with what is shown up to its last unit,
+   * only that unit is drawn again, the new items are appended, and the header is
+   * refreshed. History the reader loaded stays, even after it has slid out of the
+   * push's window. Returns how many items were added, or `null` — nothing touched
+   * — when the push must be drawn in full.
+   */
+  private continueFollow(
+    entry: VaultSessionEntry,
+    detail: VaultSessionDetail,
+    body: HTMLElement | null,
+  ): number | null {
+    const shown = this.activePreviewDetail;
+    const rendered = this.renderedTimeline;
+    const header = this.headerEl;
+    if (!shown || !rendered || !body || rendered.container !== body || !header) {
+      return null;
+    }
+    // Anything drawn above the transcript must come out the same.
+    if (
+      detail.contentKind === "metadata-only" ||
+      detail.contentKind !== shown.contentKind ||
+      partialNotice(detail) !== partialNotice(shown)
+    ) {
+      return null;
+    }
+    const fixedUntil = lastUnitStart(rendered);
+    if (fixedUntil === undefined) {
+      return null;
+    }
+    const merge = mergeFollowTimeline(shown.timeline ?? [], detail.timeline ?? [], fixedUntil);
+    if (!merge) {
+      return null;
+    }
+    // What is shown starts where it did; whether older items exist above it is
+    // the shown answer once the push has dropped some of it.
+    const truncated = merge.dropped > 0 ? shown.truncated : detail.truncated;
+    if (truncated !== shown.truncated) {
+      return null; // the "load older" control would change
+    }
+    if (!continueTimelineInto(rendered, merge.timeline, "root", this.timelineBag)) {
+      return null;
+    }
+    const merged: VaultSessionDetail = { ...detail, timeline: merge.timeline, truncated };
+    this.activePreviewDetail = merged;
+    this.followTailFingerprint = tailFingerprint(detail.timeline ?? []);
+    // A later "load older" must ask for at least what is on screen.
+    this.previewLimit = Math.max(this.previewLimit, merge.timeline.length);
+    const freshHeader = this.buildPreviewHeader(entry, merged);
+    if (freshHeader !== header) {
+      header.replaceWith(freshHeader);
+    }
+    return merge.added;
   }
 
   /** Pill click / caught-up: jump to the newest message and dismiss the pill. */
@@ -650,6 +721,13 @@ export class PreviewController {
         break;
       }
     }
+    // A push that extends the transcript keeps the earlier messages, flash and
+    // all: only the newest one is fresh. Reading `offsetWidth` restarts the
+    // animation should the newest one be the same element as before.
+    for (const fresh of body.querySelectorAll(".vault-preview-message.is-fresh")) {
+      fresh.classList.remove("is-fresh");
+    }
+    void target.offsetWidth;
     target.classList.add("is-fresh");
   }
 
@@ -825,6 +903,7 @@ export class PreviewController {
 
   private renderPreviewDetail(entry: VaultSessionEntry, detail: VaultSessionDetail): void {
     this.activePreviewDetail = detail; // kept so "Show more" can re-render in place
+    this.renderedTimeline = null;
     // Track the tail so the next live-follow push can no-op when nothing changed (D5).
     this.followTailFingerprint = tailFingerprint(detail.timeline ?? []);
     const body = document.createElement("div");
@@ -841,11 +920,12 @@ export class PreviewController {
       loadMore.addEventListener("click", () => this.requestMorePreview());
       body.appendChild(loadMore);
     }
-    if (detail.partial && detail.limitedReason) {
-      const notice = document.createElement("div");
-      notice.className = "vault-preview-notice";
-      notice.textContent = detail.limitedReason;
-      body.appendChild(notice);
+    const notice = partialNotice(detail);
+    if (notice) {
+      const el = document.createElement("div");
+      el.className = "vault-preview-notice";
+      el.textContent = notice;
+      body.appendChild(el);
     }
 
     if (metadataOnly && this.actionsAvailable) {
@@ -860,7 +940,8 @@ export class PreviewController {
     } else if (!metadataOnly) {
       // Full chronological transcript, run-grouped + capped. The same renderer is
       // reused for nested transcripts so capping + pinned conclusions match (D14).
-      renderTimelineInto(body, detail.timeline ?? [], "root", this.timelineBag);
+      // Drawn last into the body, which is what lets a live-follow push extend it.
+      this.renderedTimeline = renderTimelineInto(body, detail.timeline ?? [], "root", this.timelineBag);
     }
 
     // Metadata-only details never expose transcript-derived copy, raw, or
@@ -969,6 +1050,11 @@ function isTextEntryFocused(): boolean {
  *  tail" threshold that decides auto-scroll vs. the "N new messages" pill (D5). */
 function isNearBottom(el: HTMLElement, threshold = 60): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+}
+
+/** The partial-read notice drawn above a transcript, if any. */
+function partialNotice(detail: VaultSessionDetail): string | undefined {
+  return detail.partial && detail.limitedReason ? detail.limitedReason : undefined;
 }
 
 /** A stable fingerprint over the last K timeline items — `kind|role|timestamp|

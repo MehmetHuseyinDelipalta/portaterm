@@ -89,40 +89,114 @@ export interface PreviewTimelineBag {
  * color-highlighted teammateTurns) break the run and always render directly.
  * Run-expansion keys are prefixed by `keyPrefix` so nested runs can't collide.
  */
+/**
+ * Where each rendered unit of a timeline begins — a user message, a run-breaking
+ * item, or a run of AI output — so a live-follow update can rebuild only the last
+ * unit (a run the new items may extend) and append what follows, instead of the
+ * whole transcript.
+ */
+export interface RenderedTimeline {
+  container: Node;
+  units: Array<{
+    /** Index in the timeline of the unit's first item. */
+    start: number;
+    /** The unit's first DOM node; everything up to the next unit's is its. */
+    first: ChildNode;
+    /** The run index the unit used, or the next one, so a rebuild keeps run keys stable. */
+    runIndex: number;
+  }>;
+}
+
+/**
+ * Render a timeline into `container`, run-grouped. The timeline must be the last
+ * content of `container` for `continueTimelineInto` to extend it.
+ */
 export function renderTimelineInto(
-  container: HTMLElement,
+  container: Node,
   timeline: VaultTimelineItem[],
   keyPrefix: string,
   bag: PreviewTimelineBag,
+): RenderedTimeline {
+  const rendered: RenderedTimeline = { container, units: [] };
+  renderUnits(rendered, timeline, 0, 0, keyPrefix, bag, nestedCardKeys(timeline, keyPrefix));
+  return rendered;
+}
+
+/** The index of the last rendered unit's first item, or `undefined` when nothing rendered. */
+export function lastUnitStart(rendered: RenderedTimeline): number | undefined {
+  return rendered.units.at(-1)?.start;
+}
+
+/**
+ * Bring a rendered timeline up to `timeline`, which must equal the rendered one
+ * up to and including the first item of its last unit. That unit is removed and
+ * rendered again — new items may extend a run — followed by every new unit. Run
+ * keys and card keys come out exactly as a full render of `timeline` gives them.
+ *
+ * Returns false, touching nothing, when the rendered DOM no longer has the shape
+ * this needs (a unit's first node was replaced or moved); the caller then renders
+ * in full.
+ */
+export function continueTimelineInto(
+  rendered: RenderedTimeline,
+  timeline: VaultTimelineItem[],
+  keyPrefix: string,
+  bag: PreviewTimelineBag,
+): boolean {
+  const last = rendered.units.at(-1);
+  if (!last) {
+    return false;
+  }
+  if (rendered.units.some((unit) => unit.first.parentNode !== rendered.container)) {
+    return false;
+  }
+  let node: ChildNode | null = last.first;
+  while (node) {
+    const next: ChildNode | null = node.nextSibling;
+    node.remove();
+    node = next;
+  }
+  rendered.units.pop();
+  renderUnits(rendered, timeline, last.start, last.runIndex, keyPrefix, bag, nestedCardKeys(timeline, keyPrefix));
+  return true;
+}
+
+function renderUnits(
+  rendered: RenderedTimeline,
+  timeline: VaultTimelineItem[],
+  from: number,
+  firstRunIndex: number,
+  keyPrefix: string,
+  bag: PreviewTimelineBag,
+  cardKeys: Map<VaultTimelineItem, string>,
 ): void {
-  const cardKeys = nestedCardKeys(timeline, keyPrefix);
-  let i = 0;
-  let runIndex = 0;
+  const container = rendered.container;
+  let i = from;
+  let runIndex = firstRunIndex;
   while (i < timeline.length) {
+    const start = i;
+    const unitRunIndex = runIndex;
+    const before = container.lastChild;
     const item = timeline[i];
-    if (item.kind === "message" && item.role === "user") {
+    if ((item.kind === "message" && item.role === "user") || breaksRun(item)) {
       container.appendChild(renderTimelineItem(item, bag, cardKeys));
       i++;
-      continue;
-    }
-    if (breaksRun(item)) {
-      container.appendChild(renderTimelineItem(item, bag, cardKeys));
-      i++;
-      continue;
-    }
-    const run: VaultTimelineItem[] = [];
-    while (i < timeline.length) {
-      const it = timeline[i];
-      if (it.kind === "message" && it.role === "user") {
-        break;
+    } else {
+      const run: VaultTimelineItem[] = [];
+      while (i < timeline.length) {
+        const it = timeline[i];
+        if ((it.kind === "message" && it.role === "user") || breaksRun(it)) {
+          break;
+        }
+        run.push(it);
+        i++;
       }
-      if (breaksRun(it)) {
-        break;
-      }
-      run.push(it);
-      i++;
+      renderRun(container, run, `${keyPrefix}#${runIndex++}`, bag, cardKeys);
     }
-    renderRun(container, run, `${keyPrefix}#${runIndex++}`, bag, cardKeys);
+    const first = before ? before.nextSibling : container.firstChild;
+    if (first) {
+      rendered.units.push({ start, first, runIndex: unitRunIndex });
+    }
   }
 }
 
@@ -303,7 +377,7 @@ function renderTimelineItem(
  *  concluding assistant message is pinned BELOW the expand so the highest-signal
  *  item stays visible: head (CAP-1) + expand + pinned conclusion. */
 function renderRun(
-  body: HTMLElement,
+  body: Node,
   run: VaultTimelineItem[],
   key: string,
   bag: PreviewTimelineBag,
