@@ -385,6 +385,11 @@ than the thing being paced, and the cost of getting the tiers wrong exceeds anyt
 three surfaces render this view independently, so the scan pauses only when none of them is
 showing it.
 
+While the window has no focus the scan slows to every 30 s (`UNFOCUSED_SCAN_INTERVAL_MS`) — the
+view may still be on another screen, so it does not stop — and when focus returns during such a
+wait it scans at once and resumes the 5 s pace. Watching the registry directory instead would
+not do: a crashed agent leaves its record behind, and only the scan's liveness probe notices.
+
 **A surface reports what it draws, not whether the rail is on screen.** Its declaration carries a
 level: `rows` while agent rows are drawn, `presence` when the rail is closed but something else
 drawn from presence is not — a scope's chip, its escape control, and the count carried on that
@@ -537,7 +542,7 @@ graph LR
 | cwd→worktree mapping | panes × worktrees per rebuild | Both are tens at most; prefix match is string work only |
 | Session resolution | per pane, per rebuild | Cached per `(paneId, cwd, ptyPid)`; only re-resolved when one changes |
 | Process-table reads | per scan | Must be deduped behind a short-TTL snapshot so N panes cost one `ps`, not N. **This snapshot does not exist yet**: `descendantPids` shells out to a full-process-table `ps` on every call with a 500 ms timeout and no cache (`src/pty/processTree.ts:83-102`). Building it is part of the work, not an existing bound |
-| External scan | wall-clock | Flat 5 s while any surface shows the view; paused otherwise |
+| External scan | wall-clock | 5 s while any surface shows the view, 30 s while the window has no focus (one scan at once when it regains focus); paused otherwise |
 | Title / waiting reports | per pane, per change | Decoration-stripped before send, so animation frames collapse to zero messages |
 | Preview reads | rows × scans | A per-`entryId` re-check interval bounds syscalls independently of scan rate; a `(mtimeMs, size)` stamp means a quiet scan opens nothing; the read itself is a tail window, flat in transcript size (§ 3.8) |
 | Subagent reads | per expanded row | Lazy; never on a tree push |

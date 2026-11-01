@@ -43,7 +43,11 @@ import { createSurfaceDelivery, type SurfaceState, WHOLE_TREE_SCOPE } from "./wo
 const LOG_PREFIX = "[worktree-host]";
 
 /** The two cadences this host paces itself by, re-exported so no test moved. */
-export { EXTERNAL_SCAN_INTERVAL_MS, PRESENCE_MAX_LATENCY_MS } from "./worktreeHost/scanReconcile";
+export {
+  EXTERNAL_SCAN_INTERVAL_MS,
+  PRESENCE_MAX_LATENCY_MS,
+  UNFOCUSED_SCAN_INTERVAL_MS,
+} from "./worktreeHost/scanReconcile";
 
 /** The gate scope that rebuilds every repository; any other scope is a repoId. */
 export { WHOLE_TREE_SCOPE } from "./worktreeHost/surfaceDelivery";
@@ -172,6 +176,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
     gate: () => gate,
     surfaceStates: () => surfaces.values(),
     disposed: () => disposed,
+    windowFocused: () => options.windowFocus?.focused() ?? true,
     built: () => delivery.built(),
     projectionRun: () => loop.projectionRun(),
     requestProjection: (request) => loop.requestProjection(request),
@@ -355,6 +360,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
   const gate = createRebuildGate(delivery.rebuild, options.clock);
 
   const paneSub = options.onPaneChange?.(onPaneChange);
+  const focusSub = options.windowFocus?.onDidChange((focused) => timers.onWindowFocus(focused));
 
   const folderSub = options.onDidChangeWorkspaceFolders?.(() => {
     // Forced: the folder set moved, so the cached tree is known wrong. The
@@ -439,6 +445,7 @@ export function createWorktreeHost(options: WorktreeHostOptions): WorktreeHost {
       timers.dispose();
       gate.dispose();
       paneSub?.dispose();
+      focusSub?.dispose();
       folderSub?.dispose();
       for (const watch of watches.values()) {
         watch.dispose();

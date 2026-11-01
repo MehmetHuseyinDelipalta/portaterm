@@ -1624,6 +1624,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onDidChangeWorkspaceFolders: (listener) => vscode.workspace.onDidChangeWorkspaceFolders(listener),
     // This window's panes, as agent rows under the worktree each one is inside.
     projector: presenceProjector,
+    windowFocus: {
+      focused: () => vscode.window.state.focused,
+      onDidChange: (listener) => vscode.window.onDidChangeWindowState((state) => listener(state.focused)),
+    },
     onPaneChange: (listener) => {
       onPaneEvidenceChange = listener;
       return {

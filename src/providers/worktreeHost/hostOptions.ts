@@ -101,6 +101,15 @@ export interface WorktreeHostOptions {
    * point — and the host behaves exactly as it did before presence existed.
    */
   projector?: PresenceProjector;
+  /**
+   * Whether this window has focus, and when that changes — `vscode.window.state`.
+   * The external scan slows down while the window is unfocused. Absent, the
+   * window counts as focused.
+   */
+  windowFocus?: {
+    focused(): boolean;
+    onDidChange(listener: (focused: boolean) => void): vscode.Disposable;
+  };
   /** Pane evidence moved. Injected as a subscription so the host owns no store. */
   onPaneChange?(listener: () => void): vscode.Disposable;
   now?(): number;

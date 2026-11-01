@@ -21,6 +21,7 @@ import {
   createWorktreeHost,
   EXTERNAL_SCAN_INTERVAL_MS,
   PRESENCE_MAX_LATENCY_MS,
+  UNFOCUSED_SCAN_INTERVAL_MS,
   type WorktreeSurface,
 } from "./WorktreeHost";
 
@@ -231,6 +232,8 @@ interface HostOptions {
   projector?: PresenceProjector;
   /** What the first surface declares it draws. Omitted means rows. */
   level?: "rows" | "presence";
+  /** Whether the window starts focused; omitted, the host is given no focus source. */
+  focused?: boolean;
 }
 
 /** A host already built once, pushing to one surface the window is displaying. */
@@ -238,6 +241,8 @@ async function builtHost(options: HostOptions = {}) {
   const runner = options.runner ?? oneRepo(MAIN, A, B);
   const { clock, advance, pending } = fakeClock();
   let notifyPaneChange: (() => void) | undefined;
+  let focused = options.focused ?? true;
+  let notifyFocus: ((focused: boolean) => void) | undefined;
 
   const host = createWorktreeHost({
     deps: deps(runner),
@@ -254,6 +259,21 @@ async function builtHost(options: HostOptions = {}) {
       };
     },
     now: () => 1000,
+    ...(options.focused === undefined
+      ? {}
+      : {
+          windowFocus: {
+            focused: () => focused,
+            onDidChange: (listener: (focused: boolean) => void) => {
+              notifyFocus = listener;
+              return {
+                dispose: () => {
+                  notifyFocus = undefined;
+                },
+              };
+            },
+          },
+        }),
   });
 
   const view = surface();
@@ -287,6 +307,11 @@ async function builtHost(options: HostOptions = {}) {
     pending,
     paneChanged: () => notifyPaneChange?.(),
     isSubscribed: () => notifyPaneChange !== undefined,
+    setFocus: (next: boolean) => {
+      focused = next;
+      notifyFocus?.(next);
+    },
+    isFocusSubscribed: () => notifyFocus !== undefined,
   };
 }
 
@@ -975,6 +1000,115 @@ describe("the external scan is paced, and only while the view is shown", () => {
 
     expect(fake.calls()).toBe(before);
     h.host.dispose();
+  });
+
+  it("polls every 30 s while the window has no focus", async () => {
+    const fake = fakeProjector();
+    const h = await builtHost({ projector: fake.projector, focused: false });
+    const before = fake.calls();
+
+    h.advance(UNFOCUSED_SCAN_INTERVAL_MS - 1);
+    await settle();
+    expect(fake.calls()).toBe(before);
+    h.advance(1);
+    await settle();
+    expect(fake.calls()).toBe(before + 1);
+    expect(fake.modes[fake.modes.length - 1]).toBe(true);
+    h.host.dispose();
+  });
+
+  it("slows down from the next poll once the window loses focus", async () => {
+    const fake = fakeProjector();
+    const h = await builtHost({ projector: fake.projector, focused: true });
+    const before = fake.calls();
+
+    h.setFocus(false);
+    h.advance(EXTERNAL_SCAN_INTERVAL_MS); // the poll already armed keeps its pace
+    await settle();
+    expect(fake.calls()).toBe(before + 1);
+    h.advance(EXTERNAL_SCAN_INTERVAL_MS * 5);
+    await settle();
+    expect(fake.calls()).toBe(before + 1);
+    h.advance(UNFOCUSED_SCAN_INTERVAL_MS - EXTERNAL_SCAN_INTERVAL_MS * 5);
+    await settle();
+    expect(fake.calls()).toBe(before + 2);
+    h.host.dispose();
+  });
+
+  it("polls at once when focus returns during a slow wait, then at the quick pace", async () => {
+    const fake = fakeProjector();
+    const h = await builtHost({ projector: fake.projector, focused: false });
+    const before = fake.calls();
+
+    h.advance(EXTERNAL_SCAN_INTERVAL_MS);
+    h.setFocus(true);
+    await settle();
+    expect(fake.calls()).toBe(before + 1);
+    expect(fake.modes[fake.modes.length - 1]).toBe(true);
+    expect(h.pending()).toBe(1); // the slow timer is gone, a quick one armed
+
+    h.advance(EXTERNAL_SCAN_INTERVAL_MS);
+    await settle();
+    expect(fake.calls()).toBe(before + 2);
+    h.host.dispose();
+  });
+
+  it("does not poll early on a window-state change that leaves it unfocused", async () => {
+    const fake = fakeProjector();
+    const h = await builtHost({ projector: fake.projector, focused: false });
+    const before = fake.calls();
+
+    h.setFocus(false); // e.g. the window went inactive: still no focus
+    await settle();
+    expect(fake.calls()).toBe(before);
+    h.host.dispose();
+  });
+
+  it("does not poll early when focus returns before a quick poll", async () => {
+    const fake = fakeProjector();
+    const h = await builtHost({ projector: fake.projector, focused: true });
+    const before = fake.calls();
+
+    h.setFocus(false);
+    h.setFocus(true);
+    await settle();
+    expect(fake.calls()).toBe(before);
+    h.host.dispose();
+  });
+
+  it("does not poll on focus while the view is not shown", async () => {
+    const fake = fakeProjector();
+    const h = await builtHost({ projector: fake.projector, focused: false });
+    h.hide();
+    const before = fake.calls();
+
+    h.setFocus(true);
+    await settle();
+    expect(fake.calls()).toBe(before);
+    expect(h.pending()).toBe(0);
+    h.host.dispose();
+  });
+
+  it("projects pane evidence waiting under a cap when focus brings the poll forward", async () => {
+    const fake = fakeProjector();
+    const h = await builtHost({ projector: fake.projector, focused: false });
+
+    h.paneChanged();
+    h.setFocus(true);
+    await settle();
+    expect(fake.modes[fake.modes.length - 1]).toBe(false); // a full pass: the panes moved
+    h.host.dispose();
+  });
+
+  it("stops listening for focus when the host is disposed", async () => {
+    const h = await builtHost({ projector: fakeProjector().projector, focused: true });
+    expect(h.isFocusSubscribed()).toBe(true);
+    h.host.dispose();
+    expect(h.isFocusSubscribed()).toBe(false);
+  });
+
+  it("paces the unfocused poll at 30 s", () => {
+    expect(UNFOCUSED_SCAN_INTERVAL_MS).toBe(30_000);
   });
 
   it("leaves no timer behind when the host is disposed", async () => {

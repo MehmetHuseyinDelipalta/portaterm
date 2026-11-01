@@ -32,6 +32,13 @@ export const PRESENCE_MAX_LATENCY_MS = 150;
  */
 export const EXTERNAL_SCAN_INTERVAL_MS = 5_000;
 
+/**
+ * The same scan's pace while the window has no focus. The view may still be on
+ * screen (another monitor), so it does not stop; it slows down, and catches up
+ * the moment the window is focused again.
+ */
+export const UNFOCUSED_SCAN_INTERVAL_MS = 30_000;
+
 /** The three surface facts these predicates read, and nothing else. */
 export interface DrawingState {
   visible: boolean;
@@ -49,6 +56,8 @@ export interface ScanReconcileDeps {
   /** The attached surfaces' drawing state. */
   surfaceStates(): Iterable<DrawingState>;
   disposed(): boolean;
+  /** Whether this window has focus, read when the next scan is armed. */
+  windowFocused(): boolean;
   /** False until the first rebuild writes the cache. */
   built(): boolean;
   /** The projection currently in flight, if any (task 2_11). */
@@ -115,6 +124,9 @@ export interface ScanReconcile {
    * already in flight is the right thing to join (design.md D2).
    */
   reconcileRowDrawing(): void;
+
+  /** The window gained or lost focus: a slow scan pending when it is regained runs now. */
+  onWindowFocus(focused: boolean): void;
 
   onPaneChange(): void;
 
@@ -262,29 +274,30 @@ export function createScanReconcile(deps: ScanReconcileDeps): ScanReconcile {
   let capHandle: unknown;
   /** The external-scan timer, armed only while some surface is showing the view. */
   let scanHandle: unknown;
+  /** Whether the armed scan was paced for an unfocused window. */
+  let scanIsSlow = false;
 
   const clock = deps.options.clock;
 
-  function armScan(): void {
-    scanHandle = arm(
-      clock,
-      () => {
-        scanHandle = undefined;
-        // A pending cap means pane evidence is waiting to be projected. Absorbing
-        // it is only honest if this projection actually looks at the panes — the
-        // external-only pass is precisely the one that does not, so absorbing into
-        // it would drop that evidence for good (.reviews/round-1.md B1).
-        if (capHandle !== undefined) {
-          cancelCap(clock, capHandle);
-          capHandle = undefined;
-        }
-        void deps.requestProjection(
-          deps.paneEvidence() !== deps.paneEvidenceApplied() ? {} : { external: true, join: true },
-        );
-        reconcileScan();
-      },
-      EXTERNAL_SCAN_INTERVAL_MS,
+  function scanNow(): void {
+    scanHandle = undefined;
+    // A pending cap means pane evidence is waiting to be projected. Absorbing
+    // it is only honest if this projection actually looks at the panes — the
+    // external-only pass is precisely the one that does not, so absorbing into
+    // it would drop that evidence for good (.reviews/round-1.md B1).
+    if (capHandle !== undefined) {
+      cancelCap(clock, capHandle);
+      capHandle = undefined;
+    }
+    void deps.requestProjection(
+      deps.paneEvidence() !== deps.paneEvidenceApplied() ? {} : { external: true, join: true },
     );
+    reconcileScan();
+  }
+
+  function armScan(): void {
+    scanIsSlow = !deps.windowFocused();
+    scanHandle = arm(clock, scanNow, scanIsSlow ? UNFOCUSED_SCAN_INTERVAL_MS : EXTERNAL_SCAN_INTERVAL_MS);
   }
 
   function reconcileScan(): void {
@@ -312,6 +325,15 @@ export function createScanReconcile(deps: ScanReconcileDeps): ScanReconcile {
 
     reconcileRowDrawing() {
       reconcileRowDrawing(deps);
+    },
+
+    onWindowFocus(focused: boolean) {
+      // Focused again while a slow scan is pending: the view may be far behind
+      // what other windows' agents did, so look now and resume the quick pace.
+      if (focused && scanIsSlow && scanHandle !== undefined) {
+        cancelCap(clock, scanHandle);
+        scanNow();
+      }
     },
 
     onPaneChange() {
