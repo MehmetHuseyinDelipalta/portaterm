@@ -231,6 +231,9 @@ record type to match (`claudeReader.ts:268`).
 | Tokens | usage attributed to the **last** assistant item | `:899-919` |
 | Locator | line ordinal, `#<line>` | `:1012,1024` |
 | Index-only detail | `metadata-only`, with a reason naming the missing rollout | `:1305`, `:604` |
+| Snapshot economy | a detail's thread lookup, spawn edges and child rows share **one** snapshot | `readCodexDetail` |
+| Detail children | only the session's own: spawn edges filtered by parent (unbounded — ids only), and `threads` rows that an edge names or whose `source` mentions the parent's id, 500-row cap, parsed `source` deciding; older schemas fall back without `created_at_ms`, then `source` | `readCodexChildRows` |
+| Child rollout reads | eight at a time | `CHILD_META_CONCURRENCY` |
 
 ## 7. OpenCode
 

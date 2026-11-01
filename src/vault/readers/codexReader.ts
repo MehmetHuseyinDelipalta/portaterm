@@ -11,11 +11,20 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { provesAbsence } from "../../utils/fsPresence";
+import { mapBounded } from "../../utils/mapBounded";
 import { asRecord } from "../../utils/record";
 import { isResolvedPathInside } from "../../utils/resolvedPathBoundary";
 import type { ReaderListCache, ReaderResultWithState } from "../cacheTypes";
 import { boundedPreview } from "../preview";
-import { readPrimarySqlite, type readSqlite, type SqliteStatus, writeSqlite } from "../sqlite";
+import {
+  readPrimarySqlite,
+  type readSqlite,
+  type SqliteResult,
+  type SqliteStatus,
+  withPrimarySqliteSnapshot,
+  type withSqliteSnapshot,
+  writeSqlite,
+} from "../sqlite";
 import { sameStamps, stampStoreFiles, storeFilePaths } from "../storeStamp";
 import {
   formatEntryId,
@@ -82,6 +91,12 @@ export interface CodexReaderOptions {
   codexDir?: string;
   /** Injectable for tests; defaults to the real WAL-safe reader. */
   readSqliteFn?: typeof readSqlite;
+  /**
+   * Injectable for tests; defaults to the real snapshot of the primary store. A
+   * session's detail runs all its queries against one snapshot. When only
+   * `readSqliteFn` is given, the detail's queries go through it instead.
+   */
+  withSqliteSnapshotFn?: typeof withSqliteSnapshot;
   /** Injectable for tests; defaults to the real live-DB writer. */
   writeSqliteFn?: typeof writeSqlite;
 }
@@ -1133,14 +1148,16 @@ async function findCodexRolloutByFilename(
   return { path: null, exhaustive };
 }
 
+/** One query against the store — a snapshot's, or a one-off read of it. */
+type CodexQuery = (sql: string) => Promise<SqliteResult>;
+
 /** Best-effort: the `threads` index row for one session (rollout_path + first prompt). */
 async function queryCodexThread(
   sessionId: string,
-  dbPath: string,
-  readSqliteFn: typeof readSqlite,
+  query: CodexQuery,
 ): Promise<{ rolloutPath?: string; firstUserMessage?: string } | null> {
   const sql = `SELECT rollout_path, first_user_message FROM threads WHERE id = '${sessionId}' LIMIT 1`;
-  const res = await readSqliteFn(dbPath, sql);
+  const res = await query(sql);
   if (res.status !== "ok" || res.rows.length === 0) {
     return null;
   }
@@ -1148,21 +1165,57 @@ async function queryCodexThread(
   return { rolloutPath: asString(row.rollout_path), firstUserMessage: asString(row.first_user_message) };
 }
 
-async function readCodexThreadRowsForDetailChildren(
-  dbPath: string,
-  readSqliteFn: typeof readSqlite,
-): Promise<CodexThreadRowsRead> {
-  const withCreated = await readSqliteFn(
-    dbPath,
-    `SELECT ${CODEX_THREAD_COLUMNS}, source, created_at_ms
-FROM threads
-WHERE archived = 0
-ORDER BY updated_at_ms DESC`,
+/**
+ * A parent's direct children by the spawn-edge table. `available` is false when
+ * the table cannot be read (an older Codex has none). Unbounded: these are only
+ * ids, and the `threads` rows they are matched against carry the row limit — a
+ * second limit here could keep a different subset and drop children both hold.
+ */
+async function readCodexChildEdges(
+  parentThreadId: string,
+  query: CodexQuery,
+): Promise<{ available: boolean; childIds: Set<string> }> {
+  const result = await query(
+    `SELECT child_thread_id FROM thread_spawn_edges WHERE parent_thread_id = '${parentThreadId}'`,
   );
+  // Only ever matched against row ids, which codexChildStubFromRow checks.
+  const childIds = new Set(result.rows.flatMap((row) => asString(row.child_thread_id) ?? []));
+  return { available: result.status === "ok", childIds };
+}
+
+/**
+ * The `threads` rows that can be a parent's children: those the edge table names
+ * (when it exists), and those whose `source` mentions the parent's id — a
+ * superset of the rows whose parsed `source` names it as parent, which the
+ * caller then picks out. Asked with the richest columns the store has, falling
+ * back as an older schema lacks `created_at_ms`, then `source`.
+ */
+async function readCodexChildRows(
+  parentThreadId: string,
+  edgesAvailable: boolean,
+  query: CodexQuery,
+): Promise<CodexThreadRowsRead> {
+  const byEdge = edgesAvailable
+    ? `id IN (SELECT child_thread_id FROM thread_spawn_edges WHERE parent_thread_id = '${parentThreadId}')`
+    : undefined;
+  // Ids are [A-Za-z0-9-] only (isSafeCodexId), so none is a LIKE wildcard.
+  const bySource = `source LIKE '%${parentThreadId}%'`;
+  const rowsWhere = (conditions: string) => `FROM threads
+WHERE archived = 0 AND (${conditions})
+ORDER BY updated_at_ms DESC
+LIMIT ${ROW_LIMIT}`;
+  const withSource = byEdge ? `${byEdge} OR ${bySource}` : bySource;
+
+  const withCreated = await query(`SELECT ${CODEX_THREAD_COLUMNS}, source, created_at_ms ${rowsWhere(withSource)}`);
   if (withCreated.status === "ok") {
     return { status: "ok", rows: withCreated.rows, hasSource: true };
   }
-  return readCodexThreadRowsForParentage(dbPath, readSqliteFn);
+  const sourceOnly = await query(`SELECT ${CODEX_THREAD_COLUMNS}, source ${rowsWhere(withSource)}`);
+  if (sourceOnly.status === "ok") {
+    return { status: "ok", rows: sourceOnly.rows, hasSource: true };
+  }
+  const base = await query(`SELECT ${CODEX_THREAD_COLUMNS} ${rowsWhere(byEdge ?? "0")}`);
+  return { status: base.status, rows: base.rows, hasSource: false };
 }
 
 function codexChildStubFromRow(row: Record<string, unknown>): CodexChildStub | null {
@@ -1217,25 +1270,33 @@ async function readCodexChildJsonlMeta(
   }
 }
 
-async function queryCodexDirectChildStubs(
+/** Children's rollout files read at once, at most. */
+const CHILD_META_CONCURRENCY = 8;
+
+/** The parent's children as the store records them: by spawn edge, and the rows to pick them from. */
+type CodexChildRecords = CodexThreadRowsRead & { edges: { available: boolean; childIds: Set<string> } };
+
+async function readCodexChildRecords(parentThreadId: string, query: CodexQuery): Promise<CodexChildRecords> {
+  const edges = await readCodexChildEdges(parentThreadId, query);
+  return { ...(await readCodexChildRows(parentThreadId, edges.available, query)), edges };
+}
+
+async function codexDirectChildStubs(
   parentThreadId: string,
-  dbPath: string,
   sessionsDir: string,
-  readSqliteFn: typeof readSqlite,
+  /** What the store said — or, when no snapshot could be taken, only why not. */
+  children: CodexChildRecords | { status: Exclude<SqliteStatus, "ok"> },
 ): Promise<CodexChildStub[]> {
   const stubs = new Map<string, CodexChildStub>();
-  const threadRead = await readCodexThreadRowsForDetailChildren(dbPath, readSqliteFn);
   let sqliteParentageAvailable = false;
-  if (threadRead.status === "ok") {
-    const edges = await readCodexThreadSpawnEdges(dbPath, readSqliteFn);
-    sqliteParentageAvailable = edges.available || threadRead.hasSource;
-    const directChildIds = new Set(edges.childrenByParent.get(parentThreadId) ?? []);
-    if (threadRead.hasSource) {
-      for (const childId of collectSourceChildIds(threadRead.rows, parentThreadId)) {
-        directChildIds.add(childId);
-      }
-    }
-    for (const row of threadRead.rows) {
+  if (children.status === "ok") {
+    sqliteParentageAvailable = children.edges.available || children.hasSource;
+    // Rows without a `source` column name no parent, and add nothing here.
+    const directChildIds = new Set([
+      ...children.edges.childIds,
+      ...collectSourceChildIds(children.rows, parentThreadId),
+    ]);
+    for (const row of children.rows) {
       const childThreadId = asString(row.id);
       if (!childThreadId || !directChildIds.has(childThreadId)) {
         continue;
@@ -1248,13 +1309,13 @@ async function queryCodexDirectChildStubs(
   }
 
   if (sqliteParentageAvailable) {
-    for (const stub of stubs.values()) {
+    await mapBounded([...stubs.values()], CHILD_META_CONCURRENCY, async (stub) => {
       const meta = await readCodexChildJsonlMeta(stub.childThreadId, sessionsDir, stub.rolloutPath);
       if (meta?.timestamp) {
         stub.timestamp = meta.timestamp;
       }
-    }
-  } else if (threadRead.status !== "query-error") {
+    });
+  } else if (children.status !== "query-error") {
     for (const meta of (await collectCodexJsonlParentage(sessionsDir)).values()) {
       if (meta.parentThreadId !== parentThreadId || stubs.has(meta.sessionId)) {
         continue;
@@ -1326,7 +1387,8 @@ export async function readCodexMessageRecord(
 
 async function resolveCodexRolloutPath(sessionId: string, options: CodexReaderOptions): Promise<string | undefined> {
   const { dbPath, sessionsDir } = codexDirs(options);
-  const thread = await queryCodexThread(sessionId, dbPath, options.readSqliteFn ?? readPrimarySqlite);
+  const readSqliteFn = options.readSqliteFn ?? readPrimarySqlite;
+  const thread = await queryCodexThread(sessionId, (sql) => readSqliteFn(dbPath, sql));
   return pickRolloutPath(thread, sessionId, sessionsDir);
 }
 
@@ -1346,6 +1408,21 @@ export async function pickRolloutPath(
   return (await findCodexRolloutByFilename(sessionId, sessionsDir)).path ?? undefined;
 }
 
+/** How a detail takes its snapshot: the injected one, a stand-in over an injected `readSqliteFn`, or the real one. */
+function codexSnapshotFn(options: CodexReaderOptions): typeof withSqliteSnapshot {
+  if (options.withSqliteSnapshotFn) {
+    return options.withSqliteSnapshotFn;
+  }
+  const readSqliteFn = options.readSqliteFn;
+  if (readSqliteFn) {
+    return async (dbPath, callback) => ({
+      status: "ok",
+      value: await callback({ query: (sql) => readSqliteFn(dbPath, sql) }),
+    });
+  }
+  return withPrimarySqliteSnapshot;
+}
+
 export async function readCodexDetail(
   sessionId: string,
   options: CodexReaderOptions = {},
@@ -1355,10 +1432,22 @@ export async function readCodexDetail(
     return null;
   }
   const { dbPath, sessionsDir } = codexDirs(options);
-  const readSqliteFn = options.readSqliteFn ?? readPrimarySqlite;
 
-  const thread = await queryCodexThread(sessionId, dbPath, readSqliteFn);
-  const childStubs = await queryCodexDirectChildStubs(sessionId, dbPath, sessionsDir, readSqliteFn);
+  // One snapshot for every query: Codex writes its store while it runs, and a
+  // read per query could take a fresh copy of it each time.
+  const read = await codexSnapshotFn(options)(dbPath, async (snapshot) => {
+    const [thread, children] = await Promise.all([
+      queryCodexThread(sessionId, snapshot.query),
+      readCodexChildRecords(sessionId, snapshot.query),
+    ]);
+    return { thread, children };
+  });
+  const thread = read.status === "ok" ? read.value.thread : null;
+  const childStubs = await codexDirectChildStubs(
+    sessionId,
+    sessionsDir,
+    read.status === "ok" ? read.value.children : { status: read.status },
+  );
 
   const rolloutPath = await pickRolloutPath(thread, sessionId, sessionsDir);
 

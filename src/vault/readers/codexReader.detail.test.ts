@@ -451,8 +451,8 @@ describe("readCodexDetail", () => {
     const parentId = "parent-thread";
     const childId = "child-thread";
     const readSqliteFn = async (_dbPath: string, sql: string): Promise<SqliteResult> => {
-      if (sql.includes("thread_spawn_edges")) {
-        return { status: "ok", rows: [{ parent_thread_id: parentId, child_thread_id: childId }] };
+      if (sql.startsWith("SELECT child_thread_id FROM thread_spawn_edges")) {
+        return { status: "ok", rows: [{ child_thread_id: childId }] };
       }
       if (sql.includes("WHERE id = 'parent-thread'")) {
         return { status: "ok", rows: [{ rollout_path: null, first_user_message: "parent prompt" }] };
@@ -499,8 +499,8 @@ describe("readCodexDetail", () => {
       })}\n`,
     );
     const readSqliteFn = async (_dbPath: string, sql: string): Promise<SqliteResult> => {
-      if (sql.includes("thread_spawn_edges")) {
-        return { status: "ok", rows: [{ parent_thread_id: parentId, child_thread_id: childId }] };
+      if (sql.startsWith("SELECT child_thread_id FROM thread_spawn_edges")) {
+        return { status: "ok", rows: [{ child_thread_id: childId }] };
       }
       if (sql.includes("WHERE id = 'parent-thread'")) {
         return { status: "ok", rows: [{ rollout_path: null, first_user_message: "parent prompt" }] };
