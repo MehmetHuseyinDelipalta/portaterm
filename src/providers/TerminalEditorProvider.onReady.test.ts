@@ -83,6 +83,31 @@ describe("TerminalEditorProvider.onReady three-case branching", () => {
     sm.dispose();
   });
 
+  it("cold-open waits for the spawn gate before its first spawn (C2)", async () => {
+    const ctx = createMockContext();
+    const sm = new SessionManager();
+    let open!: () => void;
+    sm.setSpawnGate(new Promise<void>((resolve) => (open = resolve)), 60_000);
+    const vscode = await import("vscode");
+    const createSpy = vi.spyOn(vscode.window, "createWebviewPanel");
+    TerminalEditorProvider.createPanel(ctx, sm);
+    const panel = createSpy.mock.results[0].value;
+    const postSpy = vi.spyOn(panel.webview, "postMessage");
+    const types = () => postSpy.mock.calls.map((c) => (c[0] as { type?: string })?.type);
+
+    for (const h of (panel as any).__messageHandlers) {
+      h({ type: "ready" });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(types()).not.toContain("init");
+
+    open();
+    await vi.waitFor(() => expect(types()).toContain("init"));
+
+    (panel as any).dispose();
+    sm.dispose();
+  });
+
   it("existing-sessions Phase A: init.tabs includes root + split with isSplitPane flag", async () => {
     const ctx = createMockContext();
     const sm = new SessionManager();

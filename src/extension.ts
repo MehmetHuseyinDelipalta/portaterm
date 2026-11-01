@@ -435,6 +435,13 @@ function toResultMessage(outcome: MutationOutcome): WorktreeMutationResultMessag
   }
 }
 
+/**
+ * Longest the first terminals wait for the agent-hook runtime before spawning
+ * without its environment. Reconciling the hook files is normally a few ms;
+ * this bounds the case where other windows hold their locks.
+ */
+export const AGENT_HOOK_SPAWN_WAIT_MS = 2000;
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // Validate node-pty availability early — show user-facing error if missing
   try {
@@ -669,7 +676,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
   );
-  await agentHookController.start();
+  // Not awaited: activation goes on to register the views while the hook
+  // runtime binds and the hook files are reconciled — under lock, which can take
+  // seconds when several windows open at once. The views' first spawns wait for
+  // it instead, bounded, so their shells still carry the hook environment.
+  const agentHooksStarted = agentHookController.start();
+  agentHooksStarted.catch((err: unknown) => {
+    console.warn("[Portaterm] Agent hook startup failed — continuing without hook observability:", err);
+  });
+  sessionManager.setSpawnGate(agentHooksStarted, AGENT_HOOK_SPAWN_WAIT_MS);
 
   // Shared GitDecorationProvider — one singleton, threaded through every
   // FileTreeHost so the three webviews (sidebar / panel / editor) see one

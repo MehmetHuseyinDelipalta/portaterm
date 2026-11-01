@@ -1125,6 +1125,13 @@ export class TerminalEditorProvider {
       settings: readHoverPreviewSettings(),
     });
 
+    // See TerminalViewProvider.onReady: the first shells wait (bounded) for the
+    // agent-hook runtime, so they carry its environment.
+    const spawnGate = this.sessionManager.whenSpawnReady();
+    if (spawnGate) {
+      await spawnGate;
+    }
+
     try {
       const settings = readTerminalSettings();
       const existingSessions = this.sessionManager.getAllSessionsForView(this._viewId);

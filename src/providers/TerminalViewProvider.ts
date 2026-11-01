@@ -1581,6 +1581,13 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       settings: readHoverPreviewSettings(),
     });
 
+    // The first shells must carry the agent-hook environment, which exists only
+    // once the hook runtime is up (bounded; see SessionManager.setSpawnGate).
+    const spawnGate = this.sessionManager.whenSpawnReady();
+    if (spawnGate) {
+      await spawnGate;
+    }
+
     try {
       const viewId = this.getViewId();
       const existingSessions = this.sessionManager.getAllSessionsForView(viewId);

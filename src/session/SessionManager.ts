@@ -326,6 +326,48 @@ export class SessionManager {
     this.agentHooks = contributor;
   }
 
+  /**
+   * What a surface awaits before it spawns its first PTYs. Resolved by default.
+   *
+   * A PTY's agent-hook environment is minted once, at spawn, so a shell spawned
+   * before the hook runtime is up never reports to it. Activation no longer
+   * waits for that runtime before registering the views — a window opened
+   * together with others could spend seconds on hook-file locks while its
+   * terminals stayed blank — so the views' first spawns wait here instead,
+   * bounded, while their webviews load alongside it.
+   */
+  private spawnGate: Promise<void> = Promise.resolve();
+  /** Whether `spawnGate` has resolved — so a ready path need not yield when it has. */
+  private spawnGateOpen = true;
+
+  /**
+   * Gate the first spawns on `ready`, for at most `maxWaitMs`: past that the
+   * terminals open without hook observability rather than not at all. Never
+   * rejects, whatever `ready` does.
+   */
+  setSpawnGate(ready: Promise<unknown>, maxWaitMs: number): void {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, maxWaitMs);
+    });
+    this.spawnGateOpen = false;
+    const gate = Promise.race([ready.then(noop, noop), timeout]).then(() => {
+      clearTimeout(timer);
+      if (this.spawnGate === gate) {
+        this.spawnGateOpen = true;
+      }
+    });
+    this.spawnGate = gate;
+  }
+
+  /**
+   * Resolves once the first spawns may go ahead; see `setSpawnGate`. `undefined`
+   * when they already may, so a caller with nothing to wait for does not yield.
+   */
+  whenSpawnReady(): Promise<void> | undefined {
+    return this.spawnGateOpen ? undefined : this.spawnGate;
+  }
+
   // ─── Snapshot pass-through (test + provider compatibility) ──────
 
   /**
@@ -2159,3 +2201,5 @@ export class SessionManager {
     }
   }
 }
+
+function noop(): void {}
