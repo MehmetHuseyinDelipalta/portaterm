@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.49.5] — 2026-11-01
+
+### Fixed
+
+- **The file tree no longer runs git for every folder each time the window regains focus.** Which files are gitignored is now remembered, shared by every file tree in the window, and asked of git again only when an ignore rule, the index or a git config file changes — not after an unrelated `git status` or `git diff` from a terminal or an agent. Folders outside a repository never run git at all.
+- **Agent activity no longer re-reads the process table on every tool call to refresh the Vault.** The Vault's pinned and open sessions are now updated at most every 300 ms during a burst, in one pass.
+- **One process-table read now serves both the worktree status and the Vault**, instead of each taking its own a moment apart.
+
 ## [0.49.4] — 2026-11-01
 
 ### Fixed
