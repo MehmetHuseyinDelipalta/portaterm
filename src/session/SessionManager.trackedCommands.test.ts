@@ -475,3 +475,51 @@ describe("CommandTracker constructor (hydrate)", () => {
     expect(original.output).toBe("before");
   });
 });
+
+describe("CommandTracker: revision", () => {
+  it("starts at 0, including for a tracker seeded from a persisted list", () => {
+    expect(new CommandTracker().revision).toBe(0);
+    const seeded = new CommandTracker([
+      {
+        id: "p",
+        commandLine: "ls",
+        output: "",
+        exitCode: 0,
+        cwd: null,
+        startedAt: 1,
+        endedAt: 2,
+        outputChars: 0,
+        outputTruncated: false,
+      },
+    ]);
+    expect(seeded.commands).toHaveLength(1);
+    expect(seeded.revision).toBe(0);
+  });
+
+  it("moves when a command closes into the list, and only then", () => {
+    const tr = new CommandTracker();
+    tr.open({ id: nextId(), now: 1, cwd: null });
+    tr.setCommandLine("ls");
+    tr.appendOutput("a");
+    expect(tr.revision).toBe(0);
+    tr.close({ exitCode: 0, now: 2 });
+    expect(tr.revision).toBe(1);
+
+    // A prompt repaint closes an empty command that is discarded: no change.
+    tr.open({ id: nextId(), now: 3, cwd: null });
+    tr.close({ exitCode: 0, now: 4 });
+    expect(tr.revision).toBe(1);
+
+    // Abandoning an in-flight command never touched the list.
+    tr.open({ id: nextId(), now: 5, cwd: null });
+    tr.setCommandLine("crashed");
+    tr.abandonInFlight();
+    expect(tr.revision).toBe(1);
+  });
+
+  it("moves when the list is cleared", () => {
+    const tr = new CommandTracker();
+    tr.clear();
+    expect(tr.revision).toBe(1);
+  });
+});

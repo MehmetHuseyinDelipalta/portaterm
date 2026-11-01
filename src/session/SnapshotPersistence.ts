@@ -17,6 +17,7 @@ import type { PendingSnapshot, SessionSnapshotMetadata, SessionSnapshotsIndex, V
 import type { SessionStorage } from "./SessionStorage";
 import { evictIndex } from "./sessionSnapshotEviction";
 import type { HeadlessFactory, SerializeAddonFactory, TerminalSession } from "./TerminalSession";
+import type { TrackedCommand } from "./TrackedCommand";
 
 /** Snapshot serialize options — match VS Code core's XtermSerializer (`ptyService.ts:1086-1089`). */
 const SERIALIZE_OPTIONS = { scrollback: 1000, excludeAltBuffer: true, excludeModes: true } as const;
@@ -148,6 +149,14 @@ export class SnapshotPersistence {
   private _snapshotIndex: Record<string, SessionSnapshotMetadata> = {};
 
   /**
+   * Per session, the `CommandTracker.revision` whose list is on disk in the
+   * session's tracked-commands file. A flush writes that file only when the
+   * tracker has moved past it — a command closed, or the list was cleared — so
+   * the up-to-1 MB list is no longer re-serialized on every snapshot.
+   */
+  private readonly _commandsRevision = new Map<string, number>();
+
+  /**
    * Pending restore snapshots loaded on activate via `hydrateFromSnapshots`.
    * Drained by `consumeSnapshotsForLocation` / `consumeSnapshotsForPanel`.
    */
@@ -195,6 +204,7 @@ export class SnapshotPersistence {
         }
       }
       this._snapshotIndex = {};
+      this._commandsRevision.clear();
       if (this.storage) {
         void this.storage.purge();
       }
@@ -288,6 +298,14 @@ export class SnapshotPersistence {
     if (!result) {
       return;
     }
+    // Captured in the same tick as the buffer, so both describe one moment.
+    const commands = this.commandsOwed(session)
+      ? {
+          revision: session.commandTracking.revision,
+          list: [...session.commandTracking.commands],
+          gen: storage.currentCommandsGen(id),
+        }
+      : undefined;
     const capturedGen = storage.currentBufferGen(id);
     let outcome: "renamed" | "stale-skipped" | "stale-post-write" | "stale-post-rename";
     try {
@@ -295,6 +313,9 @@ export class SnapshotPersistence {
     } catch (err) {
       console.error("[Portaterm] commitLiveSnapshot commitBufferAsync failed:", err);
       return;
+    }
+    if (commands) {
+      await this.commitCommandsLive(storage, generation, id, commands);
     }
     if (!this.isStillCurrent(storage, generation)) {
       return;
@@ -308,6 +329,59 @@ export class SnapshotPersistence {
       return;
     }
     this._snapshotIndex[id] = result.metadata;
+  }
+
+  /**
+   * Whether `session`'s tracked commands differ from what is on disk for it.
+   * A session that has never had a command has nothing on disk and nothing to
+   * write, and is recorded as such without creating a file.
+   */
+  private commandsOwed(session: TerminalSession): boolean {
+    const revision = session.commandTracking.revision;
+    const written = this._commandsRevision.get(session.id);
+    if (written === revision) {
+      return false;
+    }
+    if (written === undefined && session.commandTracking.commands.length === 0) {
+      this._commandsRevision.set(session.id, revision);
+      return false;
+    }
+    return true;
+  }
+
+  /** The async half of a live commit, for the tracked-commands file. */
+  private async commitCommandsLive(
+    storage: SessionStorage,
+    generation: number,
+    id: string,
+    commands: { revision: number; list: TrackedCommand[]; gen: number },
+  ): Promise<void> {
+    let outcome: "renamed" | "stale-skipped" | "stale-post-write" | "stale-post-rename";
+    try {
+      outcome = await storage.commitCommandsAsync(id, commands.list, commands.gen);
+    } catch (err) {
+      console.error("[Portaterm] commitLiveSnapshot commitCommandsAsync failed:", err);
+      return;
+    }
+    // Only a write that reached the canonical file settles the debt; anything
+    // else leaves it owed, and the next flush of this session writes it.
+    if (outcome === "renamed" && this.isStillCurrent(storage, generation) && this.getSession(id)) {
+      this._commandsRevision.set(id, commands.revision);
+    }
+  }
+
+  /** The sync form, for the exit commit and the deactivate flush. */
+  private commitCommandsSyncIfOwed(storage: SessionStorage, session: TerminalSession): void {
+    if (!this.commandsOwed(session)) {
+      return;
+    }
+    const revision = session.commandTracking.revision;
+    try {
+      storage.commitCommandsSync(session.id, session.commandTracking.commands);
+      this._commandsRevision.set(session.id, revision);
+    } catch (err) {
+      console.error("[Portaterm] commitCommandsSync failed:", err);
+    }
   }
 
   /**
@@ -337,6 +411,7 @@ export class SnapshotPersistence {
       console.error("[Portaterm] commitExitSnapshot commitBufferSync failed:", err);
       return;
     }
+    this.commitCommandsSyncIfOwed(this.storage, session);
     this._snapshotIndex[id] = result.metadata;
     try {
       this.storage.commitIndexSync({ version: 1, entries: { ...this._snapshotIndex } });
@@ -366,7 +441,8 @@ export class SnapshotPersistence {
       // No mirror to RIS — drop entirely (privacy boundary for restored
       // exited sessions cleared via Cmd+K).
       delete this._snapshotIndex[id];
-      this.storage.dropBuffer(id);
+      this.storage.dropBuffer(id); // the tracked-commands file goes with it
+      this._commandsRevision.set(id, session.commandTracking.revision);
       try {
         this.storage.commitIndexSync({ version: 1, entries: { ...this._snapshotIndex } });
       } catch (err) {
@@ -404,13 +480,16 @@ export class SnapshotPersistence {
       console.error("[Portaterm] commitClearSnapshot commitBufferSync failed:", err);
       return;
     }
+    // Erase the tracked-commands file, and record the tracker's current list as
+    // the one on disk. SessionManager.clearScrollback already calls
+    // commandTracking.clear() before us, so that list is empty — but if a future
+    // caller forgets, its pre-clear commands still never reach disk until the
+    // list changes again: defense-in-depth for the privacy boundary
+    // (external-review B2). An erase, so an async write of the pre-clear list
+    // still in flight cannot bring it back.
+    this.storage.dropCommands(id);
+    this._commandsRevision.set(id, session.commandTracking.revision);
     if (metadata) {
-      // Force-omit trackedCommands on the clear path. SessionManager.clearScrollback
-      // already calls commandTracking.clear() before us so the in-memory list is
-      // empty by the time generateSnapshotMetadata runs — but persisting an empty
-      // value here is defense-in-depth: any future caller of commitClearSnapshot
-      // that forgets to wipe commandTracking first still won't leak command
-      // output across the privacy boundary. See external-review B2.
       this._snapshotIndex[id] = { ...metadata, bufferBytes: 0, trackedCommands: undefined };
     }
     try {
@@ -433,12 +512,13 @@ export class SnapshotPersistence {
     }
     this._pendingSessions.delete(id);
     this.writeBarriers.delete(id);
+    this._commandsRevision.delete(id);
     const hadEntry = this._snapshotIndex[id] !== undefined;
     delete this._snapshotIndex[id];
     if (!this.storage) {
       return;
     }
-    this.storage.dropBuffer(id);
+    this.storage.dropBuffer(id); // and the tracked-commands file
     if (!hadEntry) {
       return;
     }
@@ -773,6 +853,9 @@ export class SnapshotPersistence {
         console.error("[Portaterm] flushSnapshotsSync commitBufferSync failed:", err);
         continue;
       }
+      if (session) {
+        this.commitCommandsSyncIfOwed(this.storage, session);
+      }
       this._snapshotIndex[id] = result.metadata;
     }
     // Sync sidecar commit via the transactional API. The temp+rename path
@@ -899,7 +982,7 @@ export class SnapshotPersistence {
         delete indexAfterEviction[meta.sessionId];
         continue;
       }
-      hydrated.push({ metadata: meta, buffer: buf });
+      hydrated.push({ metadata: this.withPersistedCommands(this.storage, meta), buffer: buf });
     }
 
     // Step 3 — Buffer-file fallback. Inspect buffer files that survived on disk
@@ -949,7 +1032,7 @@ export class SnapshotPersistence {
           shellExited: false,
           exitCode: null,
         };
-        hydrated.push({ metadata: meta, buffer: buf });
+        hydrated.push({ metadata: this.withPersistedCommands(this.storage, meta), buffer: buf });
         indexAfterEviction[sessionId] = meta;
       }
     }
@@ -967,6 +1050,17 @@ export class SnapshotPersistence {
         }
       }
     }
+    // A tracked-commands file can outlive its buffer (a buffer that failed to
+    // read drops the entry above without touching the file).
+    for (const sessionId of this.storage.listCommandsFiles()) {
+      if (!surviving.has(sessionId)) {
+        try {
+          this.storage.dropCommands(sessionId);
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
     this.storage.cleanupOrphanTemps();
 
     // Step 5 — Stage in memory.
@@ -975,6 +1069,34 @@ export class SnapshotPersistence {
       this._pendingSnapshots.set(item.metadata.sessionId, item);
     }
     this._snapshotIndex = { ...indexAfterEviction };
+  }
+
+  /**
+   * Attach a hydrated entry's tracked commands, read from its own file — or,
+   * for an index written by an older build that kept them inline, move them
+   * into that file now: the next index write drops the inline copy, and a
+   * session that is not restored before then would otherwise lose them.
+   * Either way the file then holds exactly what the restored tracker starts
+   * from, so its revision 0 is recorded as already on disk. A move that failed
+   * records nothing, and the restored session's first flush writes the file.
+   */
+  private withPersistedCommands(storage: SessionStorage, meta: SessionSnapshotMetadata): SessionSnapshotMetadata {
+    let commands = meta.trackedCommands;
+    let onDisk = true;
+    if (commands && commands.length > 0) {
+      try {
+        storage.commitCommandsSync(meta.sessionId, commands);
+      } catch (err) {
+        onDisk = false;
+        console.error("[Portaterm] hydrate could not move tracked commands out of the index:", err);
+      }
+    } else {
+      commands = storage.readCommandsFile(meta.sessionId);
+    }
+    if (onDisk) {
+      this._commandsRevision.set(meta.sessionId, 0);
+    }
+    return commands && commands.length > 0 ? { ...meta, trackedCommands: commands } : meta;
   }
 
   // ─── Pending restore snapshot consumption ───────────────────────

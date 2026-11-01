@@ -17,6 +17,18 @@ The extension SHALL persist a metadata index under the workspaceState key `anywh
 
 Reads SHALL be tolerant of unknown extra fields. Reads MUST validate `version === 1`; any other value SHALL be treated as missing data (record discarded, no error thrown). Missing or unreadable buffer files SHALL cause the matching index entry to be dropped silently.
 
+A session's tracked commands SHALL be persisted in their own file, `<storageUri>/snapshots/<sessionId>.commands.json` (owner-only, written by temp file + rename like a buffer), and SHALL NOT be written into the index. The file SHALL be written only when the session's command list has changed since it was last written, SHALL be erased by a clear (Cmd+K) and by every drop of the session's snapshot, and SHALL be read back on hydrate. An index entry written by an older build that still carries the list inline SHALL have it moved into the file on hydrate.
+
+#### Scenario: Output alone does not rewrite tracked commands
+
+- **WHEN** a session with completed commands keeps producing output and no command closes
+- **THEN** each snapshot write SHALL leave its tracked-commands file untouched, and no index write SHALL carry the list
+
+#### Scenario: A clear removes tracked commands from disk
+
+- **WHEN** the user clears a session's scrollback
+- **THEN** its tracked-commands file SHALL be erased synchronously, and a write of the pre-clear list already in flight SHALL NOT recreate it
+
 #### Scenario: Index lost but buffer files survive
 
 - **WHEN** the extension host is killed between the buffer-write step and the index-write step of `deactivate`

@@ -14,6 +14,7 @@ import type {
   SerializeAddonFactory,
   SerializeAddonLike,
 } from "../session/TerminalSession";
+import type { TrackedCommand } from "../session/TrackedCommand";
 
 /** Registered by every mocked PtySession so a test can drive its callbacks. */
 interface MockPtyHandle {
@@ -112,6 +113,8 @@ export interface SessionStorageMockOptions {
    * commits are stored and read back, seeded from the given map.
    */
   buffers?: Record<string, string>;
+  /** Tracked-commands files present before the suite runs, by session id. */
+  commands?: Record<string, TrackedCommand[]>;
 }
 
 /**
@@ -130,12 +133,21 @@ export interface SessionStorageMockOptions {
 export function sessionStorageMock(options: SessionStorageMockOptions = {}) {
   const backed = options.buffers !== undefined;
   const buffers = new Map<string, string>(Object.entries(options.buffers ?? {}));
+  const commands = new Map<string, TrackedCommand[]>(Object.entries(options.commands ?? {}));
   const bufferGens = new Map<string, number>();
+  const commandsGens = new Map<string, number>();
   let sidecarGen = 0;
 
   const bumpBuffer = (id: string) => {
     bufferGens.set(id, (bufferGens.get(id) ?? 0) + 1);
   };
+  const bumpCommands = (id: string) => {
+    commandsGens.set(id, (commandsGens.get(id) ?? 0) + 1);
+  };
+  const dropCommands = vi.fn((id: string) => {
+    commands.delete(id);
+    bumpCommands(id);
+  });
 
   return {
     commitBufferSync: vi.fn((id: string, data: string) => {
@@ -165,8 +177,31 @@ export function sessionStorageMock(options: SessionStorageMockOptions = {}) {
     dropBuffer: vi.fn((id: string) => {
       buffers.delete(id);
       bumpBuffer(id);
+      // The real store drops a session's tracked-commands file with its buffer.
+      dropCommands(id);
     }),
     currentBufferGen: vi.fn((id: string) => bufferGens.get(id) ?? 0),
+    commitCommandsSync: vi.fn((id: string, list: readonly TrackedCommand[]) => {
+      commands.set(id, [...list]);
+      bumpCommands(id);
+    }),
+    commitCommandsAsync: vi.fn(
+      async (
+        id: string,
+        list: readonly TrackedCommand[],
+        capturedGen: number,
+      ): Promise<"renamed" | "stale-skipped" | "stale-post-write" | "stale-post-rename"> => {
+        if ((commandsGens.get(id) ?? 0) !== capturedGen) {
+          return "stale-skipped";
+        }
+        commands.set(id, [...list]);
+        return "renamed";
+      },
+    ),
+    dropCommands,
+    currentCommandsGen: vi.fn((id: string) => commandsGens.get(id) ?? 0),
+    readCommandsFile: vi.fn((id: string) => commands.get(id)),
+    listCommandsFiles: vi.fn(() => Array.from(commands.keys())),
     currentSidecarGen: vi.fn(() => sidecarGen),
     cleanupOrphanTemps: vi.fn(),
     scheduleLivePanelsWrite: vi.fn(),
@@ -182,6 +217,8 @@ export function sessionStorageMock(options: SessionStorageMockOptions = {}) {
     purge: vi.fn(async () => {}),
     /** Backing store, present whether or not `buffers` was passed; empty when not. */
     _buffers: buffers,
+    /** Tracked-commands files by session id. Always backed: no suite relies on a refusing reader. */
+    _commands: commands,
   };
 }
 

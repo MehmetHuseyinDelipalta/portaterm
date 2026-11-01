@@ -8,6 +8,7 @@ import {
   type SessionSnapshotsIndex,
 } from "./SessionSnapshot";
 import { SessionStorage, type SessionStorageFs } from "./SessionStorage";
+import type { TrackedCommand } from "./TrackedCommand";
 
 function makeFakeMemento(initial: Record<string, unknown> = {}) {
   const store = new Map<string, unknown>(Object.entries(initial));
@@ -746,6 +747,189 @@ describe("SessionStorage", () => {
 
       expect(files.get(`${SNAPS_DIR}/alpha.snapshot.ans.tmp.999`)).toBeUndefined();
       expect(files.get(bufferFile("alpha"))).toBe("DATA");
+    });
+  });
+
+  describe("tracked commands live in their own per-session file (A2)", () => {
+    function commandsFile(sessionId: string) {
+      return `${SNAPS_DIR}/${sessionId}.commands.json`;
+    }
+
+    function cmd(id: string, overrides: Partial<TrackedCommand> = {}): TrackedCommand {
+      return {
+        id,
+        commandLine: `echo ${id}`,
+        output: `${id}\r\n`,
+        exitCode: 0,
+        cwd: "/home/user",
+        startedAt: 1,
+        endedAt: 2,
+        outputChars: id.length + 2,
+        outputTruncated: false,
+        ...overrides,
+      };
+    }
+
+    function setup() {
+      const harness = makeFakeFs();
+      const s = new SessionStorage(makeFakeMemento() as unknown as vscode.Memento, STORAGE_URI, harness.fs);
+      return { s, ...harness };
+    }
+
+    /** Hold the next async write to `file` until released, to interleave a sync op. */
+    function holdWriteOf(fs: SessionStorageFs, file: string) {
+      let release: () => void = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const realWriteFile = fs.promises.writeFile;
+      fs.promises.writeFile = vi.fn(async (f: string, d: string, o?: { mode?: number }) => {
+        if (f.startsWith(file)) {
+          await held;
+        }
+        return realWriteFile(f, d, o);
+      });
+      return () => release();
+    }
+
+    it("never writes tracked commands into the index sidecar, sync or async", async () => {
+      const { s, files } = setup();
+      const index: SessionSnapshotsIndex = {
+        version: 1,
+        entries: { s1: makeMeta("s1", { trackedCommands: [cmd("a")], customName: "kept" }) },
+      };
+
+      s.commitIndexSync(index);
+      const syncEntry = JSON.parse(files.get(`${SNAPS_DIR}/index.json`) ?? "{}").entries.s1;
+      expect(syncEntry).not.toHaveProperty("trackedCommands");
+      expect(syncEntry.customName).toBe("kept");
+
+      await s.commitIndexAsync(index, s.currentSidecarGen());
+      const asyncEntry = JSON.parse(files.get(`${SNAPS_DIR}/index.json`) ?? "{}").entries.s1;
+      expect(asyncEntry).not.toHaveProperty("trackedCommands");
+      // The caller's in-memory metadata is not touched.
+      expect(index.entries.s1.trackedCommands).toHaveLength(1);
+    });
+
+    it("still reads commands an older build wrote inline, so hydrate can move them", () => {
+      const { s, files } = setup();
+      files.set(
+        `${SNAPS_DIR}/index.json`,
+        JSON.stringify({ version: 1, entries: { s1: makeMeta("s1", { trackedCommands: [cmd("legacy")] }) } }),
+      );
+      expect(s.loadIndex()?.entries.s1.trackedCommands?.[0].id).toBe("legacy");
+    });
+
+    it("round-trips a list through the sync and the async writer, owner-only", async () => {
+      const { s, files, writeFileSync, writeFile } = setup();
+
+      s.commitCommandsSync("alpha", [cmd("a"), cmd("b")]);
+      expect(s.readCommandsFile("alpha")).toEqual([cmd("a"), cmd("b")]);
+      expect(writeFileSync.mock.calls.at(-1)?.[2]).toEqual({ mode: 0o600 });
+
+      await expect(s.commitCommandsAsync("alpha", [cmd("c")], s.currentCommandsGen("alpha"))).resolves.toBe("renamed");
+      expect(s.readCommandsFile("alpha")).toEqual([cmd("c")]);
+      expect(writeFile.mock.calls.at(-1)?.[2]).toEqual({ mode: 0o600 });
+      expect([...files.keys()].filter((k) => k.includes(".tmp."))).toEqual([]);
+      expect(files.has(commandsFile("alpha"))).toBe(true);
+    });
+
+    it("reads a missing, unparseable or non-array file as no commands, and skips malformed entries", () => {
+      const { s, files } = setup();
+      expect(s.readCommandsFile("none")).toBeUndefined();
+
+      files.set(commandsFile("torn"), "[{");
+      expect(s.readCommandsFile("torn")).toBeUndefined();
+
+      files.set(commandsFile("object"), JSON.stringify({ id: "x" }));
+      expect(s.readCommandsFile("object")).toBeUndefined();
+
+      files.set(
+        commandsFile("mixed"),
+        JSON.stringify([cmd("good"), { ...cmd("in-flight"), endedAt: null }, { id: 42 }, null, "text"]),
+      );
+      expect(s.readCommandsFile("mixed")).toEqual([cmd("good")]);
+    });
+
+    it("refuses a path-traversal session id", () => {
+      const { s } = setup();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      expect(s.readCommandsFile("../../etc")).toBeUndefined();
+      expect(() => s.commitCommandsSync("../../etc", [cmd("a")])).toThrow(/path-traversal|unsafe/);
+      warn.mockRestore();
+    });
+
+    it("lists the sessions that have a commands file, and only those", () => {
+      const { s } = setup();
+      s.commitBufferSync("buffer-only", "B");
+      s.commitCommandsSync("alpha", [cmd("a")]);
+      s.commitCommandsSync("beta", [cmd("b")]);
+      expect(s.listCommandsFiles().sort()).toEqual(["alpha", "beta"]);
+      expect(s.listBufferFiles()).toEqual(["buffer-only"]);
+    });
+
+    it("drops the commands file with the buffer; dropCommands leaves the buffer", () => {
+      const { s, files } = setup();
+      s.commitBufferSync("alpha", "B");
+      s.commitCommandsSync("alpha", [cmd("a")]);
+      s.commitBufferSync("beta", "B");
+      s.commitCommandsSync("beta", [cmd("b")]);
+
+      s.dropBuffer("alpha");
+      expect(files.has(bufferFile("alpha"))).toBe(false);
+      expect(files.has(commandsFile("alpha"))).toBe(false);
+
+      s.dropCommands("beta");
+      expect(files.has(commandsFile("beta"))).toBe(false);
+      expect(files.get(bufferFile("beta"))).toBe("B");
+    });
+
+    it("an async write of the pre-clear list that lands after the erase does not bring it back", async () => {
+      const { s, fs, files } = setup();
+      s.commitCommandsSync("alpha", [cmd("before")]);
+      const release = holdWriteOf(fs, commandsFile("alpha"));
+      const write = s.commitCommandsAsync("alpha", [cmd("before"), cmd("secret")], s.currentCommandsGen("alpha"));
+
+      s.dropCommands("alpha"); // Cmd+K
+      release();
+
+      await expect(write).resolves.toBe("stale-post-write");
+      expect(files.has(commandsFile("alpha"))).toBe(false);
+      expect([...files.keys()].filter((k) => k.includes(".tmp."))).toEqual([]);
+    });
+
+    it("an async write whose rename races the erase removes the file it renamed into place", async () => {
+      const { s, fs, files } = setup();
+      const realRename = fs.promises.rename;
+      let release: () => void = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      fs.promises.rename = vi.fn(async (from: string, to: string) => {
+        await realRename(from, to); // the rename lands...
+        await held; // ...and the erase runs before it returns
+      });
+      const write = s.commitCommandsAsync("alpha", [cmd("secret")], s.currentCommandsGen("alpha"));
+      await vi.waitFor(() => expect(files.has(commandsFile("alpha"))).toBe(true));
+
+      s.dropCommands("alpha");
+      release();
+
+      await expect(write).resolves.toBe("stale-post-rename");
+      expect(files.has(commandsFile("alpha"))).toBe(false);
+    });
+
+    it("a sync buffer write does not void an async commands write, nor the reverse", async () => {
+      const { s, files } = setup();
+      const commandsWrite = s.commitCommandsAsync("alpha", [cmd("a")], s.currentCommandsGen("alpha"));
+      s.commitBufferSync("alpha", "SYNC");
+      await expect(commandsWrite).resolves.toBe("renamed");
+      expect(s.readCommandsFile("alpha")).toEqual([cmd("a")]);
+
+      const bufferWrite = s.commitBufferAsync("alpha", "ASYNC", s.currentBufferGen("alpha"));
+      s.commitCommandsSync("alpha", [cmd("b")]);
+      await expect(bufferWrite).resolves.toBe("renamed");
+      expect(files.get(bufferFile("alpha"))).toBe("ASYNC");
     });
   });
 });

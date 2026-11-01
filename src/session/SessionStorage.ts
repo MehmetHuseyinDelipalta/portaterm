@@ -9,6 +9,7 @@ import * as path from "node:path";
 import type * as vscode from "vscode";
 import {
   expandMetadataForPersist,
+  isPersistableTrackedCommand,
   LIVE_EDITOR_PANELS_KEY,
   type LiveEditorPanelsRecord,
   SESSION_SNAPSHOTS_INDEX_KEY,
@@ -16,6 +17,17 @@ import {
   type SessionSnapshotsIndex,
   siftMetadataUnknownFields,
 } from "./SessionSnapshot";
+import type { TrackedCommand } from "./TrackedCommand";
+
+type CommitOutcome = "renamed" | "stale-skipped" | "stale-post-write" | "stale-post-rename";
+
+/** One per-session artifact's transactional bookkeeping (design.md D16). */
+interface ArtifactGens {
+  /** Bumped by sync writers and drops BEFORE the disk op. */
+  gens: Map<string, number>;
+  /** The generation of the last ERASE per session (a drop or a clear). */
+  erased: Map<string, number>;
+}
 
 export interface FsLike {
   writeFileSync: (file: string, data: string, options?: { mode?: number }) => void;
@@ -62,6 +74,8 @@ const INDEX_DEBOUNCE_MS = 1000;
 const SNAPSHOT_FILE_MODE = 0o600;
 /** Directory mode for `<storageUri>/snapshots/`. See [W5]. */
 const SNAPSHOT_DIR_MODE = 0o700;
+/** `<snapshotsDir>/<sessionId>.commands.json` — one session's tracked commands. */
+const COMMANDS_FILE_SUFFIX = ".commands.json";
 
 export class SessionStorage {
   private readonly snapshotsDir: string;
@@ -75,6 +89,12 @@ export class SessionStorage {
    * See design.md D16.
    */
   private bufferGens: Map<string, number> = new Map();
+  /**
+   * The same bookkeeping for each session's tracked-commands file. Separate from
+   * the buffer's because the two are written independently: a sync buffer write
+   * must not void an async commands write that is still correct, and vice versa.
+   */
+  private readonly commandsGens: ArtifactGens = { gens: new Map(), erased: new Map() };
   /**
    * Sidecar generation counter. Same semantics as bufferGens but for the
    * shared `<snapshotsDir>/index.json` artifact. Eliminates R5.B2 where a
@@ -170,7 +190,11 @@ export class SessionStorage {
   private serializeIndex(index: SessionSnapshotsIndex): string {
     const entries: Record<string, Record<string, unknown>> = {};
     for (const [sessionId, meta] of Object.entries(index.entries)) {
-      entries[sessionId] = expandMetadataForPersist(meta);
+      // Tracked commands live in their own per-session file (`commitCommands*`):
+      // inline, up to 1 MB per session was re-serialized with EVERY session on
+      // every index write, which runs on every snapshot flush.
+      const { trackedCommands: _ownFile, ...persisted } = expandMetadataForPersist(meta);
+      entries[sessionId] = persisted;
     }
     return JSON.stringify({ version: index.version, entries });
   }
@@ -248,6 +272,11 @@ export class SessionStorage {
     return path.join(this.snapshotsDir, `${sessionId}.snapshot.ans`);
   }
 
+  commandsFilePath(sessionId: string): string {
+    this.assertSafeSessionId(sessionId);
+    return path.join(this.snapshotsDir, `${sessionId}${COMMANDS_FILE_SUFFIX}`);
+  }
+
   bufferFileRelativePath(sessionId: string): string {
     this.assertSafeSessionId(sessionId);
     return path.posix.join("snapshots", `${sessionId}.snapshot.ans`);
@@ -276,6 +305,45 @@ export class SessionStorage {
       return this.fs.readFileSync(file, "utf8");
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * A session's persisted tracked commands, or `undefined` when there is no file
+   * or it cannot be used. Only well-formed, completed commands are returned; a
+   * file that is not a JSON array reads as absent rather than failing the restore.
+   */
+  readCommandsFile(sessionId: string): TrackedCommand[] | undefined {
+    let file: string;
+    try {
+      file = this.commandsFilePath(sessionId);
+    } catch (err) {
+      console.warn("[Portaterm] readCommandsFile rejected unsafe sessionId:", err);
+      return undefined;
+    }
+    if (!this.fs.existsSync(file)) {
+      return undefined;
+    }
+    try {
+      const parsed: unknown = JSON.parse(this.fs.readFileSync(file, "utf8"));
+      return Array.isArray(parsed) ? parsed.filter(isPersistableTrackedCommand) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Session ids that have a tracked-commands file. */
+  listCommandsFiles(): string[] {
+    try {
+      if (!this.fs.existsSync(this.snapshotsDir)) {
+        return [];
+      }
+      return this.fs
+        .readdirSync(this.snapshotsDir)
+        .filter((name) => name.endsWith(COMMANDS_FILE_SUFFIX))
+        .map((name) => name.slice(0, -COMMANDS_FILE_SUFFIX.length));
+    } catch {
+      return [];
     }
   }
 
@@ -319,27 +387,13 @@ export class SessionStorage {
     return `${canonical}.tmp.${tempId}`;
   }
 
-  private bumpBufferGen(sessionId: string): number {
-    const next = (this.bufferGens.get(sessionId) ?? 0) + 1;
-    this.bufferGens.set(sessionId, next);
-    return next;
-  }
-
   /**
    * Synchronously commit a buffer snapshot. Bumps gen FIRST so any in-flight
    * async writer sees the mismatch on its post-write check and unlinks only
    * its temp.
    */
   commitBufferSync(sessionId: string, data: string, options: { erase?: boolean } = {}): void {
-    const canonical = this.bufferFilePath(sessionId);
-    const gen = this.bumpBufferGen(sessionId);
-    if (options.erase) {
-      this.bufferErasedGen.set(sessionId, gen);
-    }
-    this.ensureSnapshotsDir();
-    const temp = this.tempPath(canonical, this.nextTempId());
-    this.fs.writeFileSync(temp, data, { mode: SNAPSHOT_FILE_MODE });
-    this.fs.renameSync(temp, canonical);
+    this.commitArtifactSync(this.bufferArtifact(), sessionId, this.bufferFilePath(sessionId), data, options);
   }
 
   /**
@@ -348,17 +402,110 @@ export class SessionStorage {
    * stale write never reaches the canonical path. Returns the outcome so
    * the caller can skip the in-memory index update on stale results.
    */
-  async commitBufferAsync(
+  async commitBufferAsync(sessionId: string, data: string, capturedGen: number): Promise<CommitOutcome> {
+    return this.commitArtifactAsync(
+      this.bufferArtifact(),
+      sessionId,
+      () => this.bufferFilePath(sessionId),
+      data,
+      capturedGen,
+    );
+  }
+
+  /**
+   * Drop a session's persisted artifacts — its buffer file AND its tracked-
+   * commands file. Bumps each one's gen so any in-flight async writer sees the
+   * mismatch and unlinks its temp only — preventing the R5.B1 race where the
+   * async stale unlink targeted the canonical path.
+   */
+  dropBuffer(sessionId: string): void {
+    this.dropArtifact(this.bufferArtifact(), sessionId, () => this.bufferFilePath(sessionId), "dropBuffer");
+    this.dropCommands(sessionId);
+  }
+
+  /** Snapshot the current tracked-commands generation for `id` — pass to commitCommandsAsync later. */
+  currentCommandsGen(sessionId: string): number {
+    return this.commandsGens.gens.get(sessionId) ?? 0;
+  }
+
+  /**
+   * Synchronously commit a session's tracked commands to its own file. Same
+   * transactional rules as `commitBufferSync`.
+   */
+  commitCommandsSync(sessionId: string, commands: readonly TrackedCommand[]): void {
+    this.commitArtifactSync(
+      this.commandsGens,
+      sessionId,
+      this.commandsFilePath(sessionId),
+      JSON.stringify(commands),
+      {},
+    );
+  }
+
+  /** Async commit of a session's tracked commands. Same rules as `commitBufferAsync`. */
+  async commitCommandsAsync(
     sessionId: string,
+    commands: readonly TrackedCommand[],
+    capturedGen: number,
+  ): Promise<CommitOutcome> {
+    return this.commitArtifactAsync(
+      this.commandsGens,
+      sessionId,
+      () => this.commandsFilePath(sessionId),
+      JSON.stringify(commands),
+      capturedGen,
+    );
+  }
+
+  /**
+   * Erase a session's tracked-commands file — the privacy boundary of a clear
+   * (Cmd+K) as well as part of every drop. Counts as an erase, so an async write
+   * of the pre-clear list that is still in flight cannot bring it back.
+   */
+  dropCommands(sessionId: string): void {
+    this.dropArtifact(this.commandsGens, sessionId, () => this.commandsFilePath(sessionId), "dropCommands");
+  }
+
+  private bufferArtifact(): ArtifactGens {
+    return { gens: this.bufferGens, erased: this.bufferErasedGen };
+  }
+
+  private bumpGen(artifact: ArtifactGens, sessionId: string): number {
+    const next = (artifact.gens.get(sessionId) ?? 0) + 1;
+    artifact.gens.set(sessionId, next);
+    return next;
+  }
+
+  private commitArtifactSync(
+    artifact: ArtifactGens,
+    sessionId: string,
+    canonical: string,
+    data: string,
+    options: { erase?: boolean },
+  ): void {
+    const gen = this.bumpGen(artifact, sessionId);
+    if (options.erase) {
+      artifact.erased.set(sessionId, gen);
+    }
+    this.ensureSnapshotsDir();
+    const temp = this.tempPath(canonical, this.nextTempId());
+    this.fs.writeFileSync(temp, data, { mode: SNAPSHOT_FILE_MODE });
+    this.fs.renameSync(temp, canonical);
+  }
+
+  private async commitArtifactAsync(
+    artifact: ArtifactGens,
+    sessionId: string,
+    canonicalOf: () => string,
     data: string,
     capturedGen: number,
-  ): Promise<"renamed" | "stale-skipped" | "stale-post-write" | "stale-post-rename"> {
+  ): Promise<CommitOutcome> {
     // Pre-write check: if the gen already advanced past `capturedGen`,
     // someone else's sync write / drop won the race before we even mkdir'd.
-    if ((this.bufferGens.get(sessionId) ?? 0) !== capturedGen) {
+    if ((artifact.gens.get(sessionId) ?? 0) !== capturedGen) {
       return "stale-skipped";
     }
-    const canonical = this.bufferFilePath(sessionId);
+    const canonical = canonicalOf();
     await this.fs.promises.mkdir(this.snapshotsDir, { recursive: true, mode: SNAPSHOT_DIR_MODE });
     const temp = this.tempPath(canonical, this.nextTempId());
     await this.fs.promises.writeFile(temp, data, { mode: SNAPSHOT_FILE_MODE });
@@ -366,7 +513,7 @@ export class SessionStorage {
     // Post-write, pre-rename check: a sync writer / drop may have run
     // during our await. Mismatch → clean up the temp and bail; never
     // overwrite the canonical with our stale data.
-    if ((this.bufferGens.get(sessionId) ?? 0) !== capturedGen) {
+    if ((artifact.gens.get(sessionId) ?? 0) !== capturedGen) {
       try {
         await this.fs.promises.unlink(temp);
       } catch {
@@ -382,8 +529,8 @@ export class SessionStorage {
     // state. Detect the race; unlink canonical to surface the lost write
     // (orphan recovery will see a missing buffer instead of a stale one).
     // Privacy boundary takes priority over data preservation.
-    if ((this.bufferGens.get(sessionId) ?? 0) !== capturedGen) {
-      if ((this.bufferErasedGen.get(sessionId) ?? 0) > capturedGen) {
+    if ((artifact.gens.get(sessionId) ?? 0) !== capturedGen) {
+      if ((artifact.erased.get(sessionId) ?? 0) > capturedGen) {
         await this.unlinkIfStillOurs(canonical, ours);
       }
       return "stale-post-rename";
@@ -391,18 +538,13 @@ export class SessionStorage {
     return "renamed";
   }
 
-  /**
-   * Drop a session's buffer file. Bumps the gen so any in-flight async
-   * writer sees the mismatch and unlinks its temp only — preventing the
-   * R5.B1 race where the async stale unlink targeted the canonical path.
-   */
-  dropBuffer(sessionId: string): void {
-    this.bufferErasedGen.set(sessionId, this.bumpBufferGen(sessionId));
+  private dropArtifact(artifact: ArtifactGens, sessionId: string, canonicalOf: () => string, caller: string): void {
+    artifact.erased.set(sessionId, this.bumpGen(artifact, sessionId));
     let canonical: string;
     try {
-      canonical = this.bufferFilePath(sessionId);
+      canonical = canonicalOf();
     } catch (err) {
-      console.warn("[Portaterm] dropBuffer rejected unsafe sessionId:", err);
+      console.warn(`[Portaterm] ${caller} rejected unsafe sessionId:`, err);
       return;
     }
     try {

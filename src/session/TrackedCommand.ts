@@ -78,6 +78,7 @@ export interface HandleEventContext {
 export class CommandTracker {
   private readonly _commands: TrackedCommand[] = [];
   private _inFlight: TrackedCommand | null = null;
+  private _revision = 0;
 
   /**
    * Construct a tracker, optionally seeded from a persisted command list
@@ -100,6 +101,16 @@ export class CommandTracker {
       this._commands.push({ ...c });
     }
     this.evict();
+  }
+
+  /**
+   * Bumped whenever `commands` changes — a command closes into it, or it is
+   * cleared. Starts at 0, including for a tracker seeded from a persisted list,
+   * so the snapshot layer can write the list only when it differs from what it
+   * last wrote.
+   */
+  get revision(): number {
+    return this._revision;
   }
 
   /** Closed commands, oldest-first. Caller MUST NOT mutate. */
@@ -239,6 +250,7 @@ export class CommandTracker {
     cmd.endedAt = params.now;
     this._commands.push(cmd);
     this.evict();
+    this._revision++;
   }
 
   /**
@@ -263,6 +275,7 @@ export class CommandTracker {
   clear(): void {
     this._commands.length = 0;
     this._inFlight = null;
+    this._revision++;
   }
 
   /**

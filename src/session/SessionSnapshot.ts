@@ -79,8 +79,14 @@ export interface SessionSnapshotMetadata {
    *
    * Bounded by the same per-session caps applied at runtime
    * (MAX_COMMANDS_PER_SESSION + MAX_TOTAL_OUTPUT_PER_SESSION); see
-   * `src/session/TrackedCommand.ts`. Stored inline in the index JSON so
-   * the same atomic-rename pipeline that handles `bufferFile` covers it.
+   * `src/session/TrackedCommand.ts`.
+   *
+   * In memory only. On disk the list lives in its own per-session file,
+   * `snapshots/<sessionId>.commands.json`, written through the same atomic-
+   * rename pipeline as `bufferFile` but only when the list changes; the index
+   * sidecar never carries it (`SessionStorage.serializeIndex`). Hydrate reads
+   * the file back into this field. An index written by an older build may
+   * still carry the list inline; hydrate moves it into the file.
    *
    * Optional for back-compat: indexes written before this field landed
    * deserialize cleanly with `trackedCommands === undefined`.
@@ -177,6 +183,29 @@ export function siftMetadataUnknownFields(raw: Record<string, unknown>): {
  * through layer is invisible on the wire). `unknownFields` itself is
  * always stripped from the output. See [W3].
  */
+/**
+ * Whether a value read back from a tracked-commands file is a completed command
+ * this build can restore. The file is our own, but it is read from disk, so a
+ * malformed entry is skipped rather than handed to `CommandTracker`.
+ */
+export function isPersistableTrackedCommand(value: unknown): value is TrackedCommand {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const c = value as Record<string, unknown>;
+  return (
+    typeof c.id === "string" &&
+    typeof c.commandLine === "string" &&
+    typeof c.output === "string" &&
+    (c.exitCode === null || typeof c.exitCode === "number") &&
+    (c.cwd === null || typeof c.cwd === "string") &&
+    typeof c.startedAt === "number" &&
+    typeof c.endedAt === "number" &&
+    typeof c.outputChars === "number" &&
+    typeof c.outputTruncated === "boolean"
+  );
+}
+
 export function expandMetadataForPersist(meta: SessionSnapshotMetadata): Record<string, unknown> {
   const { unknownFields, ...rest } = meta;
   const restAsRecord = rest as unknown as Record<string, unknown>;
