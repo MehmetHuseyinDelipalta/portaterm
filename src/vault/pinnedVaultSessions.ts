@@ -199,11 +199,22 @@ export interface PinnedVaultPublisher<T = string[]> {
 }
 
 /**
+ * How long the extension's vault-session publishers gather refreshes into one
+ * pass. Their triggers include every pane evidence change — an agent's every
+ * tool call, a pane's output starting and stopping — and a pass reads the
+ * process table and the `~/.claude/sessions` registry, so a microtask, which
+ * only merges triggers fired in the same tick, still ran one per event.
+ */
+export const VAULT_SESSION_REFRESH_DELAY_MS = 300;
+
+/**
  * Publish the pinned set to the vault surfaces when it changes.
  *
- * Refreshes are deferred to a microtask: the triggers fire mid-mutation (a pane
- * is announced before its session is registered) and in bursts (every pane
- * evidence change), and the deferred pass reads the settled state once. The
+ * Refreshes are deferred — to a microtask, or by `delayMs` when given: the
+ * triggers fire mid-mutation (a pane is announced before its session is
+ * registered) and in bursts (every pane evidence change), and the deferred pass
+ * reads the settled state once. The delay runs from the first refresh, not the
+ * last, so a steady stream of triggers still gets a pass every `delayMs`. The
  * pass is asynchronous (the process table), so at most one runs at a time; a
  * refresh that arrives meanwhile runs one more pass after it, never a second
  * concurrent one.
@@ -211,6 +222,7 @@ export interface PinnedVaultPublisher<T = string[]> {
 export function createPinnedVaultPublisher(deps: {
   compute: () => Promise<string[]> | string[];
   post: (entryIds: string[]) => void;
+  delayMs?: number;
   schedule?: (run: () => void) => void;
   onError?: (err: unknown) => void;
 }): PinnedVaultPublisher;
@@ -219,6 +231,8 @@ export function createPinnedVaultPublisher<T>(deps: {
   post: (value: T) => void;
   /** What `current()` returns before the first pass publishes. */
   initial: T;
+  /** Gather refreshes for this long before a pass, rather than for a microtask. */
+  delayMs?: number;
   schedule?: (run: () => void) => void;
   onError?: (err: unknown) => void;
 }): PinnedVaultPublisher<T>;
@@ -226,10 +240,20 @@ export function createPinnedVaultPublisher<T>(deps: {
   compute: () => Promise<T> | T;
   post: (value: T) => void;
   initial?: T;
+  delayMs?: number;
   schedule?: (run: () => void) => void;
   onError?: (err: unknown) => void;
 }): PinnedVaultPublisher<T> {
-  const schedule = deps.schedule ?? queueMicrotask;
+  const { delayMs } = deps;
+  /** The latest delayed pass, cleared on dispose so nothing outlives the publisher. */
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const schedule =
+    deps.schedule ??
+    (delayMs === undefined
+      ? queueMicrotask
+      : (run: () => void) => {
+          timer = setTimeout(run, delayMs);
+        });
   let published = deps.initial ?? ([] as unknown as T);
   let scheduled = false;
   let running = false;
@@ -286,6 +310,7 @@ export function createPinnedVaultPublisher<T>(deps: {
     },
     dispose() {
       disposed = true;
+      clearTimeout(timer); // a no-op once it has fired
     },
   };
 }

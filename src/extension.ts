@@ -93,6 +93,7 @@ import {
   livePaneForEntry,
   resolvePinnedEntryIds,
   tabsRunningEntry,
+  VAULT_SESSION_REFRESH_DELAY_MS,
 } from "./vault/pinnedVaultSessions";
 import { claudeSessionMtime } from "./vault/readers/claudePaths";
 import { MAX_DETAIL_LIMIT } from "./vault/readers/detail";
@@ -1804,6 +1805,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return entryIds;
       });
     },
+    delayMs: VAULT_SESSION_REFRESH_DELAY_MS,
     onError: (err) => console.warn("[Portaterm] Failed to resolve pinned vault sessions:", err),
     post: (entryIds) => {
       postToVaultSurfaces({ type: "vaultPinnedSessions", entryIds });
@@ -2020,6 +2022,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return { entryIds, panesByEntry };
     },
     initial: { entryIds: [], panesByEntry: {} },
+    delayMs: VAULT_SESSION_REFRESH_DELAY_MS,
     onError: (err) => console.warn("[Portaterm] Failed to resolve open vault sessions:", err),
     post: (open) => {
       postToVaultSurfaces({ type: "vaultOpenSessions", ...open });

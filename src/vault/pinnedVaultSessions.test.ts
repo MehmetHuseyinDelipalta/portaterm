@@ -1,6 +1,6 @@
 // src/vault/pinnedVaultSessions.test.ts — which vault sessions pinned tabs run.
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DescendantsOutcome, ProcessTableSnapshot } from "../pty/processTableSnapshot";
 import {
   createClaudeProcessLookup,
@@ -11,6 +11,7 @@ import {
   pinnedEntryIds,
   resolvePinnedEntryIds,
   tabsRunningEntry,
+  VAULT_SESSION_REFRESH_DELAY_MS,
 } from "./pinnedVaultSessions";
 import type { RunningClaudeSession } from "./readers/runningSessions";
 
@@ -367,5 +368,91 @@ describe("createPinnedVaultPublisher", () => {
     fail = false;
     publisher.refresh();
     await vi.waitFor(() => expect(posts).toEqual([["claude:a"]]));
+  });
+});
+
+describe("createPinnedVaultPublisher timing", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("defers a pass to a microtask by default", async () => {
+    const compute = vi.fn(() => ["claude:a"]);
+    const posts: string[][] = [];
+    const publisher = createPinnedVaultPublisher({ compute, post: (ids) => posts.push(ids) });
+    publisher.refresh();
+    expect(compute).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(posts).toEqual([["claude:a"]]));
+    expect(compute).toHaveBeenCalledOnce();
+  });
+
+  it("runs the default pass without any timer", async () => {
+    vi.useFakeTimers(); // a timer, even a 0 ms one, would now never fire
+    const posts: string[][] = [];
+    const publisher = createPinnedVaultPublisher({ compute: () => ["claude:a"], post: (ids) => posts.push(ids) });
+    publisher.refresh();
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+    expect(posts).toEqual([["claude:a"]]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("with delayMs, gathers every refresh of the window into one pass, timed from the first", async () => {
+    vi.useFakeTimers();
+    const compute = vi.fn(() => ["claude:a"]);
+    const posts: string[][] = [];
+    const publisher = createPinnedVaultPublisher({
+      compute,
+      post: (ids) => posts.push(ids),
+      delayMs: VAULT_SESSION_REFRESH_DELAY_MS,
+    });
+    publisher.refresh();
+    await vi.advanceTimersByTimeAsync(VAULT_SESSION_REFRESH_DELAY_MS - 50);
+    publisher.refresh();
+    publisher.refresh();
+    await vi.advanceTimersByTimeAsync(49);
+    expect(compute).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(compute).toHaveBeenCalledOnce();
+    expect(posts).toEqual([["claude:a"]]);
+    await vi.advanceTimersByTimeAsync(VAULT_SESSION_REFRESH_DELAY_MS * 3);
+    expect(compute).toHaveBeenCalledOnce();
+  });
+
+  it("with delayMs, a refresh during a pass gets one more pass, a delay later", async () => {
+    vi.useFakeTimers();
+    let release: (ids: string[]) => void = () => {};
+    const compute = vi
+      .fn<() => Promise<string[]> | string[]>()
+      .mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+      .mockImplementation(() => ["claude:b"]);
+    const posts: string[][] = [];
+    const publisher = createPinnedVaultPublisher({ compute, post: (ids) => posts.push(ids), delayMs: 300 });
+    publisher.refresh();
+    await vi.advanceTimersByTimeAsync(300);
+    publisher.refresh(); // arrives while the first pass runs
+    release(["claude:a"]);
+    await vi.advanceTimersByTimeAsync(299);
+    expect(compute).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(compute).toHaveBeenCalledTimes(2);
+    expect(posts).toEqual([["claude:a"], ["claude:b"]]);
+  });
+
+  it("dispose cancels the pending delayed pass", async () => {
+    vi.useFakeTimers();
+    const compute = vi.fn(() => ["claude:a"]);
+    const publisher = createPinnedVaultPublisher({ compute, post: () => {}, delayMs: 300 });
+    publisher.refresh();
+    expect(vi.getTimerCount()).toBe(1);
+    publisher.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(compute).not.toHaveBeenCalled();
+  });
+
+  it("gathers for 300 ms in the extension", () => {
+    expect(VAULT_SESSION_REFRESH_DELAY_MS).toBe(300);
   });
 });
