@@ -13,6 +13,7 @@
 //
 // See: restore-terminal-sessions design.md D1, D4-D7, D11, D13.
 
+import { MirrorWrites } from "./MirrorWrites";
 import type { PendingSnapshot, SessionSnapshotMetadata, SessionSnapshotsIndex, ViewLocation } from "./SessionSnapshot";
 import type { SessionStorage } from "./SessionStorage";
 import { evictIndex } from "./sessionSnapshotEviction";
@@ -138,14 +139,14 @@ export class SnapshotPersistence {
   private _pendingSessions = new Set<string>();
 
   /**
-   * Per-session promise chain of in-flight headless writes. xterm.js
-   * `write(data, cb)` is asynchronous — the buffer is not guaranteed to be
-   * up-to-date until `cb` fires. Async flushes MUST await this barrier before
-   * `serialize()` so the snapshot reflects the full byte stream.
-   * Sync flush (deactivate) is best-effort — captures whatever is currently
-   * parsed; this is the accepted ≤8ms loss window. See `.reviews/round-1.md` B1.
+   * Per-session headless writes not yet parsed. xterm.js `write(data, cb)` is
+   * asynchronous — the buffer is not guaranteed to be up-to-date until `cb`
+   * fires. Async flushes MUST await `settled()` before `serialize()` so the
+   * snapshot reflects the full byte stream. Sync flush (deactivate) is
+   * best-effort — captures whatever is currently parsed; this is the accepted
+   * ≤8ms loss window. See `.reviews/round-1.md` B1.
    */
-  private writeBarriers = new Map<string, Promise<void>>();
+  private mirrorWrites = new Map<string, MirrorWrites>();
 
   /**
    * Incremented when persistence is invalidated (restore toggled off, storage
@@ -204,7 +205,7 @@ export class SnapshotPersistence {
     if (!enabled) {
       this.cancelPersistTimers();
       this._pendingSessions.clear();
-      this.writeBarriers.clear();
+      this.forgetAllMirrorWrites();
       // Dispose every mirror + cached addon. The session itself stays alive;
       // only the restore pipeline is torn down.
       for (const id of liveSessionIds) {
@@ -252,15 +253,10 @@ export class SnapshotPersistence {
       // stale prompt line to the next snapshot, accumulating linearly across
       // reloads (7 reloads → 6 stacked prompts above the divider).
       const seededBuffer = `${restoreFrom.buffer}\r\x1b[2K`;
-      const seedBarrier = new Promise<void>((resolve) => {
-        try {
-          seeded.write(seededBuffer, () => resolve());
-        } catch (err) {
-          console.error("[Portaterm] Failed to seed headless mirror from restore buffer:", err);
-          resolve();
-        }
-      });
-      this.writeBarriers.set(session.id, seedBarrier);
+      this.forgetMirrorWrites(session.id); // a new mirror: the old one's writes do not count
+      this.writesFor(session.id).write(seeded, seededBuffer, (err) =>
+        console.error("[Portaterm] Failed to seed headless mirror from restore buffer:", err),
+      );
     } catch (err) {
       console.error("[Portaterm] Failed to construct seeded headless mirror:", err);
     }
@@ -460,23 +456,13 @@ export class SnapshotPersistence {
       }
       return;
     }
-    // RIS the mirror. Chain into writeBarriers so the next commitLiveSnapshot
-    // awaits the RIS parse before serialize — otherwise a debounced flush
-    // arriving between the bumped buffer gen and the new pty.onData could
-    // capture pre-RIS state. Subsequent serialize reflects the cleared
-    // buffer. See round-6 R6.S1.
-    const prior = this.writeBarriers.get(id) ?? Promise.resolve();
-    const risPromise = new Promise<void>((resolve) => {
-      try {
-        session.headless?.write("\x1bc", () => resolve());
-      } catch (err) {
-        console.error("[Portaterm] commitClearSnapshot RIS failed:", err);
-        resolve();
-      }
-    });
-    this.writeBarriers.set(
-      id,
-      prior.then(() => risPromise),
+    // RIS the mirror. Counted with its other writes so the next
+    // commitLiveSnapshot awaits the RIS parse before serialize — otherwise a
+    // debounced flush arriving between the bumped buffer gen and the new
+    // pty.onData could capture pre-RIS state. Subsequent serialize reflects the
+    // cleared buffer. See round-6 R6.S1.
+    this.writesFor(id).write(session.headless, "\x1bc", (err) =>
+      console.error("[Portaterm] commitClearSnapshot RIS failed:", err),
     );
     // Sync-commit an empty canonical so a window close immediately after Cmd+K
     // doesn't preserve the pre-clear content. We can't await the RIS parse
@@ -521,7 +507,7 @@ export class SnapshotPersistence {
       this.disposeMirrorFor(session);
     }
     this._pendingSessions.delete(id);
-    this.writeBarriers.delete(id);
+    this.forgetMirrorWrites(id);
     this._commandsRevision.delete(id);
     const hadEntry = this._snapshotIndex[id] !== undefined;
     delete this._snapshotIndex[id];
@@ -566,7 +552,7 @@ export class SnapshotPersistence {
       this.disposeMirrorFor(session);
     }
     this._pendingSessions.delete(id);
-    this.writeBarriers.delete(id);
+    this.forgetMirrorWrites(id);
     // Intentionally NOT touching _snapshotIndex or storage — the on-disk
     // state is owned by the latest commitLive/commitExit/commitClear call
     // and must survive to the next activate (D13 read-only + cross-restart).
@@ -608,24 +594,10 @@ export class SnapshotPersistence {
         return;
       }
     }
-    // Chain the write callback onto the per-session barrier. Async flushes
-    // await the latest barrier before serialize so the snapshot is consistent.
-    // The map stores only the tail Promise — the chain itself stays
-    // bounded because each `.then(() => writePromise)` returns a single
-    // Promise (no nesting).
-    const mirror = session.headless;
-    const prior = this.writeBarriers.get(session.id) ?? Promise.resolve();
-    const writePromise = new Promise<void>((resolve) => {
-      try {
-        mirror.write(data, () => resolve());
-      } catch (err) {
-        console.error("[Portaterm] Headless mirror write failed:", err);
-        resolve();
-      }
-    });
-    this.writeBarriers.set(
-      session.id,
-      prior.then(() => writePromise),
+    // Counted, so an async flush waits for this chunk to be parsed before it
+    // serializes and the snapshot is consistent.
+    this.writesFor(session.id).write(session.headless, data, (err) =>
+      console.error("[Portaterm] Headless mirror write failed:", err),
     );
     this.schedulePersist(session.id);
   }
@@ -1200,17 +1172,31 @@ export class SnapshotPersistence {
 
   // ─── Private helpers ────────────────────────────────────────────
 
-  /** Wait for the current write barrier to settle. Best-effort — never throws. */
+  /** Wait until every mirror write issued so far is parsed. Never throws. */
   private async awaitWriteBarrier(sessionId: string): Promise<void> {
-    const barrier = this.writeBarriers.get(sessionId);
-    if (!barrier) {
-      return;
+    await this.mirrorWrites.get(sessionId)?.settled();
+  }
+
+  private writesFor(sessionId: string): MirrorWrites {
+    let writes = this.mirrorWrites.get(sessionId);
+    if (!writes) {
+      writes = new MirrorWrites();
+      this.mirrorWrites.set(sessionId, writes);
     }
-    try {
-      await barrier;
-    } catch {
-      // The write promise resolver swallows errors; this catch is defensive.
+    return writes;
+  }
+
+  /** The session's mirror is going: a flush waiting on its writes stops waiting. */
+  private forgetMirrorWrites(sessionId: string): void {
+    this.mirrorWrites.get(sessionId)?.release();
+    this.mirrorWrites.delete(sessionId);
+  }
+
+  private forgetAllMirrorWrites(): void {
+    for (const writes of this.mirrorWrites.values()) {
+      writes.release();
     }
+    this.mirrorWrites.clear();
   }
 
   private disposeMirrorFor(session: TerminalSession): void {

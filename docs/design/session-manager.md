@@ -353,16 +353,21 @@ snapshots into shared global storage (`extension.ts:51`–`:62`).
 ```mermaid
 flowchart LR
     A["pty.onData"] --> B["recordData :479"]
-    B --> C["headless.write → writeBarriers chain :511"]
+    B --> C["headless.write, counted by MirrorWrites"]
     B --> D["schedulePersist :619 → 1000ms debounce :630"]
     D --> E["flushPending :656"]
-    E --> F["await barrier → serialize → commitBufferAsync"]
+    E --> F["await settled() → serialize → commitBufferAsync"]
 ```
 
-The **write barrier** (`:118`) exists because xterm's `write` is asynchronous —
-serializing before its callback fires would snapshot a half-parsed buffer. Async
-flushes await it; the sync shutdown flush does not, accepting a bounded loss
-window. The mirror freezes once the shell exits (`:485`).
+The **write barrier** (`MirrorWrites.ts`) exists because xterm's `write` is
+asynchronous — serializing before its callback fires would snapshot a half-parsed
+buffer. It is two counters per mirror, writes issued and writes parsed, and one shared
+callback: xterm calls a mirror's write callbacks in write order, so a flush waits until
+"parsed" reaches what "issued" was when it asked, and writes made after that do not
+hold it up. (It was one Promise and one `.then` per PTY chunk.) The restore seed and a
+clear's reset are counted with the data; a dropped pane or a restore switched off
+releases whoever waits. Async flushes await it; the sync shutdown flush does not,
+accepting a bounded loss window. The mirror freezes once the shell exits (`:485`).
 
 Constants: `SNAPSHOT_PERSIST_DEBOUNCE_MS` 1000 (`:28`),
 `SNAPSHOT_BUFFER_MAX_BYTES` 1 MB (`:25`), `SERIALIZE_OPTIONS.scrollback` and the
