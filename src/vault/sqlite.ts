@@ -103,6 +103,11 @@ export interface SqliteDeps {
    */
   runNodeQuery?(dbCopy: string, sql: string): Promise<SqliteResult>;
   /**
+   * Query the LIVE store read-only with `node:sqlite` (`queryLiveSqlite`).
+   * Defaults to the real engine on a worker; tests stub it to observe the call.
+   */
+  runLiveQuery?(dbPath: string, sql: string): Promise<SqliteResult>;
+  /**
    * Produce a point-in-time snapshot of the live store at `dest`. Defaults to the
    * real engine. Throws on any failure — a snapshot that could not be taken must
    * never be mistaken for a store that is empty (D2).
@@ -235,7 +240,7 @@ try {
 if (DatabaseSync) {
   let db;
   try {
-    db = new DatabaseSync(workerData.file);
+    db = new DatabaseSync(workerData.file, workerData.readOnly ? { readOnly: true } : {});
     db.exec("PRAGMA busy_timeout = " + workerData.busyTimeoutMs);
     parentPort.postMessage({ ok: true, rows: db.prepare(workerData.sql).all() });
   } catch (err) {
@@ -246,7 +251,7 @@ if (DatabaseSync) {
 }
 `;
 
-type QueryWorkerData = { file: string; sql: string; busyTimeoutMs: number };
+type QueryWorkerData = { file: string; sql: string; busyTimeoutMs: number; readOnly: boolean };
 
 export interface OffThreadQueryOptions {
   /**
@@ -256,6 +261,12 @@ export interface OffThreadQueryOptions {
    * in-process read this replaced had none either.
    */
   timeoutMs?: number;
+  /**
+   * Open the file read-only. A snapshot is a disposable copy and is opened
+   * read-write so SQLite can replay its WAL; the LIVE store a running agent owns
+   * must never be opened for writing (D3), so `queryLiveSqlite` sets this.
+   */
+  readOnly?: boolean;
   /** Start the worker. Tests replace it to model a runtime without workers. */
   createWorker?: (source: string, workerData: QueryWorkerData) => Worker;
 }
@@ -295,8 +306,9 @@ export function runNodeQueryOffThread(
   sql: string,
   options: OffThreadQueryOptions = {},
 ): Promise<SqliteResult> {
+  const readOnly = options.readOnly === true;
   if (workersUnavailable) {
-    return runNodeQueryInProcess(file, sql);
+    return runNodeQueryInProcess(file, sql, readOnly);
   }
   let worker: Worker;
   try {
@@ -304,10 +316,11 @@ export function runNodeQueryOffThread(
       file,
       sql,
       busyTimeoutMs: QUERY_BUSY_TIMEOUT_MS,
+      readOnly,
     });
   } catch {
     workersUnavailable = true;
-    return runNodeQueryInProcess(file, sql);
+    return runNodeQueryInProcess(file, sql, readOnly);
   }
   const timeoutMs = options.timeoutMs;
   return new Promise<SqliteResult>((resolve) => {
@@ -342,7 +355,7 @@ export function runNodeQueryOffThread(
         } else if (msg.unavailable) {
           // The engine does not load in a worker on this runtime.
           workersUnavailable = true;
-          finish(runNodeQueryInProcess(file, sql));
+          finish(runNodeQueryInProcess(file, sql, readOnly));
         } else {
           finish({ rows: [], status: "query-error", error: msg.error });
         }
@@ -357,7 +370,7 @@ export function runNodeQueryOffThread(
     worker.once("error", (err) => {
       if (!online) {
         workersUnavailable = true;
-        finish(runNodeQueryInProcess(file, sql));
+        finish(runNodeQueryInProcess(file, sql, readOnly));
         return;
       }
       finish({ rows: [], status: "query-error", error: messageOf(err) });
@@ -378,12 +391,13 @@ function defaultRunNodeQuery(dbCopy: string, sql: string): Promise<SqliteResult>
  * fallback where no worker can be started. The copy is a disposable
  * temp file, so we open it read-WRITE: that lets SQLite replay the copied
  * `-wal` sidecar (read-only opens can fail when the `-shm` can't be created)
- * without ever touching the user's live store. Never throws.
+ * without ever touching the user's live store. `readOnly` is for the one
+ * caller that does query the live store (`queryLiveSqlite`). Never throws.
  */
-async function runNodeQueryInProcess(dbCopy: string, sql: string): Promise<SqliteResult> {
+async function runNodeQueryInProcess(dbCopy: string, sql: string, readOnly = false): Promise<SqliteResult> {
   try {
     const { DatabaseSync } = await import("node:sqlite");
-    const db = new DatabaseSync(dbCopy);
+    const db = new DatabaseSync(dbCopy, readOnly ? { readOnly: true } : {});
     try {
       const rows = db.prepare(sql).all() as Record<string, unknown>[];
       return { rows: rows.map(normalizeRow), status: "ok" };
@@ -711,6 +725,42 @@ export function withPrimarySqliteSnapshot<T>(
   deps: SqliteDeps = defaultDeps,
 ): Promise<SqliteSnapshotResult<T>> {
   return withSqliteSnapshot(dbPath, callback, deps, { retain: true });
+}
+
+/**
+ * Run ONE static query against the LIVE store, read-only — for change detection
+ * and nothing else (agent-session-index spec, "WAL-safe read-only SQLite access").
+ *
+ * A caller may compare this answer with one it computed from a snapshot, to learn
+ * that the snapshot it already holds is still current; it must never hand these
+ * rows to anyone as data. That split is what keeps the old failure harmless: a
+ * read-only open of a live WAL store has been seen to answer an EMPTY result
+ * instead of failing, and an answer that differs from the snapshot's only costs a
+ * fresh snapshot. The connection is read-only on both engines, so it never takes
+ * a write lock on a store a running agent owns (D3), and it is bounded by a
+ * deadline so a stalled store cannot hold a refresh. Never throws.
+ */
+export async function queryLiveSqlite(
+  dbPath: string,
+  sql: string,
+  deps: SqliteDeps = defaultDeps,
+): Promise<SqliteResult> {
+  const useNode = await probeNodeSqlite(deps);
+  const useCli = useNode ? false : await probeSqlite(deps);
+  if (!useNode && !useCli) {
+    return { rows: [], status: "no-sqlite3" };
+  }
+  const found = await presence(deps, dbPath);
+  if (found !== "present") {
+    return { rows: [], status: found === "absent" ? "no-db" : "db-unreachable" };
+  }
+  if (useCli) {
+    return attemptQuery(deps, dbPath, sql); // `-readonly`, under QUERY_TIMEOUT_MS
+  }
+  if (deps.runLiveQuery) {
+    return deps.runLiveQuery(dbPath, sql);
+  }
+  return runNodeQueryOffThread(dbPath, sql, { readOnly: true, timeoutMs: QUERY_TIMEOUT_MS });
 }
 
 /**

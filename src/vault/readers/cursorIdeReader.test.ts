@@ -1,10 +1,12 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { SqliteSnapshot, withSqliteSnapshot } from "../sqlite";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { CursorIdeCache } from "../cacheTypes";
+import { queryLiveSqlite, type SqliteSnapshot, withPrimarySqliteSnapshot, type withSqliteSnapshot } from "../sqlite";
 import { storeFilePaths } from "../storeStamp";
 import {
+  CURSOR_IDE_PROBE_TRUST_MS,
   cursorIdeDbPath,
   lookupCursorIdeEntry,
   readCursorIdeDetail,
@@ -172,11 +174,13 @@ describe("Cursor IDE Composer list", () => {
     }) as typeof withSqliteSnapshot;
 
     await expect(
-      readCursorIdeSessions({ ideDbPath: dbPath, withSqliteSnapshotFn: duplicateSnapshot }),
+      readCursorIdeSessions({ ideDbPath: dbPath, withSqliteSnapshotFn: duplicateSnapshot, now: () => 7 }),
     ).resolves.toEqual({
       entries: [],
       unreadable: 2,
       sources: {},
+      fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+      verifiedAt: 7,
     });
   });
 
@@ -498,5 +502,252 @@ describe("lookupCursorIdeEntry: a row too large to parse is present, not missing
     await writeIdeStore([{ id: "composer-1" }]);
     const found = await lookupCursorIdeEntry(ID, { ideDbPath: dbPath });
     expect(found.status).toBe("found");
+  });
+});
+
+describe("Cursor IDE list: an unchanged store is not snapshotted again (B1)", () => {
+  /** The real pooled snapshot, counted — the cost the probe exists to avoid. */
+  function countedSnapshot() {
+    const calls = vi.fn();
+    const fn = ((dbFile: string, callback: (snapshot: SqliteSnapshot) => Promise<unknown>) => {
+      calls();
+      return withPrimarySqliteSnapshot(dbFile, callback);
+    }) as typeof withSqliteSnapshot;
+    return { fn, calls };
+  }
+
+  /** The cached IDE segment exactly as the combined reader would carry it forward. */
+  function asCache(result: Awaited<ReturnType<typeof readCursorIdeSessions>>): CursorIdeCache {
+    return result as CursorIdeCache;
+  }
+
+  async function writeUnrelatedKey(key: string): Promise<void> {
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(dbPath);
+    try {
+      db.prepare("INSERT INTO cursorDiskKV(key, value) VALUES (?, ?)").run(key, Buffer.from("{}", "utf8"));
+    } finally {
+      db.close();
+    }
+  }
+
+  async function renameComposer(id: string, name: string): Promise<void> {
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(dbPath);
+    try {
+      const row = db.prepare("SELECT value FROM composerHeaders WHERE composerId = ?").get(id) as { value: string };
+      const header = JSON.parse(row.value) as Record<string, unknown>;
+      db.prepare("UPDATE composerHeaders SET value = ? WHERE composerId = ?").run(
+        JSON.stringify({ ...header, name }),
+        id,
+      );
+    } finally {
+      db.close();
+    }
+  }
+
+  it("records the fingerprint and time of the snapshot that produced the list", async () => {
+    await writeIdeStore([{ id: "composer-1" }]);
+
+    const result = await readCursorIdeSessions({ ideDbPath: dbPath, now: () => 5000 });
+
+    expect(result.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.verifiedAt).toBe(5000);
+  });
+
+  it("keeps the previous list without a snapshot while the live store answers the same rows", async () => {
+    await writeIdeStore([{ id: "composer-1" }]);
+    const first = await readCursorIdeSessions({ ideDbPath: dbPath, now: () => 1000 });
+    // Cursor writes keys unrelated to composers all the time: the files change,
+    // the list does not.
+    await writeUnrelatedKey("workbench.state:unrelated");
+    const { fn, calls } = countedSnapshot();
+
+    const second = await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: fn, now: () => 2000 },
+      asCache(first),
+    );
+
+    expect(calls).not.toHaveBeenCalled();
+    expect(second.entries).toEqual(first.entries);
+    expect(second.unreadable).toBe(first.unreadable);
+    // Still vouching for the same snapshot: the trust window does not slide.
+    expect(second.fingerprint).toBe(first.fingerprint);
+    expect(second.verifiedAt).toBe(1000);
+    // The stamps are re-read, so the cache keeps describing the files as they are.
+    expect(second.sources).not.toEqual(first.sources);
+  });
+
+  it("carries the previous unreadable count forward with the entries", async () => {
+    await writeIdeStore([{ id: "archived", archived: true }, { id: "no-cwd", cwd: "relative/path" }, { id: "valid" }]);
+    const first = await readCursorIdeSessions({ ideDbPath: dbPath, now: () => 1000 });
+    expect(first.unreadable).toBe(1);
+    const { fn, calls } = countedSnapshot();
+
+    const second = await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: fn, now: () => 2000 },
+      asCache(first),
+    );
+
+    expect(calls).not.toHaveBeenCalled();
+    expect(second.unreadable).toBe(1);
+  });
+
+  it("snapshots again when a composer changes, even a rename that keeps the header's length", async () => {
+    await writeIdeStore([{ id: "composer-1", name: "Alpha" }]);
+    const first = await readCursorIdeSessions({ ideDbPath: dbPath, now: () => 1000 });
+    await renameComposer("composer-1", "Gamma");
+    const { fn, calls } = countedSnapshot();
+
+    const second = await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: fn, now: () => 2000 },
+      asCache(first),
+    );
+
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(second.entries[0].title).toBe("Gamma");
+    expect(second.fingerprint).not.toBe(first.fingerprint);
+    expect(second.verifiedAt).toBe(2000);
+  });
+
+  it("snapshots again when a new composer appears", async () => {
+    await writeIdeStore([{ id: "composer-1" }]);
+    const first = await readCursorIdeSessions({ ideDbPath: dbPath, now: () => 1000 });
+    await fs.rm(dbPath);
+    await writeIdeStore([{ id: "composer-1" }, { id: "composer-2" }]);
+    const { fn, calls } = countedSnapshot();
+
+    const second = await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: fn, now: () => 2000 },
+      asCache(first),
+    );
+
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(second.entries).toHaveLength(2);
+  });
+
+  it("snapshots when the live probe cannot answer", async () => {
+    await writeIdeStore([{ id: "composer-1" }]);
+    const first = await readCursorIdeSessions({ ideDbPath: dbPath, now: () => 1000 });
+    const { fn, calls } = countedSnapshot();
+    const queryLiveFn = vi.fn(async () => ({ rows: [], status: "query-error" as const, error: "locked" }));
+
+    const second = await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: fn, queryLiveFn, now: () => 2000 },
+      asCache(first),
+    );
+
+    expect(queryLiveFn).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(second.entries).toEqual(first.entries);
+  });
+
+  it("does not take a silently empty live answer for an unchanged store", async () => {
+    // The failure that once retired live reads: a read-only open of a live WAL
+    // store answered EMPTY instead of failing. Compared with the snapshot's
+    // digest, it can only ever cost a snapshot.
+    await writeIdeStore([{ id: "composer-1" }]);
+    const first = await readCursorIdeSessions({ ideDbPath: dbPath, now: () => 1000 });
+    const { fn, calls } = countedSnapshot();
+    const queryLiveFn = vi.fn(async () => ({ rows: [], status: "ok" as const }));
+
+    const second = await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: fn, queryLiveFn, now: () => 2000 },
+      asCache(first),
+    );
+
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(second.entries).toEqual(first.entries);
+  });
+
+  it("trusts the probe only inside the window, and never across a clock that went backwards", async () => {
+    await writeIdeStore([{ id: "composer-1" }]);
+    const first = await readCursorIdeSessions({ ideDbPath: dbPath, now: () => 10_000 });
+
+    const inside = countedSnapshot();
+    await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: inside.fn, now: () => 10_000 + CURSOR_IDE_PROBE_TRUST_MS - 1 },
+      asCache(first),
+    );
+    expect(inside.calls).not.toHaveBeenCalled();
+
+    const expired = countedSnapshot();
+    const refreshed = await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: expired.fn, now: () => 10_000 + CURSOR_IDE_PROBE_TRUST_MS },
+      asCache(first),
+    );
+    expect(expired.calls).toHaveBeenCalledTimes(1);
+    expect(refreshed.verifiedAt).toBe(10_000 + CURSOR_IDE_PROBE_TRUST_MS);
+
+    const backwards = countedSnapshot();
+    await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: backwards.fn, now: () => 9_999 },
+      asCache(first),
+    );
+    expect(backwards.calls).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not probe for a cache that carries no fingerprint", async () => {
+    await writeIdeStore([{ id: "composer-1" }]);
+    const first = await readCursorIdeSessions({ ideDbPath: dbPath, now: () => 1000 });
+    const queryLiveFn = vi.fn(queryLiveSqlite);
+    const { fn, calls } = countedSnapshot();
+
+    await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: fn, queryLiveFn, now: () => 2000 },
+      { entries: first.entries, unreadable: 0, sources: first.sources },
+    );
+    // An entries-only `prev` (the older call shape) has nothing to vouch for either.
+    await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: fn, queryLiveFn, now: () => 2000 },
+      first.entries,
+    );
+
+    expect(queryLiveFn).not.toHaveBeenCalled();
+    expect(calls).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves no fingerprint behind a failed read, so the next read snapshots", async () => {
+    await writeIdeStore([{ id: "composer-1" }]);
+    const first = await readCursorIdeSessions({ ideDbPath: dbPath, now: () => 1000 });
+    await renameComposer("composer-1", "Changed");
+    const failedSnapshot = (async () => ({
+      status: "query-error" as const,
+      error: "busy",
+    })) as typeof withSqliteSnapshot;
+
+    const failed = await readCursorIdeSessions(
+      { ideDbPath: dbPath, withSqliteSnapshotFn: failedSnapshot, now: () => 2000 },
+      asCache(first),
+    );
+
+    expect(failed.unreadable).toBe(1);
+    expect(failed.fingerprint).toBeUndefined();
+    expect(failed.verifiedAt).toBeUndefined();
+  });
+
+  it("carries the fingerprint through the combined reader's cache, so an IDE hint skips the snapshot", async () => {
+    await writeIdeStore([{ id: "composer-1" }]);
+    const chatsDir = path.join(root, "chats");
+    const projectsDir = path.join(root, "projects");
+    await Promise.all([fs.mkdir(chatsDir), fs.mkdir(projectsDir)]);
+    const options = { chatsDir, projectsDir, ideDbPath: dbPath, now: () => 1000 };
+
+    const listed = await readCursorSessions(undefined, options);
+    expect(listed.cache.kind === "cursor-files" && listed.cache.ide?.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(listed.cache.kind === "cursor-files" && listed.cache.ide?.verifiedAt).toBe(1000);
+
+    await writeUnrelatedKey("workbench.state:unrelated");
+    const { fn, calls } = countedSnapshot();
+    const hinted = await readCursorSessions(
+      listed.cache,
+      { ...options, withSqliteSnapshotFn: fn, now: () => 2000 },
+      { paths: [`${dbPath}-wal`] },
+    );
+    const complete = await readCursorSessions(listed.cache, { ...options, withSqliteSnapshotFn: fn, now: () => 2000 });
+
+    expect(calls).not.toHaveBeenCalled();
+    expect(hinted.entries).toEqual(listed.entries);
+    expect(complete.entries).toEqual(listed.entries);
   });
 });

@@ -259,6 +259,8 @@ describe("VaultCacheStore", () => {
               },
               entries: [ideEntry],
               unreadable: 2,
+              fingerprint: "a".repeat(64),
+              verifiedAt: 1_700_000_000_000,
             },
             unreadableById: { "duplicate-chat": 2 },
             rejected: 1,
@@ -324,6 +326,43 @@ describe("VaultCacheStore", () => {
       });
       harness.files.set(CACHE_FILE, JSON.stringify(bad));
       expect(store.load()).toBeNull();
+    });
+
+    it.each([
+      ["a fingerprint that is not a sha256 hex digest", { fingerprint: "not-a-digest" }],
+      ["an upper-case fingerprint", { fingerprint: "A".repeat(64) }],
+      ["a non-string fingerprint", { fingerprint: 42 }],
+      ["a negative verification time", { verifiedAt: -1 }],
+      ["a fractional verification time", { verifiedAt: 1.5 }],
+      ["a non-numeric verification time", { verifiedAt: "yesterday" }],
+    ])("rejects Cursor IDE metadata with %s", (_reason, probeState) => {
+      const bad = doc({
+        agents: {
+          cursor: {
+            kind: "cursor-files",
+            chats: {},
+            locations: { byId: {}, overflowed: false },
+            ide: { sources: {}, entries: [], unreadable: 0, ...(probeState as object) },
+          },
+        },
+      });
+      harness.files.set(CACHE_FILE, JSON.stringify(bad));
+      expect(store.load()).toBeNull();
+    });
+
+    it("accepts Cursor IDE metadata written before it carried a fingerprint", () => {
+      const legacy = doc({
+        agents: {
+          cursor: {
+            kind: "cursor-files",
+            chats: {},
+            locations: { byId: {}, overflowed: false },
+            ide: { sources: {}, entries: [], unreadable: 0 },
+          },
+        },
+      });
+      harness.files.set(CACHE_FILE, JSON.stringify(legacy));
+      expect(store.load()).toEqual(legacy);
     });
 
     it("rejects a Cursor cache entry with a non-boolean canResume capability", () => {

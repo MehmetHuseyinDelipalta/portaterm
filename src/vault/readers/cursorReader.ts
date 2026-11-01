@@ -15,6 +15,7 @@ import * as path from "node:path";
 import { asRecord } from "../../utils/record";
 import type {
   CursorFileCacheEntry,
+  CursorIdeCache,
   CursorLocationIndex,
   FileStamp,
   ReaderListCache,
@@ -255,7 +256,7 @@ function cursorResult(
   locations: CursorLocationIndex,
   unreadableById: Record<string, number>,
   rejected: number,
-  ide: { entries: VaultSessionEntry[]; unreadable: number; sources: Record<string, FileStamp> },
+  ide: CursorIdeCache,
 ): ReaderResultWithState {
   const entries = [...Object.values(chats).map((chat) => chat.entry), ...ide.entries];
   const unreadable = ide.unreadable + rejected + Object.values(unreadableById).reduce((sum, count) => sum + count, 0);
@@ -266,7 +267,13 @@ function cursorResult(
       kind: "cursor-files",
       chats,
       locations,
-      ide: { sources: ide.sources, entries: ide.entries, unreadable: ide.unreadable },
+      ide: {
+        sources: ide.sources,
+        entries: ide.entries,
+        unreadable: ide.unreadable,
+        ...(ide.fingerprint !== undefined ? { fingerprint: ide.fingerprint } : {}),
+        ...(ide.verifiedAt !== undefined ? { verifiedAt: ide.verifiedAt } : {}),
+      },
       unreadableById,
       rejected,
     },
@@ -278,14 +285,8 @@ function isWithin(root: string, candidate: string): boolean {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-function cachedIde(prev: ReaderListCache | undefined): {
-  entries: VaultSessionEntry[];
-  unreadable: number;
-  sources: Record<string, FileStamp>;
-} {
-  return prev?.kind === "cursor-files" && prev.ide
-    ? { entries: prev.ide.entries, unreadable: prev.ide.unreadable, sources: prev.ide.sources }
-    : { entries: [], unreadable: 0, sources: {} };
+function cachedIde(prev: ReaderListCache | undefined): CursorIdeCache {
+  return prev?.kind === "cursor-files" && prev.ide ? prev.ide : { entries: [], unreadable: 0, sources: {} };
 }
 
 function sameCwd(a: string, b: string): boolean {
@@ -361,7 +362,7 @@ export async function readCursorSessions(
         prevCursor.locations,
         prevCursor.unreadableById ?? {},
         prevCursor.rejected ?? 0,
-        await readCursorIdeSessions(options, cachedIde(prevCursor).entries),
+        await readCursorIdeSessions(options, cachedIde(prevCursor)),
       );
     }
     const { groups, locations, metaChanged, requiresFullScan } = await resolveChangedCursorChatCandidates(
@@ -409,7 +410,7 @@ export async function readCursorSessions(
       unreadableById[candidate.chatId] = next.unreadable;
     }
   }
-  const ide = await readCursorIdeSessions(options, cachedIde(prevCursor).entries);
+  const ide = await readCursorIdeSessions(options, cachedIde(prevCursor));
   return cursorResult(chats, locations, unreadableById, rejected, ide);
 }
 

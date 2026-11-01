@@ -109,7 +109,20 @@ function isValidCursorIde(value: unknown): boolean {
   ) {
     return false;
   }
-  return Number.isSafeInteger(value.unreadable) && (value.unreadable as number) >= 0;
+  if (!Number.isSafeInteger(value.unreadable) || (value.unreadable as number) < 0) {
+    return false;
+  }
+  // The probe fingerprint is a sha256 hex digest; anything else would only ever
+  // fail to match, but a malformed one is a sign the segment is not ours.
+  if (
+    value.fingerprint !== undefined &&
+    !(typeof value.fingerprint === "string" && /^[0-9a-f]{64}$/.test(value.fingerprint))
+  ) {
+    return false;
+  }
+  return (
+    value.verifiedAt === undefined || (Number.isSafeInteger(value.verifiedAt) && (value.verifiedAt as number) >= 0)
+  );
 }
 
 /**

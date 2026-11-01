@@ -275,6 +275,10 @@ const defaultAdapters = {
 
 export const MAX_PENDING_VAULT_REFRESH_PATHS = 128;
 
+/** The shortest gap between two watcher-driven reads of the Cursor IDE store. A
+ *  composer change made inside it reaches the list at the end of it. */
+export const CURSOR_IDE_REFRESH_MIN_INTERVAL_MS = 30_000;
+
 /** Cursor child-transcript locator domain (design.md D13) — host-issued, never
  *  a top-level row and never a launch operand. */
 const CURSOR_CHILD_PREFIX = "child:";
@@ -364,8 +368,23 @@ export class VaultService {
           return [
             { baseDir: chats, glob: "**/meta.json", events: live, agent: "cursor" },
             { baseDir: chats, glob: "**/store.db", events: ["create", "delete"], agent: "cursor" },
-            { baseDir: path.dirname(ide), glob: path.basename(ide), events: live, agent: "cursor" },
-            { baseDir: path.dirname(ide), glob: `${path.basename(ide)}-wal`, events: live, agent: "cursor" },
+            // Cursor writes this store all the time it runs, mostly keys unrelated to
+            // composers, so its events are spaced out; the reader's live probe then
+            // decides whether a snapshot is owed at all.
+            {
+              baseDir: path.dirname(ide),
+              glob: path.basename(ide),
+              events: live,
+              agent: "cursor",
+              minIntervalMs: CURSOR_IDE_REFRESH_MIN_INTERVAL_MS,
+            },
+            {
+              baseDir: path.dirname(ide),
+              glob: `${path.basename(ide)}-wal`,
+              events: live,
+              agent: "cursor",
+              minIntervalMs: CURSOR_IDE_REFRESH_MIN_INTERVAL_MS,
+            },
           ];
         },
         // Cursor ids are opaque locators its own reader resolves, never

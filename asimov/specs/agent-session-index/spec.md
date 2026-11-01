@@ -40,8 +40,14 @@ For any SQLite-backed store, the system SHALL read a point-in-time snapshot prod
 SQLite-engine operation that is atomic with respect to concurrent writers, checkpoints and vacuums,
 SHALL query that snapshot in read-only mode, and SHALL then delete it. The system SHALL NOT assemble
 a snapshot from separately-timed copies of the database file and its `-wal`/`-shm` sidecars, SHALL
-NOT query the live store in place, and SHALL NOT open the live store for writing in order to
+NOT query the live store in place for data, and SHALL NOT open the live store for writing in order to
 snapshot it.
+
+As the one exception, the system MAY run a static query read-only against the live store solely to
+decide whether a result it already produced from a snapshot is still current. Rows from such a query
+SHALL NOT be returned to any caller; the system SHALL compare them with the same query's answer from
+the snapshot, and SHALL take a fresh snapshot whenever that query fails, its answer differs, or the
+snapshot-derived result is older than a bounded trust window.
 
 #### Scenario: A session committed only to the WAL survives a concurrent checkpoint
 
@@ -49,6 +55,19 @@ snapshot it.
   live agent checkpoints and vacuums that store while the snapshot is being taken
 - **THEN** the snapshot SHALL either contain that row or report a failure status, and SHALL NOT
   return `ok` with the row missing
+
+#### Scenario: An unchanged Cursor IDE store is not snapshotted again
+
+- **WHEN** the Cursor IDE store's files changed since the last list read, but the composer list query
+  answers the same rows against the live store as it did against that read's snapshot, and that
+  snapshot is younger than the trust window
+- **THEN** the system SHALL keep the previous IDE entries without taking a snapshot
+
+#### Scenario: A live probe that cannot vouch for the list does not skip the snapshot
+
+- **WHEN** the live read-only query fails, answers different rows, or the previous snapshot is older
+  than the trust window
+- **THEN** the system SHALL take a snapshot and list from it
 
 ### Requirement: Aggregate and sort sessions
 

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
+import type { VaultRefreshHint } from "../vault/cacheTypes";
 import type { VaultSessionDetail } from "../vault/types";
-import { VaultService, type VaultWatchTarget } from "../vault/VaultService";
+import { CURSOR_IDE_REFRESH_MIN_INTERVAL_MS, VaultService, type VaultWatchTarget } from "../vault/VaultService";
 import type { WatcherPool } from "./fsWatcherPool";
 import { VaultWatchCoordinator } from "./VaultWatchCoordinator";
 
@@ -211,6 +212,159 @@ describe("VaultWatchCoordinator", () => {
       agent: "opencode",
       paths: [`${opencodeDb.baseDir}/opencode.db-wal`],
     });
+    coordinator.dispose();
+  });
+
+  /** The coordinator over VaultService's REAL targets, with the Cursor IDE subscriptions picked out. */
+  function realCursorHarness(refreshList: (hint?: VaultRefreshHint) => void) {
+    const { watcherPool, subscriptions } = createPool();
+    const coordinator = new VaultWatchCoordinator({
+      watcherPool,
+      vaultService: {
+        getStoreWatchTargets: () => new VaultService().getStoreWatchTargets(),
+        resolveSessionWatchTargets: vi.fn(async () => []),
+        getDetail: vi.fn(async () => null),
+      },
+    });
+    const sub = (match: (s: (typeof subscriptions)[number]) => boolean) => {
+      const found = subscriptions.find(match);
+      if (!found) {
+        throw new Error("missing real store subscription");
+      }
+      return found;
+    };
+    const client = coordinator.attach({ refreshList, postFollowDetail: vi.fn() });
+    return {
+      coordinator,
+      client,
+      wal: sub((s) => s.glob === "state.vscdb-wal"),
+      db: sub((s) => s.glob === "state.vscdb"),
+      meta: sub((s) => s.glob === "**/meta.json"),
+      claude: sub((s) => s.glob === "**/*.jsonl" && s.baseDir.includes(".claude")),
+    };
+  }
+
+  it("spaces Cursor IDE store reads at least the minimum interval apart, and always reads after the last write", () => {
+    // Cursor writes state.vscdb-wal the whole time it runs; each read of that
+    // multi-GB store used to cost a snapshot, once a second.
+    vi.useFakeTimers();
+    const refreshList = vi.fn();
+    const { coordinator, wal, db } = realCursorHarness(refreshList);
+    const walPath = `${wal.baseDir}/state.vscdb-wal`;
+    const dbFile = `${db.baseDir}/state.vscdb`;
+
+    wal.handlers.change?.(uri(walPath));
+    vi.advanceTimersByTime(300);
+    expect(refreshList).toHaveBeenCalledTimes(1);
+    expect(refreshList).toHaveBeenLastCalledWith({ agent: "cursor", paths: [walPath] });
+
+    // A write every second for the next 40 s reads once more at the interval
+    // boundary, not forty times.
+    for (let second = 1; second <= 40; second++) {
+      if (second % 2 === 0) {
+        db.handlers.change?.(uri(dbFile));
+      } else {
+        wal.handlers.change?.(uri(walPath));
+      }
+      vi.advanceTimersByTime(1000);
+    }
+    expect(refreshList).toHaveBeenCalledTimes(2);
+    expect(refreshList.mock.calls[1][0]).toEqual({ agent: "cursor", paths: [walPath, dbFile] });
+
+    // The last write still reads, once its interval has passed.
+    vi.advanceTimersByTime(CURSOR_IDE_REFRESH_MIN_INTERVAL_MS);
+    expect(refreshList).toHaveBeenCalledTimes(3);
+    vi.advanceTimersByTime(CURSOR_IDE_REFRESH_MIN_INTERVAL_MS * 3);
+    expect(refreshList).toHaveBeenCalledTimes(3);
+    coordinator.dispose();
+  });
+
+  it("holds an IDE read until the interval ends, measured from the previous IDE read", () => {
+    vi.useFakeTimers();
+    const refreshList = vi.fn();
+    const { coordinator, wal } = realCursorHarness(refreshList);
+    const walPath = `${wal.baseDir}/state.vscdb-wal`;
+
+    wal.handlers.change?.(uri(walPath));
+    vi.advanceTimersByTime(300); // first IDE read at t=300
+    expect(refreshList).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(10_000);
+    wal.handlers.change?.(uri(walPath)); // t=10_300
+    vi.advanceTimersByTime(CURSOR_IDE_REFRESH_MIN_INTERVAL_MS - 10_000 - 1);
+    expect(refreshList).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1); // t=30_300: one interval after the first read
+    expect(refreshList).toHaveBeenCalledTimes(2);
+
+    // Long after the interval, a write reads after the usual debounce, no later.
+    vi.advanceTimersByTime(CURSOR_IDE_REFRESH_MIN_INTERVAL_MS * 2);
+    wal.handlers.change?.(uri(walPath));
+    vi.advanceTimersByTime(299);
+    expect(refreshList).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(1);
+    expect(refreshList).toHaveBeenCalledTimes(3);
+    coordinator.dispose();
+  });
+
+  it("reads at the interval boundary even while writes keep arriving faster than the debounce", () => {
+    // A trailing debounce would starve here: Cursor can write the -wal every few
+    // milliseconds for as long as a composer streams.
+    vi.useFakeTimers();
+    const refreshList = vi.fn();
+    const { coordinator, wal } = realCursorHarness(refreshList);
+    const walPath = `${wal.baseDir}/state.vscdb-wal`;
+
+    wal.handlers.change?.(uri(walPath));
+    vi.advanceTimersByTime(300); // first IDE read at t=300
+    for (let t = 300; t < CURSOR_IDE_REFRESH_MIN_INTERVAL_MS + 5_000; t += 100) {
+      wal.handlers.change?.(uri(walPath));
+      vi.advanceTimersByTime(100);
+      if (t + 100 === CURSOR_IDE_REFRESH_MIN_INTERVAL_MS + 300) {
+        expect(refreshList).toHaveBeenCalledTimes(2);
+      }
+    }
+    expect(refreshList).toHaveBeenCalledTimes(2);
+    coordinator.dispose();
+  });
+
+  it("does not let a throttled IDE stream hold back or widen another store's routed read", () => {
+    vi.useFakeTimers();
+    const refreshList = vi.fn();
+    const { coordinator, wal, meta, claude } = realCursorHarness(refreshList);
+    const walPath = `${wal.baseDir}/state.vscdb-wal`;
+
+    wal.handlers.change?.(uri(walPath));
+    vi.advanceTimersByTime(300);
+    wal.handlers.change?.(uri(walPath)); // now owed, held for the interval
+
+    const metaPath = `${meta.baseDir}/chat-1/meta.json`;
+    meta.handlers.change?.(uri(metaPath));
+    vi.advanceTimersByTime(300);
+    expect(refreshList).toHaveBeenLastCalledWith({ agent: "cursor", paths: [metaPath] });
+
+    const claudePath = `${claude.baseDir}/project/session.jsonl`;
+    claude.handlers.change?.(uri(claudePath));
+    vi.advanceTimersByTime(300);
+    expect(refreshList).toHaveBeenLastCalledWith({ agent: "claude", paths: [claudePath] });
+    expect(refreshList).not.toHaveBeenCalledWith(undefined);
+    coordinator.dispose();
+  });
+
+  it("drops an owed IDE read when its client is disposed", () => {
+    vi.useFakeTimers();
+    const refreshList = vi.fn();
+    const { coordinator, client, wal } = realCursorHarness(refreshList);
+    const walPath = `${wal.baseDir}/state.vscdb-wal`;
+
+    wal.handlers.change?.(uri(walPath));
+    vi.advanceTimersByTime(300);
+    wal.handlers.change?.(uri(walPath));
+    expect(vi.getTimerCount()).toBe(1);
+    client.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(CURSOR_IDE_REFRESH_MIN_INTERVAL_MS * 2);
+
+    expect(refreshList).toHaveBeenCalledTimes(1);
     coordinator.dispose();
   });
 

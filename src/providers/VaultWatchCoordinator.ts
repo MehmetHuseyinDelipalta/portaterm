@@ -63,8 +63,17 @@ function subscribeTargets(
   return watchers;
 }
 
+/** Routed reads for targets that declared `minIntervalMs`, one bucket per agent. */
+interface ThrottledRefresh {
+  paths: Set<string>;
+  timer: ReturnType<typeof setTimeout> | undefined;
+  /** When this bucket last flushed (epoch ms); `undefined` before its first flush. */
+  lastFlushAt: number | undefined;
+}
+
 class StoreWatchLifecycle implements Disposable {
   private watchers: Disposable[] = [];
+  private readonly throttled = new Map<VaultRefreshHint["agent"], ThrottledRefresh>();
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private maxWaitTimer: ReturnType<typeof setTimeout> | undefined;
   private pendingAgent: VaultRefreshHint["agent"] | undefined;
@@ -96,6 +105,10 @@ class StoreWatchLifecycle implements Disposable {
     if (this.disposed) {
       return;
     }
+    if (target.minIntervalMs !== undefined && target.agent && uri?.fsPath) {
+      this.scheduleThrottled(target.agent, uri.fsPath, target.minIntervalMs);
+      return;
+    }
     if (!target.agent || !uri?.fsPath || (this.pendingAgent && this.pendingAgent !== target.agent)) {
       this.fullRefreshPending = true;
       this.pendingAgent = undefined;
@@ -124,6 +137,43 @@ class StoreWatchLifecycle implements Disposable {
       fast ? STORE_CREATE_REFRESH_DEBOUNCE_MS : STORE_REFRESH_DEBOUNCE_MS,
     );
     this.maxWaitTimer ??= setTimeout(() => this.flushRefresh(), STORE_REFRESH_MAX_WAIT_MS);
+  }
+
+  /**
+   * A throttled target's events gather in their own bucket rather than the shared
+   * pending set: they arrive constantly, and folding them in would keep pushing
+   * back — or widening into a full read — the cheap routed reads of every other
+   * store. The bucket flushes once the burst settles, but never sooner than
+   * `minIntervalMs` after its previous flush, and always after the last event.
+   */
+  private scheduleThrottled(agent: VaultRefreshHint["agent"], fsPath: string, minIntervalMs: number): void {
+    let bucket = this.throttled.get(agent);
+    if (!bucket) {
+      bucket = { paths: new Set(), timer: undefined, lastFlushAt: undefined };
+      this.throttled.set(agent, bucket);
+    }
+    if (bucket.paths.size < MAX_TARGETED_REFRESH_PATHS) {
+      bucket.paths.add(fsPath);
+    }
+    if (bucket.timer) {
+      return; // already due; this event rides along
+    }
+    const earliest = bucket.lastFlushAt === undefined ? 0 : bucket.lastFlushAt + minIntervalMs - Date.now();
+    bucket.timer = setTimeout(() => this.flushThrottled(agent), Math.max(STORE_REFRESH_DEBOUNCE_MS, earliest));
+  }
+
+  private flushThrottled(agent: VaultRefreshHint["agent"]): void {
+    const bucket = this.throttled.get(agent);
+    if (!bucket || this.disposed) {
+      return;
+    }
+    bucket.timer = undefined;
+    bucket.lastFlushAt = Date.now();
+    const paths = [...bucket.paths];
+    bucket.paths.clear();
+    if (paths.length > 0) {
+      this.refreshList({ agent, paths });
+    }
   }
 
   private flushRefresh(): void {
@@ -158,6 +208,14 @@ class StoreWatchLifecycle implements Disposable {
     }
     this.disposed = true;
     this.flushRefresh();
+    // A throttled read is dropped rather than flushed: a webview that asks for the
+    // list again gets a complete read, which covers whatever this one was owed.
+    for (const bucket of this.throttled.values()) {
+      if (bucket.timer) {
+        clearTimeout(bucket.timer);
+      }
+    }
+    this.throttled.clear();
     this.pendingAgent = undefined;
     this.pendingPaths.clear();
     this.fullRefreshPending = false;

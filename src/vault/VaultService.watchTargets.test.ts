@@ -8,7 +8,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { cursorProjectBucketForCwd } from "./readers/cursorTranscript";
-import { VaultService } from "./VaultService";
+import { CURSOR_IDE_REFRESH_MIN_INTERVAL_MS, VaultService } from "./VaultService";
 
 const svc = new VaultService();
 
@@ -48,12 +48,14 @@ describe("VaultService.getStoreWatchTargets", () => {
           glob: "state.vscdb",
           events: ["create", "change", "delete"],
           agent: "cursor",
+          minIntervalMs: CURSOR_IDE_REFRESH_MIN_INTERVAL_MS,
         },
         {
           baseDir: expect.stringContaining(path.join("Cursor", "User", "globalStorage")),
           glob: "state.vscdb-wal",
           events: ["create", "change", "delete"],
           agent: "cursor",
+          minIntervalMs: CURSOR_IDE_REFRESH_MIN_INTERVAL_MS,
         },
       ]),
     );

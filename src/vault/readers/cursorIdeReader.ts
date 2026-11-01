@@ -1,9 +1,10 @@
+import { createHash } from "node:crypto";
 import * as os from "node:os";
 import * as path from "node:path";
 import { asRecord } from "../../utils/record";
-import type { FileStamp } from "../cacheTypes";
+import type { CursorIdeCache, FileStamp } from "../cacheTypes";
 import { boundedPreview } from "../preview";
-import { withPrimarySqliteSnapshot as readSnapshot, type SqliteSnapshot } from "../sqlite";
+import { queryLiveSqlite, withPrimarySqliteSnapshot as readSnapshot, type SqliteSnapshot } from "../sqlite";
 import { stampStoreFiles, storeFilePaths } from "../storeStamp";
 import {
   formatEntryId,
@@ -27,6 +28,13 @@ const MAX_TOOL_DETAIL_CHARS = 2000;
 const MAX_CONTEXT_CHARS = 512;
 const SAFE_COMPOSER_ID_RE = /^[A-Za-z0-9._-]{1,200}$/;
 const LIMITED_REASON = "Cursor IDE transcript is unavailable for this session.";
+/**
+ * How long a list may be carried forward on the live probe's word alone. Past
+ * this, the next read takes a snapshot whatever the probe says, so a probe that
+ * could not see a change (see `queryLiveSqlite`) leaves the list stale for at
+ * most this long.
+ */
+export const CURSOR_IDE_PROBE_TRUST_MS = 5 * 60_000;
 
 // `lastUpdatedAt IS NOT NULL` drops composers that were opened and never sent a
 // message: Cursor writes a header for every new chat pane, and only the first
@@ -44,12 +52,20 @@ export interface CursorIdeReaderOptions {
   home?: string;
   ideDbPath?: string;
   withSqliteSnapshotFn?: typeof readSnapshot;
+  /** The live, read-only change probe. Injectable so a test can observe or fail it. */
+  queryLiveFn?: (dbPath: string, sql: string) => ReturnType<typeof queryLiveSqlite>;
+  /** Wall clock for the probe-trust window. Defaults to `Date.now`. */
+  now?: () => number;
 }
 
 export interface CursorIdeListResult {
   entries: VaultSessionEntry[];
   unreadable: number;
   sources: Record<string, FileStamp>;
+  /** Digest of the list query's rows, as the snapshot that produced `entries` answered it. */
+  fingerprint?: string;
+  /** When the snapshot behind `fingerprint` was taken (epoch ms). */
+  verifiedAt?: number;
 }
 
 interface ParsedComposer {
@@ -228,8 +244,25 @@ function mapEntry(composer: ParsedComposer): VaultSessionEntry {
   };
 }
 
+/**
+ * One digest of the list query's rows. Everything the list is derived from is in
+ * those rows, so two equal digests mean the same list — which is what lets a live
+ * probe vouch for a list a snapshot produced. Both sides digest rows that came
+ * through the same engine, so equal data serializes identically.
+ */
+function digestRows(rows: readonly Record<string, unknown>[]): string {
+  const hash = createHash("sha256");
+  for (const row of rows) {
+    hash.update(JSON.stringify(row));
+    hash.update("\n");
+  }
+  return hash.digest("hex");
+}
+
 /** `undefined` when the list query itself did not run — a failed read, not an empty store. */
-async function listFromSnapshot(snapshot: SqliteSnapshot): Promise<Omit<CursorIdeListResult, "sources"> | undefined> {
+async function listFromSnapshot(
+  snapshot: SqliteSnapshot,
+): Promise<{ entries: VaultSessionEntry[]; unreadable: number; fingerprint: string } | undefined> {
   const result = await snapshot.query(COMPOSER_LIST_SQL);
   if (result.status !== "ok") {
     return undefined;
@@ -258,7 +291,7 @@ async function listFromSnapshot(snapshot: SqliteSnapshot): Promise<Omit<CursorId
       unreadable += group.length;
     }
   }
-  return { entries, unreadable };
+  return { entries, unreadable, fingerprint: digestRows(result.rows) };
 }
 
 /** The store's freshness stamp, from the one owner of that question (D1). The list
@@ -269,25 +302,72 @@ function sourceStamps(dbPath: string): Promise<Record<string, FileStamp>> {
 }
 
 /**
+ * Whether the list a previous snapshot produced is still the list. Cursor writes
+ * its `-wal` continuously while it runs — mostly keys that have nothing to do with
+ * composers — so the file stamps change on almost every refresh, and a snapshot of
+ * the multi-GB store costs seconds of disk I/O each time. The probe runs the list
+ * query itself against the live store, read-only, and compares digests: only a
+ * match skips the snapshot. Anything else — a failed probe, a different answer, a
+ * cache with no fingerprint, or one older than `CURSOR_IDE_PROBE_TRUST_MS` — takes
+ * the snapshot as before.
+ */
+async function probeStillCurrent(
+  dbPath: string,
+  prev: CursorIdeCache | undefined,
+  now: number,
+  options: CursorIdeReaderOptions,
+): Promise<boolean> {
+  if (prev?.fingerprint === undefined || prev.verifiedAt === undefined) {
+    return false;
+  }
+  const age = now - prev.verifiedAt;
+  if (!(age >= 0 && age < CURSOR_IDE_PROBE_TRUST_MS)) {
+    return false; // a clock that went backwards proves nothing either
+  }
+  const live = await (options.queryLiveFn ?? queryLiveSqlite)(dbPath, COMPOSER_LIST_SQL);
+  return live.status === "ok" && digestRows(live.rows) === prev.fingerprint;
+}
+
+/**
  * List the IDE composers. A read that could not happen keeps `prevEntries`: the
  * store is Cursor's multi-GB global state, written while Cursor runs, so a
  * snapshot that misses its budget is routine — and answering it with no entries
  * blanked every IDE row until the next read brought them back, flashed as new.
  * Only a store confirmed absent (`no-db`) lists nothing.
+ *
+ * `prev` is either the previous entries alone, or the whole cached IDE segment;
+ * only the latter carries the fingerprint that lets an unchanged store skip the
+ * snapshot (see `probeStillCurrent`).
  */
 export async function readCursorIdeSessions(
   options: CursorIdeReaderOptions = {},
-  prevEntries: readonly VaultSessionEntry[] = [],
+  prev: readonly VaultSessionEntry[] | CursorIdeCache = [],
 ): Promise<CursorIdeListResult> {
+  const prevCache = isIdeCache(prev) ? prev : undefined;
+  const prevEntries = isIdeCache(prev) ? prev.entries : prev;
   const dbPath = cursorIdeDbPath(options);
+  const now = (options.now ?? Date.now)();
+  if (prevCache && (await probeStillCurrent(dbPath, prevCache, now, options))) {
+    return {
+      entries: [...prevCache.entries],
+      unreadable: prevCache.unreadable,
+      sources: await sourceStamps(dbPath),
+      fingerprint: prevCache.fingerprint,
+      verifiedAt: prevCache.verifiedAt,
+    };
+  }
   const result = await (options.withSqliteSnapshotFn ?? readSnapshot)(dbPath, listFromSnapshot);
   const sources = await sourceStamps(dbPath);
   if (result.status === "ok" && result.value !== undefined) {
-    return { ...result.value, sources };
+    return { ...result.value, sources, verifiedAt: now };
   }
   return result.status === "no-db"
     ? { entries: [], unreadable: 0, sources }
     : { entries: [...prevEntries], unreadable: 1, sources };
+}
+
+function isIdeCache(value: readonly VaultSessionEntry[] | CursorIdeCache): value is CursorIdeCache {
+  return !Array.isArray(value);
 }
 
 function sqlText(value: string): string {

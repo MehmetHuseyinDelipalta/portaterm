@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetSqliteProbeCache,
   presenceFromAccessError,
+  queryLiveSqlite,
   readPrimarySqlite,
   readSqlite,
   type SqliteDeps,
@@ -984,5 +985,111 @@ describe("both entry points map a snapshot failure the same way", () => {
     expect(read.status).toBe("query-error");
     expect(read.rows).toEqual([]);
     expect(scoped.status).toBe("query-error");
+  });
+});
+
+describe("queryLiveSqlite: a change probe that reads the live store and never writes it", () => {
+  async function liveWalStore(): Promise<{ dbFile: string; dir: string; live: InstanceType<typeof DatabaseSync> }> {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "at-vault-probe-"));
+    const dbFile = path.join(dir, "live.sqlite");
+    const seed = new DatabaseSync(dbFile);
+    seed.exec("PRAGMA journal_mode=WAL");
+    seed.exec("CREATE TABLE t(id TEXT)");
+    seed.exec("INSERT INTO t VALUES ('base-row')");
+    seed.close();
+    const live = new DatabaseSync(dbFile);
+    live.exec("PRAGMA journal_mode=WAL");
+    live.exec("PRAGMA wal_autocheckpoint=0");
+    live.exec("INSERT INTO t VALUES ('wal-row')"); // committed, WAL-resident
+    return { dbFile, dir, live };
+  }
+
+  function nodeDeps(overrides: Partial<SqliteDeps> = {}): SqliteDeps {
+    return makeDeps({
+      exists: async (p) => {
+        try {
+          await fsp.access(p);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      hasNodeSqlite: async () => true,
+      snapshot: vi.fn(async () => {
+        throw new Error("a probe must not take a snapshot");
+      }),
+      ...overrides,
+    });
+  }
+
+  it("sees a row that lives only in the WAL of a store another connection holds open", async () => {
+    const { dbFile, dir, live } = await liveWalStore();
+    try {
+      const deps = nodeDeps();
+      const result = await queryLiveSqlite(dbFile, "SELECT id FROM t ORDER BY id", deps);
+      expect(result).toEqual({ status: "ok", rows: [{ id: "base-row" }, { id: "wal-row" }] });
+      expect(deps.snapshot).not.toHaveBeenCalled();
+      expect(deps.mkdtemp).not.toHaveBeenCalled();
+    } finally {
+      live.close();
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("opens the live store read-only, so even a writing statement cannot change it", async () => {
+    const { dbFile, dir, live } = await liveWalStore();
+    try {
+      const result = await queryLiveSqlite(dbFile, "INSERT INTO t VALUES ('probe-row')", nodeDeps());
+      expect(result.status).toBe("query-error");
+      expect(result.error).toMatch(/readonly/i);
+      const rows = live.prepare("SELECT id FROM t ORDER BY id").all();
+      expect(rows).toEqual([{ id: "base-row" }, { id: "wal-row" }]);
+    } finally {
+      live.close();
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("runs through the injected live runner on the node engine", async () => {
+    const runLiveQuery = vi.fn(async () => ({ status: "ok" as const, rows: [{ n: 1 }] }));
+    const result = await queryLiveSqlite(
+      "/store/state.vscdb",
+      "SELECT 1 AS n",
+      makeDeps({ hasNodeSqlite: async () => true, runLiveQuery }),
+    );
+    expect(result).toEqual({ status: "ok", rows: [{ n: 1 }] });
+    expect(runLiveQuery).toHaveBeenCalledWith("/store/state.vscdb", "SELECT 1 AS n");
+  });
+
+  it("asks the CLI for a read-only answer on the live path, with no snapshot", async () => {
+    const exec = execWith(async () => ({ stdout: '[{"n":1}]', stderr: "" }));
+    const deps = makeDeps({ exec });
+    const result = await queryLiveSqlite("/store/state.vscdb", "SELECT 1 AS n", deps);
+    expect(result).toEqual({ status: "ok", rows: [{ n: 1 }] });
+    expect(exec).toHaveBeenLastCalledWith("sqlite3", ["-readonly", "-json", "/store/state.vscdb", "SELECT 1 AS n"], {
+      timeout: expect.any(Number),
+    });
+    expect(deps.snapshot).not.toHaveBeenCalled();
+  });
+
+  it("reports a store it could not find or use rather than an empty answer", async () => {
+    await expect(
+      queryLiveSqlite(
+        "/store/missing.vscdb",
+        "SELECT 1",
+        makeDeps({ exists: async () => false, hasNodeSqlite: async () => true }),
+      ),
+    ).resolves.toEqual({ rows: [], status: "no-db" });
+    await expect(
+      queryLiveSqlite(
+        "/store/state.vscdb",
+        "SELECT 1",
+        makeDeps({
+          exec: vi.fn(async () => {
+            throw new Error("command not found: sqlite3");
+          }),
+        }),
+      ),
+    ).resolves.toEqual({ rows: [], status: "no-sqlite3" });
   });
 });

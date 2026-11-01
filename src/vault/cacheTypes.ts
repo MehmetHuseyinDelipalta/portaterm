@@ -32,6 +32,12 @@ export interface CursorIdeCache {
   sources: Record<string /* state.vscdb and -wal absolute paths */, FileStamp>;
   entries: VaultSessionEntry[];
   unreadable: number;
+  /** Digest of the list query's rows from the snapshot behind `entries`. A live
+   *  probe that answers the same digest skips the next snapshot. Optional: a cache
+   *  written without one (or after a failed read) always snapshots. */
+  fingerprint?: string;
+  /** Epoch ms of the snapshot behind `fingerprint`; bounds how long the probe is trusted. */
+  verifiedAt?: number;
 }
 
 export const CURSOR_CHAT_ID_RE = /^[A-Za-z0-9._-]{1,200}$/;

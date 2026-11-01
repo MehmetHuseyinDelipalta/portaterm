@@ -20,6 +20,13 @@ export interface VaultWatchTarget {
   events?: Array<"create" | "change" | "delete">;
   /** Present when watcher events can be routed to one incremental reader. */
   agent?: VaultAgentId;
+  /**
+   * For a routed target whose store is written far more often than its sessions
+   * change: events still schedule a routed read, but never sooner than this many
+   * ms after the previous one from the same throttled targets. The read after the
+   * last event always runs (trailing), so a change is late, never lost.
+   */
+  minIntervalMs?: number;
 }
 
 /** Writes a user-chosen title into an agent's own store; true iff a row was
