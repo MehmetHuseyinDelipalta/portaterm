@@ -12,6 +12,11 @@
 //     the top changes what the outer one sees);
 //   - the repository's `.git`, index (`git check-ignore` reports no tracked
 //     path), `info/exclude`, and config files;
+//
+// A `.git` directory is stamped by its identity alone. Most git commands take
+// and drop a lock file in it, which moves its mtime without changing anything
+// git reads here — and what it holds that matters is stamped file by file. A
+// `.git` file (a worktree's or submodule's pointer) is stamped by its stat.
 //   - the global config files and the excludes file git uses — `core.excludesFile`
 //     (asked of git once per repository, again only when a config file changes)
 //     and the XDG default.
@@ -163,6 +168,10 @@ export function createGitIgnoreCache(deps: GitIgnoreCacheDeps): GitIgnoreCache {
       const stat = await statOnce(file);
       return stat ? `${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}` : "-";
     };
+    const dotGitSignature = async (file: string): Promise<string> => {
+      const stat = await statOnce(file);
+      return stat?.isDirectory() ? `dir:${stat.ino}` : signature(file);
+    };
 
     // The repository git finds from `cwd`: the nearest ancestor holding `.git`.
     let top = cwd;
@@ -202,18 +211,18 @@ export function createGitIgnoreCache(deps: GitIgnoreCacheDeps): GitIgnoreCache {
       )
     ).join("|");
     const excludesFile = await excludesFileFor(top, configStamp);
-    const repoStamp = [
-      configStamp,
-      ...(await Promise.all(
-        [
-          path.join(top, ".git"),
+    const repoStamp = (
+      await Promise.all([
+        configStamp,
+        dotGitSignature(path.join(top, ".git")),
+        ...[
           path.join(gitDir, "index"),
           path.join(commonDir, "info", "exclude"),
           path.join(configHome, "git", "ignore"),
           ...(excludesFile ? [excludesFile] : []),
         ].map(signature),
-      )),
-    ].join("|");
+      ])
+    ).join("|");
 
     const byDirectory = new Map<string, IgnoreQuery[]>();
     for (const query of queries) {
@@ -230,17 +239,17 @@ export function createGitIgnoreCache(deps: GitIgnoreCacheDeps): GitIgnoreCache {
     await Promise.all(
       [...byDirectory].map(async ([dir, group]) => {
         // `.gitignore` of every level from `dir` up to the top, plus any `.git` below it.
-        const files: string[] = [];
+        const sigs: Promise<string>[] = [];
         for (let level = dir; ; ) {
-          files.push(path.join(level, ".gitignore"));
+          sigs.push(signature(path.join(level, ".gitignore")));
           const parent = path.dirname(level);
           if (level === top || parent === level) {
             break;
           }
-          files.push(path.join(level, ".git"));
+          sigs.push(dotGitSignature(path.join(level, ".git")));
           level = parent;
         }
-        const stamp = `${repoStamp}#${(await Promise.all(files.map(signature))).join("|")}`;
+        const stamp = `${repoStamp}#${(await Promise.all(sigs)).join("|")}`;
         const key = `${top}\0${dir}`;
         const known = directories.get(key);
         const directory = known?.stamp === stamp ? known : { stamp, answers: new Map<string, boolean>() };

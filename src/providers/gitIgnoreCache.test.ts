@@ -180,12 +180,26 @@ describe("createGitIgnoreCache", () => {
     expect(checkIgnore).toHaveBeenCalledWith(repo, [stray]);
   });
 
-  it("asks again when the .git entry itself changes", async () => {
+  it("does not ask again when a git command only takes and drops a lock in .git", async () => {
     const { cache, checkIgnore } = harness();
     const query = [file(path.join(repo, "x"))];
     await cache.getIgnoredPaths(repo, query);
+    fs.writeFileSync(path.join(repo, ".git", "index.lock"), "");
+    fs.rmSync(path.join(repo, ".git", "index.lock"));
     clock += 10;
-    fs.utimesSync(path.join(repo, ".git"), clock, clock);
+    fs.utimesSync(path.join(repo, ".git"), clock, clock); // whatever the clock's granularity
+    await cache.getIgnoredPaths(repo, query);
+    expect(checkIgnore).toHaveBeenCalledOnce();
+  });
+
+  it("asks again when .git is a different directory, though everything in it is unchanged", async () => {
+    const { cache, checkIgnore } = harness();
+    const query = [file(path.join(repo, "x"))];
+    await cache.getIgnoredPaths(repo, query);
+    // Moving the files into a new .git would touch their ctimes; only the
+    // directory's identity changes here.
+    statOverrides.set(path.join(repo, ".git"), { ino: 42 });
+    await cache.getIgnoredPaths(repo, query);
     await cache.getIgnoredPaths(repo, query);
     expect(checkIgnore).toHaveBeenCalledTimes(2);
   });
@@ -206,6 +220,31 @@ describe("createGitIgnoreCache", () => {
     const query = [file(path.join(nested, "x"))];
     await cache.getIgnoredPaths(repo, query);
     fs.mkdirSync(path.join(repo, "vendor", ".git"));
+    await cache.getIgnoredPaths(repo, query);
+    expect(checkIgnore).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not ask again when only a nested repository's .git directory is touched", async () => {
+    const { cache, checkIgnore } = harness();
+    const nested = path.join(repo, "vendor", "lib");
+    fs.mkdirSync(path.join(repo, "vendor", ".git"), { recursive: true });
+    fs.mkdirSync(nested, { recursive: true });
+    const query = [file(path.join(nested, "x"))];
+    await cache.getIgnoredPaths(repo, query);
+    clock += 10;
+    fs.utimesSync(path.join(repo, "vendor", ".git"), clock, clock);
+    await cache.getIgnoredPaths(repo, query);
+    expect(checkIgnore).toHaveBeenCalledOnce();
+  });
+
+  it("asks again when a nested repository's .git file changes", async () => {
+    const { cache, checkIgnore } = harness();
+    const nested = path.join(repo, "vendor", "lib");
+    put(path.join(repo, "vendor", ".git"), "gitdir: ../.git/modules/vendor\n");
+    fs.mkdirSync(nested, { recursive: true });
+    const query = [file(path.join(nested, "x"))];
+    await cache.getIgnoredPaths(repo, query);
+    put(path.join(repo, "vendor", ".git"), "gitdir: ../.git/modules/vendor\n");
     await cache.getIgnoredPaths(repo, query);
     expect(checkIgnore).toHaveBeenCalledTimes(2);
   });
@@ -281,6 +320,8 @@ describe("createGitIgnoreCache", () => {
       const { cache, checkIgnore } = harness();
       const query = [file(path.join(wt, "x"))];
       await cache.getIgnoredPaths(wt, query);
+      put(path.join(wt, ".git"), `gitdir: ${gitDir}\r\n`); // rewritten, still pointing there
+      await cache.getIgnoredPaths(wt, query);
       for (const changed of [
         path.join(gitDir, "index"),
         path.join(common, "info", "exclude"),
@@ -290,7 +331,7 @@ describe("createGitIgnoreCache", () => {
         put(changed, "change");
         await cache.getIgnoredPaths(wt, query);
       }
-      expect(checkIgnore).toHaveBeenCalledTimes(5);
+      expect(checkIgnore).toHaveBeenCalledTimes(6);
       expect(checkIgnore).toHaveBeenLastCalledWith(wt, [path.join(wt, "x")]);
     });
 
@@ -519,8 +560,9 @@ describe("createGitIgnoreCache with real git", () => {
     put(path.join(work, ".gitignore"), "dist/\n");
     put(path.join(work, "notes.md"), "n");
     fs.mkdirSync(path.join(work, "dist"));
+    const ask = vi.fn(checkIgnore);
     const cache = createGitIgnoreCache({
-      checkIgnore,
+      checkIgnore: ask,
       readExcludesFileSetting,
       homeDir: home,
       xdgConfigHome: undefined,
@@ -530,6 +572,11 @@ describe("createGitIgnoreCache with real git", () => {
       { path: path.join(work, "notes.md"), kind: "1" },
     ];
     expect(await cache.getIgnoredPaths(work, queries)).toEqual(new Set([path.join(work, "dist")]));
+
+    // A plain `git status` takes and drops .git/index.lock: nothing git reads changed.
+    git(work, "status", "--porcelain");
+    expect(await cache.getIgnoredPaths(work, queries)).toEqual(new Set([path.join(work, "dist")]));
+    expect(ask).toHaveBeenCalledOnce();
 
     put(path.join(work, ".gitignore"), "dist/\nnotes.md\n");
     expect(await cache.getIgnoredPaths(work, queries)).toEqual(

@@ -278,7 +278,9 @@ files and runs git only for entries without an answer under the current stamp; a
 is keyed by its path and its type, so a file replaced by a directory of the same name is
 asked about again. A folder in no repository — or under a `.git` file git cannot
 follow — runs no git at all. A stat signature is the inode, size, mtime and ctime, any
-one of which changing is enough. Identical requests in flight share one git run.
+one of which changing is enough — except for a `.git` directory, stamped by its inode
+alone: most git commands take and drop a lock file in it, moving its mtime without
+changing anything `check-ignore` reads. Identical requests in flight share one git run.
 "No answer" is never remembered. The system-wide gitconfig is not watched: its location depends on how git
 was built.
 
