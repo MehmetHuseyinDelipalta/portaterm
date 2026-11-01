@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.49.4] — 2026-11-01
+
+### Fixed
+
+- **Terminals appear sooner when a window opens.** The views no longer wait for agent-hook setup, which could take seconds when several windows opened at once; terminals still get agent status reporting, as they wait for it briefly themselves.
+- **Every terminal view opens with half the code to load.** Syntax highlighting for file previews is loaded the first time a preview needs it, instead of in every sidebar, panel and editor tab as it opens. The first preview may show plain text for a moment before it is highlighted.
+- **Restoring terminals no longer reads every saved scrollback at startup.** Each view reads its own when it opens.
+
 ## [0.49.3] — 2026-11-01
 
 ### Fixed
