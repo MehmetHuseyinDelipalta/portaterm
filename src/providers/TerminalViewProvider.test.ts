@@ -44,7 +44,7 @@ import { openFileLink } from "./openFileLink";
 import { handleInsertOsDropPaths } from "./osDropPaths";
 import { previewFileLink } from "./previewFileLink";
 import { TerminalViewProvider } from "./TerminalViewProvider";
-import type { VaultWatchCoordinator } from "./VaultWatchCoordinator";
+import { VaultWatchCoordinator } from "./VaultWatchCoordinator";
 
 // ─── Test Setup ─────────────────────────────────────────────────────
 
@@ -1372,7 +1372,7 @@ describe("TerminalViewProvider: visibility pause/resume", () => {
 describe("TerminalViewProvider: vault watch coordinator", () => {
   it("attaches, delegates session watches, and disposes the resolved webview client", async () => {
     const sm = new SessionManager();
-    const client = { watchSession: vi.fn(async () => {}), dispose: vi.fn() };
+    const client = { watchSession: vi.fn(async () => {}), setDisplayed: vi.fn(), dispose: vi.fn() };
     const coordinator = { attach: vi.fn(() => client), dispose: vi.fn() } as unknown as VaultWatchCoordinator;
     const provider = new TerminalViewProvider(
       { fsPath: "/mock/extension" } as vscode.Uri,
@@ -1404,8 +1404,8 @@ describe("TerminalViewProvider: vault watch coordinator", () => {
 
   it("keeps late messages and disposal bound to the client captured by each resolution", async () => {
     const sm = new SessionManager();
-    const firstClient = { watchSession: vi.fn(async () => {}), dispose: vi.fn() };
-    const secondClient = { watchSession: vi.fn(async () => {}), dispose: vi.fn() };
+    const firstClient = { watchSession: vi.fn(async () => {}), setDisplayed: vi.fn(), dispose: vi.fn() };
+    const secondClient = { watchSession: vi.fn(async () => {}), setDisplayed: vi.fn(), dispose: vi.fn() };
     const coordinator = {
       attach: vi.fn().mockReturnValueOnce(firstClient).mockReturnValueOnce(secondClient),
       dispose: vi.fn(),
@@ -1451,6 +1451,109 @@ describe("TerminalViewProvider: vault watch coordinator", () => {
     }
     await Promise.resolve();
     expect(secondClient.watchSession).toHaveBeenCalledWith("claude:new");
+    sm.dispose();
+  });
+});
+
+describe("TerminalViewProvider: the vault stops reading while the view is hidden (D5)", () => {
+  function setup(initiallyVisible: boolean) {
+    vi.useFakeTimers();
+    const sm = new SessionManager();
+    const handlers: Array<{ glob: string; change?: (uri: vscode.Uri) => void }> = [];
+    const watcherPool = {
+      subscribePattern: vi.fn((_baseDir: string, glob: string, h: { change?: (uri: vscode.Uri) => void }) => {
+        handlers.push({ glob, change: h.change });
+        return { dispose: vi.fn() };
+      }),
+    };
+    const vaultService = {
+      getStoreWatchTargets: () => [{ baseDir: "/claude", glob: "**/*.jsonl", agent: "claude" as const }],
+      resolveSessionWatchTargets: vi.fn(async () => [{ baseDir: "/claude/p", glob: "s1.jsonl" }]),
+      getDetail: vi.fn(async () => ({ entryId: "claude:s1", timeline: [] })),
+      refresh: vi.fn(async () => ({ entries: [], unreadable: { count: 0, reasons: [] } })),
+    };
+    const coordinator = new VaultWatchCoordinator({
+      watcherPool: watcherPool as never,
+      vaultService: vaultService as never,
+    });
+    const provider = new TerminalViewProvider(
+      { fsPath: "/mock/extension" } as vscode.Uri,
+      sm,
+      "sidebar",
+      null,
+      null,
+      vaultService as unknown as VaultService,
+      null,
+      coordinator,
+    );
+    const view = createMockWebviewView();
+    (view.webviewView as { visible: boolean }).visible = initiallyVisible;
+    provider.resolveWebviewView(
+      view.webviewView,
+      {} as vscode.WebviewViewResolveContext,
+      {} as vscode.CancellationToken,
+    );
+    const write = (fsPath: string) => {
+      for (const h of handlers) {
+        h.change?.({ fsPath } as vscode.Uri);
+      }
+    };
+    return { sm, vaultService, view, write, coordinator };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("records a store write while hidden and reads it once when shown", async () => {
+    const { sm, vaultService, view, write, coordinator } = setup(true);
+    view.setVisible(false);
+    write("/claude/p/a.jsonl");
+    write("/claude/p/b.jsonl");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(vaultService.refresh).not.toHaveBeenCalled();
+
+    view.setVisible(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vaultService.refresh).toHaveBeenCalledTimes(1);
+    expect(vaultService.refresh).toHaveBeenCalledWith({
+      hint: { agent: "claude", paths: ["/claude/p/a.jsonl", "/claude/p/b.jsonl"] },
+    });
+    coordinator.dispose();
+    sm.dispose();
+  });
+
+  it("starts paused for a view resolved while hidden", async () => {
+    const { sm, vaultService, view, write, coordinator } = setup(false);
+    write("/claude/p/a.jsonl");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(vaultService.refresh).not.toHaveBeenCalled();
+
+    view.setVisible(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vaultService.refresh).toHaveBeenCalledTimes(1);
+    coordinator.dispose();
+    sm.dispose();
+  });
+
+  it("does not re-read a followed transcript while hidden, and reads it once when shown", async () => {
+    const { sm, vaultService, view, write, coordinator } = setup(true);
+    for (const handler of view.messageHandlers) {
+      handler({ type: "vaultWatchSession", entryId: "claude:s1" });
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    view.setVisible(false);
+    write("/claude/p/s1.jsonl");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(vaultService.getDetail).not.toHaveBeenCalled();
+
+    view.setVisible(true);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(vaultService.getDetail).toHaveBeenCalledTimes(1);
+    expect(view.postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "vaultSessionDetailResponse", entryId: "claude:s1", followUpdate: true }),
+    );
+    coordinator.dispose();
     sm.dispose();
   });
 });

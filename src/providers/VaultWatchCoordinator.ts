@@ -27,6 +27,13 @@ export interface VaultWatchCallbacks {
 
 export interface VaultWatchClient extends Disposable {
   watchSession(entryId: string | null): Promise<void>;
+  /**
+   * Whether the webview this client serves is on screen. Hidden, events are
+   * still recorded but nothing is read: a `retainContextWhenHidden` view kept
+   * re-reading stores and pushing lists and transcripts nobody could see. Shown
+   * again, whatever was missed is read once.
+   */
+  setDisplayed(displayed: boolean): void;
 }
 
 export interface VaultWatchCoordinatorDeps {
@@ -36,6 +43,7 @@ export interface VaultWatchCoordinatorDeps {
 
 const NOOP_CLIENT: VaultWatchClient = {
   watchSession: async () => {},
+  setDisplayed: () => {},
   dispose: () => {},
 };
 
@@ -66,6 +74,7 @@ function subscribeTargets(
 /** Routed reads for targets that declared `minIntervalMs`, one bucket per agent. */
 interface ThrottledRefresh {
   paths: Set<string>;
+  minIntervalMs: number;
   timer: ReturnType<typeof setTimeout> | undefined;
   /** When this bucket last flushed (epoch ms); `undefined` before its first flush. */
   lastFlushAt: number | undefined;
@@ -81,6 +90,8 @@ class StoreWatchLifecycle implements Disposable {
   private fullRefreshPending = false;
   /** A new-session flush is armed; later events join it rather than push it back. */
   private createFlushArmed = false;
+  /** Off screen, events accumulate and no timer runs; see `setDisplayed`. */
+  private displayed = true;
   private disposed = false;
 
   constructor(
@@ -122,8 +133,8 @@ class StoreWatchLifecycle implements Disposable {
         this.pendingPaths.clear();
       }
     }
-    if (this.createFlushArmed) {
-      return; // already flushing soon; this event rides along
+    if (this.createFlushArmed || !this.displayed) {
+      return; // already flushing soon, or owed until shown; this event rides along
     }
     // Only a routed read is cheap enough to run at once: an unrouted create still
     // waits out the burst, since it re-reads every store.
@@ -149,17 +160,53 @@ class StoreWatchLifecycle implements Disposable {
   private scheduleThrottled(agent: VaultRefreshHint["agent"], fsPath: string, minIntervalMs: number): void {
     let bucket = this.throttled.get(agent);
     if (!bucket) {
-      bucket = { paths: new Set(), timer: undefined, lastFlushAt: undefined };
+      bucket = { paths: new Set(), minIntervalMs, timer: undefined, lastFlushAt: undefined };
       this.throttled.set(agent, bucket);
     }
+    bucket.minIntervalMs = minIntervalMs;
     if (bucket.paths.size < MAX_TARGETED_REFRESH_PATHS) {
       bucket.paths.add(fsPath);
     }
-    if (bucket.timer) {
-      return; // already due; this event rides along
+    if (bucket.timer || !this.displayed) {
+      return; // already due, or owed until shown; this event rides along
     }
-    const earliest = bucket.lastFlushAt === undefined ? 0 : bucket.lastFlushAt + minIntervalMs - Date.now();
-    bucket.timer = setTimeout(() => this.flushThrottled(agent), Math.max(STORE_REFRESH_DEBOUNCE_MS, earliest));
+    this.armThrottled(agent, bucket, STORE_REFRESH_DEBOUNCE_MS);
+  }
+
+  /** Due after `floorMs`, and never sooner than the bucket's interval after its last flush. */
+  private armThrottled(agent: VaultRefreshHint["agent"], bucket: ThrottledRefresh, floorMs: number): void {
+    const earliest = bucket.lastFlushAt === undefined ? 0 : bucket.lastFlushAt + bucket.minIntervalMs - Date.now();
+    bucket.timer = setTimeout(() => this.flushThrottled(agent), Math.max(floorMs, earliest));
+  }
+
+  /**
+   * Hidden: stop every timer but keep what the events recorded. Shown: read what
+   * was missed — the ordinary pending set at once, a throttled bucket as soon as
+   * its interval allows. Nothing missed, nothing read.
+   */
+  setDisplayed(displayed: boolean): void {
+    if (this.disposed || displayed === this.displayed) {
+      return;
+    }
+    this.displayed = displayed;
+    if (!displayed) {
+      this.clearTimers();
+      for (const bucket of this.throttled.values()) {
+        if (bucket.timer) {
+          clearTimeout(bucket.timer);
+          bucket.timer = undefined;
+        }
+      }
+      return;
+    }
+    if (this.fullRefreshPending || this.pendingAgent) {
+      this.emitPending();
+    }
+    for (const [agent, bucket] of this.throttled) {
+      if (bucket.paths.size > 0 && !bucket.timer) {
+        this.armThrottled(agent, bucket, 0);
+      }
+    }
   }
 
   private flushThrottled(agent: VaultRefreshHint["agent"]): void {
@@ -177,10 +224,19 @@ class StoreWatchLifecycle implements Disposable {
   }
 
   private flushRefresh(): void {
-    this.createFlushArmed = false;
     if (!this.refreshTimer && !this.maxWaitTimer) {
+      this.createFlushArmed = false;
       return;
     }
+    this.clearTimers();
+    if (this.disposed) {
+      return;
+    }
+    this.emitPending();
+  }
+
+  private clearTimers(): void {
+    this.createFlushArmed = false;
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = undefined;
@@ -189,9 +245,9 @@ class StoreWatchLifecycle implements Disposable {
       clearTimeout(this.maxWaitTimer);
       this.maxWaitTimer = undefined;
     }
-    if (this.disposed) {
-      return;
-    }
+  }
+
+  private emitPending(): void {
     const hint =
       !this.fullRefreshPending && this.pendingAgent
         ? { agent: this.pendingAgent, paths: [...this.pendingPaths] }
@@ -233,6 +289,11 @@ class FollowWatchLifecycle implements Disposable {
   private refreshSeq = 0;
   private watchedEntryId: string | undefined;
   private readonly detailReads = new Map<string, { inFlight: boolean; dirtyRefreshSeq: number | undefined }>();
+  /** The re-read a debounce timer is counting down to, so hiding can keep it owed. */
+  private pendingRefresh: { entryId: string; seq: number } | undefined;
+  /** A change seen while hidden, read once the view is shown again. */
+  private owedRefresh: { entryId: string; seq: number } | undefined;
+  private displayed = true;
   private disposed = false;
 
   constructor(
@@ -272,14 +333,47 @@ class FollowWatchLifecycle implements Disposable {
     if (this.disposed || seq !== this.seq) {
       return;
     }
+    if (!this.displayed) {
+      this.owedRefresh = { entryId, seq };
+      return;
+    }
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
     }
     const refreshSeq = ++this.refreshSeq;
+    this.pendingRefresh = { entryId, seq };
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = undefined;
+      this.pendingRefresh = undefined;
       void this.pushDetail(entryId, seq, refreshSeq);
     }, FOLLOW_REFRESH_DEBOUNCE_MS);
+  }
+
+  /**
+   * Hidden: a re-read counting down becomes owed, and later changes only mark it
+   * owed. Shown: an owed re-read of the session still being followed runs once,
+   * after the usual debounce.
+   */
+  setDisplayed(displayed: boolean): void {
+    if (this.disposed || displayed === this.displayed) {
+      return;
+    }
+    this.displayed = displayed;
+    if (!displayed) {
+      if (this.refreshTimer) {
+        clearTimeout(this.refreshTimer);
+        this.refreshTimer = undefined;
+        this.refreshSeq++;
+        this.owedRefresh = this.pendingRefresh;
+      }
+      this.pendingRefresh = undefined;
+      return;
+    }
+    const owed = this.owedRefresh;
+    this.owedRefresh = undefined;
+    if (owed && owed.seq === this.seq) {
+      this.scheduleRefresh(owed.entryId, owed.seq);
+    }
   }
 
   private async pushDetail(entryId: string, seq: number, refreshSeq: number): Promise<void> {
@@ -354,6 +448,12 @@ class AttachedVaultWatchClient implements VaultWatchClient {
 
   watchSession(entryId: string | null): Promise<void> {
     return this.follow.watchSession(entryId);
+  }
+
+  /** Each lifecycle ignores this once disposed. */
+  setDisplayed(displayed: boolean): void {
+    this.store.setDisplayed(displayed);
+    this.follow.setDisplayed(displayed);
   }
 
   dispose(): void {

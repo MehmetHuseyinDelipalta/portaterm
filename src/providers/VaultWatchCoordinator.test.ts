@@ -368,6 +368,216 @@ describe("VaultWatchCoordinator", () => {
     coordinator.dispose();
   });
 
+  describe("while the view is hidden (D5)", () => {
+    it("arms no timer and reads nothing, then reads what was missed once when shown", () => {
+      vi.useFakeTimers();
+      const { coordinator, subscriptions } = createHarness();
+      const refreshList = vi.fn();
+      const client = coordinator.attach({ refreshList, postFollowDetail: vi.fn() });
+
+      client.setDisplayed(false);
+      subscriptions[3].handlers.change?.(uri("/cursor-projects/a/chat.jsonl"));
+      subscriptions[3].handlers.create?.(uri("/cursor-projects/a/new.jsonl"));
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(60_000);
+      expect(refreshList).not.toHaveBeenCalled();
+
+      client.setDisplayed(true);
+      expect(refreshList).toHaveBeenCalledTimes(1);
+      expect(refreshList).toHaveBeenCalledWith({
+        agent: "cursor",
+        paths: ["/cursor-projects/a/chat.jsonl", "/cursor-projects/a/new.jsonl"],
+      });
+      vi.advanceTimersByTime(60_000);
+      expect(refreshList).toHaveBeenCalledTimes(1);
+      coordinator.dispose();
+    });
+
+    it("widens to one complete read when the missed writes span agents", () => {
+      vi.useFakeTimers();
+      const { coordinator, subscriptions } = createHarness();
+      const refreshList = vi.fn();
+      const client = coordinator.attach({ refreshList, postFollowDetail: vi.fn() });
+
+      client.setDisplayed(false);
+      subscriptions[0].handlers.change?.(uri("/claude/a.jsonl")); // unrouted
+      subscriptions[3].handlers.change?.(uri("/cursor-projects/a/chat.jsonl"));
+      client.setDisplayed(true);
+
+      expect(refreshList).toHaveBeenCalledTimes(1);
+      expect(refreshList).toHaveBeenCalledWith(undefined);
+      coordinator.dispose();
+    });
+
+    it("reads nothing on show when nothing was missed", () => {
+      vi.useFakeTimers();
+      const { coordinator } = createHarness();
+      const refreshList = vi.fn();
+      const client = coordinator.attach({ refreshList, postFollowDetail: vi.fn() });
+
+      client.setDisplayed(false);
+      client.setDisplayed(true);
+      client.setDisplayed(true);
+      vi.advanceTimersByTime(10_000);
+      expect(refreshList).not.toHaveBeenCalled();
+      coordinator.dispose();
+    });
+
+    it("keeps a read that was counting down when the view hid, and runs it on show", () => {
+      vi.useFakeTimers();
+      const { coordinator, subscriptions } = createHarness();
+      const refreshList = vi.fn();
+      const client = coordinator.attach({ refreshList, postFollowDetail: vi.fn() });
+
+      subscriptions[3].handlers.change?.(uri("/cursor-projects/a/chat.jsonl"));
+      vi.advanceTimersByTime(100);
+      client.setDisplayed(false);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(refreshList).not.toHaveBeenCalled();
+
+      client.setDisplayed(true);
+      expect(refreshList).toHaveBeenCalledWith({ agent: "cursor", paths: ["/cursor-projects/a/chat.jsonl"] });
+      coordinator.dispose();
+    });
+
+    it("resumes ordinary debouncing after it is shown", () => {
+      vi.useFakeTimers();
+      const { coordinator, subscriptions } = createHarness();
+      const refreshList = vi.fn();
+      const client = coordinator.attach({ refreshList, postFollowDetail: vi.fn() });
+      client.setDisplayed(false);
+      client.setDisplayed(true);
+
+      subscriptions[3].handlers.change?.(uri("/cursor-projects/a/chat.jsonl"));
+      vi.advanceTimersByTime(299);
+      expect(refreshList).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(refreshList).toHaveBeenCalledTimes(1);
+      coordinator.dispose();
+    });
+
+    it("holds a throttled IDE read while hidden, and on show still keeps its interval", () => {
+      vi.useFakeTimers();
+      const refreshList = vi.fn();
+      const { coordinator, client, wal } = realCursorHarness(refreshList);
+      const walPath = `${wal.baseDir}/state.vscdb-wal`;
+
+      wal.handlers.change?.(uri(walPath));
+      vi.advanceTimersByTime(300); // IDE read at t=300
+      expect(refreshList).toHaveBeenCalledTimes(1);
+
+      client.setDisplayed(false);
+      wal.handlers.change?.(uri(walPath));
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000); // t=10_300
+      client.setDisplayed(true);
+      // Owed, but not before one interval after the last IDE read.
+      vi.advanceTimersByTime(CURSOR_IDE_REFRESH_MIN_INTERVAL_MS - 10_000 - 1);
+      expect(refreshList).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1);
+      expect(refreshList).toHaveBeenCalledTimes(2);
+
+      // Long after the interval, a write missed while hidden reads at once on show.
+      client.setDisplayed(false);
+      wal.handlers.change?.(uri(walPath));
+      vi.advanceTimersByTime(CURSOR_IDE_REFRESH_MIN_INTERVAL_MS * 3);
+      client.setDisplayed(true);
+      vi.advanceTimersByTime(0);
+      expect(refreshList).toHaveBeenCalledTimes(3);
+      coordinator.dispose();
+    });
+
+    it("cancels a throttled IDE read that was armed when the view hid, and keeps it owed", () => {
+      vi.useFakeTimers();
+      const refreshList = vi.fn();
+      const { coordinator, client, wal } = realCursorHarness(refreshList);
+      const walPath = `${wal.baseDir}/state.vscdb-wal`;
+
+      wal.handlers.change?.(uri(walPath)); // armed for t=300
+      client.setDisplayed(false);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(CURSOR_IDE_REFRESH_MIN_INTERVAL_MS);
+      expect(refreshList).not.toHaveBeenCalled();
+
+      client.setDisplayed(true);
+      vi.advanceTimersByTime(0);
+      expect(refreshList).toHaveBeenCalledWith({ agent: "cursor", paths: [walPath] });
+      coordinator.dispose();
+    });
+
+    it("does not re-read a followed session while hidden; reads it once when shown", async () => {
+      vi.useFakeTimers();
+      const { coordinator, subscriptions, vaultService, detail } = createHarness();
+      const postFollowDetail = vi.fn();
+      const client = coordinator.attach({ refreshList: vi.fn(), postFollowDetail });
+      await client.watchSession("claude:s1");
+      const follow = subscriptions.at(-1)!;
+
+      client.setDisplayed(false);
+      follow.handlers.change?.(uri("/sessions/claude:s1.jsonl"));
+      follow.handlers.change?.(uri("/sessions/claude:s1.jsonl"));
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(vaultService.getDetail).not.toHaveBeenCalled();
+
+      client.setDisplayed(true);
+      await vi.advanceTimersByTimeAsync(399);
+      expect(vaultService.getDetail).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(vaultService.getDetail).toHaveBeenCalledTimes(1);
+      expect(postFollowDetail).toHaveBeenCalledWith("claude:s1", detail);
+      coordinator.dispose();
+    });
+
+    it("keeps a follow re-read that was counting down when the view hid", async () => {
+      vi.useFakeTimers();
+      const { coordinator, subscriptions, vaultService } = createHarness();
+      const client = coordinator.attach({ refreshList: vi.fn(), postFollowDetail: vi.fn() });
+      await client.watchSession("claude:s1");
+      const follow = subscriptions.at(-1)!;
+
+      follow.handlers.change?.(uri("/sessions/claude:s1.jsonl"));
+      await vi.advanceTimersByTimeAsync(200);
+      client.setDisplayed(false);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(vaultService.getDetail).not.toHaveBeenCalled();
+
+      client.setDisplayed(true);
+      await vi.advanceTimersByTimeAsync(400);
+      expect(vaultService.getDetail).toHaveBeenCalledTimes(1);
+      coordinator.dispose();
+    });
+
+    it("drops an owed follow re-read when another session is followed meanwhile", async () => {
+      vi.useFakeTimers();
+      const { coordinator, subscriptions, vaultService } = createHarness();
+      const client = coordinator.attach({ refreshList: vi.fn(), postFollowDetail: vi.fn() });
+      await client.watchSession("claude:s1");
+      const follow = subscriptions.at(-1)!;
+      client.setDisplayed(false);
+      follow.handlers.change?.(uri("/sessions/claude:s1.jsonl"));
+      await client.watchSession(null);
+
+      client.setDisplayed(true);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(vaultService.getDetail).not.toHaveBeenCalled();
+      coordinator.dispose();
+    });
+
+    it("ignores visibility after the client is disposed", () => {
+      vi.useFakeTimers();
+      const { coordinator, subscriptions } = createHarness();
+      const refreshList = vi.fn();
+      const client = coordinator.attach({ refreshList, postFollowDetail: vi.fn() });
+      client.setDisplayed(false);
+      subscriptions[3].handlers.change?.(uri("/cursor-projects/a/chat.jsonl"));
+      client.dispose();
+      client.setDisplayed(true);
+      expect(refreshList).not.toHaveBeenCalled();
+      coordinator.dispose();
+    });
+  });
+
   it("flushes continuous targeted and full-fallback store streams within the maximum wait", () => {
     vi.useFakeTimers();
     const { coordinator, subscriptions } = createHarness();

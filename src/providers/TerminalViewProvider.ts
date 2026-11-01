@@ -372,6 +372,9 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         // `retainContextWhenHidden` means the webview's own declaration cannot
         // tell it that (audit B1).
         worktreeAttachment?.setDisplayed(webviewView.visible);
+        // The vault's store and follow watchers stop reading for a hidden view,
+        // and catch up once when it is shown.
+        vaultWatchClient?.setDisplayed(webviewView.visible);
         if (webviewView.visible) {
           // Resume output flushing when view becomes visible
           this.sessionManager.resumeOutputForView(viewId);
@@ -401,6 +404,9 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         });
       },
     });
+    // Seeded for the same reason as the worktree attachment: a view resolved
+    // while hidden never fires a visibility event until it is shown.
+    vaultWatchClient?.setDisplayed(webviewView.visible);
     this._vaultWatchClient = vaultWatchClient;
 
     // 5. Wire dispose handler — clean up subscriptions but preserve sessions for re-creation.
