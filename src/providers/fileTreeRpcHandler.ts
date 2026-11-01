@@ -18,7 +18,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { FileEntry, ReadDirectoryResponseMessage, RequestReadDirectoryMessage } from "../types/messages";
 import type { GitDecorationProvider } from "./gitDecorationProvider";
-import { getIgnoredPaths } from "./gitIgnoreChecker";
+import { type GitIgnoreCache, sharedGitIgnoreCache } from "./gitIgnoreCache";
 
 /**
  * Read the user's enabled `files.exclude` glob patterns. Patterns set to
@@ -133,6 +133,8 @@ export async function handleRequestReadDirectory(
    * the entries' `gitStatus`/`gitRevision` fields are omitted.
    */
   gitDecorationProvider: GitDecorationProvider | null = null,
+  /** Which entries are gitignored — shared by every host, so unchanged answers cost no `git` run. */
+  ignoreCache: GitIgnoreCache = sharedGitIgnoreCache,
 ): Promise<void> {
   const currentGeneration = provider.rootGeneration;
 
@@ -185,6 +187,8 @@ export async function handleRequestReadDirectory(
   //    dropped here so the webview never sees them.
   const compiledExcludes = excludePatterns.map(patternToBasenameRegex).filter((r): r is RegExp => r !== null);
   const entries: FileEntry[] = [];
+  /** Each entry's raw `FileType`, so a name that changes type is asked about again. */
+  const types = new Map<string, number>();
   for (const [name, type] of raw) {
     if (compiledExcludes.length > 0 && nameMatchesAnyExclude(name, compiledExcludes)) {
       continue;
@@ -198,26 +202,29 @@ export async function handleRequestReadDirectory(
     if (kind === undefined) {
       continue;
     }
+    const entryPath = path.join(absPath, name);
     entries.push({
       name,
-      path: path.join(absPath, name),
+      path: entryPath,
       kind,
     });
+    types.set(entryPath, type);
   }
 
   // 6. Sort: directories before files, then case-insensitive locale order
   //    within each group (matches VS Code's default Explorer sort).
   entries.sort(compareEntries);
 
-  // 7. Annotate gitignored entries. We invoke `git check-ignore --stdin` from
-  //    the listed directory itself (`absPath`) so the matching honours the
-  //    enclosing repo's .gitignore — even when the user navigated outside the
-  //    workspace folder. Errors / timeout / non-git-repo collapse to an empty
-  //    set (no annotations) — the file tree just doesn't dim anything.
+  // 7. Annotate gitignored entries. git is asked from the listed directory
+  //    itself (`absPath`) so the matching honours the enclosing repo's
+  //    .gitignore — even when the user navigated outside the workspace folder —
+  //    and only when the cache holds no answer under the current rules.
+  //    Errors / timeout / non-git-repo collapse to an empty set (no
+  //    annotations) — the file tree just doesn't dim anything.
   if (entries.length > 0) {
-    const ignored = await getIgnoredPaths(
+    const ignored = await ignoreCache.getIgnoredPaths(
       absPath,
-      entries.map((e) => e.path),
+      entries.map((e) => ({ path: e.path, kind: String(types.get(e.path)) })),
     );
     if (ignored.size > 0) {
       for (const e of entries) {

@@ -14,8 +14,9 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { handleRequestReadDirectory, type RootProvider } from "../providers/fileTreeRpcHandler";
+import { sharedGitIgnoreCache } from "../providers/gitIgnoreCache";
 import type { ReadDirectoryResponseMessage, RequestReadDirectoryMessage } from "../types/messages";
 
 // ─── Test fs/Uri shims ──────────────────────────────────────────────
@@ -208,5 +209,64 @@ describe("fileTreeRpcHandler integration", () => {
 
     expect(response.error).toBeUndefined();
     expect(response.entries).toBeDefined();
+  });
+});
+
+describe("fileTreeRpcHandler gitignore annotation", () => {
+  const listing: Array<[string, number]> = [
+    ["dist", FILE_TYPE_DIRECTORY],
+    ["linked", FILE_TYPE_DIRECTORY | 64],
+    ["notes.md", FILE_TYPE_FILE],
+  ];
+  const listingFs = { readDirectory: async () => listing } as any;
+  const request: RequestReadDirectoryMessage = {
+    type: "request-read-directory",
+    requestId: "req-ignore",
+    rootGeneration: 7,
+    path: "/repo",
+  };
+
+  it("asks the ignore cache from the listed directory, keyed by each entry's raw file type", async () => {
+    const ignoreCache = { getIgnoredPaths: vi.fn(async () => new Set(["/repo/dist"])) };
+    const responses: ReadDirectoryResponseMessage[] = [];
+    await handleRequestReadDirectory(
+      request,
+      makeProvider(7, null),
+      (r) => responses.push(r),
+      listingFs,
+      uriArg,
+      [],
+      null,
+      ignoreCache,
+    );
+    expect(ignoreCache.getIgnoredPaths).toHaveBeenCalledWith("/repo", [
+      { path: "/repo/dist", kind: "2" },
+      { path: "/repo/linked", kind: "66" },
+      { path: "/repo/notes.md", kind: "1" },
+    ]);
+    const entries = responses[0].entries ?? [];
+    expect(entries.map((e) => [e.name, e.ignored])).toEqual([
+      ["dist", true],
+      ["linked", undefined],
+      ["notes.md", undefined],
+    ]);
+  });
+
+  it("uses the cache every host shares by default", async () => {
+    const spy = vi.spyOn(sharedGitIgnoreCache, "getIgnoredPaths").mockResolvedValue(new Set());
+    try {
+      await handleRequestReadDirectory(request, makeProvider(7, null), () => {}, listingFs, uriArg);
+      expect(spy).toHaveBeenCalledOnce();
+      expect(spy.mock.calls[0][0]).toBe("/repo");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("asks nothing for an empty directory", async () => {
+    const ignoreCache = { getIgnoredPaths: vi.fn(async () => new Set<string>()) };
+    const emptyFs = { readDirectory: async () => [] } as any;
+    await handleRequestReadDirectory(request, makeProvider(7, null), () => {}, emptyFs, uriArg, [], null, ignoreCache);
+    expect(ignoreCache.getIgnoredPaths).not.toHaveBeenCalled();
   });
 });

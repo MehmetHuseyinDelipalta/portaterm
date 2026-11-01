@@ -43,7 +43,7 @@ export interface FileEntry {
   kind: "file" | "directory";
   /**
    * True when git considers this entry ignored relative to the workspace root
-   * (populated by `gitIgnoreChecker.getIgnoredPaths`). The host upgrades
+   * (populated through `gitIgnoreCache.getIgnoredPaths`). The host upgrades
    * `ignored: true` into `gitStatus: "ignored"` when no higher-severity status
    * exists, so the webview reads `gitStatus` as the single source of truth for
    * rendering — `ignored` is retained for hosts/tests that depend on the

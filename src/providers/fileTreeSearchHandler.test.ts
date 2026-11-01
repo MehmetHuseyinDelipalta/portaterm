@@ -14,7 +14,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import type { RequestFileTreeSearchMessage } from "../types/messages";
-import { FileTreeSearchHandler, readCombinedExcludeGlob, type SearchVscodeApi } from "./fileTreeSearchHandler";
+import {
+  createDefaultSearchVscodeApi,
+  FileTreeSearchHandler,
+  readCombinedExcludeGlob,
+  type SearchVscodeApi,
+} from "./fileTreeSearchHandler";
+import { sharedGitIgnoreCache } from "./gitIgnoreCache";
 
 const SCOPE = "/repo/src";
 
@@ -299,5 +305,23 @@ describe("FileTreeSearchHandler", () => {
     resolveFind([]);
     const res = await inflight;
     expect(res).toBeNull();
+  });
+});
+
+describe("createDefaultSearchVscodeApi", () => {
+  it("asks the shared ignore cache, every candidate a file", async () => {
+    const spy = vi.spyOn(sharedGitIgnoreCache, "getIgnoredPaths").mockResolvedValue(new Set(["/repo/src/b.ts"]));
+    try {
+      const api = createDefaultSearchVscodeApi();
+      expect(await api.getIgnoredPaths(SCOPE, ["/repo/src/a.ts", "/repo/src/b.ts"])).toEqual(
+        new Set(["/repo/src/b.ts"]),
+      );
+      expect(spy).toHaveBeenCalledWith(SCOPE, [
+        { path: "/repo/src/a.ts", kind: "file" },
+        { path: "/repo/src/b.ts", kind: "file" },
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

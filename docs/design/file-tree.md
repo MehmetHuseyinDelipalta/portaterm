@@ -137,7 +137,7 @@ matched in `handleResponse` (`:684`).
 | Exclusion | Only `files.exclude` entries valued literally `true`, compiled to a **basename** regex — `*` and `?` only, no braces, no internal slashes | `fileTreeRpcHandler.ts:30-36`, `:59-71` |
 | Type bits | A directory symlink is `Directory\|SymbolicLink` and still counts as a directory | `fileTreeRpcHandler.ts:82-88` |
 | Sort | Directories first, then a base-sensitivity numeric collator, matching VS Code's explorer | `fileTreeRpcHandler.ts:93-99` |
-| Ignore | `git check-ignore` annotation | `fileTreeRpcHandler.ts:217-229` |
+| Ignore | `git check-ignore` annotation, through the shared ignore cache (§ 6.5) | `fileTreeRpcHandler.ts:218-235` |
 | Git | Status, revision, and descendant buckets | `fileTreeRpcHandler.ts:236-257` |
 
 Exclusion is evaluated at a single directory level because the handler enumerates one
@@ -190,7 +190,8 @@ Coalesced events fan out as `fs-changes-invalidated` (`scheduleFanout` `:212`).
 **Focus rehydrate.** A watcher cannot report what happened while VS Code was backgrounded
 on every platform, so a rising edge on window focus (`fsWatcherPool.ts:172-180`) fires
 `onDidRequestRehydrate`; the webview then re-reads the root and every expanded directory
-(`FileTreePanel.ts:747`).
+(`FileTreePanel.ts:747`). The re-read lists each directory again but runs no `git` for one
+whose ignore rules are unchanged (§ 6.5).
 
 ---
 
@@ -260,11 +261,26 @@ restraint is what keeps decoration updates blink-free (goal 2).
 
 ### 6.5 Gitignore
 
-`getIgnoredPaths` (`gitIgnoreChecker.ts:40`) shells out to `git check-ignore -z --stdin`
-with a `TIMEOUT_MS = 1500` budget (`src/providers/gitIgnoreChecker.ts:18`). Exit codes
-**0 and 1 are both success** (`:72`) — `1` means nothing in the batch is ignored. Any
-other outcome resolves to an empty set: the annotation is decorative, never load-bearing
-(`gitIgnoreChecker.ts:14`).
+`checkIgnore` (`src/providers/gitIgnoreChecker.ts`) shells out to `git check-ignore -z
+--stdin` with a `TIMEOUT_MS = 1500` budget. Exit codes **0 and 1 are both success** — `1`
+means nothing in the batch is ignored. Any other outcome is "no answer" (`null`), which
+the tree shows as nothing dimmed: the annotation is decorative, never load-bearing.
+
+Both the directory listing and the search ask through `sharedGitIgnoreCache`
+(`src/providers/gitIgnoreCache.ts`), one per extension host, so every tree host shares
+its answers. It keeps them per directory under a stamp of the files git reads to reach
+them — the `.gitignore` of the directory and each ancestor up to the repository top (and
+any nested `.git` between), the repository's `.git`, index, `info/exclude` and config
+files (a linked worktree's `.git` file is followed to its git dir and common dir), the
+global config files, the XDG ignore file and `core.excludesFile`, which is asked of git
+once per repository and again only when a config file changes. A request re-stats those
+files and runs git only for entries without an answer under the current stamp; an entry
+is keyed by its path and its type, so a file replaced by a directory of the same name is
+asked about again. A folder in no repository — or under a `.git` file git cannot
+follow — runs no git at all. A stat signature is the inode, size, mtime and ctime, any
+one of which changing is enough. Identical requests in flight share one git run.
+"No answer" is never remembered. The system-wide gitconfig is not watched: its location depends on how git
+was built.
 
 ---
 

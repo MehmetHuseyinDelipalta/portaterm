@@ -23,7 +23,7 @@ import type {
   RequestFileTreeSearchMessage,
 } from "../types/messages";
 import type { RootProvider } from "./fileTreeRpcHandler";
-import { getIgnoredPaths } from "./gitIgnoreChecker";
+import { sharedGitIgnoreCache } from "./gitIgnoreCache";
 
 /** Hard floor / ceiling on the enumeration cap. */
 const MIN_MAX_RESULTS = 1;
@@ -33,7 +33,8 @@ const DEFAULT_MAX_RESULTS = 2000;
 /**
  * Injection seam — only the two genuinely external operations are injected:
  *   - `findFiles` hits VS Code's search pipeline (slow, I/O bound).
- *   - `getIgnoredPaths` spawns `git check-ignore --stdin` (subprocess).
+ *   - `getIgnoredPaths` asks `git check-ignore` (a subprocess, unless the
+ *     shared cache still holds the answers).
  * Everything else (RelativePattern, Uri, CancellationTokenSource, config
  * read) is imported directly from `vscode` because there's no meaningful
  * production-vs-test variance.
@@ -80,7 +81,12 @@ export function readCombinedExcludeGlob(): string | undefined {
 export function createDefaultSearchVscodeApi(): SearchVscodeApi {
   return {
     findFiles: (include, exclude, max, token) => vscode.workspace.findFiles(include, exclude, max, token),
-    getIgnoredPaths: (scope, paths) => getIgnoredPaths(scope, paths),
+    // `findFiles` yields files only.
+    getIgnoredPaths: (scope, paths) =>
+      sharedGitIgnoreCache.getIgnoredPaths(
+        scope,
+        paths.map((p) => ({ path: p, kind: "file" })),
+      ),
   };
 }
 
