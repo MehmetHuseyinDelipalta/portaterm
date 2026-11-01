@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.49.3] — 2026-11-01
+
+### Fixed
+
+- **The Vault no longer reads agent histories while its view is hidden.** A hidden sidebar or panel kept re-reading session stores and refreshing a list and preview nobody could see. It now waits, and catches up once when you show it again.
+- **Following a long session no longer re-reads the whole transcript on every new message.** Only what the agent has added since the last read is read, so a transcript of tens of MB stays cheap to follow. Loading older messages reuses what was already read too.
+- **The live preview no longer redraws the whole transcript for each new message.** New messages are added below what is already shown, and older messages you loaded stay in view instead of snapping back to the latest ones. **Scroll to first message** now draws the transcript once, when it has finished loading, rather than once per batch.
+
 ## [0.49.2] — 2026-11-01
 
 ### Fixed
