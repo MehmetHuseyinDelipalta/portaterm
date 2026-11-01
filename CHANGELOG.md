@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.49.1] — 2026-11-01
+
+### Fixed
+
+- **Codex and OpenCode no longer make the Vault re-read every agent's history.** While either one was running, each write to its session store re-read the stores of all four agents — Cursor's IDE database, which can be gigabytes, included — about once a second. Now only that agent's own store is read again.
+- **Terminals in a background editor tab no longer keep rendering output nobody can see.** Output is held while the tab is hidden and shows at once, in order, when you switch back — as it already did for the sidebar and panel.
+- **Typing in the Vault search no longer rebuilds the list on every key.** The list and the worktree view now update once you pause typing.
+
 ## [0.49.0] — 2026-10-31
 
 ### Fixed
