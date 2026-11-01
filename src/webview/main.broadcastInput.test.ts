@@ -415,3 +415,21 @@ describe("broadcast input in the shipped webview", () => {
     expect(tab().classList.contains("tab-broadcast")).toBe(false);
   });
 });
+
+describe("the shipped webview's start-up (D3)", () => {
+  it("does not load Shiki until a preview wants it", async () => {
+    // Same module instance `./main` is about to import (modules reset per test).
+    // Given a script to locate shiki.js from, a load would add a <script> for it.
+    const renderer = await import("./links/syntaxRenderer");
+    const webviewScript = document.createElement("script");
+    webviewScript.src = "https://res/media/webview.js";
+    renderer.__setHostScriptForTests(webviewScript);
+    try {
+      await bootWithSplit();
+      expect(document.querySelector('script[src*="shiki.js"]')).toBeNull();
+      expect(renderer.isHighlighterReady()).toBe(false);
+    } finally {
+      renderer.__setHostScriptForTests(null);
+    }
+  });
+});

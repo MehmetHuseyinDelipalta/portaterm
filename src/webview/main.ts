@@ -39,7 +39,6 @@ import {
   shouldHostReadOsClipboardImage,
 } from "./imagePasteBridge";
 import type { HoverPreviewThemeKind } from "./links/HoverPreviewController";
-import { preloadSyntaxHighlighter } from "./links/syntaxRenderer";
 import { createMessageRouter } from "./messaging/MessageRouter";
 import { createScrollbackDumpHandler } from "./messaging/scrollbackDumpHandler";
 import {
@@ -107,11 +106,9 @@ import { worktreeDelegatedHandlers } from "./worktree/worktreeMessageHandlers";
   document.head.appendChild(styleEl);
 })();
 
-// Kick off Shiki highlighter init in the background; first hover will then
-// render synchronously. Failures fall back to plain text in the popup.
-void preloadSyntaxHighlighter().catch((err) => {
-  console.warn("[Portaterm] preloadSyntaxHighlighter failed:", err);
-});
+// Shiki is NOT loaded here: it is its own bundle (media/shiki.js), added on the
+// first hover preview that wants it (links/syntaxRenderer.ts). A pane that never
+// shows a preview never pays for it.
 
 // Debug helper for diagnosing wrap-aware link detection. Set true from the
 // webview devtools console: `window.__AT_DEBUG_WRAP = true`, then hover the

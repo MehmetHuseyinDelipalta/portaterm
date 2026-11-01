@@ -1,7 +1,8 @@
-// esbuild.js — Dual-target build for Portaterm
+// esbuild.js — Build targets for Portaterm
 //
 // Extension bundle: dist/extension.js (CJS, Node.js)
 // WebView bundle:   media/webview.js  (IIFE, browser)
+// Shiki bundle:     media/shiki.js    (IIFE, browser; loaded on first hover preview)
 
 const esbuild = require("esbuild");
 const { copyFileSync, mkdirSync, existsSync } = require("fs");
@@ -130,21 +131,40 @@ const webviewConfig = {
   plugins: [esbuildProblemMatcherPlugin, copyXtermCssPlugin],
 };
 
+// Shiki bundle: media/shiki.js — the curated hover-preview highlighter, kept out
+// of webview.js so a webview does not parse ~2 MB of grammars on every open.
+// syntaxRenderer.ts adds it to the page (nonce'd <script>) on first use.
+const shikiConfig = {
+  ...webviewConfig,
+  entryPoints: ["./src/webview/links/shikiBundle.ts"],
+  outfile: "./media/shiki.js",
+  plugins: [esbuildProblemMatcherPlugin],
+};
+
+/** Every target, built together and watched together. */
+const buildConfigs = [extensionConfig, webviewConfig, shikiConfig];
+
 // --- Build Entry Point ---
-async function main() {
-  if (watch) {
-    // Watch mode: both targets rebuild incrementally in parallel
-    const [extCtx, wvCtx] = await Promise.all([esbuild.context(extensionConfig), esbuild.context(webviewConfig)]);
-    await Promise.all([extCtx.watch(), wvCtx.watch()]);
+/** Build (or watch) every target with `api` — esbuild itself, or a test's stand-in. */
+async function run(api, options) {
+  if (options.watch) {
+    // Watch mode: every target rebuilds incrementally in parallel
+    const contexts = await Promise.all(buildConfigs.map((config) => api.context(config)));
+    await Promise.all(contexts.map((ctx) => ctx.watch()));
     console.log("Watching for changes...");
   } else {
-    // Single build: build both targets in parallel
-    await Promise.all([esbuild.build(extensionConfig), esbuild.build(webviewConfig)]);
+    // Single build: every target in parallel
+    await Promise.all(buildConfigs.map((config) => api.build(config)));
     console.log("Build complete.");
   }
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// Required rather than run (a test reading the targets): build nothing.
+if (require.main === module) {
+  run(esbuild, { watch }).catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
+
+module.exports = { buildConfigs, extensionConfig, webviewConfig, shikiConfig, run };

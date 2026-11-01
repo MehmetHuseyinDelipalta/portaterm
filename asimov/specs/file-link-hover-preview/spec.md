@@ -37,7 +37,7 @@ The host SHALL treat a file as binary when its first 8 192 bytes contain at leas
 
 ### Requirement: Popup rendering — code files
 
-For non-markdown files with `status: "ok"`, the popup SHALL render `content` with Shiki using a theme matching VSCode's current `colorTheme.kind` (`Light` → `github-light`; `HighContrastLight` → `light-plus`; `Dark` → `github-dark`; `HighContrast` → `dark-plus`). Unknown languages (`languageId === "plaintext"` or grammar not in the bundled set) MUST render as `<pre>`-escaped plain text. The Shiki bundle MUST be statically composed at build time from the curated language list defined in `design.md` D1 (no runtime dynamic imports of grammars, themes, or oniguruma resources — these are incompatible with the webview's IIFE bundle + nonce-CSP).
+For non-markdown files with `status: "ok"`, the popup SHALL render `content` with Shiki using a theme matching VSCode's current `colorTheme.kind` (`Light` → `github-light`; `HighContrastLight` → `light-plus`; `Dark` → `github-dark`; `HighContrast` → `dark-plus`). Unknown languages (`languageId === "plaintext"` or grammar not in the bundled set) MUST render as `<pre>`-escaped plain text. The Shiki bundle MUST be statically composed at build time from the curated language list defined in `design.md` D1 (no runtime dynamic imports of grammars, themes, or oniguruma resources — these are incompatible with the webview's IIFE bundle + nonce-CSP). It SHALL be built as its own IIFE (`media/shiki.js`) rather than into the webview bundle, and SHALL be loaded only when a preview first needs it, by a `<script>` element carrying the page's CSP nonce; until it has loaded, and if it fails to load, previews render as `<pre>`-escaped plain text.
 
 ### Requirement: Popup rendering — markdown files
 

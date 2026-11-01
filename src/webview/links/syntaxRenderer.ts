@@ -1,43 +1,19 @@
-// src/webview/links/syntaxRenderer.ts — Static curated Shiki bundle for the
-// hover preview popup.
+// src/webview/links/syntaxRenderer.ts — Shiki rendering for the hover preview
+// popup, with Shiki itself loaded on first use.
 //
-// The static-import set comes from `design.md` D1 (the curated 20-grammar +
-// 4-theme bundle). Any language outside the curated set falls back to plain
-// text. The renderer NEVER calls dynamic `import()` — the IIFE webview build
-// (`esbuild.js:83-89`) bundles everything statically; a runtime import would
-// break the CSP nonce check.
+// The curated 20-grammar + 4-theme bundle (design.md D1) is composed statically
+// at build time — but into its own IIFE, `media/shiki.js` (`shikiBundle.ts`),
+// not into `webview.js`. It is about 2.2 MB of the 4.2 MB a webview used to
+// parse on every open, for a popup most panes never show. The first render that
+// wants it adds one `<script>` carrying this page's nonce, so the nonce-CSP
+// admits it; this module still makes no dynamic `import()` (D11).
 //
 // See: asimov/changes/add-hover-file-preview/design.md D1, D8, D11
 // See: docs/research/20260521-shiki-v3-api.md (exact API surface)
 
-import c from "@shikijs/langs/c";
-import cpp from "@shikijs/langs/cpp";
-import css from "@shikijs/langs/css";
-import go from "@shikijs/langs/go";
-import html from "@shikijs/langs/html";
-import java from "@shikijs/langs/java";
-import javascript from "@shikijs/langs/javascript";
-import json from "@shikijs/langs/json";
-import jsx from "@shikijs/langs/jsx";
-import kotlin from "@shikijs/langs/kotlin";
-import markdown from "@shikijs/langs/markdown";
-import php from "@shikijs/langs/php";
-import python from "@shikijs/langs/python";
-import ruby from "@shikijs/langs/ruby";
-import rust from "@shikijs/langs/rust";
-import shellscript from "@shikijs/langs/shellscript";
-import sql from "@shikijs/langs/sql";
-import tsx from "@shikijs/langs/tsx";
-import typescript from "@shikijs/langs/typescript";
-import yaml from "@shikijs/langs/yaml";
-import darkPlus from "@shikijs/themes/dark-plus";
-import githubDark from "@shikijs/themes/github-dark";
-import githubLight from "@shikijs/themes/github-light";
-import lightPlus from "@shikijs/themes/light-plus";
-import { createHighlighterCore, type HighlighterCore } from "shiki/core";
-import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
-
+import type { HighlighterCore } from "shiki/core";
 import type { HoverPreviewThemeKind } from "./HoverPreviewController";
+import { SHIKI_GLOBAL, type ShikiBundle } from "./shikiGlobal";
 
 /** Curated language set bundled into the webview at build time. */
 export const SUPPORTED_LANGUAGES = new Set<string>([
@@ -124,36 +100,74 @@ export interface SyntaxRendererDeps {
   getTheme: () => HoverPreviewThemeKind;
 }
 
-/** Singleton highlighter — created lazily on first render. */
-let _highlighterPromise: Promise<HighlighterCore> | null = null;
-function getHighlighter(): Promise<HighlighterCore> {
-  if (!_highlighterPromise) {
-    _highlighterPromise = createHighlighterCore({
-      engine: createJavaScriptRegexEngine(),
-      langs: [
-        c,
-        cpp,
-        css,
-        go,
-        html,
-        java,
-        javascript,
-        json,
-        jsx,
-        kotlin,
-        markdown,
-        php,
-        python,
-        ruby,
-        rust,
-        shellscript,
-        sql,
-        tsx,
-        typescript,
-        yaml,
-      ],
-      themes: [githubLight, lightPlus, githubDark, darkPlus],
+/**
+ * The `<script>` running this bundle — only knowable while it evaluates, so it
+ * is captured at module load. Its `src` locates `shiki.js` beside `webview.js`,
+ * and its nonce is what the CSP admits.
+ */
+let hostScript: HTMLScriptElement | null =
+  typeof document !== "undefined" && document.currentScript instanceof HTMLScriptElement
+    ? document.currentScript
+    : null;
+
+/** `shiki.js` beside the given `webview.js` URL, keeping its cache-busting query. */
+export function shikiBundleUrl(webviewScriptSrc: string): string {
+  return webviewScriptSrc.replace(/webview\.js(?=$|[?#])/, "shiki.js");
+}
+
+/** Add `media/shiki.js` to the page once, and resolve with what it publishes. */
+function loadBundleScript(): Promise<ShikiBundle> {
+  const published = (globalThis as Record<string, unknown>)[SHIKI_GLOBAL] as ShikiBundle | undefined;
+  if (published) {
+    return Promise.resolve(published);
+  }
+  const host = hostScript;
+  if (!host?.src) {
+    return Promise.reject(new Error("the webview script is unknown, so shiki.js cannot be located"));
+  }
+  return new Promise<ShikiBundle>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = shikiBundleUrl(host.src);
+    script.nonce = host.nonce;
+    script.addEventListener("load", () => {
+      const bundle = (globalThis as Record<string, unknown>)[SHIKI_GLOBAL] as ShikiBundle | undefined;
+      if (bundle) {
+        resolve(bundle);
+      } else {
+        reject(new Error("shiki.js ran without publishing its bundle"));
+      }
     });
+    script.addEventListener("error", () => {
+      script.remove();
+      reject(new Error("shiki.js failed to load"));
+    });
+    document.head.appendChild(script);
+  });
+}
+
+/** Singleton highlighter — created lazily on first render. */
+let _highlighterPromise: Promise<HighlighterCore | null> | null = null;
+
+/**
+ * The highlighter, loading Shiki on first call. Never rejects: a load that fails
+ * answers `null` — every caller then renders plain text — and the next call
+ * tries again.
+ */
+function getHighlighter(): Promise<HighlighterCore | null> {
+  if (!_highlighterPromise) {
+    _highlighterPromise = loadBundleScript()
+      .then((bundle) => bundle.createHighlighter())
+      .then(
+        (highlighter) => {
+          highlighterSync = highlighter;
+          return highlighter;
+        },
+        (err: unknown) => {
+          console.warn("[Portaterm] Shiki failed to load; previews stay plain text:", err);
+          _highlighterPromise = null; // the next render tries again
+          return null;
+        },
+      );
   }
   return _highlighterPromise;
 }
@@ -200,9 +214,9 @@ export function whenHighlighterReady(): Promise<void> {
   return getHighlighter().then(() => undefined);
 }
 
-/** Kick off async init + cache for sync access. Call once at webview startup. */
+/** Load Shiki now rather than on the first render that wants it. */
 export async function preloadSyntaxHighlighter(): Promise<void> {
-  highlighterSync = await getHighlighter();
+  await getHighlighter();
 }
 
 /**
@@ -233,4 +247,15 @@ export function createSyntaxRenderer(deps: SyntaxRendererDeps): {
 /** Test-only override — never call in production. */
 export function __setHighlighterForTests(h: HighlighterCore | null): void {
   highlighterSync = h;
+  if (h === null) {
+    _highlighterPromise = null;
+  }
+}
+
+/** Test-only: replace how the bundle is obtained (jsdom loads no script). */
+export type { ShikiBundle };
+
+/** Test-only: the script `shiki.js` is located from (module load captured none under jsdom). */
+export function __setHostScriptForTests(script: HTMLScriptElement | null): void {
+  hostScript = script;
 }

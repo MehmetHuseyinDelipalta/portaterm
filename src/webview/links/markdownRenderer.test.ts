@@ -3,9 +3,17 @@
 // HTML sanitization, link inertness. See: spec
 // "Popup rendering — markdown files" + design.md D12.
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { createMarkdownRenderer, renderMarkdownElement } from "./markdownRenderer";
+import { shikiBundle } from "./shikiBundle";
+import { SHIKI_GLOBAL } from "./shikiGlobal";
 import { preloadSyntaxHighlighter } from "./syntaxRenderer";
+
+// jsdom loads no <script>: importing the bundle module publishes it, as running
+// shiki.js would. Kept explicit so the order of test files cannot matter.
+beforeAll(() => {
+  (globalThis as Record<string, unknown>)[SHIKI_GLOBAL] = shikiBundle;
+});
 
 describe("markdownRenderer — static-import audit", () => {
   it("does not import @shikijs/markdown-it (per design.md D12)", async () => {
