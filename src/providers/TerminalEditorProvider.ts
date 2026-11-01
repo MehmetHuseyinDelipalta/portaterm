@@ -137,6 +137,13 @@ export class TerminalEditorProvider {
   private readonly _viewId: string;
   /** Whether the webview has sent the 'ready' message. Gates outbound messages. */
   private _ready = false;
+  /**
+   * Whether `onReady` has finished its replay step and handed PTY output to the
+   * visibility gate. Until then a view-state change must not resume output: a
+   * restored session is paused so its snapshot replay lands before the first
+   * live byte, and `_ready` turns true before the awaits that replay waits on.
+   */
+  private _outputReleased = false;
   private _activeNavigation: { tabId: string; paneId: string } | null | undefined;
   /** Whether the webview holds keyboard focus, as its `focus` / `blur` messages last said. */
   private _webviewFocused = false;
@@ -487,7 +494,7 @@ export class TerminalEditorProvider {
       }),
     );
 
-    // 3b. Wire visibility handler (for deferred resize on tab switch)
+    // 3b. Wire visibility handler (deferred resize on tab switch + output pause/resume)
     // Assigned by 3d below; this subscription only reads it at event time, which
     // is always after the attach.
     let worktreeAttachment: WorktreeAttachment | undefined;
@@ -496,6 +503,10 @@ export class TerminalEditorProvider {
         // The worktree host pushes only to a surface the window is displaying —
         // this panel retains its context when hidden, so nothing else says so.
         worktreeAttachment?.setDisplayed(e.webviewPanel.visible);
+        // A background editor tab keeps its webview alive, so without this every
+        // flush still reached a terminal nobody could see and xterm parsed it.
+        // The sidebar and panel pause the same way (TerminalViewProvider 4b).
+        this.syncOutputToVisibility();
         if (e.webviewPanel.visible && this._ready) {
           this.safePostMessage({ type: "viewShow" });
         }
@@ -1071,6 +1082,27 @@ export class TerminalEditorProvider {
     this.safePostMessage({ type: "worktreeRowActivation", activation: readWorktreeRowActivation() });
   }
 
+  /**
+   * Output flows while the panel is on screen and is held, buffered, while it is
+   * hidden. A no-op until `onReady` releases output (see `_outputReleased`).
+   */
+  private syncOutputToVisibility(): void {
+    if (!this._outputReleased) {
+      return;
+    }
+    if (this._panel.visible) {
+      this.sessionManager.resumeOutputForView(this._viewId);
+    } else {
+      this.sessionManager.pauseOutputForView(this._viewId);
+    }
+  }
+
+  /** End of `onReady`'s replay step: from here output follows visibility. */
+  private releaseOutput(): void {
+    this._outputReleased = true;
+    this.syncOutputToVisibility();
+  }
+
   private async onReady(): Promise<void> {
     this._ready = true;
     signalSurfaceReady((message) => this.safePostMessage(message));
@@ -1133,7 +1165,7 @@ export class TerminalEditorProvider {
         }
         if (!initDelivered) {
           console.error("[Portaterm] init delivery failed during editor reload — skipping scrollback restore.");
-          this.sessionManager.resumeOutputForView(this._viewId);
+          this.releaseOutput();
           return;
         }
         for (const session of existingSessions) {
@@ -1142,7 +1174,7 @@ export class TerminalEditorProvider {
             this.safePostMessage({ type: "restore", tabId: session.id, data: scrollback });
           }
         }
-        this.sessionManager.resumeOutputForView(this._viewId);
+        this.releaseOutput();
       } else if (this.restoreSnapshots.length > 0) {
         // Phase B: cross-restart restore — consume staged snapshots from the
         // panel serializer and seed new sessions with the persisted metadata.
@@ -1181,7 +1213,7 @@ export class TerminalEditorProvider {
         }
         if (!initDelivered) {
           console.error("[Portaterm] init delivery failed during editor restore — skipping restoreFromSnapshot posts.");
-          this.sessionManager.resumeOutputForView(this._viewId);
+          this.releaseOutput();
           return;
         }
         for (const snap of this.restoreSnapshots) {
@@ -1200,8 +1232,9 @@ export class TerminalEditorProvider {
         }
         // Resume output flushing for sessions paused by createSession({restoreFrom}).
         // Order is now: init → restoreFromSnapshot (per session) → buffered PTY
-        // output flush. See round-1 B3.
-        this.sessionManager.resumeOutputForView(this._viewId);
+        // output flush. See round-1 B3. A panel hidden by now stays paused
+        // until it is shown.
+        this.releaseOutput();
       } else {
         // Cold open: existing behaviour — spawn a fresh session.
         const newSessionId = this.sessionManager.createSession(this._viewId, this._panel.webview, {
@@ -1236,6 +1269,9 @@ export class TerminalEditorProvider {
           this.fileTreeHost.notifyInitDelivered();
           this.postRowActivation();
         }
+        // The fresh session was never paused; this pauses it if the panel went
+        // to the background before the webview finished loading.
+        this.releaseOutput();
       }
     } catch (err) {
       console.error("[Portaterm] Failed to initialize editor terminal:", err);
