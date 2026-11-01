@@ -1194,12 +1194,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   });
 
+  // One process table for the window: presence and the vault's pinned and open
+  // sets each read it on every pane event, so with a table apiece one event
+  // could cost two `ps` runs a millisecond apart. Shared, they join one read.
+  const processTable = createProcessTableSnapshot();
   // Constructed before the host because `removalFacts` reads it: the removal
   // assessment asks the user-wide registry a SECOND question, and needs this
   // pass's answer to which of those sessions this window already holds (D6).
   const presenceProjector = createPresenceProjector(
     createPresenceProjectorDeps({
       store: paneEvidence,
+      table: processTable,
       cwdMemo: pathMemo,
       // Fallback only — the projector asks about a session the registry left
       // unnamed. A user rename outranks the derived title here for the same
@@ -1742,7 +1747,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // report names its session first (Claude via its turn, OpenCode via its
   // session report), then the entry its vault resume launched.
   const claudeByProcess = createClaudeProcessLookup({
-    table: createProcessTableSnapshot(),
+    table: processTable,
     listRunning: () => listRunningClaudeSessions(),
     sessionMtime: claudeSessionMtime,
   });
