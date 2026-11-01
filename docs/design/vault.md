@@ -150,6 +150,8 @@ newest-first (`:519`).
 | Path / version | `<globalStorage>/vault-cache/list.json`, version 8 | `VaultCacheStore.ts:211-212`; `cacheTypes.ts:179` |
 | Modes | file `0o600`, dir `0o700` | `VaultCacheStore.ts:197,199` |
 | Write | temp file → rename, 3 retries on lock errors | `:256,281-296` |
+| Skipped write | a refresh whose document equals the one last written or loaded (`savedAt` aside) writes nothing; a failed write is retried by the next refresh | `VaultService.persist` |
+| Skipped post | a watcher-driven refresh posts nothing when the webview already shows that exact list and no other request posted a list since | `TerminalViewProvider.autoRefreshVaultList` |
 | Load | version-guarded; one malformed entry voids the **whole** cache | `:221` |
 
 Voiding wholesale is deliberate: a half-trusted cache is worse than a cold scan, and the

@@ -5,6 +5,7 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import * as path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
   type ListReader,
   type ReaderListCache,
@@ -292,6 +293,11 @@ function isGlobSafeId(id: string): boolean {
   return /^[A-Za-z0-9._-]+$/.test(id) && !id.includes("..");
 }
 
+/** Two cache documents with the same content; when each was saved does not count. */
+function sameCacheDocument(a: VaultListCacheFileV1, b: VaultListCacheFileV1): boolean {
+  return isDeepStrictEqual({ ...a, savedAt: 0 }, { ...b, savedAt: 0 });
+}
+
 export class VaultService {
   /** One adapter per agent — the single registration list/detail/entry/record
    *  and the native renamer all resolve through (D6). */
@@ -346,6 +352,11 @@ export class VaultService {
   private readonly laneFollowUps = new Map<VaultAgentId, { paths: Set<string>; run: Promise<VaultListResult> }>();
   /** Cache writes in order: lanes finish independently, and two saves must never interleave. */
   private persistChain: Promise<void> = Promise.resolve();
+  /**
+   * The document last written to disk, or read from it: a refresh that produces
+   * the same document — every store unchanged — writes nothing.
+   */
+  private persisted: VaultListCacheFileV1 | null = null;
 
   constructor(deps: VaultServiceDeps = {}) {
     this.cursorReaderOptions = deps.cursorReaderOptions ?? {};
@@ -737,8 +748,12 @@ export class VaultService {
       return Promise.resolve();
     }
     const next = this.persistChain.then(async () => {
+      if (this.persisted && sameCacheDocument(this.persisted, doc)) {
+        return;
+      }
       try {
         await store.save(doc);
+        this.persisted = doc;
       } catch (err) {
         console.error("[Portaterm] Failed to persist vault cache:", err);
       }
@@ -953,6 +968,7 @@ export class VaultService {
       return;
     }
     this.mem = this.cacheStore?.load() ?? null;
+    this.persisted = this.mem;
     this.memLoaded = true;
   }
 

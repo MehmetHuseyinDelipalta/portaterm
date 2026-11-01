@@ -376,6 +376,69 @@ describe("VaultService cache: listCached + refresh", () => {
     void current;
   });
 
+  it("writes nothing when a refresh finds every store unchanged", async () => {
+    const { store } = makeCacheStore(null);
+    const svc = new VaultService({
+      readers: makeReaders({ claude: async () => result([entry("claude", "c1", 100)]) }),
+      cacheStore: store as unknown as VaultCacheStore,
+    });
+    await svc.refresh();
+    await svc.refresh();
+    await svc.refresh({ hint: { agent: "claude", paths: ["/claude/c1.jsonl"] } });
+    expect(store.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes again once a store changed", async () => {
+    const claude = vi
+      .fn()
+      .mockResolvedValueOnce(result([entry("claude", "c1", 100)]))
+      .mockResolvedValueOnce(result([entry("claude", "c1", 100)]))
+      .mockResolvedValue(result([entry("claude", "c1", 200)]));
+    const { store } = makeCacheStore(null);
+    const svc = new VaultService({ readers: makeReaders({ claude }), cacheStore: store as unknown as VaultCacheStore });
+    await svc.refresh();
+    await svc.refresh();
+    await svc.refresh();
+    expect(store.save).toHaveBeenCalledTimes(2);
+  });
+
+  it("writes nothing when what the stores say matches the document on disk", async () => {
+    const onDisk: VaultListCacheFileV1 = {
+      version: VAULT_CACHE_VERSION,
+      savedAt: 1,
+      agents: {
+        claude: result([entry("claude", "c1", 100)]).cache,
+        codex: result([]).cache,
+        opencode: result([]).cache,
+        cursor: result([]).cache,
+      },
+      entries: [entry("claude", "c1", 100)],
+      unreadable: { count: 0, reasons: [] },
+    };
+    const { store } = makeCacheStore(onDisk);
+    const svc = new VaultService({
+      readers: makeReaders({ claude: async () => result([entry("claude", "c1", 100)]) }),
+      cacheStore: store as unknown as VaultCacheStore,
+    });
+    await svc.refresh();
+    expect(store.save).not.toHaveBeenCalled();
+  });
+
+  it("writes an unchanged document again after a write that failed", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { store } = makeCacheStore(null);
+    vi.mocked(store.save).mockRejectedValueOnce(new Error("disk full"));
+    const svc = new VaultService({
+      readers: makeReaders({ claude: async () => result([entry("claude", "c1", 100)]) }),
+      cacheStore: store as unknown as VaultCacheStore,
+    });
+    await svc.refresh();
+    await svc.refresh();
+    await svc.refresh();
+    expect(store.save).toHaveBeenCalledTimes(2);
+    error.mockRestore();
+  });
+
   it("a second refresh feeds each reader its prior per-agent cache (incremental)", async () => {
     const claude = vi.fn(async (_prev?: ReaderListCache) => result([entry("claude", "c1", 1)]));
     const { store } = makeCacheStore(null);

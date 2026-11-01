@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import * as vscode from "vscode";
 import { PINNED_TAB_CLOSE_REFUSED } from "../session/closeGates";
 import { confirmKill } from "../session/killConfirmation";
@@ -25,7 +26,7 @@ import { MAX_CONTINUATION_INSTRUCTION } from "../vault/continuationLimits";
 import type { ContinuationTarget, LaunchMode } from "../vault/LaunchBuilder";
 import { resolveAssistantMessageRef } from "../vault/messageText";
 import { agentKindForExecutable, detectLaunchTargets } from "../vault/registry";
-import type { VaultSessionEntry } from "../vault/types";
+import type { VaultListResult, VaultSessionEntry } from "../vault/types";
 import type { CreateSessionOptions, VaultLauncher } from "../vault/VaultLauncher";
 import type { VaultService } from "../vault/VaultService";
 import { handlePasteClipboardImage, handlePasteOsClipboardImage, readImageFromOsClipboard } from "./clipboardImageSync";
@@ -123,6 +124,12 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
    * out-of-order refresh never overwrites a newer one (cache-vault-load D7).
    */
   private _vaultRefreshSeq = 0;
+  /**
+   * The list the last watcher-driven refresh delivered, to which webview, under
+   * which `_vaultRefreshSeq` token. The next one skips its post when nothing
+   * else posted a list since and the list is the same.
+   */
+  private _lastAutoVaultList?: { webview: vscode.Webview; token: number; result: VaultListResult };
 
   /**
    * In-flight hover-preview cancellation tokens, keyed by `sessionId`. A new
@@ -793,12 +800,23 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
       if (token !== this._vaultRefreshSeq) {
         return;
       }
-      void this.safeSendWithRetry(
+      const last = this._lastAutoVaultList;
+      if (last?.webview === webview && last.token === token - 1 && isDeepStrictEqual(last.result, result)) {
+        // The webview already shows this list: a store event that changed no row.
+        this._lastAutoVaultList = { webview, token, result };
+        return;
+      }
+      const sent = await this.safeSendWithRetry(
         webview,
         { type: "vaultSessionsResponse", result, fromCache: false },
         2,
         () => token !== this._vaultRefreshSeq,
       );
+      if (sent) {
+        // Recorded even if a newer request began meanwhile: its token then no
+        // longer follows this one, so the next refresh posts regardless.
+        this._lastAutoVaultList = { webview, token, result };
+      }
     } catch (err) {
       console.error("[Portaterm] Vault auto-refresh failed:", err);
     }
