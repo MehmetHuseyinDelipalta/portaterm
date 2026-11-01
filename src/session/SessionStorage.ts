@@ -290,6 +290,15 @@ export class SessionStorage {
     return path.join(this.snapshotsDir, "index.json");
   }
 
+  /** Whether a session's buffer file is there — a stat, not a read. */
+  hasBufferFile(sessionId: string): boolean {
+    try {
+      return this.fs.existsSync(this.bufferFilePath(sessionId));
+    } catch {
+      return false; // an unsafe id has no file of ours
+    }
+  }
+
   readBufferFile(sessionId: string): string | null {
     let file: string;
     try {

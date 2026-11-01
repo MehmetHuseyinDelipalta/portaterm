@@ -303,6 +303,17 @@ describe("SessionStorage", () => {
     expect(s.readBufferFile("sync1")).toBe("DATA");
   });
 
+  it("hasBufferFile answers from the file's presence, and false for an unsafe id", () => {
+    const mem = makeFakeMemento();
+    const { fs, files } = makeFakeFs();
+    const s = new SessionStorage(mem as unknown as vscode.Memento, STORAGE_URI, fs);
+    s.commitBufferSync("alpha", "DATA");
+    files.set(`${SNAPS_DIR}/../../etc.snapshot.ans`, "x");
+    expect(s.hasBufferFile("alpha")).toBe(true);
+    expect(s.hasBufferFile("beta")).toBe(false);
+    expect(s.hasBufferFile("../../etc")).toBe(false);
+  });
+
   it("listBufferFiles returns sessionIds of present buffer files", () => {
     const mem = makeFakeMemento();
     const { fs } = makeFakeFs();

@@ -207,6 +207,7 @@ export function sessionStorageMock(options: SessionStorageMockOptions = {}) {
     scheduleLivePanelsWrite: vi.fn(),
     writeIndexAwaited: vi.fn(async () => {}),
     writeLivePanelsAwaited: vi.fn(async () => {}),
+    hasBufferFile: vi.fn((id: string) => backed && buffers.has(id)),
     readBufferFile: vi.fn((id: string) => (backed ? (buffers.get(id) ?? null) : null)),
     listBufferFiles: vi.fn(() => (backed ? Array.from(buffers.keys()) : [])),
     loadIndex: () => undefined,

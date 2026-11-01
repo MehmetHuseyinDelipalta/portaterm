@@ -110,6 +110,16 @@ export interface SnapshotPersistenceOptions {
   titleOf?: (sessionId: string) => string | undefined;
 }
 
+/**
+ * A snapshot hydrate found, not yet consumed by a view. `buffer` is present only
+ * when hydrate had to read it anyway (an orphaned buffer, rebuilt into an entry);
+ * otherwise `materialize` reads it on consumption.
+ */
+interface StagedSnapshot {
+  metadata: SessionSnapshotMetadata;
+  buffer?: string;
+}
+
 export class SnapshotPersistence {
   private readonly headlessFactory: HeadlessFactory;
   private readonly serializeAddonFactory: SerializeAddonFactory;
@@ -160,7 +170,7 @@ export class SnapshotPersistence {
    * Pending restore snapshots loaded on activate via `hydrateFromSnapshots`.
    * Drained by `consumeSnapshotsForLocation` / `consumeSnapshotsForPanel`.
    */
-  private _pendingSnapshots: Map<string, PendingSnapshot> = new Map();
+  private _pendingSnapshots: Map<string, StagedSnapshot> = new Map();
 
   private _disposed = false;
 
@@ -975,14 +985,16 @@ export class SnapshotPersistence {
 
     // Step 2 — Load buffer file for each surviving entry. Drop entries with
     // missing/unreadable files.
-    const hydrated: Array<{ metadata: SessionSnapshotMetadata; buffer: string }> = [];
+    // Only whether the file is there: the buffer itself — up to 1 MB per tab,
+    // 20 tabs — is read when a view consumes the snapshot (`materialize`), not
+    // on the activation path every window walks before showing anything.
+    const hydrated: StagedSnapshot[] = [];
     for (const meta of Object.values(indexAfterEviction)) {
-      const buf = this.storage.readBufferFile(meta.sessionId);
-      if (buf === null) {
+      if (!this.storage.hasBufferFile(meta.sessionId)) {
         delete indexAfterEviction[meta.sessionId];
         continue;
       }
-      hydrated.push({ metadata: this.withPersistedCommands(this.storage, meta), buffer: buf });
+      hydrated.push({ metadata: this.migrateInlineCommands(this.storage, meta) });
     }
 
     // Step 3 — Buffer-file fallback. Inspect buffer files that survived on disk
@@ -1032,7 +1044,7 @@ export class SnapshotPersistence {
           shellExited: false,
           exitCode: null,
         };
-        hydrated.push({ metadata: this.withPersistedCommands(this.storage, meta), buffer: buf });
+        hydrated.push({ metadata: this.migrateInlineCommands(this.storage, meta), buffer: buf });
         indexAfterEviction[sessionId] = meta;
       }
     }
@@ -1072,16 +1084,17 @@ export class SnapshotPersistence {
   }
 
   /**
-   * Attach a hydrated entry's tracked commands, read from its own file — or,
-   * for an index written by an older build that kept them inline, move them
-   * into that file now: the next index write drops the inline copy, and a
-   * session that is not restored before then would otherwise lose them.
-   * Either way the file then holds exactly what the restored tracker starts
-   * from, so its revision 0 is recorded as already on disk. A move that failed
-   * records nothing, and the restored session's first flush writes the file.
+   * For an index written by an older build that kept a session's tracked
+   * commands inline: move them into the session's own file now — the next index
+   * write drops the inline copy, and a session that is not restored before then
+   * would otherwise lose them. Either way the file then holds exactly what the
+   * restored tracker starts from, so its revision 0 is recorded as already on
+   * disk. A move that failed records nothing, and the restored session's first
+   * flush writes the file. Reading a file that is already there is left to
+   * `materialize`.
    */
-  private withPersistedCommands(storage: SessionStorage, meta: SessionSnapshotMetadata): SessionSnapshotMetadata {
-    let commands = meta.trackedCommands;
+  private migrateInlineCommands(storage: SessionStorage, meta: SessionSnapshotMetadata): SessionSnapshotMetadata {
+    const commands = meta.trackedCommands;
     let onDisk = true;
     if (commands && commands.length > 0) {
       try {
@@ -1090,13 +1103,32 @@ export class SnapshotPersistence {
         onDisk = false;
         console.error("[Portaterm] hydrate could not move tracked commands out of the index:", err);
       }
-    } else {
-      commands = storage.readCommandsFile(meta.sessionId);
     }
     if (onDisk) {
       this._commandsRevision.set(meta.sessionId, 0);
     }
-    return commands && commands.length > 0 ? { ...meta, trackedCommands: commands } : meta;
+    return meta;
+  }
+
+  /**
+   * Turn a staged snapshot into one a view can restore: read its buffer (unless
+   * the orphan scan already had to) and its tracked commands. `null` when the
+   * buffer is gone by now — the entry and its files are dropped then, as hydrate
+   * would have dropped it.
+   */
+  private materialize(staged: StagedSnapshot): PendingSnapshot | null {
+    const storage = this.storage;
+    const id = staged.metadata.sessionId;
+    const buffer = staged.buffer ?? storage?.readBufferFile(id) ?? null;
+    if (buffer === null) {
+      delete this._snapshotIndex[id];
+      storage?.dropBuffer(id); // and its tracked-commands file; never throws
+      return null;
+    }
+    // Commands an older build kept inline win: if moving them into the file
+    // failed at hydrate, the file does not have them.
+    const trackedCommands = staged.metadata.trackedCommands ?? storage?.readCommandsFile(id);
+    return { metadata: { ...staged.metadata, trackedCommands }, buffer };
   }
 
   // ─── Pending restore snapshot consumption ───────────────────────
@@ -1118,8 +1150,11 @@ export class SnapshotPersistence {
     const out: PendingSnapshot[] = [];
     for (const [sessionId, snap] of this._pendingSnapshots) {
       if (snap.metadata.viewLocation === loc) {
-        out.push(snap);
         this._pendingSnapshots.delete(sessionId);
+        const ready = this.materialize(snap);
+        if (ready) {
+          out.push(ready);
+        }
       }
     }
     return out;
@@ -1139,8 +1174,11 @@ export class SnapshotPersistence {
     const out: PendingSnapshot[] = [];
     for (const [sessionId, snap] of this._pendingSnapshots) {
       if (snap.metadata.viewLocation === "editor" && snap.metadata.panelId === panelId) {
-        out.push(snap);
         this._pendingSnapshots.delete(sessionId);
+        const ready = this.materialize(snap);
+        if (ready) {
+          out.push(ready);
+        }
       }
     }
     return out;

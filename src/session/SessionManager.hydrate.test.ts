@@ -248,3 +248,95 @@ describe("SessionManager.hydrateLivePanels", () => {
     sm.dispose();
   });
 });
+
+describe("SessionManager.hydrateFromSnapshots reads buffers only when a view restores them (C6)", () => {
+  it("checks that each buffer is there without reading it", () => {
+    const storage = makeStorageMock({ buffers: { S1: "BUF1", S2: "BUF2" } });
+    const sm = new SessionManager(undefined, { restoreEnabled: true, storage: storage as any });
+    sm.hydrateFromSnapshots({
+      version: 1,
+      entries: { S1: meta("S1"), S2: meta("S2", { viewLocation: "panel" }) },
+    });
+
+    expect(storage.hasBufferFile).toHaveBeenCalledWith("S1");
+    expect(storage.hasBufferFile).toHaveBeenCalledWith("S2");
+    expect(storage.readBufferFile).not.toHaveBeenCalled();
+    expect(storage.readCommandsFile).not.toHaveBeenCalled();
+    expect(sm.hasSnapshotsForLocation("sidebar")).toBe(true);
+    sm.dispose();
+  });
+
+  it("reads a location's buffers when that location consumes them, and no other's", () => {
+    const storage = makeStorageMock({ buffers: { S1: "BUF1", S2: "BUF2" } });
+    const sm = new SessionManager(undefined, { restoreEnabled: true, storage: storage as any });
+    sm.hydrateFromSnapshots({
+      version: 1,
+      entries: { S1: meta("S1"), S2: meta("S2", { viewLocation: "panel" }) },
+    });
+
+    const sidebar = sm.consumeSnapshotsForLocation("sidebar");
+
+    expect(sidebar.map((s) => s.buffer)).toEqual(["BUF1"]);
+    expect(storage.readBufferFile.mock.calls.map((c) => c[0])).toEqual(["S1"]);
+    expect(storage.readCommandsFile.mock.calls.map((c) => c[0])).toEqual(["S1"]);
+    sm.dispose();
+  });
+
+  it("reads an editor panel's buffers when its panel consumes them", () => {
+    const storage = makeStorageMock({ buffers: { E1: "EDIT" } });
+    const sm = new SessionManager(undefined, { restoreEnabled: true, storage: storage as any });
+    sm.hydrateFromSnapshots({
+      version: 1,
+      entries: { E1: meta("E1", { viewLocation: "editor", panelId: "P1" }) },
+    });
+    expect(storage.readBufferFile).not.toHaveBeenCalled();
+
+    expect(sm.consumeSnapshotsForPanel("P1").map((s) => s.buffer)).toEqual(["EDIT"]);
+    sm.dispose();
+  });
+
+  it("skips a panel's snapshot whose buffer vanished, and hands each snapshot out once", () => {
+    const storage = makeStorageMock({ buffers: { E1: "GONE", E2: "EDIT" } });
+    const sm = new SessionManager(undefined, { restoreEnabled: true, storage: storage as any });
+    sm.hydrateFromSnapshots({
+      version: 1,
+      entries: {
+        E1: meta("E1", { viewLocation: "editor", panelId: "P1" }),
+        E2: meta("E2", { viewLocation: "editor", panelId: "P1" }),
+      },
+    });
+    storage._buffers.delete("E1");
+
+    expect(sm.consumeSnapshotsForPanel("P1").map((s) => s.metadata.sessionId)).toEqual(["E2"]);
+    expect(storage.dropBuffer).toHaveBeenCalledWith("E1");
+    expect(sm.consumeSnapshotsForPanel("P1")).toEqual([]);
+    sm.dispose();
+  });
+
+  it("skips, and forgets, a snapshot whose buffer vanished before its view consumed it", () => {
+    const storage = makeStorageMock({ buffers: { S1: "BUF1", S2: "BUF2" } });
+    const sm = new SessionManager(undefined, { restoreEnabled: true, storage: storage as any });
+    sm.hydrateFromSnapshots({ version: 1, entries: { S1: meta("S1"), S2: meta("S2") } });
+    storage._buffers.delete("S1");
+
+    const restored = sm.consumeSnapshotsForLocation("sidebar");
+
+    expect(restored.map((s) => s.metadata.sessionId)).toEqual(["S2"]);
+    expect(storage.dropBuffer).toHaveBeenCalledWith("S1");
+    expect(Object.keys(sm.getSnapshotIndexEntries())).toEqual(["S2"]);
+    sm.dispose();
+  });
+
+  it("keeps the buffer it had to read for an orphan rebuilt into an entry", () => {
+    const storage = makeStorageMock({ buffers: { ORPHAN: "ORPHAN-BUF" } });
+    const sm = new SessionManager(undefined, { restoreEnabled: true, storage: storage as any });
+    sm.hydrateFromSnapshots({ version: 1, entries: {} });
+    const reads = storage.readBufferFile.mock.calls.length;
+
+    const [snap] = sm.consumeSnapshotsForLocation("sidebar");
+
+    expect(snap.buffer).toBe("ORPHAN-BUF");
+    expect(storage.readBufferFile.mock.calls.length).toBe(reads); // not read a second time
+    sm.dispose();
+  });
+});
