@@ -151,7 +151,13 @@ function isValidReaderCache(c: unknown): boolean {
         return false;
       }
     }
-    return true;
+    if (v.excluded !== undefined && !(isRecord(v.excluded) && Object.values(v.excluded).every(isValidStamp))) {
+      return false;
+    }
+    return (
+      v.unreadablePaths === undefined ||
+      (Array.isArray(v.unreadablePaths) && v.unreadablePaths.every((p) => typeof p === "string"))
+    );
   }
   if (v.kind === "store") {
     if (!v.sources || typeof v.sources !== "object") {

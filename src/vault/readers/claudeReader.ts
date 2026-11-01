@@ -17,8 +17,10 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { provesAbsence } from "../../utils/fsPresence";
+import { mapBounded } from "../../utils/mapBounded";
 import { isResolvedPathInsideRoot, prepareResolvedRoot } from "../../utils/resolvedPathBoundary";
-import type { ReaderListCache, ReaderResultWithState } from "../cacheTypes";
+import type { ReaderListCache, ReaderRefreshHint, ReaderResultWithState } from "../cacheTypes";
 import { boundedPreview } from "../preview";
 import { formatEntryId, type VaultEntryLookup, type VaultSessionDetail, type VaultSessionEntry } from "../types";
 import { type ClaudeChildId, parseClaudeChildId } from "./claudeChildIds";
@@ -339,23 +341,187 @@ async function buildClaudeEntry(
   return { entry, isTeamMember: fields.isTeamMember, isEmpty: !fields.hasContent };
 }
 
+/** Session files read at once in a full pass. */
+export const CLAUDE_SCAN_CONCURRENCY = 16;
+
+type ClaudeFilesCache = Extract<ReaderListCache, { kind: "files" }>;
+type FileStamp = ClaudeFilesCache["files"][string]["stamp"];
+
+/** What one session file contributes to the list. */
+type ClaudeFileOutcome =
+  | { kind: "listed"; stamp: FileStamp; entry: VaultSessionEntry }
+  | { kind: "excluded"; stamp: FileStamp }
+  | { kind: "unreadable" }
+  /** Not a session of the list: gone, or resolving outside the store. */
+  | { kind: "none" };
+
+const sameStamp = (a: FileStamp | undefined, b: FileStamp): boolean =>
+  a !== undefined && a.mtimeMs === b.mtimeMs && a.size === b.size;
+
+/**
+ * Classify one session file, reading its body only when its stamp is new: an
+ * unchanged file listed before reuses its entry, and an unchanged file excluded
+ * before (a team member, or no content) stays excluded.
+ */
+async function readClaudeSessionFile(
+  filePath: string,
+  configDir: string | undefined,
+  resolvedRoot: NonNullable<Awaited<ReturnType<typeof prepareResolvedRoot>>>,
+  prev: ClaudeFilesCache | undefined,
+  missingIsGone: boolean,
+): Promise<ClaudeFileOutcome> {
+  // Being LISTED under the root is not evidence of being inside it: a symlink
+  // here resolves wherever it likes, and everything below this line stats and
+  // reads the file. One entry is skipped, not the directory — a link out of the
+  // store is a lost row, not a lost project.
+  if (!(await isResolvedPathInsideRoot(filePath, resolvedRoot))) {
+    return { kind: "none" };
+  }
+  try {
+    const stat = await fs.stat(filePath);
+    const stamp = { mtimeMs: stat.mtimeMs, size: stat.size };
+    const cached = prev?.files[filePath];
+    if (cached && sameStamp(cached.stamp, stamp)) {
+      // Unchanged + previously LISTED file — reuse the cached entry without a
+      // body read (skips the metadata stream + the 64 KB ai-title tail, the
+      // dominant cost).
+      return { kind: "listed", stamp, entry: cached.entry };
+    }
+    if (sameStamp(prev?.excluded?.[filePath], stamp)) {
+      return { kind: "excluded", stamp };
+    }
+    const built = await buildClaudeEntry(filePath, path.basename(filePath, ".jsonl"), configDir);
+    if (!built) {
+      return { kind: "unreadable" };
+    }
+    // Members thread under their leader (D5); content-less sessions (only a
+    // /clear, a caveat banner, …) are junk — neither is listed (D18).
+    return built.isTeamMember || built.isEmpty
+      ? { kind: "excluded", stamp }
+      : { kind: "listed", stamp, entry: built.entry };
+  } catch (err) {
+    return missingIsGone && provesAbsence(err) ? { kind: "none" } : { kind: "unreadable" };
+  }
+}
+
+/** The session files a watcher's changed paths touch, or `null` when only a full pass can tell. */
+async function hintedSessionFiles(paths: readonly string[], projectsDir: string): Promise<string[] | null> {
+  const files: string[] = [];
+  const inside = projectsDir + path.sep;
+  for (const changed of paths) {
+    if (!changed.startsWith(inside)) {
+      return null; // outside the store, or the store itself
+    }
+    const parts = changed.slice(inside.length).split(path.sep);
+    if (parts.length < 2) {
+      return null; // a project folder
+    }
+    if (parts.length > 2) {
+      continue; // below a project folder (a session's own subagents): never a list row
+    }
+    if (!parts[1].endsWith(".jsonl")) {
+      return null;
+    }
+    // A full pass lists only real project folders (a symlinked one is skipped).
+    try {
+      if (!(await fs.lstat(path.join(projectsDir, parts[0]))).isDirectory()) {
+        continue;
+      }
+    } catch (err) {
+      if (!provesAbsence(err)) {
+        return null;
+      }
+    }
+    files.push(path.join(projectsDir, parts[0], parts[1]));
+  }
+  return files;
+}
+
+/** The list, and the cache for the next pass, from every file's outcome. */
+function claudeListResult(outcomes: ReadonlyMap<string, ClaudeFileOutcome>): ReaderResultWithState {
+  const files: ClaudeFilesCache["files"] = {};
+  const excluded: Record<string, FileStamp> = {};
+  const unreadablePaths: string[] = [];
+  const entries: VaultSessionEntry[] = [];
+  for (const [filePath, outcome] of outcomes) {
+    if (outcome.kind === "listed") {
+      files[filePath] = { stamp: outcome.stamp, entry: outcome.entry };
+      entries.push(outcome.entry);
+    } else if (outcome.kind === "excluded") {
+      excluded[filePath] = outcome.stamp;
+    } else if (outcome.kind === "unreadable") {
+      unreadablePaths.push(filePath);
+    }
+  }
+  return {
+    entries,
+    unreadable: unreadablePaths.length,
+    cache: { kind: "files", files, excluded, unreadablePaths },
+  };
+}
+
+/** Every file of `prev` as the outcome it had, to carry forward past a hinted pass. */
+function previousOutcomes(prev: ClaudeFilesCache): Map<string, ClaudeFileOutcome> {
+  const outcomes = new Map<string, ClaudeFileOutcome>();
+  for (const [filePath, file] of Object.entries(prev.files)) {
+    outcomes.set(filePath, { kind: "listed", stamp: file.stamp, entry: file.entry });
+  }
+  for (const [filePath, stamp] of Object.entries(prev.excluded ?? {})) {
+    outcomes.set(filePath, { kind: "excluded", stamp });
+  }
+  for (const filePath of prev.unreadablePaths ?? []) {
+    outcomes.set(filePath, { kind: "unreadable" });
+  }
+  return outcomes;
+}
+
 /**
  * List Claude sessions, incrementally (cache-vault-load D3). When `prev` carries
  * a per-file cache, each session file is `stat`-ed and — if its `(mtimeMs, size)`
  * is unchanged — its entry is reused WITHOUT re-reading the body (skipping the
- * metadata stream and the 64 KB ai-title tail read, the dominant cost). Files
- * absent from disk drop out of the returned cache, so deletions reconcile. The
- * returned `cache.files` is keyed by current paths only.
+ * metadata stream and the 64 KB ai-title tail read, the dominant cost); a file
+ * excluded last time is likewise not read to be excluded again. Files absent
+ * from disk drop out of the returned cache, so deletions reconcile. The returned
+ * cache is keyed by current paths only.
+ *
+ * With a watcher's `hint`, only the session files it names are looked at again
+ * and every other file keeps what `prev` says of it — unless a path is one only
+ * a full pass can account for (outside the store, a folder), or there is no
+ * `prev` to carry forward.
  *
  * Stays option-first for back-compat; `prev` is an optional second argument.
  */
 export async function readClaudeSessions(
   options: ClaudeReaderOptions = {},
   prev?: ReaderListCache,
+  hint?: ReaderRefreshHint,
 ): Promise<ReaderResultWithState> {
   const { configDir, projectsDir } = claudeRoots(options);
-  const prevFiles = prev?.kind === "files" ? prev.files : undefined;
-  const files: Record<string, { stamp: { mtimeMs: number; size: number }; entry: VaultSessionEntry }> = {};
+  const prevFiles = prev?.kind === "files" ? prev : undefined;
+  const empty: ReaderResultWithState = { entries: [], unreadable: 0, cache: { kind: "files", files: {} } };
+
+  // The root is resolved once for the whole listing, not once per file — it
+  // cannot move within a pass in any way this pass would observe, and a store
+  // with a long history makes that a syscall per session (D8). Null means the
+  // root itself does not resolve, so nothing is inside it and there is nothing
+  // to list.
+  if (hint && prevFiles) {
+    const named = await hintedSessionFiles(hint.paths, projectsDir);
+    if (named) {
+      const resolvedRoot = await prepareResolvedRoot(projectsDir);
+      if (resolvedRoot === null) {
+        return empty;
+      }
+      const outcomes = previousOutcomes(prevFiles);
+      const fresh = await mapBounded(named, CLAUDE_SCAN_CONCURRENCY, (filePath) =>
+        readClaudeSessionFile(filePath, configDir, resolvedRoot, prevFiles, true),
+      );
+      for (const [i, filePath] of named.entries()) {
+        outcomes.set(filePath, fresh[i] as ClaudeFileOutcome);
+      }
+      return claudeListResult(outcomes);
+    }
+  }
 
   let projectDirs: string[];
   try {
@@ -364,65 +530,22 @@ export async function readClaudeSessions(
   } catch {
     // No store → zero entries (not an error), and an empty cache so the next
     // refresh re-discovers the dir if the user starts using the agent.
-    return { entries: [], unreadable: 0, cache: { kind: "files", files } };
+    return empty;
   }
-
-  const entries: VaultSessionEntry[] = [];
-  let unreadable = 0;
-
-  // Once for the whole listing, not once per file — the root cannot move within
-  // a pass in any way this pass would observe, and a store with a long history
-  // makes that a syscall per session (D8). Null means the root itself does not
-  // resolve, so nothing is inside it and there is nothing to list.
   const resolvedProjectsRoot = await prepareResolvedRoot(projectsDir);
   if (resolvedProjectsRoot === null) {
-    return { entries: [], unreadable: 0, cache: { kind: "files", files } };
+    return empty;
   }
 
-  for (const projectDir of projectDirs) {
-    const dirPath = path.join(projectsDir, projectDir);
-    const jsonlFiles = await listJsonlFiles(dirPath);
-    for (const filePath of jsonlFiles) {
-      const sessionId = path.basename(filePath, ".jsonl");
-      // Being LISTED under the root is not evidence of being inside it: a
-      // symlink here resolves wherever it likes, and everything below this line
-      // stats and reads the file. One entry is skipped, not the directory —
-      // a link out of the store is a lost row, not a lost project.
-      if (!(await isResolvedPathInsideRoot(filePath, resolvedProjectsRoot))) {
-        continue;
-      }
-      try {
-        const stat = await fs.stat(filePath);
-        const stamp = { mtimeMs: stat.mtimeMs, size: stat.size };
-        const cached = prevFiles?.[filePath];
-        if (cached && cached.stamp.mtimeMs === stamp.mtimeMs && cached.stamp.size === stamp.size) {
-          // Unchanged + previously LISTED file — reuse the cached entry without a
-          // body read (skips the metadata stream + the 64 KB ai-title tail, the
-          // dominant cost). Only listed entries are ever cached (below), so a hit
-          // is always safe to push; a member/empty file is never a hit.
-          files[filePath] = cached;
-          entries.push(cached.entry);
-          continue;
-        }
-        const built = await buildClaudeEntry(filePath, sessionId, configDir);
-        if (!built) {
-          unreadable++;
-        } else if (built.isTeamMember || built.isEmpty) {
-          // Members thread under their leader (D5); content-less sessions
-          // (only a /clear, a caveat banner, …) are junk — neither is listed (D18).
-          // Excluded sessions carry no listed entry, so they are NOT cached and get
-          // re-evaluated each refresh (cheap relative to a full first-load scan).
-        } else {
-          files[filePath] = { stamp, entry: built.entry };
-          entries.push(built.entry);
-        }
-      } catch {
-        unreadable++;
-      }
-    }
-  }
-
-  return { entries, unreadable, cache: { kind: "files", files } };
+  const filePaths = (
+    await mapBounded(projectDirs, CLAUDE_SCAN_CONCURRENCY, (projectDir) =>
+      listJsonlFiles(path.join(projectsDir, projectDir)),
+    )
+  ).flat();
+  const read = await mapBounded(filePaths, CLAUDE_SCAN_CONCURRENCY, (filePath) =>
+    readClaudeSessionFile(filePath, configDir, resolvedProjectsRoot, prevFiles, false),
+  );
+  return claudeListResult(new Map(filePaths.map((filePath, i) => [filePath, read[i] as ClaudeFileOutcome])));
 }
 
 /**

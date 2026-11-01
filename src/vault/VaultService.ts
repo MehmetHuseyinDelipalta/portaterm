@@ -200,7 +200,7 @@ export interface VaultLaunchTarget {
 // no writable title field — absent, not stubbed.
 const defaultAdapters = {
   claude: {
-    list: (prev) => readClaudeSessions({}, prev),
+    list: (prev, hint) => readClaudeSessions({}, prev, hint),
     detail: (sessionId, limit) => readClaudeDetail(sessionId, {}, limit),
     entry: (sessionId) => lookupClaudeEntry(sessionId),
     record: (sessionId, msgRef) => readClaudeMessageRecord(sessionId, msgRef),

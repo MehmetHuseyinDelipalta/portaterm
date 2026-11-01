@@ -235,6 +235,18 @@ describe("production list readers", () => {
       expect(fn).toHaveBeenCalledTimes(1);
     }
   });
+  it("hands a Claude watcher hint to the Claude reader, with the cache it last returned", async () => {
+    const svc = new VaultService();
+    await svc.refresh();
+    const cache = m.claudeSessions.mock.results[0].value;
+    await svc.refresh({ hint: { agent: "claude", paths: ["/home/.claude/projects/-w/a.jsonl"] } });
+    expect(m.claudeSessions).toHaveBeenCalledTimes(2);
+    expect(m.claudeSessions.mock.calls[1]).toEqual([
+      {},
+      (await cache).cache,
+      { paths: ["/home/.claude/projects/-w/a.jsonl"] },
+    ]);
+  });
 });
 
 describe("production native renamers", () => {

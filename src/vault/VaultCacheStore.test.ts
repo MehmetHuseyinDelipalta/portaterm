@@ -219,6 +219,32 @@ describe("VaultCacheStore", () => {
       expect(store.load()).toBeNull();
     });
 
+    it.each([
+      ["excluded is not a record", { excluded: [] }],
+      ["an excluded stamp is malformed", { excluded: { "/a/c.jsonl": { mtimeMs: "x", size: 1 } } }],
+      ["unreadablePaths is not an array", { unreadablePaths: "/a/d.jsonl" }],
+      ["an unreadable path is not a string", { unreadablePaths: ["/a/d.jsonl", 7] }],
+    ])("rejects a files cache whose %s", (_label, extra) => {
+      const bad = { ...doc(), agents: { claude: { kind: "files", files: {}, ...extra } } };
+      harness.files.set(CACHE_FILE, JSON.stringify(bad));
+      expect(store.load()).toBeNull();
+    });
+
+    it("accepts a files cache with excluded stamps and unreadable paths", async () => {
+      const good = doc({
+        agents: {
+          claude: {
+            kind: "files",
+            files: {},
+            excluded: { "/a/c.jsonl": { mtimeMs: 3, size: 4 } },
+            unreadablePaths: ["/a/d.jsonl"],
+          },
+        },
+      });
+      await store.save(good);
+      expect(store.load()).toEqual(good);
+    });
+
     it("rejects an unknown reader-cache discriminant", () => {
       harness.files.set(CACHE_FILE, JSON.stringify({ ...doc(), agents: { claude: { kind: "weird" } } }));
       expect(store.load()).toBeNull();

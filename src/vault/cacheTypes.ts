@@ -138,6 +138,12 @@ export type ReaderListCache =
   | {
       kind: "files";
       files: Record<string /* absolute path */, { stamp: FileStamp; entry: VaultSessionEntry }>;
+      /** Files read and kept off the list — team members, content-less sessions — by
+       *  the stamp they had, so an unchanged one is not read again to be excluded again. */
+      excluded?: Record<string /* absolute path */, FileStamp>;
+      /** Files the last pass could not read. A hinted pass leaves the others alone,
+       *  so it counts these again; a full pass reads them again. */
+      unreadablePaths?: string[];
     }
   | {
       kind: "store";

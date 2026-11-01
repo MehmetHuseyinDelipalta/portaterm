@@ -79,9 +79,16 @@ containment-checked under the projects directory (`:61,100,140`), with ids passi
 | `store` | the `.db` **and** its `-wal`, deliberately not `-shm` | codex, opencode |
 | `cursor-files` | per-chat-id location + IDE source stamps, all LRU-capped | cursor |
 
-Defined `cacheTypes.ts:13,38-41,131`. Only entries that were actually *listed* are cached —
-a Claude team-member or content-less transcript is excluded from both
-(`claudeReader.ts:425-433`) — so a cache hit is always safe to push without re-validation.
+Defined `cacheTypes.ts:13,38-41,131`. Only entries that were actually *listed* are cached as
+entries, so a cache hit is always safe to push without re-validation. A Claude team-member
+or content-less transcript is never listed, but its stamp is kept apart (`excluded`), so an
+unchanged one is not read again only to be excluded again; files the last pass could not
+read are kept as `unreadablePaths`. A full Claude pass reads project folders and files
+sixteen at a time (`CLAUDE_SCAN_CONCURRENCY`). A watcher's hint re-reads only the session
+files it names and carries every other file's outcome forward; a path only a full pass can
+account for — outside the store, the store or a project folder itself, a non-session file —
+or a missing previous cache falls back to a full pass, and a path below a session folder
+(its subagents) is ignored, being never a list row (`readClaudeSessions`).
 
 ## 4. The Shared Pipeline
 
