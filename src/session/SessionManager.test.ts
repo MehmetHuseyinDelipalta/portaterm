@@ -700,12 +700,12 @@ describe("SessionManager: clearScrollback", () => {
     ptyMock!.onData?.("some output data");
 
     const session = sm.getSession(id);
-    expect(session!.scrollbackCache.length).toBeGreaterThan(0);
+    expect(session!.scrollback.size).toBeGreaterThan(0);
 
     sm.clearScrollback(id);
 
-    expect(session!.scrollbackCache).toEqual([]);
-    expect(session!.scrollbackSize).toBe(0);
+    expect(session!.scrollback.text()).toBe("");
+    expect(session!.scrollback.size).toBe(0);
 
     sm.dispose();
   });
@@ -825,8 +825,8 @@ describe("SessionManager: scrollback cache", () => {
     ptyMock!.onData?.("world");
 
     const session = sm.getSession(id);
-    expect(session!.scrollbackCache).toEqual(["hello ", "world"]);
-    expect(session!.scrollbackSize).toBe(11);
+    expect(session!.scrollback.text()).toBe("hello world");
+    expect(session!.scrollback.size).toBe(11);
 
     sm.dispose();
   });
@@ -843,15 +843,15 @@ describe("SessionManager: scrollback cache", () => {
     ptyMock!.onData?.(chunk520k);
 
     const session = sm.getSession(id);
-    expect(session!.scrollbackSize).toBe(520_000);
+    expect(session!.scrollback.size).toBe(520_000);
 
     // Add 10KB more — total 530KB > 524,288 → should evict the 520KB chunk
     const chunk10k = "y".repeat(10_000);
     ptyMock!.onData?.(chunk10k);
 
     // After eviction, only the 10KB chunk should remain
-    expect(session!.scrollbackSize).toBe(10_000);
-    expect(session!.scrollbackCache).toEqual([chunk10k]);
+    expect(session!.scrollback.size).toBe(10_000);
+    expect(session!.scrollback.text()).toBe(chunk10k);
 
     sm.dispose();
   });
@@ -1245,11 +1245,11 @@ describe("SessionManager: getMemoryMetrics", () => {
     // Set mock values on the output buffers
     (session1.outputBuffer as unknown as { bufferSize: number }).bufferSize = 1000;
     (session1.outputBuffer as unknown as { unackedCharCount: number }).unackedCharCount = 500;
-    session1.scrollbackSize = 2000;
+    session1.scrollback.append("a".repeat(2000));
 
     (session2.outputBuffer as unknown as { bufferSize: number }).bufferSize = 3000;
     (session2.outputBuffer as unknown as { unackedCharCount: number }).unackedCharCount = 1500;
-    session2.scrollbackSize = 4000;
+    session2.scrollback.append("b".repeat(4000));
 
     const metrics = sm.getMemoryMetrics();
 

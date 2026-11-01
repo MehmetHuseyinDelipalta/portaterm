@@ -37,7 +37,7 @@ allowed to keep producing them at all**.
 
 | Not here | Where |
 |----------|-------|
-| Repainting a re-created webview | `scrollbackCache` — [session-manager.md](session-manager.md) |
+| Repainting a re-created webview | `ScrollbackCache` — [session-manager.md](session-manager.md) |
 | Surviving a window reload | snapshot pipeline — [session-manager.md](session-manager.md) |
 | The scrollback the user scrolls | xterm's own, sized by `anywhereTerminal.scrollback` (`SettingsReader.ts:22`, applied `TerminalFactory.ts:234`) |
 | Parsing or interpreting the bytes | `oscParser` — [pty-manager.md](pty-manager.md) |

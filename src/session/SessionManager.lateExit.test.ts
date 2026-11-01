@@ -258,7 +258,7 @@ describe("the guards behind the detach", () => {
     spawned[0].emitData("prompt$ ");
     const session = sm.getSession(id)!;
     const append = session.outputBuffer.append as ReturnType<typeof vi.fn>;
-    const before = { appends: append.mock.calls.length, scrollback: [...session.scrollbackCache] };
+    const before = { appends: append.mock.calls.length, scrollback: session.scrollback.text() };
     const late = (session.pty as unknown as Callbacks)._onDataCallback;
 
     sm.destroySession(id);
@@ -267,7 +267,7 @@ describe("the guards behind the detach", () => {
     late?.("later output");
 
     expect(append.mock.calls.length).toBe(before.appends);
-    expect(session.scrollbackCache).toEqual(before.scrollback);
+    expect(session.scrollback.text()).toBe(before.scrollback);
     sm.dispose();
   });
 

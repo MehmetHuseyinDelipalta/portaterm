@@ -6,6 +6,7 @@
 import type { PtySession } from "../pty/PtySession";
 import type { TabColorId, TabIconId } from "../shared/tabAppearance";
 import type { MessageSender, OutputBuffer } from "./OutputBuffer";
+import type { ScrollbackCache } from "./ScrollbackCache";
 import type { CommandTracker } from "./TrackedCommand";
 
 /**
@@ -82,10 +83,8 @@ export interface TerminalSession {
   number: number;
   /** Output buffer instance for this session */
   outputBuffer: OutputBuffer;
-  /** Cached scrollback chunks for view restore */
-  scrollbackCache: string[];
-  /** Total character count across all scrollback chunks */
-  scrollbackSize: number;
+  /** Recent output for view restore, bounded, oldest dropped first */
+  scrollback: ScrollbackCache;
   /** Timestamp of session creation */
   createdAt: number;
   /** Current terminal columns */

@@ -26,6 +26,7 @@ import { EditorPanelRegistry } from "./EditorPanelRegistry";
 import type { MessageSender } from "./OutputBuffer";
 import { OutputBuffer } from "./OutputBuffer";
 import type { PaneEvidenceStore } from "./PaneEvidenceStore";
+import { ScrollbackCache } from "./ScrollbackCache";
 import { ScrollbackDumpCoordinator, type ScrollbackDumpPayload } from "./ScrollbackDumpCoordinator";
 import type {
   LiveEditorPanelsRecord,
@@ -645,8 +646,7 @@ export class SessionManager {
       isActive: !isSplitPane && !restoringExited && restoreFrom === undefined,
       number,
       outputBuffer,
-      scrollbackCache: [],
-      scrollbackSize: 0,
+      scrollback: new ScrollbackCache(SCROLLBACK_MAX_SIZE),
       createdAt: Date.now(),
       cols: restoreFrom?.metadata.cols ?? 80,
       rows: restoreFrom?.metadata.rows ?? 30,
@@ -810,7 +810,7 @@ export class SessionManager {
         return;
       }
       session.outputBuffer.append(data);
-      this.appendToScrollback(session, data);
+      session.scrollback.append(data);
       this.snapshots.recordData(session, data);
       // NOTE: command-output capture is NOT done here. The OSC parser emits
       // ordered `text`/`commandStart`/`commandEnd` events; the tracker drives
@@ -1570,8 +1570,7 @@ export class SessionManager {
     if (!session) {
       return;
     }
-    session.scrollbackCache = [];
-    session.scrollbackSize = 0;
+    session.scrollback.clear();
     session.commandTracking.clear();
     this.snapshots.commitClearSnapshot(sessionId);
   }
@@ -1610,7 +1609,7 @@ export class SessionManager {
     if (!session) {
       return "";
     }
-    return session.scrollbackCache.join("");
+    return session.scrollback.text();
   }
 
   // ─── Shell-integration read API ─────────────────────────────────────
@@ -1681,7 +1680,7 @@ export class SessionManager {
 
     for (const session of this.sessions.values()) {
       const bufferSize = session.outputBuffer.bufferSize;
-      const { scrollbackSize } = session;
+      const scrollbackSize = session.scrollback.size;
       const unackedCharCount = session.outputBuffer.unackedCharCount;
 
       totalBufferSize += bufferSize;
@@ -2133,20 +2132,6 @@ export class SessionManager {
       return preferred;
     }
     return this.findAvailableNumber();
-  }
-
-  // ─── Private: Scrollback Cache ──────────────────────────────────
-
-  /** Append data to a session's scrollback cache with FIFO eviction. */
-  private appendToScrollback(session: TerminalSession, data: string): void {
-    session.scrollbackCache.push(data);
-    session.scrollbackSize += data.length;
-
-    // Evict oldest chunks until under limit
-    while (session.scrollbackSize > SCROLLBACK_MAX_SIZE && session.scrollbackCache.length > 0) {
-      const evicted = session.scrollbackCache.shift()!;
-      session.scrollbackSize -= evicted.length;
-    }
   }
 
   // ─── Private: Safe Message Posting ──────────────────────────────

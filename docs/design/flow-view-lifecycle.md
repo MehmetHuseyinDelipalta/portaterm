@@ -70,7 +70,7 @@ stateDiagram-v2
         [*] --> SessionsAlive
         SessionsAlive: subscriptions disposed (:251)
         SessionsAlive: pauseOutputForView (:262)
-        SessionsAlive: PTY + scrollbackCache intact
+        SessionsAlive: PTY + scrollback cache intact
     }
 ```
 

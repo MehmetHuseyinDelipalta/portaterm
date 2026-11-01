@@ -126,7 +126,12 @@ the owning tab's `rootTabId`.
 `wirePty` (`:591`) is extracted so a replacement PTY can be re-wired onto the
 same session; it reads `session.outputBuffer` live rather than capturing it, so a
 buffer swap stays correct (`:594`). Each chunk fans out three ways — output
-buffer (`:594`), scrollback cache (`:595`), snapshot mirror (`:596`).
+buffer (`:594`), scrollback cache (`:595`), snapshot mirror (`:596`). The scrollback
+cache (`ScrollbackCache.ts`) keeps 512 KB, dropping the oldest output first: tiny chunks
+(an agent TUI's spinner frames) are joined into pieces of up to 4 KB, and dropped pieces
+are passed by a head index, the array compacted only once they outweigh the kept ones —
+so an append costs O(1) amortized, where an `Array.shift()` per chunk used to copy the
+whole array.
 Command-output capture is deliberately *not* here: the OSC parser emits ordered
 events and the tracker drives capture from them, so a chunk shaped
 `[output][OSC D]` cannot close a command before its output is recorded (`:597`).
