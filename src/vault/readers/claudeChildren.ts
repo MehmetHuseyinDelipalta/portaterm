@@ -20,12 +20,11 @@ import {
   WORKFLOW_AGENT_STEM_RE,
   WORKFLOW_ID_RE,
 } from "./claudePaths";
-import { readFirstUserRecord, readManifestJson, streamClaudeRecords } from "./claudeRecords";
-import { createClaudeUsageCollector } from "./claudeUsage";
+import { readFirstUserRecord, readManifestJson } from "./claudeRecords";
+import { scanClaudeTranscript } from "./claudeScan";
 import {
   type ClaudeChildStub,
   classifyClaudeStyleEvents,
-  createSpawnIdCollector,
   finalizeDetail,
   scopeDirectChildren,
   sourceVerdict,
@@ -54,26 +53,19 @@ export async function readClaudeSubagentDetail(
   // Collect this subagent's spawn ids (whole stream, ALL records — the file is the
   // sidechain) while reading; scope the session's flat subagent list to its direct
   // children. Both reads run in parallel.
-  const spawn = createSpawnIdCollector(true);
-  const usage = createClaudeUsageCollector();
   const [read, allStubs] = await Promise.all([
-    streamClaudeRecords(filePath, {
-      onRecord: (rec) => {
-        spawn.onRecord(rec);
-        usage.onRecord(rec);
-      },
-    }),
+    scanClaudeTranscript(filePath, { includeSidechain: true }),
     listClaudeSubagentStubs(parentId, options),
   ]);
   if (read === null) {
     return null;
   }
-  const childStubs = scopeDirectChildren(allStubs, spawn.ids);
+  const childStubs = scopeDirectChildren(allStubs, read.spawnIds);
   const detail = classifyClaudeStyleEvents(read.records, {
     limit,
     includeSidechain: true,
     childStubs,
-    usage: usage.result(),
+    usage: read.usage,
   });
   return finalizeDetail(formatEntryId("claude", sessionId), detail, sourceVerdict(read.truncated));
 }
@@ -364,12 +356,11 @@ export async function readClaudeWorkflowAgentDetail(
   if (!filePath) {
     return null;
   }
-  const usage = createClaudeUsageCollector();
-  const read = await streamClaudeRecords(filePath, { onRecord: usage.onRecord });
+  const read = await scanClaudeTranscript(filePath, { includeSidechain: true });
   if (read === null) {
     return null;
   }
-  const detail = classifyClaudeStyleEvents(read.records, { limit, includeSidechain: true, usage: usage.result() });
+  const detail = classifyClaudeStyleEvents(read.records, { limit, includeSidechain: true, usage: read.usage });
   return finalizeDetail(formatEntryId("claude", sessionId), detail, sourceVerdict(read.truncated));
 }
 

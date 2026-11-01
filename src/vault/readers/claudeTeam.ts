@@ -108,8 +108,8 @@ function teammateBoundary(rec: Record<string, unknown>): ReturnType<typeof parse
  * A streaming side-collector for a parent session's team context (review W3/N1):
  * the `teamName`s it recorded (collected across the whole stream) and whether it
  * is itself a non-lead member (decided on the first text-bearing user record, the
- * same predicate as the list/grouping paths). Pass `.onRecord` to
- * `streamClaudeRecords`, then read `.ctx`. Centralizes the predicate so the
+ * same predicate as the list/grouping paths). Feed it every record
+ * (`scanClaudeTranscript` does), then read `.ctx`. Centralizes the predicate so the
  * parent-detail path and the team-group resolver agree on leadership.
  */
 export function teamContextCollector(): {

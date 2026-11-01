@@ -40,20 +40,13 @@ import {
   resolveClaudeWorkflowAgentPath,
   scanClaudeSessionPath,
 } from "./claudePaths";
-import { extractUserText, readLatestTailFields, streamClaudeRecords } from "./claudeRecords";
-import {
-  buildTeamThread,
-  readClaudeTeamSegment,
-  recordTeamIdentity,
-  teamContextCollector,
-  teammateMessageHook,
-} from "./claudeTeam";
-import { createClaudeUsageCollector } from "./claudeUsage";
+import { extractUserText, readLatestTailFields } from "./claudeRecords";
+import { scanClaudeTranscript } from "./claudeScan";
+import { buildTeamThread, readClaudeTeamSegment, recordTeamIdentity, teammateMessageHook } from "./claudeTeam";
 import {
   boundTimeline,
   clampDetailLimit,
   classifyClaudeStyleEvents,
-  createSpawnIdCollector,
   finalizeDetail,
   MAX_TIMELINE_ITEMS,
   mergeTimestampedItems,
@@ -197,19 +190,11 @@ export async function readClaudeDetail(
   // the root's `Agent`/`Task` spawn ids (non-sidechain only) used to scope subagent
   // stubs to root's DIRECT children — so a subagent spawned inside another subagent
   // is NOT flattened under the root (support-nested-subagent-preview D2).
-  const { ctx, onRecord } = teamContextCollector();
-  const spawn = createSpawnIdCollector(false);
-  const usage = createClaudeUsageCollector();
-  const read = await streamClaudeRecords(filePath, {
-    onRecord: (rec) => {
-      onRecord(rec);
-      spawn.onRecord(rec);
-      usage.onRecord(rec);
-    },
-  });
+  const read = await scanClaudeTranscript(filePath, { includeSidechain: false });
   if (read === null) {
     return null;
   }
+  const ctx = read.team;
   // childStubs = flat subagents ∪ workflow groups (each folds into its spawn call
   // or merges by timestamp). Team members are NOT collapsed groups any more:
   // their communication turns are threaded as `teammateTurn` nodes (D13/D14). A
@@ -223,12 +208,12 @@ export async function readClaudeDetail(
   // Progress-bearing runs render INLINE as self-collapsing `workflowBoard` items (no
   // wrapper layer) — threaded with the teammate turns by timestamp below. Fallback
   // runs fold in as lazy "Workflow:" group stubs (classify merges them).
-  const childStubs = [...scopeDirectChildren(subStubs, spawn.ids), ...wfNodes.stubs];
+  const childStubs = [...scopeDirectChildren(subStubs, read.spawnIds), ...wfNodes.stubs];
   const detail = classifyClaudeStyleEvents(read.records, {
     limit,
     childStubs,
     teammateMessage: teammateMessageHook,
-    usage: usage.result(),
+    usage: read.usage,
   });
   // Thread the teammate turns + inline workflow boards into the classified timeline
   // by timestamp, then re-bound (classify already bounded its stream-derived items) (D14).

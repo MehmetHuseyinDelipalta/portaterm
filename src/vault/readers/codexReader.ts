@@ -42,7 +42,8 @@ import {
   truncate,
   truncateRich,
 } from "./detail";
-import { streamJsonlLines, streamJsonlObjects } from "./jsonlStream";
+import { type JsonlFollowCache, jsonlFollowCache } from "./jsonlFollow";
+import { streamJsonlLines } from "./jsonlStream";
 import { findRecordLine, type RecordLineResult } from "./recordLine";
 import { parseEpochMilliseconds, parseStoredTimestamp } from "./timestamp";
 import { createToolTally, toolStats } from "./toolTally";
@@ -1073,22 +1074,26 @@ function msgRefOf(rec: Record<string, unknown>): { msgRef?: string } {
   return n === undefined ? {} : { msgRef: `#${n}` };
 }
 
-async function streamCodexRecords(
+/**
+ * Through the shared follow cache (`jsonlFollow.ts`): a re-read of the same
+ * rollout — the live follow, "load more" — parses only what was appended. The
+ * reader's `lineNo` is the physical line, counted before any skip, which is what
+ * the `#n` transcript locator means.
+ */
+function streamCodexRecords(
   filePath: string,
+  cache: JsonlFollowCache = jsonlFollowCache,
 ): Promise<{ records: Record<string, unknown>[]; truncated: boolean } | null> {
-  const buffer = createBoundedRecordBuffer();
-  try {
-    // The generator's `lineNo` is the physical line, counted before any skip —
-    // the same number the local counter produced, and what the `#n` transcript
-    // locator means.
-    for await (const { record, lineNo } of streamJsonlObjects(filePath)) {
+  return cache.read(
+    `codex\0${filePath}`,
+    filePath,
+    () => createBoundedRecordBuffer(),
+    (buffer, record, lineNo) => {
       stampLineOrdinal(record, lineNo);
       buffer.push(record);
-    }
-  } catch {
-    return null;
-  }
-  return buffer.result();
+    },
+    (buffer) => buffer.result(),
+  );
 }
 
 /** Find the rollout jsonl by the session uuid embedded in its filename. */

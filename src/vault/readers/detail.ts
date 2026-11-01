@@ -555,7 +555,7 @@ function buildClaudeQuestionItem(
 /**
  * Whole-stream collector of `Agent`/`Task` spawn `tool_use` ids — the parent edges
  * used to scope a transcript to its DIRECT children (support-nested-subagent-preview
- * D2). Pass `.onRecord` to `streamClaudeRecords` so it sees EVERY record (even those
+ * D2). Feed it every record (`scanClaudeTranscript` does) so it sees EVERY record (even those
  * the head+tail bound later drops — a direct child whose spawn call sits in the
  * truncated middle is still recognized), then read `.ids`. Mirrors the classifier's
  * record filtering: a ROOT read counts non-`isSidechain` records only (an older mixed

@@ -6,7 +6,8 @@
 
 import * as fs from "node:fs/promises";
 import { createBoundedRecordBuffer } from "./detail";
-import { streamJsonlLines, streamJsonlObjects } from "./jsonlStream";
+import { createJsonlFollowCache } from "./jsonlFollow";
+import { streamJsonlLines } from "./jsonlStream";
 import { parseStoredTimestamp } from "./timestamp";
 import { classifyUserRecord } from "./userRecord";
 
@@ -159,29 +160,29 @@ export async function readLatestTailFields(filePath: string): Promise<ClaudeTail
  * Read parseable records from a session jsonl (skip-malformed, D8), bounded to a
  * head + tail window so a tens-of-MB transcript never fully materializes (W1).
  * Returns `truncated` when the middle was dropped.
+ *
+ * One-shot: nothing is kept between calls. The detail readers use
+ * `scanClaudeTranscript`, which reads through the same line reader but keeps its
+ * state so a re-read parses only appended lines.
  */
 export async function streamClaudeRecords(
   filePath: string,
   opts: { onRecord?: (rec: Record<string, unknown>) => void } = {},
 ): Promise<{ records: Record<string, unknown>[]; truncated: boolean } | null> {
-  const buffer = createBoundedRecordBuffer();
-  try {
-    for await (const { record } of streamJsonlObjects(filePath)) {
-      try {
-        // Fire BEFORE buffering so a side-collector (e.g. teamName gathering,
-        // D4) sees every record even when the head+tail bound later drops the
-        // middle of a very large transcript (W1).
-        opts.onRecord?.(record);
-        buffer.push(record);
-      } catch {
-        // A throwing hook costs that one record, never the file: the per-line
-        // catch that used to cover it now lives inside the generator (D8).
-      }
-    }
-  } catch {
-    return null; // stream/open failure → unreadable
-  }
-  return buffer.result();
+  return createJsonlFollowCache({ maxEntries: 1 }).read(
+    "once",
+    filePath,
+    () => createBoundedRecordBuffer(),
+    (buffer, record) => {
+      // Fire BEFORE buffering so a side-collector (e.g. teamName gathering,
+      // D4) sees every record even when the head+tail bound later drops the
+      // middle of a very large transcript (W1). A throwing hook costs that one
+      // record, never the file (D8).
+      opts.onRecord?.(record);
+      buffer.push(record);
+    },
+    (buffer) => buffer.result(),
+  );
 }
 
 /** Cheaply read a transcript's first user message text + timestamp (head only). */
