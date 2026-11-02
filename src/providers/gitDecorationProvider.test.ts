@@ -1262,3 +1262,102 @@ describe("createGitDecorationProvider — revision eviction under workspace filt
     provider.dispose();
   });
 });
+
+describe("createGitDecorationProvider — a repo's rebuild against the others (perf C8)", () => {
+  const S = "/work/shared.ts";
+
+  async function twoRepos(a: Array<{ path: string; status: Status }>, b: Array<{ path: string; status: Status }>) {
+    vi.useFakeTimers();
+    const repoA = makeRepo("/work/repoA", a);
+    const repoB = makeRepo("/work/repoB", b);
+    const { api } = makeApi({ repos: [repoA.repo, repoB.repo] });
+    const { extObj } = makeExtension({ api });
+    const provider = createGitDecorationProvider({ getExtension: () => extObj as never });
+    await vi.runAllTimersAsync();
+    vi.advanceTimersByTime(100);
+    const changes: Array<{ path: string; status: GitStatus | null }> = [];
+    provider.onDidChange((d) => changes.push(...d.changes));
+    const rebuildA = (next: Array<{ path: string; status: Status }>) => {
+      repoA.setChanges(next);
+      repoA.fire();
+      vi.advanceTimersByTime(100);
+    };
+    return { provider, changes, rebuildA };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([
+    [
+      "raised above the other repo's status",
+      Status.UNTRACKED,
+      Status.BOTH_MODIFIED,
+      [{ path: S, status: "conflicted" }],
+    ],
+    ["changed while still below the other repo's", Status.UNTRACKED, Status.INDEX_ADDED, []],
+    [
+      "lowered from above the other repo's, to it",
+      Status.BOTH_MODIFIED,
+      Status.UNTRACKED,
+      [{ path: S, status: "modified" }],
+    ],
+    ["dropped while the other repo still claims it higher", Status.UNTRACKED, undefined, []],
+    ["dropped from above the other repo's", Status.BOTH_MODIFIED, undefined, [{ path: S, status: "modified" }]],
+  ] as const)("a path claimed by both repos, %s", async (_label, before, after, expected) => {
+    const { provider, changes, rebuildA } = await twoRepos(
+      [{ path: S, status: before }],
+      [{ path: S, status: Status.MODIFIED }],
+    );
+    rebuildA(after === undefined ? [] : [{ path: S, status: after }]);
+    expect(changes).toEqual(expected);
+    expect(provider.getStatus(S).status).toBe(expected[0]?.status ?? "modified");
+    provider.dispose();
+  });
+
+  it("emits a path this repo alone claimed as clean once it leaves", async () => {
+    const { provider, changes, rebuildA } = await twoRepos([{ path: "/work/repoA/a.ts", status: Status.MODIFIED }], []);
+    rebuildA([]);
+    expect(changes).toEqual([{ path: "/work/repoA/a.ts", status: null }]);
+    expect(provider.getStatus("/work/repoA/a.ts").status).toBeUndefined();
+    provider.dispose();
+  });
+
+  it("emits a new path, and nothing for the paths that kept their status", async () => {
+    const { provider, changes, rebuildA } = await twoRepos(
+      [
+        { path: "/work/repoA/kept.ts", status: Status.MODIFIED },
+        { path: S, status: Status.UNTRACKED },
+      ],
+      [{ path: S, status: Status.UNTRACKED }],
+    );
+    rebuildA([
+      { path: "/work/repoA/kept.ts", status: Status.MODIFIED },
+      { path: S, status: Status.UNTRACKED },
+      { path: "/work/repoA/new.ts", status: Status.UNTRACKED },
+    ]);
+    expect(changes).toEqual([{ path: "/work/repoA/new.ts", status: "untracked" }]);
+    provider.dispose();
+  });
+
+  it("asks the other repos about no path whose status here did not change", async () => {
+    const many = Array.from({ length: 1000 }, (_, i) => ({ path: `/work/repoA/f${i}.ts`, status: Status.UNTRACKED }));
+    vi.useFakeTimers();
+    const repos = ["A", "B", "C"].map((n, i) => makeRepo(`/work/repo${n}`, i === 0 ? many : []));
+    const { api } = makeApi({ repos: repos.map((r) => r.repo) });
+    const { extObj } = makeExtension({ api });
+    const provider = createGitDecorationProvider({ getExtension: () => extObj as never });
+    await vi.runAllTimersAsync();
+    vi.advanceTimersByTime(100);
+
+    const get = vi.spyOn(Map.prototype, "get");
+    repos[0].fire(); // a status refresh that changed nothing
+    const lookups = get.mock.calls.length;
+    get.mockRestore();
+    // One lookup to build this repo's map and one against its previous map per
+    // path; asking the other two repos too would be two more per path.
+    expect(lookups).toBeLessThanOrEqual(2 * many.length + 50);
+    provider.dispose();
+  });
+});

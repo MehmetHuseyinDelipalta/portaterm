@@ -210,6 +210,14 @@ working-tree-modified). `pickHigherSeverity` (`gitStatusMapping.ts:79`) resolves
 fixed order — conflicted 6, deleted 5, modified 4, renamed 3, added 2, untracked 1,
 ignored 0 (`src/providers/gitStatusMapping.ts:64-72`).
 
+A repository's status refresh rebuilds its own map and diffs it against the previous one:
+a path whose status in that repository did not change keeps its merged status, so it is
+skipped, and only the paths that moved are merged with the other repositories' claims
+(`rebuildRepoMap`). The order being total, the merged status is the higher of this
+repository's and the others' best, whichever order they are read in — so a refresh of a
+repository with thousands of untracked files costs a lookup per path, not one per path
+per repository.
+
 ### 6.2 Propagation to folders
 
 A collapsed folder shows the dominant status among its descendants.

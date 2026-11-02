@@ -628,49 +628,33 @@ export function createGitDecorationProvider(options: CreateGitDecorationProvider
 
     repoMaps.set(key, newMap);
 
-    // Compute the delta against `oldMap` joined with other repos.
+    // The delta against `oldMap` joined with the other repos. Only this repo's
+    // map changed, so a path whose status here is unchanged keeps its merged
+    // status too and is skipped: a status refresh of a repo with thousands of
+    // untracked files touches only the paths that moved, and asks the other
+    // repos about those alone. Severities are a total order, so the merged
+    // status is the higher of this repo's and the others' whatever their order.
     const delta: Array<{ path: string; status: GitStatus | null }> = [];
-    // Paths in the new map that changed value OR are new.
-    for (const [absPath, _status] of newMap) {
-      const oldStatus = oldMap.get(absPath);
-      // We also need to consider whether another repo's claim on this path
-      // changes the merged answer — recompute merged across all repos.
-      const merged = computeMergedStatus(absPath);
-      const prevMerged =
-        oldStatus !== undefined
-          ? // The previous merged value before this rebuild equals the
-            // merged value computed if we put oldMap back in place. But since
-            // only this repo's map changed in this rebuild, the previous
-            // merged value is `pickHigherSeverity(oldStatus, otherReposBest)`,
-            // and the new merged is `pickHigherSeverity(status, otherReposBest)`.
-            // We re-derive using the current repoMaps state (newMap is already
-            // installed) by swapping in oldStatus.
-            (() => {
-              const other = computeMergedExcludingRepo(absPath, key);
-              if (oldStatus === undefined) {
-                return other;
-              }
-              return other === undefined ? oldStatus : pickHigherSeverity(oldStatus, other);
-            })()
-          : computeMergedExcludingRepo(absPath, key);
-      if (merged !== prevMerged) {
+    const consider = (absPath: string, before: GitStatus | undefined, after: GitStatus | undefined): void => {
+      const other = computeMergedExcludingRepo(absPath, key);
+      const withOther = (own: GitStatus | undefined) =>
+        own === undefined ? other : other === undefined ? own : pickHigherSeverity(own, other);
+      const merged = withOther(after);
+      if (merged !== withOther(before)) {
         noteMergedChange(absPath, merged);
         delta.push({ path: absPath, status: merged ?? null });
+      }
+    };
+    for (const [absPath, status] of newMap) {
+      const oldStatus = oldMap.get(absPath);
+      if (oldStatus !== status) {
+        consider(absPath, oldStatus, status);
       }
     }
-    // Paths that disappeared from this repo's map but still might be claimed
-    // by another repo.
-    for (const absPath of oldMap.keys()) {
-      if (newMap.has(absPath)) {
-        continue;
-      }
-      const merged = computeMergedStatus(absPath);
-      const prevOther = computeMergedExcludingRepo(absPath, key);
-      const prevMerged =
-        prevOther === undefined ? oldMap.get(absPath) : pickHigherSeverity(oldMap.get(absPath)!, prevOther);
-      if (merged !== prevMerged) {
-        noteMergedChange(absPath, merged);
-        delta.push({ path: absPath, status: merged ?? null });
+    // Paths that left this repo's map, which another repo may still claim.
+    for (const [absPath, oldStatus] of oldMap) {
+      if (!newMap.has(absPath)) {
+        consider(absPath, oldStatus, undefined);
       }
     }
 
