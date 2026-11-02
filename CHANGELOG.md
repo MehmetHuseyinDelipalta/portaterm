@@ -7,6 +7,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.49.7] — 2026-11-02
+
+### Fixed
+
+- **Terminal output with long unbroken lines no longer slows link detection.** A long run of characters without spaces — base64, a minified file — took about 6 ms per line to scan for file links; it now takes a fraction of a millisecond.
+- **Resizing a split tab measures its panes once.** Each pane was measured and resized in turn, making the browser recompute the layout for every pane; all panes are now measured first and resized after.
+- **Git status in the file tree costs less in large repositories.** A status refresh compared every changed file against every open repository, even files whose status had not moved; now only the files that changed are looked at.
+- **The Worktree view no longer runs git for every folder on each rebuild.** Which repository a workspace folder belongs to is remembered until its `.git` changes.
+- **Codex sessions without a usable database list faster.** Each rollout file is read once until it changes, instead of on every refresh, and several are read at a time.
+- **The Vault opens without reading its saved list from disk at that moment.** The list is loaded in the background while the terminal view starts. Claude sessions cancelled before any reply are no longer read to their end to find a model they never had.
+
 ## [0.49.6] — 2026-11-02
 
 ### Fixed
