@@ -19,6 +19,20 @@ import type { Terminal } from "@xterm/xterm";
  * @returns `{ cols, rows }` if a resize is needed, or `null` if no resize is necessary.
  */
 export function fitTerminal(terminal: Terminal, parentElement: HTMLElement): { cols: number; rows: number } | null {
+  const size = measureFit(terminal, parentElement);
+  if (size) {
+    clearRenderer(terminal);
+  }
+  return size;
+}
+
+/**
+ * The cols/rows `terminal` should take in `parentElement`, or `null` when it
+ * already has them or cannot be measured — reading layout and writing nothing.
+ * Measure every pane of a split before resizing any: a resize between two
+ * measurements makes the browser compute the layout again for the second.
+ */
+export function measureFit(terminal: Terminal, parentElement: HTMLElement): { cols: number; rows: number } | null {
   const element = terminal.element;
   if (!element) {
     return null;
@@ -56,7 +70,15 @@ export function fitTerminal(terminal: Terminal, parentElement: HTMLElement): { c
   if (terminal.rows === rows && terminal.cols === cols) {
     return null;
   }
-
-  core?._renderService?.clear();
   return { cols, rows };
+}
+
+function clearRenderer(terminal: Terminal): void {
+  (terminal as any)._core?._renderService?.clear(); // xterm private API — intentional
+}
+
+/** Resize `terminal` to a size `measureFit` gave, clearing the renderer first as `fitTerminal` does. */
+export function applyFit(terminal: Terminal, size: { cols: number; rows: number }): void {
+  clearRenderer(terminal);
+  terminal.resize(size.cols, size.rows);
 }

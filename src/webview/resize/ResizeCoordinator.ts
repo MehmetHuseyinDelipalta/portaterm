@@ -58,12 +58,24 @@ export class ResizeCoordinator {
   private splitFitTimeouts: Map<string, number> = new Map();
   private observer: ResizeObserver | undefined;
 
-  private readonly fitTerminal: (instance: FittableInstance) => void;
+  /** Fit these terminals together: all measured, then all resized (see `TerminalFactory.fitTerminals`). */
+  private readonly fitTerminals: (instances: FittableInstance[]) => void;
   private readonly getState: () => ResizeState;
 
-  constructor(fitTerminal: (instance: FittableInstance) => void, getState: () => ResizeState) {
-    this.fitTerminal = fitTerminal;
+  constructor(fitTerminals: (instances: FittableInstance[]) => void, getState: () => ResizeState) {
+    this.fitTerminals = fitTerminals;
     this.getState = getState;
+  }
+
+  /** The panes of `tabId`'s split, or the tab's own terminal when it has no layout. */
+  private instancesOf(tabId: string, fallbackToTab: boolean): FittableInstance[] {
+    const { tabLayouts, terminals } = this.getState();
+    const layout = tabLayouts.get(tabId);
+    if (layout) {
+      return getAllSessionIds(layout).flatMap((sessionId) => terminals.get(sessionId) ?? []);
+    }
+    const own = fallbackToTab ? terminals.get(tabId) : undefined;
+    return own ? [own] : [];
   }
 
   /**
@@ -117,18 +129,7 @@ export class ResizeCoordinator {
     }
     const handle = window.setTimeout(() => {
       this.splitFitTimeouts.delete(tabId);
-      const { tabLayouts, terminals } = this.getState();
-      const layout = tabLayouts.get(tabId);
-      if (!layout) {
-        return;
-      }
-      const sessionIds = getAllSessionIds(layout);
-      for (const sessionId of sessionIds) {
-        const instance = terminals.get(sessionId);
-        if (instance) {
-          this.fitTerminal(instance);
-        }
-      }
+      this.fitTerminals(this.instancesOf(tabId, false));
     }, RESIZE_DEBOUNCE_MS);
     this.splitFitTimeouts.set(tabId, handle);
   }
@@ -140,27 +141,7 @@ export class ResizeCoordinator {
   onViewShow(): void {
     if (this.pendingResize) {
       this.pendingResize = false;
-      requestAnimationFrame(() => {
-        const { activeTabId, tabLayouts, terminals } = this.getState();
-        if (!activeTabId) {
-          return;
-        }
-        const layout = tabLayouts.get(activeTabId);
-        if (layout) {
-          const sessionIds = getAllSessionIds(layout);
-          for (const sessionId of sessionIds) {
-            const instance = terminals.get(sessionId);
-            if (instance) {
-              this.fitTerminal(instance);
-            }
-          }
-        } else {
-          const instance = terminals.get(activeTabId);
-          if (instance) {
-            this.fitTerminal(instance);
-          }
-        }
-      });
+      requestAnimationFrame(() => this.fitAllTerminals());
     }
   }
 
@@ -181,26 +162,9 @@ export class ResizeCoordinator {
    * Immediately fit all visible terminals in the active tab.
    */
   private fitAllTerminals(): void {
-    const { activeTabId, tabLayouts, terminals } = this.getState();
-    if (!activeTabId) {
-      return;
-    }
-    const layout = tabLayouts.get(activeTabId);
-    if (layout) {
-      // Fit all leaves in the split tree
-      const sessionIds = getAllSessionIds(layout);
-      for (const sessionId of sessionIds) {
-        const instance = terminals.get(sessionId);
-        if (instance) {
-          this.fitTerminal(instance);
-        }
-      }
-    } else {
-      // Fallback: fit single terminal
-      const instance = terminals.get(activeTabId);
-      if (instance) {
-        this.fitTerminal(instance);
-      }
+    const { activeTabId } = this.getState();
+    if (activeTabId) {
+      this.fitTerminals(this.instancesOf(activeTabId, true));
     }
   }
 }

@@ -22,7 +22,7 @@ import { PastedImageStore } from "../links/PastedImageStore";
 import { SubagentLinkProvider } from "../links/SubagentLinkProvider";
 import { SubagentPreviewPopup } from "../links/SubagentPreviewPopup";
 import { createSyntaxRenderer, isHighlighterReady, whenHighlighterReady } from "../links/syntaxRenderer";
-import { fitTerminal as fitTerminalCore } from "../resize/XtermFitService";
+import { applyFit, measureFit } from "../resize/XtermFitService";
 import { createLeaf, getAllSessionIds } from "../SplitModel";
 import type { TerminalInstance, WebviewStateStore } from "../state/WebviewStateStore";
 import type { ThemeManager } from "../theme/ThemeManager";
@@ -159,14 +159,25 @@ export class TerminalFactory {
    * then performs the resize if needed.
    */
   fitTerminal(instance: { terminal: Terminal; container: HTMLDivElement }): void {
-    const parentElement = instance.terminal.element?.parentElement;
-    if (!parentElement) {
-      return;
-    }
+    this.fitTerminals([instance]);
+  }
 
-    const result = fitTerminalCore(instance.terminal, parentElement);
-    if (result) {
-      instance.terminal.resize(result.cols, result.rows);
+  /**
+   * Fit several terminals — a split's panes — measuring every one before
+   * resizing any. Interleaved, each resize changed the layout the next pane's
+   * measurement then had to force the browser to compute again: one forced
+   * layout per pane, where measuring first costs one.
+   */
+  fitTerminals(instances: ReadonlyArray<{ terminal: Terminal; container: HTMLDivElement }>): void {
+    const sizes = instances.map((instance) => {
+      const parentElement = instance.terminal.element?.parentElement;
+      return parentElement ? measureFit(instance.terminal, parentElement) : null;
+    });
+    for (const [index, instance] of instances.entries()) {
+      const size = sizes[index];
+      if (size) {
+        applyFit(instance.terminal, size);
+      }
     }
   }
 
@@ -613,16 +624,11 @@ export class TerminalFactory {
    */
   fitAllAndFocus(tabId: string, fallbackInstance: TerminalInstance): void {
     const layout = this.store.tabLayouts.get(tabId);
-    if (layout) {
-      for (const sessionId of getAllSessionIds(layout)) {
-        const instance = this.store.terminals.get(sessionId);
-        if (instance) {
-          this.fitTerminal(instance);
-        }
-      }
-    } else {
-      this.fitTerminal(fallbackInstance);
-    }
+    this.fitTerminals(
+      layout
+        ? getAllSessionIds(layout).flatMap((sessionId) => this.store.terminals.get(sessionId) ?? [])
+        : [fallbackInstance],
+    );
     const activePaneId = this.store.tabActivePaneIds.get(tabId) ?? tabId;
     const activeInstance = this.store.terminals.get(activePaneId);
     if (activeInstance) {

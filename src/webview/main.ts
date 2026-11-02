@@ -201,7 +201,7 @@ const dragDropHandler = new DragDropHandler({
 });
 
 const resizeCoordinator = new ResizeCoordinator(
-  (instance) => factory.fitTerminal(instance),
+  (instances) => factory.fitTerminals(instances),
   () => ({ activeTabId: store.activeTabId, terminals: store.terminals, tabLayouts: store.tabLayouts }),
 );
 

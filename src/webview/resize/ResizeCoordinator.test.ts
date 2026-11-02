@@ -96,7 +96,9 @@ describe("ResizeCoordinator", () => {
     coordinator.debouncedFitAllLeaves("tab-1");
     vi.advanceTimersByTime(100);
 
-    expect(fitTerminal).toHaveBeenCalledTimes(2);
+    // One call with both panes, so they are measured before either is resized.
+    expect(fitTerminal).toHaveBeenCalledTimes(1);
+    expect(fitTerminal).toHaveBeenCalledWith([terminals.get("s1"), terminals.get("s2")]);
   });
 
   it("sets pendingResize when container dimensions are zero", () => {
@@ -177,5 +179,79 @@ describe("ResizeCoordinator", () => {
     // Advancing timer after dispose should not trigger fit
     vi.advanceTimersByTime(200);
     expect(fitTerminal).not.toHaveBeenCalled();
+  });
+});
+
+describe("ResizeCoordinator fits a split's panes together (perf D7)", () => {
+  function splitState() {
+    const pane = () => ({
+      terminal: createMockTerminal() as unknown as Terminal,
+      container: document.createElement("div"),
+    });
+    const terminals = new Map([
+      ["s1", pane()],
+      ["s2", pane()],
+      ["solo", pane()],
+    ]);
+    const tabLayouts = new Map([["tab-1", createBranch("vertical", createLeaf("s1"), createLeaf("s2"))]]);
+    return { activeTabId: "tab-1" as string | null, terminals, tabLayouts };
+  }
+
+  it("hands every pane of the active tab over in one call on a window resize", () => {
+    const fitTerminals = vi.fn();
+    const state = splitState();
+    const coordinator = new ResizeCoordinator(fitTerminals, () => state);
+    coordinator.debouncedFit();
+    vi.advanceTimersByTime(100);
+    expect(fitTerminals.mock.calls).toEqual([[[state.terminals.get("s1"), state.terminals.get("s2")]]]);
+  });
+
+  it("fits a tab without a split as its own terminal", () => {
+    const fitTerminals = vi.fn();
+    const state = { ...splitState(), activeTabId: "solo" };
+    const coordinator = new ResizeCoordinator(fitTerminals, () => state);
+    coordinator.debouncedFit();
+    vi.advanceTimersByTime(100);
+    expect(fitTerminals.mock.calls).toEqual([[[state.terminals.get("solo")]]]);
+  });
+
+  it("fits nothing when no tab is active", () => {
+    const fitTerminals = vi.fn();
+    const state = { ...splitState(), activeTabId: null };
+    const coordinator = new ResizeCoordinator(fitTerminals, () => state);
+    coordinator.debouncedFit();
+    vi.advanceTimersByTime(100);
+    expect(fitTerminals).not.toHaveBeenCalled();
+  });
+
+  it("fits a split's leaves only — never a tab terminal of that name — when asked for its leaves", () => {
+    const fitTerminals = vi.fn();
+    const state = splitState();
+    const coordinator = new ResizeCoordinator(fitTerminals, () => state);
+    coordinator.debouncedFitAllLeaves("solo"); // no layout for it
+    vi.advanceTimersByTime(100);
+    expect(fitTerminals.mock.calls.flat(2)).toEqual([]);
+  });
+
+  it("hands every pane over in one call when a deferred resize is flushed", () => {
+    const fitTerminals = vi.fn();
+    const state = splitState();
+    const coordinator = new ResizeCoordinator(fitTerminals, () => state);
+    coordinator.setup(document.createElement("div"));
+    triggerResize(0, 0);
+    coordinator.onViewShow();
+    expect(fitTerminals.mock.calls).toEqual([[[state.terminals.get("s1"), state.terminals.get("s2")]]]);
+    coordinator.onViewShow(); // nothing deferred any more
+    expect(fitTerminals).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips a pane whose terminal is gone", () => {
+    const fitTerminals = vi.fn();
+    const state = splitState();
+    state.terminals.delete("s2");
+    const coordinator = new ResizeCoordinator(fitTerminals, () => state);
+    coordinator.debouncedFitAllLeaves("tab-1");
+    vi.advanceTimersByTime(100);
+    expect(fitTerminals.mock.calls).toEqual([[[state.terminals.get("s1")]]]);
   });
 });

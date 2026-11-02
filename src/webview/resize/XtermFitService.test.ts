@@ -4,7 +4,7 @@
 import type { Terminal } from "@xterm/xterm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockTerminal } from "../test-utils/mockTerminal";
-import { fitTerminal } from "./XtermFitService";
+import { applyFit, fitTerminal, measureFit } from "./XtermFitService";
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -128,5 +128,35 @@ describe("fitTerminal", () => {
     // availableWidth = 200 - 0 - 0 = 200, cols = floor(200/10) = 20
     // availableHeight = 400, rows = floor(400/20) = 20
     expect(result).toEqual({ cols: 20, rows: 20 });
+  });
+});
+
+describe("measureFit and applyFit (perf D7)", () => {
+  it("measures without touching the renderer", () => {
+    const term = createMockTerminal({ cellWidth: 10, cellHeight: 20, cols: 0, rows: 0 });
+    mockParentRect(200, 400);
+    expect(measureFit(term as unknown as Terminal, parent)).toEqual({ cols: 20, rows: 20 });
+    expect(term._core._renderService.clear).not.toHaveBeenCalled();
+  });
+
+  it("clears the renderer, then resizes", () => {
+    const term = createMockTerminal();
+    const order: string[] = [];
+    term._core._renderService.clear.mockImplementation(() => order.push("clear"));
+    (term as unknown as { resize: (c: number, r: number) => void }).resize = vi.fn((c: number, r: number) => {
+      order.push(`resize ${c}x${r}`);
+    });
+    applyFit(term as unknown as Terminal, { cols: 30, rows: 12 });
+    expect(order).toEqual(["clear", "resize 30x12"]);
+  });
+
+  it("fitTerminal clears the renderer only when a resize is due", () => {
+    const due = createMockTerminal({ cellWidth: 10, cellHeight: 20, cols: 0, rows: 0 });
+    mockParentRect(200, 400);
+    fitTerminal(due as unknown as Terminal, parent);
+    expect(due._core._renderService.clear).toHaveBeenCalledOnce();
+    const fitted = createMockTerminal({ cellWidth: 10, cellHeight: 20, cols: 20, rows: 20 });
+    expect(fitTerminal(fitted as unknown as Terminal, parent)).toBeNull();
+    expect(fitted._core._renderService.clear).not.toHaveBeenCalled();
   });
 });

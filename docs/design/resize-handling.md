@@ -105,6 +105,13 @@ It works in four steps:
 3. Apply the fit formula — `cols = max(2, floor(availableWidth / cell.width))`, `rows = max(1, floor(availableHeight / cell.height))` (`:52-54`).
 4. Clear the render service's dimension cache so the next paint re-measures, and return the pair (`:60-62`).
 
+Steps 1–3 are also `measureFit`, which writes nothing, and step 4 plus the resize is
+`applyFit`. A split's panes are fitted together through `TerminalFactory.fitTerminals`:
+every pane measured, then every pane resized. Interleaved, each resize changed the layout
+the next pane's `getBoundingClientRect()` then forced the browser to compute again — one
+forced layout per pane instead of one in all. The coordinator, a tab switch
+(`fitAllAndFocus`) and a deferred show all hand over the whole set at once.
+
 Four guards short-circuit to `null` before any of that:
 
 ### Early-Return Table
@@ -161,7 +168,7 @@ sequenceDiagram
     EXT->>RC: { type: 'viewShow' }
 
     RC->>RC: pendingResize? → clear + requestAnimationFrame
-    RC->>XFS: fitTerminal(instance) for every leaf of the active tab
+    RC->>XFS: fitTerminals(every leaf of the active tab) — measure all, then resize
     XFS-->>EXT: terminal.onResize → { type: 'resize', cols, rows }
     EXT->>EXT: pty.resize(cols, rows)
 ```
