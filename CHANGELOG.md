@@ -7,6 +7,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.49.6] — 2026-11-02
+
+### Fixed
+
+- **Hovering a long file no longer freezes the terminal.** The preview of a large file was colored all at once — about a fifth of a second for a 1000-line file, during which the terminal stopped responding. A long file now shows as plain text at once and is colored in small steps, with exactly the same colors; hovering the same file again shows it instantly. Markdown previews are faster to render too.
+- **Opening a Codex session reads its store once.** Its preview read Codex's database several times, copying it each time while Codex was writing to it, and loaded every thread to find the session's subagents. It now reads one copy and asks only for that session's own subagents.
+- **The Vault re-reads only the Claude sessions that changed.** Every write to any Claude transcript made the Vault go through every Claude session again, re-reading in full the ones it hides from the list (team members, empty sessions). It now reads just the changed files, remembers what it hides, and goes through the rest in parallel when it does need to look at everything.
+- **The Vault no longer rewrites and re-sends an unchanged list.** A store change that altered nothing in the list still rewrote the Vault's cache on disk and redrew the list.
+- **Busy terminals cost less to keep.** An agent's constant small screen updates made each terminal's restore buffer copy itself on every update, and set up a separate wait for each one. Both now take constant time.
+- **The Worktree view checks for agents in other windows less often while VS Code is in the background** — every 30 seconds instead of every 5 — and catches up as soon as you switch back.
+
 ## [0.49.5] — 2026-11-01
 
 ### Fixed
