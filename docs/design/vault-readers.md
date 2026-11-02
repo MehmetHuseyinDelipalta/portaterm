@@ -233,6 +233,7 @@ record type to match (`claudeReader.ts:268`).
 | Title | thread title, else the first user message | `:141` |
 | Sandbox | internal policy enum mapped to the CLI's own flag value | `:96,114` |
 | Fallback | no DB or no sqlite driver ⇒ JSONL rollouts | `:499` |
+| Rollout first lines | read once per change of the file (its stat), sixteen at a time, by the list fallback, the parentage fallback and a detail's subagents alike; up to 20 000 kept in memory | `rolloutMeta` |
 | Query error | 1 unreadable **and empty stamps**, so the next pass retries rather than caching a failure | `:499` |
 | Rollout dialect | `{timestamp, type, payload}` with four record types | `:817` |
 | Tokens | usage attributed to the **last** assistant item | `:899-919` |

@@ -277,18 +277,59 @@ async function readCodexJsonlMeta(filePath: string): Promise<CodexJsonlMeta | nu
   };
 }
 
+/** Rollout files read at once by the JSONL fallbacks. */
+export const ROLLOUT_READ_CONCURRENCY = 16;
+/** Rollouts whose first-line metadata is remembered, least recently used dropped first. */
+export const MAX_REMEMBERED_ROLLOUTS = 20_000;
+
+/**
+ * Each rollout's `session_meta`, by path, as of the stat it was read at. The
+ * JSONL fallbacks run on every refresh of a store without a usable database and
+ * would otherwise open every rollout each time; a rollout's first line is
+ * written once, so an unchanged stat answers without opening the file.
+ */
+const rolloutMetas = new Map<string, { mtimeMs: number; size: number; meta: CodexJsonlMeta | null }>();
+let rolloutMemoryLimit = MAX_REMEMBERED_ROLLOUTS;
+
+/** A rollout's first-line metadata and its mtime. Throws when the file cannot be read or parsed. */
+async function rolloutMeta(filePath: string): Promise<{ meta: CodexJsonlMeta | null; mtimeMs: number }> {
+  const stat = await fs.stat(filePath);
+  const known = rolloutMetas.get(filePath);
+  if (known && known.mtimeMs === stat.mtimeMs && known.size === stat.size) {
+    rolloutMetas.delete(filePath);
+    rolloutMetas.set(filePath, known);
+    return { meta: known.meta, mtimeMs: stat.mtimeMs };
+  }
+  const meta = await readCodexJsonlMeta(filePath);
+  rolloutMetas.delete(filePath);
+  rolloutMetas.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, meta });
+  if (rolloutMetas.size > rolloutMemoryLimit) {
+    rolloutMetas.delete(rolloutMetas.keys().next().value as string);
+  }
+  return { meta, mtimeMs: stat.mtimeMs };
+}
+
+/** Test-only: forget every remembered rollout, and remember at most `limit` from now on. */
+export function __forgetCodexRolloutsForTests(limit = MAX_REMEMBERED_ROLLOUTS): void {
+  rolloutMetas.clear();
+  rolloutMemoryLimit = limit;
+}
+
 async function collectCodexJsonlParentage(sessionsDir: string): Promise<Map<string, CodexJsonlMeta>> {
   const files = await walkJsonl(sessionsDir);
-  const children = new Map<string, CodexJsonlMeta>();
-  for (const filePath of files) {
+  const metas = await mapBounded(files, ROLLOUT_READ_CONCURRENCY, async (filePath) => {
     try {
-      const meta = await readCodexJsonlMeta(filePath);
-      if (meta?.parentThreadId) {
-        children.set(meta.sessionId, meta);
-      }
+      return (await rolloutMeta(filePath)).meta;
     } catch {
       // Parentage fallback is best-effort; unreadable files are counted only on
       // the primary JSONL fallback list path.
+      return null;
+    }
+  });
+  const children = new Map<string, CodexJsonlMeta>();
+  for (const meta of metas) {
+    if (meta?.parentThreadId) {
+      children.set(meta.sessionId, meta);
     }
   }
   return children;
@@ -436,28 +477,40 @@ async function buildCodexJsonlEntry(filePath: string, sessionIdOverride?: string
   };
 }
 
-/** Degraded source: minimal entries from session_meta first lines. */
+/** Degraded source: minimal entries from session_meta first lines, each read once. */
 async function readCodexJsonlFallback(sessionsDir: string): Promise<ReaderResult> {
   const files = await walkJsonl(sessionsDir);
+  const read = await mapBounded(files, ROLLOUT_READ_CONCURRENCY, async (filePath) => {
+    try {
+      return await rolloutMeta(filePath);
+    } catch {
+      return null;
+    }
+  });
   const entries: VaultSessionEntry[] = [];
   let unreadable = 0;
 
-  for (const filePath of files) {
-    try {
-      const meta = await readCodexJsonlMeta(filePath);
-      if (meta?.parentThreadId) {
-        continue;
-      }
-      const entry = await buildCodexJsonlEntry(filePath);
-      if (entry) {
-        entries.push(entry);
-      } else {
-        unreadable++;
-      }
-    } catch {
-      unreadable++;
+  files.forEach((filePath, i) => {
+    const rollout = read[i];
+    if (!rollout?.meta) {
+      unreadable++; // unreadable, or a blank first line
+      return;
     }
-  }
+    const { meta, mtimeMs } = rollout;
+    if (meta.parentThreadId) {
+      return;
+    }
+    entries.push({
+      id: formatEntryId("codex", meta.sessionId),
+      agent: "codex",
+      sessionId: meta.sessionId,
+      title: "",
+      cwd: meta.cwd ?? "",
+      modified: meta.timestamp ?? mtimeMs,
+      flags: {},
+      sessionPath: filePath, // the rollout jsonl backs this session (UI hint)
+    });
+  });
   entries.sort((a, b) => b.modified - a.modified);
   return { entries: entries.slice(0, ROW_LIMIT), unreadable };
 }
@@ -1254,7 +1307,7 @@ async function readCodexChildJsonlMeta(
 ): Promise<CodexJsonlMeta | null> {
   if (rolloutPath && (await isResolvedPathInside(rolloutPath, sessionsDir))) {
     try {
-      return await readCodexJsonlMeta(rolloutPath);
+      return (await rolloutMeta(rolloutPath)).meta;
     } catch {
       // Fall back to filename lookup below.
     }
@@ -1264,7 +1317,7 @@ async function readCodexChildJsonlMeta(
     return null;
   }
   try {
-    return await readCodexJsonlMeta(foundRolloutPath);
+    return (await rolloutMeta(foundRolloutPath)).meta;
   } catch {
     return null;
   }
