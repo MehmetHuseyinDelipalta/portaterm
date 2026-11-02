@@ -9,6 +9,7 @@
 import * as fs from "node:fs/promises";
 import { authorizeDirectory } from "../utils/authorizedDirectory";
 import { createTrackedPathResolver, type ResolvedPathMemo } from "../utils/resolvedPathMemo";
+import { createFolderRepoMemo } from "./folderRepoMemo";
 import { createGitCapabilities } from "./gitCapabilities";
 import { createGitCommandRunner } from "./gitCommandRunner";
 import { normalizeWorktreePath } from "./normalizePath";
@@ -37,6 +38,7 @@ export function createWorktreeTreeDeps(options: CreateWorktreeTreeDepsOptions = 
     normalize: (p) => normalizeWorktreePath(p),
     authorizeCommonDirectory: (p) => authorizeDirectory(p),
     stat: (p) => fs.stat(p),
+    folderRepos: createFolderRepoMemo({ realpath: (p) => fs.realpath(p), stat: (p) => fs.stat(p) }),
     ...(options.pathMemo ? { paths: createTrackedPathResolver(options.pathMemo) } : {}),
   };
 }

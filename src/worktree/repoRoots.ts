@@ -9,6 +9,7 @@ import { mapBounded } from "../utils/mapBounded";
 import { isPathInside } from "../utils/pathBoundary";
 import type { TrackedPathResolver } from "../utils/resolvedPathMemo";
 import { describeGitFailure } from "./describeGitFailure";
+import type { FolderRepoAnswer, FolderRepoMemo } from "./folderRepoMemo";
 import { type GitCapabilities, hasUnsupportedPathFormatEcho } from "./gitCapabilities";
 import type { GitCommandResult, GitCommandRunner } from "./gitCommandRunner";
 
@@ -41,6 +42,11 @@ export interface RepoRootsDeps {
    * this module is in a position to notice it.
    */
   paths?: TrackedPathResolver;
+  /**
+   * Remembers each folder's git answers while the `.git` it resolves through is
+   * unchanged. Absent — every rebuild asks git, exactly as before.
+   */
+  folderRepos?: FolderRepoMemo;
 }
 
 /**
@@ -196,23 +202,46 @@ export async function resolveRepoOutcomes(
   return folders.map((folder, index) => ({ folder, outcome: outcomes[index] as RepoResolution }));
 }
 
-async function resolveOne(folder: string, deps: RepoRootsDeps): Promise<RepoResolution> {
+/** What git says about `folder`: its top level and common dir, no repository, or no answer. */
+async function askGit(
+  folder: string,
+  matched: string | undefined,
+  deps: RepoRootsDeps,
+): Promise<FolderRepoAnswer | { kind: "failed"; reason: string }> {
   // A repository VS Code already has open is proof of a repository, so it skips
   // the probe and cannot report absence.
-  const matched = matchRepository(folder, deps);
   const top: TopLevel =
     matched === undefined ? await resolveToplevel(folder, deps) : { kind: "resolved", root: matched };
   if (top.kind !== "resolved") {
     return top;
   }
-
   const commonDir = await resolveCommonDir(top.root, deps);
-  if (commonDir.kind === "failed") {
-    return commonDir;
+  return commonDir.kind === "failed" ? commonDir : { kind: "resolved", root: top.root, commonDir: commonDir.dir };
+}
+
+async function resolveOne(folder: string, deps: RepoRootsDeps): Promise<RepoResolution> {
+  const matched = matchRepository(folder, deps);
+  const memo = deps.folderRepos;
+  // Which open repository matched is part of the stamp: it decides whether git is asked at all.
+  const gitStamp = memo ? await memo.stampOf(folder) : null;
+  const stamp = gitStamp === null ? null : `${matched ?? "-"} ${gitStamp}`;
+  let answer = stamp === null ? undefined : memo?.recall(folder, stamp);
+  if (!answer) {
+    const asked = await askGit(folder, matched, deps);
+    if (asked.kind === "failed") {
+      return asked; // no answer: not remembered
+    }
+    answer = asked;
+    if (stamp !== null) {
+      memo?.remember(folder, stamp, answer);
+    }
+  }
+  if (answer.kind === "absent") {
+    return answer;
   }
 
-  const repoId = await deps.normalize(commonDir.dir);
-  const rootPath = await deps.normalize(top.root);
+  const repoId = await deps.normalize(answer.commonDir);
+  const rootPath = await deps.normalize(answer.root);
   if (repoId === null || rootPath === null) {
     return { kind: "failed", reason: `Could not resolve a usable path for ${folder}.` };
   }

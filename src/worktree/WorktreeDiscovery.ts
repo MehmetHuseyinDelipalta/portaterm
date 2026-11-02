@@ -7,6 +7,7 @@ import { type AuthorizedDirectory, sameFileIdentity } from "../utils/authorizedD
 import { mapBounded } from "../utils/mapBounded";
 import { isPathInside } from "../utils/pathBoundary";
 import { describeGitFailure } from "./describeGitFailure";
+import type { FolderRepoMemo } from "./folderRepoMemo";
 import { type GitCapabilities, isUnsupportedZResult } from "./gitCapabilities";
 import type { GitCommandResult, GitCommandRunner } from "./gitCommandRunner";
 import { parseWorktreeList } from "./porcelainParser";
@@ -199,6 +200,8 @@ export async function listRegisteredRepoWorktrees(root: ResolvedRepo, deps: Work
 export interface WorktreeTreeDeps extends WorktreeListingDeps {
   authorizeCommonDirectory?(p: string): Promise<AuthorizedDirectory | undefined>;
   getGitApi?: GitApiAccessor;
+  /** Each folder's git answers, kept while its `.git` is unchanged (`RepoRootsDeps.folderRepos`). */
+  folderRepos?: FolderRepoMemo;
   /** Supplied by the presence projection (P4); absent here — design.md D4. */
   rank?: WorktreeActivityRank;
 }

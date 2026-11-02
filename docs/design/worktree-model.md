@@ -125,6 +125,11 @@ separator drift, and drive-letter case.
    line, so only an exit-zero echo marks the capability unsupported. A non-zero exit is that
    repository's own failure and must not change the shared capability, whatever its stderr
    happens to mention.
+   Steps 3–4 are skipped while the folder's `.git` is unchanged (`folderRepoMemo.ts`): their
+   answer is kept under a stamp of the first `.git` above the folder's real path — a
+   directory's inode and `HEAD`, a `.git` file's stat, or its absence — plus which open
+   repository matched, and a rebuild re-stats that instead of running two `rev-parse`s.
+   An answer git failed to give is never kept.
 5. **Dedupe by `repoId`.** A workspace that has both a repo and one of its own linked
    worktrees open as separate folders resolves to a single `repoId` and therefore a single
    group — not two. This is why grouping keys on the common dir and never on `rootUri`.
@@ -286,7 +291,7 @@ Two watcher caveats to honour:
 |-------|-----|----------|--------------|
 | Per-repo worktree listing | `repoId` | Process (in-memory only) | § 3.5 signals |
 | Git capability (`-z`, `--path-format`) | Capability name, process-wide | Positive: process. Negative: 30 min | Negative results expire, so the user we just told to upgrade git is not stranded on the fallback for the rest of the session |
-| Resolved repo roots | — | Process | Workspace-folder / repo open-close events |
+| Resolved repo roots | workspace folder | Process, 256 folders | The `.git` git finds from the folder changing, or the matching open repository |
 
 Nothing is persisted to disk. A cold window rebuilds the tree from git on first show; the
 cost is one `rev-parse` plus one `worktree list` per repo, which is milliseconds.

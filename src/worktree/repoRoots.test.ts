@@ -570,3 +570,111 @@ describe("resolveRepoOutcomes — bounded concurrency and input order", () => {
     ]);
   });
 });
+
+describe("resolveRepoOutcomes with a folder memo (perf C7)", () => {
+  /** A memo whose stamps the test sets, wrapping the real answer store. */
+  function fakeMemo(stamps: Record<string, string | null>) {
+    const answers = new Map<string, { stamp: string; answer: unknown }>();
+    return {
+      stamps,
+      stampOf: vi.fn(async (folder: string) => stamps[folder] ?? null),
+      recall: (folder: string, stamp: string) => {
+        const known = answers.get(folder);
+        return known?.stamp === stamp ? (known.answer as never) : undefined;
+      },
+      remember: vi.fn((folder: string, stamp: string, answer: unknown) => {
+        answers.set(folder, { stamp, answer });
+      }),
+    };
+  }
+  const repoTable = {
+    [`/repo|${TOPLEVEL}`]: { stdout: "/repo\n" },
+    [`/repo|${PATH_FORMAT}`]: { stdout: "/repo/.git\n" },
+  };
+
+  it("asks git once while the folder's stamp is unchanged", async () => {
+    const { runner, run } = makeRunner(repoTable);
+    const memo = fakeMemo({ "/repo": "dir /repo/.git 1 h" });
+    const d = { ...deps(runner), folderRepos: memo };
+    const first = await resolveRepoOutcomes(["/repo"], d);
+    const calls = run.mock.calls.length;
+    const second = await resolveRepoOutcomes(["/repo"], d);
+    expect(second).toEqual(first);
+    expect(first[0].outcome).toEqual({ kind: "resolved", repo: { repoId: "/repo/.git", rootPath: "/repo" } });
+    expect(run.mock.calls.length).toBe(calls);
+    expect(memo.remember).toHaveBeenCalledWith("/repo", "- dir /repo/.git 1 h", {
+      kind: "resolved",
+      root: "/repo",
+      commonDir: "/repo/.git",
+    });
+  });
+
+  it("asks again once the stamp moved", async () => {
+    const { runner, run } = makeRunner(repoTable);
+    const memo = fakeMemo({ "/repo": "dir /repo/.git 1 h" });
+    const d = { ...deps(runner), folderRepos: memo };
+    await resolveRepoOutcomes(["/repo"], d);
+    const calls = run.mock.calls.length;
+    memo.stamps["/repo"] = "dir /repo/.git 1 h2";
+    await resolveRepoOutcomes(["/repo"], d);
+    expect(run.mock.calls.length).toBe(calls * 2);
+  });
+
+  it("remembers that a folder is in no repository", async () => {
+    const { runner, run } = makeRunner({
+      [`/plain|${TOPLEVEL}`]: { code: 128, stderr: "fatal: not a git repository (or any of the parent directories)" },
+    });
+    const d = { ...deps(runner), folderRepos: fakeMemo({ "/plain": "none" }) };
+    expect((await resolveRepoOutcomes(["/plain"], d))[0].outcome).toEqual({ kind: "absent" });
+    expect((await resolveRepoOutcomes(["/plain"], d))[0].outcome).toEqual({ kind: "absent" });
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not remember an answer git failed to give", async () => {
+    const { runner, run } = makeRunner({ [`/repo|${TOPLEVEL}`]: { timedOut: true } });
+    const memo = fakeMemo({ "/repo": "dir /repo/.git 1 h" });
+    const d = { ...deps(runner), folderRepos: memo };
+    expect((await resolveRepoOutcomes(["/repo"], d))[0].outcome.kind).toBe("failed");
+    await resolveRepoOutcomes(["/repo"], d);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(memo.remember).not.toHaveBeenCalled();
+  });
+
+  it("does not remember a failed common-dir answer either", async () => {
+    const { runner } = makeRunner({ [`/repo|${TOPLEVEL}`]: { stdout: "/repo\n" } });
+    const memo = fakeMemo({ "/repo": "dir /repo/.git 1 h" });
+    expect((await resolveRepoOutcomes(["/repo"], { ...deps(runner), folderRepos: memo }))[0].outcome.kind).toBe(
+      "failed",
+    );
+    expect(memo.remember).not.toHaveBeenCalled();
+  });
+
+  it("asks git every time when no stamp can be taken", async () => {
+    const { runner, run } = makeRunner(repoTable);
+    const d = { ...deps(runner), folderRepos: fakeMemo({ "/repo": null }) };
+    await resolveRepoOutcomes(["/repo"], d);
+    const calls = run.mock.calls.length;
+    await resolveRepoOutcomes(["/repo"], d);
+    expect(run.mock.calls.length).toBe(calls * 2);
+  });
+
+  it("asks again when the open repository that matches the folder changes", async () => {
+    const { runner, run } = makeRunner({
+      ...repoTable,
+      [`/repo/sub|${PATH_FORMAT}`]: { stdout: "/repo/.git/modules/sub\n" },
+    });
+    let roots = ["/repo"];
+    const getGitApi: GitApiAccessor = () =>
+      ({
+        state: "initialized",
+        repositories: roots.map((fsPath) => ({ rootUri: { fsPath } })),
+      }) as ReturnType<GitApiAccessor>;
+    const d = { ...deps(runner, getGitApi), folderRepos: fakeMemo({ "/repo/sub": "file /repo/sub/.git x" }) };
+    const before = await resolveRepoOutcomes(["/repo/sub"], d);
+    roots = ["/repo", "/repo/sub"];
+    const after = await resolveRepoOutcomes(["/repo/sub"], d);
+    expect(before[0].outcome).toMatchObject({ repo: { rootPath: "/repo" } });
+    expect(after[0].outcome).toMatchObject({ repo: { rootPath: "/repo/sub", repoId: "/repo/.git/modules/sub" } });
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+});
