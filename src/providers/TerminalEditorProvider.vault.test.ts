@@ -62,7 +62,7 @@ function mount(vault: Partial<VaultService> | null, seam = panelSeam()) {
     null,
     null,
     null,
-    vault as VaultService | null,
+    vault ? ({ preloadCache: async () => {}, ...vault } as VaultService) : null,
   );
   return {
     send: (msg: unknown) => {
@@ -89,6 +89,7 @@ describe("an editor surface answers the vault reads a preview needs", () => {
     // The cached post paints the panel immediately; the refresh is the truth.
     const view = mount({
       listCached: () => listResult("claude:cached"),
+      preloadCache: async () => {},
       refresh: async () => listResult("claude:fresh"),
     });
     view.send({ type: "requestVaultSessions" });
@@ -103,6 +104,7 @@ describe("an editor surface answers the vault reads a preview needs", () => {
     let resolveFirst: ((r: VaultListResult) => void) | undefined;
     const view = mount({
       listCached: () => null,
+      preloadCache: async () => {},
       refresh: vi
         .fn()
         .mockImplementationOnce(() => new Promise<VaultListResult>((r) => (resolveFirst = r)))
@@ -131,6 +133,7 @@ describe("an editor surface answers the vault reads a preview needs", () => {
     const view = mount(
       {
         listCached: () => null,
+        preloadCache: async () => {},
         refresh: vi
           .fn()
           .mockImplementationOnce(async () => listResult("claude:first"))
@@ -153,6 +156,7 @@ describe("an editor surface answers the vault reads a preview needs", () => {
   it("answers the overlay's detail read, echoing the request token", async () => {
     const view = mount({
       listCached: () => null,
+      preloadCache: async () => {},
       refresh: async () => listResult(),
       getDetail: async () => ({ entryId: "claude:s1", timeline: [] }) as unknown as VaultSessionDetail,
     });
@@ -177,6 +181,7 @@ describe("an editor surface answers the vault reads a preview needs", () => {
   it("reports a read that threw instead of dropping the request", async () => {
     const view = mount({
       listCached: () => null,
+      preloadCache: async () => {},
       refresh: async () => listResult(),
       getDetail: async () => {
         throw new Error("EACCES");
@@ -249,5 +254,13 @@ describe("a cold-created editor surface orders activation after init", () => {
     expect(types.filter((t) => t === "init")).toHaveLength(2);
     expect(types.indexOf("worktreeRowActivation")).toBeGreaterThan(types.lastIndexOf("init"));
     view.dispose();
+  });
+});
+
+describe("an editor surface warms the vault list (perf B8)", () => {
+  it("starts reading the persisted list while its webview boots", () => {
+    const preloadCache = vi.fn(async () => {});
+    mount({ listCached: () => null, refresh: async () => listResult(), preloadCache });
+    expect(preloadCache).toHaveBeenCalledOnce();
   });
 });

@@ -244,6 +244,35 @@ export const defaultTempReaper: TempReaperDeps = {
   },
 };
 
+/**
+ * A cache document from its JSON, or `null` when it is torn, corrupt, of another
+ * version or malformed anywhere — treated as a miss (full rebuild). No partial
+ * recovery: the refresh that follows is the source of truth.
+ */
+function parseCacheDocument(raw: string): VaultListCacheFileV1 | null {
+  try {
+    return validCacheDocument(JSON.parse(raw) as Partial<VaultListCacheFileV1>);
+  } catch {
+    return null;
+  }
+}
+
+function validCacheDocument(parsed: Partial<VaultListCacheFileV1>): VaultListCacheFileV1 | null {
+  return parsed &&
+    typeof parsed === "object" &&
+    parsed.version === VAULT_CACHE_VERSION &&
+    Array.isArray(parsed.entries) &&
+    parsed.entries.every(isValidCachedEntry) &&
+    parsed.agents &&
+    typeof parsed.agents === "object" &&
+    Object.values(parsed.agents).every(isValidReaderCache) &&
+    parsed.unreadable &&
+    typeof parsed.unreadable === "object" &&
+    Array.isArray(parsed.unreadable.reasons)
+    ? (parsed as VaultListCacheFileV1)
+    : null;
+}
+
 export class VaultCacheStore {
   private readonly cacheDir: string;
   private readonly cacheFile: string;
@@ -270,28 +299,21 @@ export class VaultCacheStore {
       return null;
     }
     try {
-      const raw = this.fs.readFileSync(this.cacheFile, "utf8");
-      const parsed = JSON.parse(raw) as Partial<VaultListCacheFileV1>;
-      if (
-        parsed &&
-        typeof parsed === "object" &&
-        parsed.version === VAULT_CACHE_VERSION &&
-        Array.isArray(parsed.entries) &&
-        parsed.entries.every(isValidCachedEntry) &&
-        parsed.agents &&
-        typeof parsed.agents === "object" &&
-        Object.values(parsed.agents).every(isValidReaderCache) &&
-        parsed.unreadable &&
-        typeof parsed.unreadable === "object" &&
-        Array.isArray(parsed.unreadable.reasons)
-      ) {
-        return parsed as VaultListCacheFileV1;
-      }
+      return parseCacheDocument(this.fs.readFileSync(this.cacheFile, "utf8"));
     } catch {
-      // Torn/corrupt/unreadable cache — treat as a miss (full rebuild). No
-      // partial recovery: the refresh that follows is the source of truth.
+      return null; // unreadable: a miss
     }
-    return null;
+  }
+
+  /** `load` without blocking on the read — for a load ahead of the first `listCached`. */
+  async loadAsync(): Promise<VaultListCacheFileV1 | null> {
+    let raw: string;
+    try {
+      raw = await this.fs.promises.readFile(this.cacheFile, "utf8");
+    } catch {
+      return null; // missing or unreadable: a miss
+    }
+    return parseCacheDocument(raw);
   }
 
   /**

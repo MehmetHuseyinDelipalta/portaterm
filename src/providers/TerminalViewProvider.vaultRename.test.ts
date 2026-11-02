@@ -43,6 +43,7 @@ type FakeVault = {
   setCustomName: ReturnType<typeof vi.fn>;
   refresh: ReturnType<typeof vi.fn>;
   listCached: ReturnType<typeof vi.fn>;
+  preloadCache: () => Promise<void>;
 };
 
 function makeFakeVault(over: Partial<FakeVault> = {}): FakeVault {
@@ -51,6 +52,7 @@ function makeFakeVault(over: Partial<FakeVault> = {}): FakeVault {
     setCustomName: vi.fn(),
     refresh: vi.fn(async () => freshResult("fresh")),
     listCached: vi.fn(() => null),
+    preloadCache: async () => {},
     ...over,
   };
 }
@@ -125,6 +127,7 @@ describe("handleVaultRenameSession routing", () => {
     const vault = makeFakeVault({
       writeNativeTitle: vi.fn(async () => false),
       listCached: vi.fn(() => freshResult("cached")),
+      preloadCache: async () => {},
     });
     const { send, postMessageSpy, dispose } = mountProvider(vault);
 

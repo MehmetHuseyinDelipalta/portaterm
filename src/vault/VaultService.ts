@@ -357,6 +357,8 @@ export class VaultService {
    * the same document — every store unchanged — writes nothing.
    */
   private persisted: VaultListCacheFileV1 | null = null;
+  /** A background read of the persisted list under way (`preloadCache`). */
+  private preloading: Promise<void> | undefined;
 
   constructor(deps: VaultServiceDeps = {}) {
     this.cursorReaderOptions = deps.cursorReaderOptions ?? {};
@@ -960,6 +962,27 @@ export class VaultService {
         this.inflightHintReadStarted = false;
       }
     }
+  }
+
+  /**
+   * Read the persisted list in the background, so the panel's first
+   * `listCached()` finds it in memory instead of reading and parsing the file
+   * right then. Whatever reaches memory first wins: a `listCached()` that came
+   * before this finished has already loaded it, and a refresh may have moved on.
+   */
+  preloadCache(): Promise<void> {
+    const store = this.cacheStore;
+    if (this.memLoaded || !store) {
+      return Promise.resolve();
+    }
+    this.preloading ??= store.loadAsync().then((doc) => {
+      if (!this.memLoaded) {
+        this.mem = doc;
+        this.persisted = doc;
+        this.memLoaded = true;
+      }
+    });
+    return this.preloading;
   }
 
   /** Load the persisted cache into memory once (no-op without a cache store). */

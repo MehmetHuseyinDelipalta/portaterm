@@ -266,6 +266,8 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
 
     // 2. Set HTML content using shared utility
     webviewView.webview.html = getTerminalHtml(webviewView.webview, this.extensionUri, this.location);
+    // While the webview boots, so its first Vault list is in memory, not read then.
+    void this.vaultService?.preloadCache();
 
     // 3. Wire message handler and lifecycle handlers
     const disposables: vscode.Disposable[] = [];

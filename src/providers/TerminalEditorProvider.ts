@@ -444,6 +444,8 @@ export class TerminalEditorProvider {
   private setupPanel(): void {
     // 1. Set HTML content using shared utility
     this._panel.webview.html = getTerminalHtml(this._panel.webview, this.extensionUri, "editor");
+    // While the webview boots, so its first Vault list is in memory, not read then.
+    void this.vaultService?.preloadCache();
 
     // 2. Wire message handler
     const disposables: vscode.Disposable[] = [];

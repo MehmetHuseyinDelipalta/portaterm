@@ -867,6 +867,7 @@ describe("TerminalViewProvider: vault fresh-response supersession (F4)", () => {
     let refreshes = 0;
     const fakeVault = {
       listCached: () => null, // no instant-cache post — isolate the fresh path
+      preloadCache: async () => {},
       refresh: async () => freshResult(`r${++refreshes}`),
     } as unknown as VaultService;
     const provider = new TerminalViewProvider(
@@ -985,6 +986,7 @@ describe("TerminalViewProvider: Reveal Working Directory", () => {
     const sm = new SessionManager();
     const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar", null, null, {
       getEntry: async () => ({ cwd: "/Users/me/Downloads/Evil.app" }),
+      preloadCache: async () => {},
     } as unknown as VaultService);
     const { webviewView, messageHandlers } = createMockWebviewView();
     provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
@@ -1016,14 +1018,10 @@ describe("TerminalViewProvider: session-detail requestId echo", () => {
     dispose: () => void;
   } {
     const sm = new SessionManager();
-    const provider = new TerminalViewProvider(
-      { fsPath: "/mock/extension" } as vscode.Uri,
-      sm,
-      "sidebar",
-      null,
-      null,
-      vault as VaultService,
-    );
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar", null, null, {
+      preloadCache: async () => {},
+      ...vault,
+    } as VaultService);
     const { webviewView, messageHandlers, postMessageSpy } = createMockWebviewView();
     provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
     for (const handler of messageHandlers) {
@@ -1471,6 +1469,7 @@ describe("TerminalViewProvider: the vault stops reading while the view is hidden
       resolveSessionWatchTargets: vi.fn(async () => [{ baseDir: "/claude/p", glob: "s1.jsonl" }]),
       getDetail: vi.fn(async () => ({ entryId: "claude:s1", timeline: [] })),
       refresh: vi.fn(async () => ({ entries: [], unreadable: { count: 0, reasons: [] } })),
+      preloadCache: async () => {},
     };
     const coordinator = new VaultWatchCoordinator({
       watcherPool: watcherPool as never,
@@ -1720,7 +1719,7 @@ describe("TerminalViewProvider: vaultCopyResumeCommand", () => {
       "sidebar",
       null,
       null,
-      {} as VaultService,
+      { preloadCache: async () => {} } as unknown as VaultService,
       launcher as VaultLauncher,
     );
     const { webviewView, messageHandlers, postMessageSpy } = createMockWebviewView();
@@ -1775,14 +1774,10 @@ describe("TerminalViewProvider: vault stars and tags", () => {
 
   function wireMarks(vaultService: Partial<VaultService>): { sm: SessionManager; send: (msg: unknown) => void } {
     const sm = new SessionManager();
-    const provider = new TerminalViewProvider(
-      { fsPath: "/mock/extension" } as vscode.Uri,
-      sm,
-      "sidebar",
-      null,
-      null,
-      vaultService as VaultService,
-    );
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar", null, null, {
+      preloadCache: async () => {},
+      ...vaultService,
+    } as VaultService);
     const { webviewView, messageHandlers } = createMockWebviewView();
     provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
     return {
@@ -1884,14 +1879,10 @@ describe("TerminalViewProvider: vaultExportMarkdown", () => {
     send: (msg: unknown) => void;
   } {
     const sm = new SessionManager();
-    const provider = new TerminalViewProvider(
-      { fsPath: "/mock/extension" } as vscode.Uri,
-      sm,
-      "sidebar",
-      null,
-      null,
-      vaultService as VaultService,
-    );
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "sidebar", null, null, {
+      preloadCache: async () => {},
+      ...vaultService,
+    } as VaultService);
     const { webviewView, messageHandlers } = createMockWebviewView();
     provider.resolveWebviewView(webviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
     return {

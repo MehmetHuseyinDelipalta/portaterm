@@ -439,6 +439,105 @@ describe("VaultService cache: listCached + refresh", () => {
     error.mockRestore();
   });
 
+  describe("preloadCache (perf B8)", () => {
+    function asyncStore(onDisk: VaultListCacheFileV1 | null) {
+      let release: () => void = () => {};
+      const gate = new Promise<void>((r) => (release = r));
+      const store = {
+        load: vi.fn(() => onDisk),
+        loadAsync: vi.fn(async () => {
+          await gate;
+          return onDisk;
+        }),
+        save: vi.fn(async () => {}),
+      };
+      return { store, release };
+    }
+
+    it("serves the first listCached from what it read, without a blocking load", async () => {
+      const { store, release } = asyncStore(cacheDoc([entry("claude", "c1", 7)]));
+      const svc = new VaultService({ readers: makeReaders(), cacheStore: store as unknown as VaultCacheStore });
+      const preload = svc.preloadCache();
+      release();
+      await preload;
+      expect(svc.listCached()?.entries.map((e) => e.id)).toEqual(["claude:c1"]);
+      expect(store.load).not.toHaveBeenCalled();
+    });
+
+    it("reads once however often it is asked, and not at all once the list is in memory", async () => {
+      const { store, release } = asyncStore(null);
+      const svc = new VaultService({ readers: makeReaders(), cacheStore: store as unknown as VaultCacheStore });
+      const first = svc.preloadCache();
+      expect(svc.preloadCache()).toBe(first);
+      release();
+      await first;
+      await svc.preloadCache();
+      expect(store.loadAsync).toHaveBeenCalledOnce();
+    });
+
+    it("lets a listCached that came first load the list itself, and keeps that", async () => {
+      const { store, release } = asyncStore(cacheDoc([entry("claude", "late", 7)]));
+      store.load.mockReturnValue(cacheDoc([entry("claude", "first", 7)]));
+      const svc = new VaultService({ readers: makeReaders(), cacheStore: store as unknown as VaultCacheStore });
+      const preload = svc.preloadCache();
+      expect(svc.listCached()?.entries.map((e) => e.id)).toEqual(["claude:first"]);
+      release();
+      await preload;
+      expect(svc.listCached()?.entries.map((e) => e.id)).toEqual(["claude:first"]);
+    });
+
+    it("does not overwrite a refreshed list with what it read before", async () => {
+      const { store, release } = asyncStore(cacheDoc([entry("claude", "stale", 7)]));
+      store.load.mockReturnValue(null);
+      const svc = new VaultService({
+        readers: makeReaders({ claude: async () => result([entry("claude", "fresh", 9)]) }),
+        cacheStore: store as unknown as VaultCacheStore,
+      });
+      const preload = svc.preloadCache();
+      await svc.refresh();
+      release();
+      await preload;
+      expect(svc.listCached()?.entries.map((e) => e.id)).toEqual(["claude:fresh"]);
+    });
+
+    it("counts what it read as written, so an unchanged refresh writes nothing", async () => {
+      const onDisk: VaultListCacheFileV1 = {
+        version: VAULT_CACHE_VERSION,
+        savedAt: 1,
+        agents: {
+          claude: result([entry("claude", "c1", 100)]).cache,
+          codex: result([]).cache,
+          opencode: result([]).cache,
+          cursor: result([]).cache,
+        },
+        entries: [entry("claude", "c1", 100)],
+        unreadable: { count: 0, reasons: [] },
+      };
+      const { store, release } = asyncStore(onDisk);
+      const svc = new VaultService({
+        readers: makeReaders({ claude: async () => result([entry("claude", "c1", 100)]) }),
+        cacheStore: store as unknown as VaultCacheStore,
+      });
+      const preload = svc.preloadCache();
+      release();
+      await preload;
+      await svc.refresh();
+      expect(store.save).not.toHaveBeenCalled();
+    });
+
+    it("reads nothing once listCached has loaded the list", async () => {
+      const { store } = asyncStore(null);
+      const svc = new VaultService({ readers: makeReaders(), cacheStore: store as unknown as VaultCacheStore });
+      svc.listCached();
+      await svc.preloadCache();
+      expect(store.loadAsync).not.toHaveBeenCalled();
+    });
+
+    it("does nothing without a cache store", async () => {
+      await expect(new VaultService({ readers: makeReaders() }).preloadCache()).resolves.toBeUndefined();
+    });
+  });
+
   it("a second refresh feeds each reader its prior per-agent cache (incremental)", async () => {
     const claude = vi.fn(async (_prev?: ReaderListCache) => result([entry("claude", "c1", 1)]));
     const { store } = makeCacheStore(null);

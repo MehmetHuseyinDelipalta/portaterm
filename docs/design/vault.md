@@ -153,6 +153,7 @@ newest-first (`:519`).
 | Skipped write | a refresh whose document equals the one last written or loaded (`savedAt` aside) writes nothing; a failed write is retried by the next refresh | `VaultService.persist` |
 | Skipped post | a watcher-driven refresh posts nothing when the webview already shows that exact list and no other request posted a list since | `TerminalViewProvider.autoRefreshVaultList` |
 | Load | version-guarded; one malformed entry voids the **whole** cache | `:221` |
+| Preload | read and parsed in the background as a terminal webview boots (`preloadCache`), so the panel's first `listCached()` finds it in memory; if that comes first it loads the file itself, and a refresh that already landed is never overwritten | `VaultService.preloadCache` |
 
 Voiding wholesale is deliberate: a half-trusted cache is worse than a cold scan, and the
 cold scan is bounded. Per-agent freshness is a discriminated union — `files` (per-path

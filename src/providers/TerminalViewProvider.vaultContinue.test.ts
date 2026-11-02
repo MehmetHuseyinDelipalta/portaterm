@@ -121,7 +121,7 @@ function mount(
     "sidebar",
     null,
     null,
-    vault as unknown as VaultService,
+    { preloadCache: async () => {}, ...vault } as unknown as VaultService,
     { resolve, startAgent } as unknown as VaultLauncher,
     null,
     worktreeHost,
@@ -206,6 +206,7 @@ describe("vault list request", () => {
     // The list request also reads the vault's cache and refreshes it.
     const vault = Object.assign(makeVault(), {
       listCached: vi.fn(() => undefined),
+      preloadCache: async () => {},
       refresh: vi.fn(async () => ({ entries: [], errors: [] })),
     });
     const h = mount(vault);

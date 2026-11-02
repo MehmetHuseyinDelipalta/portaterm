@@ -98,11 +98,19 @@ interface ClaudeFileFields {
   isTeamMember: boolean;
 }
 
+/**
+ * Records read past the first prompt in search of the model. The first reply
+ * follows the prompt within a few records; a session cancelled before any
+ * reply has no model to find, and was read to its end looking for one.
+ */
+export const MODEL_SEARCH_RECORDS = 200;
+
 async function parseClaudeFile(filePath: string): Promise<ClaudeFileFields | null> {
   const fields: ClaudeFileFields = { parsedAnyLine: false, isTeamMember: false, hasContent: false };
   let summary: string | undefined;
   let haveUser = false;
   let haveAssistant = false;
+  let recordsSincePrompt = 0;
 
   try {
     for await (const { record: obj } of streamJsonlObjects(filePath)) {
@@ -141,8 +149,9 @@ async function parseClaudeFile(filePath: string): Promise<ClaudeFileFields | nul
         }
       }
       // Title + model are the last-appearing fields we need; cwd/branch/mode
-      // sit on earlier lines, so stop here to avoid loading the transcript.
-      if (haveUser && haveAssistant) {
+      // sit on earlier lines, so stop here to avoid loading the transcript —
+      // and stop looking for a model no reply ever carried.
+      if (haveUser && (haveAssistant || ++recordsSincePrompt > MODEL_SEARCH_RECORDS)) {
         break;
       }
     }

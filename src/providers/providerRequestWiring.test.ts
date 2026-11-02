@@ -149,6 +149,7 @@ describe("OBL-8: each provider's log strings are a wiring fact", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const surface = mountEditor({
       listCached: () => undefined,
+      preloadCache: async () => {},
       refresh: async () => {
         throw new Error("boom");
       },
@@ -164,6 +165,7 @@ describe("OBL-8: each provider's log strings are a wiring fact", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const surface = mountView({
       listCached: () => undefined,
+      preloadCache: async () => {},
       refresh: async () => {
         throw new Error("boom");
       },
@@ -227,6 +229,7 @@ describe("OBL-6: one _vaultRefreshSeq, shared with the rename push", () => {
     let call = 0;
     const surface = mountView({
       listCached: () => undefined,
+      preloadCache: async () => {},
       // First call is the request's refresh and stays pending; every later call
       // is the rename push's own, which must be the one that lands.
       refresh: vi.fn(() => {
@@ -261,6 +264,7 @@ describe("vault rename reaches the host from an editor panel too", () => {
     const setCustomName = vi.fn();
     const surface = mountEditor({
       listCached: () => listResult("claude:renamed"),
+      preloadCache: async () => {},
       refresh: vi.fn(async () => listResult("claude:renamed")),
       setCustomName,
     } as unknown as Partial<VaultService>);

@@ -174,7 +174,10 @@ Ground truth for every shape here is `src/vault/__fixtures__/claude*` (§ 9).
 ### 5.2 Late-written fields
 
 Claude appends title, model and permission metadata **as the session evolves**, so the head
-of the file is not enough. The reader scans a 256 KB tail window
+of the file is not enough. The head scan stops once it has the first prompt and the first
+reply's model — or 200 records past the prompt without a model (`MODEL_SEARCH_RECORDS`),
+which a session cancelled before any reply never has; it used to read such a session to its
+end. The reader scans a 256 KB tail window
 (`TAIL_SCAN_BYTES`, `claudeRecords.ts:89`) — a size chosen by measurement, recorded in that
 constant's own comment: over 120 local transcripts, 64 KB reached the last `permissionMode`
 in 90 of the 109 that record one, 256 KB in 104. Within the window the rule is **last wins,

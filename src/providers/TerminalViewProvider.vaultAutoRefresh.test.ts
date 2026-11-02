@@ -73,7 +73,13 @@ function mount(refresh: ReturnType<typeof vi.fn>) {
       return { watchSession: async () => {}, setDisplayed: () => {}, dispose: () => {} };
     },
   };
-  const vault = { refresh, listCached: vi.fn(() => null), writeNativeTitle: vi.fn(), setCustomName: vi.fn() };
+  const vault = {
+    refresh,
+    listCached: vi.fn(() => null),
+    preloadCache: vi.fn(async () => {}),
+    writeNativeTitle: vi.fn(),
+    setCustomName: vi.fn(),
+  };
   const provider = new TerminalViewProvider(
     { fsPath: "/mock/extension" } as vscode.Uri,
     sm,
@@ -91,6 +97,7 @@ function mount(refresh: ReturnType<typeof vi.fn>) {
   resolve(webviewViewFor(postMessage, handlers));
   return {
     sm,
+    vault,
     postMessage,
     listPosts: () => listTitles(postMessage),
     /** Resolve the view again, as VS Code does after it disposed the old one. */
@@ -205,6 +212,12 @@ describe("watcher-driven vault list refresh", () => {
     storeEvent(); // "first" is not what the webview shows
     await settle();
     expect(listPosts()).toEqual(["newer", "first"]);
+    sm.dispose();
+  });
+
+  it("starts reading the persisted list while the webview boots (perf B8)", () => {
+    const { vault, sm } = mount(vi.fn(async () => list("same")));
+    expect(vault.preloadCache).toHaveBeenCalledOnce();
     sm.dispose();
   });
 });
