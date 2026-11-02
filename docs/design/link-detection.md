@@ -112,7 +112,7 @@ URIs are claimed by this detector and handed to the host resolver (`:27-29`).
 | Bare path | `:119` |
 | Python verbose traceback — `File "x.py", line 3` | `:127` |
 | Python colon form | `:131` |
-| Claude CLI `… lines 10-20` form | `:143` |
+| Claude CLI `… lines 10-20` form — a match starts only after a character the path excludes, so a long token with no `·` after it is scanned once, not from every position (~6 ms for a 2000-character line before) | `:143` |
 
 Recognized location suffixes (`:108`): `:L`, `:L:C`, `:L.C`, `:L-L`, `(L)`, `(L,C)`,
 `[L]`, `[L:C]`, `#L`, `#LL`, `#L-L`.

@@ -139,8 +139,16 @@ const PYTHON_COLON_RE = /"(?<path>[^"\n]+)":(?<row>\d+)(?::(?<col>\d+))?/g;
  *
  * The path body excludes `)` so the trailing close-paren in `Read(...)` doesn't
  * get pulled into the match.
+ *
+ * The lookbehind admits a match only where a path can start — after exactly
+ * the characters the path body excludes — which is where the leftmost match
+ * began anyway. Without it, a long run of path characters with no `·` after it
+ * (a base64 blob, a minified line) was retried from every position, each retry
+ * running to its end: about 6 ms for a 2000-character line, every time the
+ * line was scanned.
  */
-const CLAUDE_LINES_RE = /(?<path>[^\s'"<>(){}[\]|]+)\s+·\s+lines?\s+(?<row>\d+)(?:-\d+)?/g;
+export const CLAUDE_LINES_RE =
+  /(?<=^|[\s'"<>(){}[\]|])(?<path>[^\s'"<>(){}[\]|]+)\s+·\s+lines?\s+(?<row>\d+)(?:-\d+)?/g;
 
 const SUFFIXED_POSIX = buildSuffixedRegex("posix");
 const SUFFIXED_WIN32 = buildSuffixedRegex("win32");
