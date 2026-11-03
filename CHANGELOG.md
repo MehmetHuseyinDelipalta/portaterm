@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.49.8] — 2026-11-03
+
+### Fixed
+
+- **A Claude tab opened from the Vault comes back with its conversation after a restart.** A restored tab re-ran the command that had opened it: a fresh start opened a new, empty session, a continuation sent its handoff prompt again, and a resume reopened the session it began with even after `/resume` or `/clear`. The old conversation was visible only by scrolling up through the restored scrollback, and the tab's pin marked no row in the Vault. The tab now resumes the session it was last running, keeping its model and permission mode, and the Vault pins that row. `portaterm.sessionRestore.resumeClaude` applies as for any other tab.
+- **The start button on the Vault's agent headers no longer disappears for the rest of the session.** It shows for agents whose executable answers a quick check, made once when the panel opened; a check that timed out — the first run of a freshly updated binary, a window opening under load — hid the button until the panel was folded and reopened. An empty answer is now asked again as the list refreshes, at most every 30 seconds, and the check may take up to 5 seconds.
+
 ## [0.49.7] — 2026-11-02
 
 ### Fixed
