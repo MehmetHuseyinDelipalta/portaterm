@@ -128,10 +128,10 @@ export interface TerminalSession {
    */
   vaultEntryId?: string;
   /**
-   * The Claude session this pane is running by hand, while its tab is pinned —
-   * kept current by the vault's pinned-session mirror from the process table.
-   * Persisted so a restore can resume it; absent for an agent launch, whose
-   * restore re-runs the launch itself.
+   * The Claude session this pane is running — by hand, or as its agent launch —
+   * kept current by the vault's session mirror from the process table.
+   * Persisted so a restore can resume it: a shell gets `claude --resume <id>`
+   * typed in, an agent launch respawns as one (agentLaunchResume.ts).
    */
   resumeClaudeSessionId?: string;
   /**

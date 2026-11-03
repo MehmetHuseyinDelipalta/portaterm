@@ -21,6 +21,7 @@ import type { InjectionContext } from "../pty/ShellIntegrationInjector";
 import { MAX_REPORTED_TITLE_CHARS } from "../shared/paneEvidence";
 import { type TabColorId, type TabIconId, toTabColor, toTabIcon } from "../shared/tabAppearance";
 import { stripDecorations } from "../shared/titleDecorations";
+import { claudeEntryId, claudeResumeArgs, isClaudeExecutable } from "./agentLaunchResume";
 import { CustomNameRegistry, type CustomNameStorage, noopCustomNameStorage } from "./CustomNameRegistry";
 import { EditorPanelRegistry } from "./EditorPanelRegistry";
 import type { MessageSender } from "./OutputBuffer";
@@ -567,6 +568,28 @@ export class SessionManager {
       resolvedArgs = optArgs && optArgs.length > 0 ? optArgs : detected.args;
     }
 
+    // A restored Claude agent launch resumes the session the process table last
+    // placed under it, not the launch it started as — which, for a fresh start
+    // or a continuation, would open a new conversation (agentLaunchResume.ts).
+    const restoredClaudeId = restoreFrom?.metadata.resumeClaudeSessionId;
+    let resumedEntryId: string | undefined;
+    if (
+      restoreFrom &&
+      !restoringExited &&
+      isAgentLaunch &&
+      isClaudeExecutable(resolvedShell) &&
+      typeof restoredClaudeId === "string" &&
+      CLAUDE_SESSION_ID.test(restoredClaudeId) &&
+      this.restoreMayResumeClaude(
+        isSplitPane
+          ? this.getTabSession(restoreFrom.metadata.rootTabId ?? "")?.pinned === true
+          : restoreFrom.metadata.pinned === true,
+      )
+    ) {
+      resolvedArgs = claudeResumeArgs(resolvedArgs, restoredClaudeId);
+      resumedEntryId = claudeEntryId(restoredClaudeId);
+    }
+
     const cwd = restoreFrom?.metadata.cwd || options?.cwd || PtyManager.resolveWorkingDirectory();
 
     // Spawn PTY (skipped for exited shells — restored read-only per D13).
@@ -664,7 +687,10 @@ export class SessionManager {
       shell: resolvedShell,
       shellArgs: resolvedArgs,
       isAgentLaunch: isAgentLaunch || undefined,
-      vaultEntryId: isAgentLaunch ? vaultEntryId : undefined,
+      vaultEntryId: isAgentLaunch ? (resumedEntryId ?? vaultEntryId) : undefined,
+      // Carried forward until the next process pass, so a reload before it
+      // still resumes the same conversation.
+      resumeClaudeSessionId: resumedEntryId !== undefined ? restoredClaudeId : undefined,
       // Arm shell-fallback for a live agent root; a restored-exited session is
       // read-only so nothing to fall back from.
       shellFallbackArmed: isAgentLaunch && !restoringExited ? true : undefined,
@@ -755,6 +781,12 @@ export class SessionManager {
     return id;
   }
 
+  /** Whether `resumeClaudeOnRestore` lets a restored pane of a tab, pinned or not, resume its Claude. */
+  private restoreMayResumeClaude(tabPinned: boolean): boolean {
+    const mode = this.resumeClaudeOnRestore;
+    return mode === "all" || (mode === "pinned" && tabPinned);
+  }
+
   /**
    * Type a pending `claude --resume` into a restored shell — on its first
    * prompt, or after the fallback delay for a shell without integration, where
@@ -771,22 +803,22 @@ export class SessionManager {
     if (session?.state !== "live") {
       return;
     }
-    const mode = this.resumeClaudeOnRestore;
-    if (mode === "off" || (mode === "pinned" && this.getTabSession(session.rootTabId ?? session.id)?.pinned !== true)) {
+    if (!this.restoreMayResumeClaude(this.getTabSession(session.rootTabId ?? session.id)?.pinned === true)) {
       return;
     }
     session.pty.write(`claude --resume ${pending.sessionId}\r`);
   }
 
   /**
-   * Record which panes are running Claude by hand, so a restore can resume
-   * them; every pane not named here forgets its id. Called by the vault's
+   * Record which panes are running Claude — typed by hand or as the pane's
+   * agent launch — so a restore can resume them; every pane not named here
+   * forgets its id. Called by the vault's
    * pinned- or open-session mirror (per `resumeClaudeOnRestore`) after each
    * pass over the process table.
    */
   setResumeClaudeSessions(byPane: ReadonlyMap<string, string>): void {
     for (const session of this.sessions.values()) {
-      const next = session.isAgentLaunch ? undefined : byPane.get(session.id);
+      const next = byPane.get(session.id);
       if (session.resumeClaudeSessionId !== next) {
         session.resumeClaudeSessionId = next;
         this.snapshots.schedulePersist(session.id);
@@ -902,6 +934,8 @@ export class SessionManager {
     // The resumed session is gone; the vault must stop pinning it. Cleared before
     // `markProcess` announces the change the pinned-session mirror listens for.
     session.vaultEntryId = undefined;
+    // Nor may the restored shell type a resume of the Claude the user quit.
+    session.resumeClaudeSessionId = undefined;
     // Identity rank 1 reads these, so a shell that reclaimed the pane must stop
     // it claiming the agent that used to be here (D4).
     this.paneEvidence?.markProcess(id, { ptyPid: pty.pid, shell, isAgentLaunch: false });

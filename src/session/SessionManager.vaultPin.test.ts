@@ -226,11 +226,93 @@ describe("SessionManager restore of a pinned tab's title and hand-started Claude
     r.sm.dispose();
   });
 
-  it("does not resume into an agent launch, which re-runs its own launch", () => {
-    const r = restore(snapshotOf({ shell: "claude", isAgentLaunch: true, resumeClaudeSessionId: CLAUDE_ID }));
+  /** The args the restored pane's pty was spawned with. */
+  const spawnArgs = (sm: SessionManager, id: string) =>
+    (sm.getSession(id)?.pty as unknown as { spawn: ReturnType<typeof vi.fn> }).spawn.mock.calls[0]?.[2];
+
+  it("respawns a Claude agent launch as a resume of the session it held, not its launch", () => {
+    // A fresh start whose conversation the process table placed under the pane.
+    const r = restore(
+      snapshotOf({
+        shell: "claude",
+        shellArgs: ["--permission-mode", "plan", "--model=opus", "hello there"],
+        isAgentLaunch: true,
+        resumeClaudeSessionId: CLAUDE_ID,
+      }),
+    );
+    expect(spawnArgs(r.sm, r.id)).toEqual(["--resume", CLAUDE_ID, "--permission-mode", "plan", "--model=opus"]);
+    const session = r.sm.getSession(r.id);
+    // The pane now names the session it resumed, so the vault pins that row.
+    expect(session?.vaultEntryId).toBe(`claude:${CLAUDE_ID}`);
+    expect(session?.resumeClaudeSessionId).toBe(CLAUDE_ID);
+    // Kept as the persisted identity, so the next restore resumes it too.
+    expect(session?.shellArgs).toEqual(spawnArgs(r.sm, r.id));
+    // Nothing is typed: the agent IS the pty process.
     r.promptStart();
     expect(r.pty.write).not.toHaveBeenCalled();
     r.sm.dispose();
+  });
+
+  it("replaces the session an earlier resume named with the one the pane moved to", () => {
+    const r = restore(
+      snapshotOf({
+        shell: "/usr/local/bin/claude",
+        shellArgs: ["--resume", "s1", "--model", "sonnet"],
+        isAgentLaunch: true,
+        vaultEntryId: "claude:s1",
+        resumeClaudeSessionId: CLAUDE_ID,
+      }),
+    );
+    expect(spawnArgs(r.sm, r.id)).toEqual(["--resume", CLAUDE_ID, "--model", "sonnet"]);
+    expect(r.sm.getSession(r.id)?.vaultEntryId).toBe(`claude:${CLAUDE_ID}`);
+    r.sm.dispose();
+  });
+
+  it("re-runs an agent launch as it was when no Claude session was placed under it", () => {
+    const r = restore(
+      snapshotOf({ shell: "claude", shellArgs: ["--resume", "s1"], isAgentLaunch: true, vaultEntryId: "claude:s1" }),
+    );
+    expect(spawnArgs(r.sm, r.id)).toEqual(["--resume", "s1"]);
+    expect(r.sm.getSession(r.id)?.vaultEntryId).toBe("claude:s1");
+    r.sm.dispose();
+  });
+
+  it("never respawns another agent, or a non-UUID id, as a Claude resume", () => {
+    const codex = restore(
+      snapshotOf({
+        shell: "codex",
+        shellArgs: ["resume", "t1"],
+        isAgentLaunch: true,
+        resumeClaudeSessionId: CLAUDE_ID,
+      }),
+    );
+    expect(spawnArgs(codex.sm, codex.id)).toEqual(["resume", "t1"]);
+    codex.sm.dispose();
+    mockPtySessions.length = 0;
+
+    const bad = restore(
+      snapshotOf({ shell: "claude", shellArgs: [], isAgentLaunch: true, resumeClaudeSessionId: "x" }),
+    );
+    expect(spawnArgs(bad.sm, bad.id)).toEqual([]);
+    bad.sm.dispose();
+  });
+
+  it("respawns an agent launch as a resume only as the restore mode allows", () => {
+    const launch = { shell: "claude", shellArgs: ["hi"], isAgentLaunch: true, resumeClaudeSessionId: CLAUDE_ID };
+    const modes: Array<["all" | "pinned" | "off", boolean, string[]]> = [
+      ["off", true, ["hi"]],
+      ["pinned", false, ["hi"]],
+      ["pinned", true, ["--resume", CLAUDE_ID]],
+    ];
+    for (const [mode, pinned, expected] of modes) {
+      const metadata = snapshotOf({ ...launch, pinned });
+      const sm = newSM();
+      sm.resumeClaudeOnRestore = mode;
+      const id = sm.createSession("sidebar", mockWebview(), { restoreFrom: { metadata, buffer: "" } });
+      expect(spawnArgs(sm, id), `${mode}/${pinned}`).toEqual(expected);
+      sm.dispose();
+      mockPtySessions.length = 0;
+    }
   });
 
   it("resumes an unpinned tab by default", () => {
@@ -275,7 +357,7 @@ describe("SessionManager restore of a pinned tab's title and hand-started Claude
     }
   });
 
-  it("records the running Claude of plain panes only, and forgets every pane not named", () => {
+  it("records the running Claude of shells and agent launches alike, and forgets every pane not named", () => {
     const sm = newSM();
     const webview = mockWebview();
     const shell = sm.createSession("sidebar", webview);
@@ -289,11 +371,12 @@ describe("SessionManager restore of a pinned tab's title and hand-started Claude
       ]),
     );
     expect(sm.getSession(shell)?.resumeClaudeSessionId).toBe(CLAUDE_ID);
-    expect(sm.getSession(agent)?.resumeClaudeSessionId).toBeUndefined();
+    expect(sm.getSession(agent)?.resumeClaudeSessionId).toBe(CLAUDE_ID);
     expect(sm.generateSnapshotMetadata(shell)?.metadata.resumeClaudeSessionId).toBe(CLAUDE_ID);
 
     sm.setResumeClaudeSessions(new Map());
     expect(sm.getSession(shell)?.resumeClaudeSessionId).toBeUndefined();
+    expect(sm.getSession(agent)?.resumeClaudeSessionId).toBeUndefined();
     sm.dispose();
   });
 });

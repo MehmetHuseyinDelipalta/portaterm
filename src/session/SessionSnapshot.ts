@@ -63,8 +63,9 @@ export interface SessionSnapshotMetadata {
   lastTitle?: string;
 
   /**
-   * A Claude session the tab was running by hand when the window went away.
-   * Restore types `claude --resume <id>` into the restored shell, as
+   * A Claude session the tab was running when the window went away. Restore
+   * types `claude --resume <id>` into a restored shell, or respawns a Claude
+   * agent launch as that resume (agentLaunchResume.ts), as
    * `portaterm.sessionRestore.resumeClaude` allows. Only a UUID is ever
    * honoured: the value is written into a shell. Optional.
    */
