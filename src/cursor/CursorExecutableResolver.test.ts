@@ -38,7 +38,7 @@ describe("resolveAgentExecutable", () => {
 
     await expect(resolveAgentExecutable(getAgentDefinition("cursor")!, { exec })).resolves.toBe("agent");
     expect(exec).toHaveBeenCalledOnce();
-    expect(exec).toHaveBeenCalledWith("agent", ["--help"], { timeout: 2000 });
+    expect(exec).toHaveBeenCalledWith("agent", ["--help"], { timeout: 5000 });
   });
 
   it("accepts the installed official help shape with variadic prompt and optional chatId", async () => {
@@ -106,7 +106,7 @@ describe("resolveAgentExecutable", () => {
     const exec = vi.fn(async () => ({ stdout: "1.0.0", stderr: "" }));
 
     await expect(resolveAgentExecutable(getAgentDefinition("claude")!, { exec })).resolves.toBe("claude");
-    expect(exec).toHaveBeenCalledWith("claude", ["--version"], { timeout: 2000 });
+    expect(exec).toHaveBeenCalledWith("claude", ["--version"], { timeout: 5000 });
   });
 
   it("returns null when no candidate passes every required capability", async () => {

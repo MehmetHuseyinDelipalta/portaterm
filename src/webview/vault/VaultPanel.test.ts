@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VaultListResult, VaultSessionEntry } from "../../vault/types";
 import { resetTooltipForTests } from "../ui/Tooltip";
-import { VAULT_SEARCH_DEBOUNCE_MS, VaultPanel } from "./VaultPanel";
+import { START_TARGETS_RETRY_MS, VAULT_SEARCH_DEBOUNCE_MS, VaultPanel } from "./VaultPanel";
 
 afterEach(() => {
   // Each createHost() appends a host to document.body and tests never remove it.
@@ -479,6 +479,37 @@ describe("VaultPanel agent quick launch", () => {
     panel.toggleCollapsed();
     panel.toggleCollapsed();
     expect(asks()).toBe(2);
+  });
+
+  it("asks again on a later list while the host named no startable agent, spaced out", () => {
+    vi.useFakeTimers();
+    try {
+      const posted: { type: string }[] = [];
+      const { panel } = mountAgentMode(posted);
+      const asks = () => posted.filter((m) => m.type === "requestVaultStartTargets").length;
+      // The open asked once; the probe came back empty (timed out).
+      expect(asks()).toBe(1);
+      panel.setStartableAgents([]);
+      const list = result([entry({ id: "claude:a", agent: "claude" })]);
+      panel.render(list);
+      expect(asks()).toBe(1);
+      vi.advanceTimersByTime(START_TARGETS_RETRY_MS);
+      panel.render(list);
+      expect(asks()).toBe(2);
+      // Answered: no list asks again.
+      panel.setStartableAgents(["claude"]);
+      vi.advanceTimersByTime(START_TARGETS_RETRY_MS);
+      panel.render(list);
+      expect(asks()).toBe(2);
+      // Nor while the panel is folded — reopening asks on its own.
+      panel.setStartableAgents([]);
+      panel.toggleCollapsed();
+      vi.advanceTimersByTime(START_TARGETS_RETRY_MS);
+      panel.render(list);
+      expect(asks()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not ask on a surface that answers no actions", () => {

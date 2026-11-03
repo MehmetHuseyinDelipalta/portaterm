@@ -3,7 +3,12 @@ import { promisify } from "node:util";
 import type { AgentVaultDefinition } from "../vault/types";
 
 const execFileAsync = promisify(execFile);
-const PROBE_TIMEOUT_MS = 2000;
+/**
+ * How long one `--version`/`--help` probe may take. Generous because a miss is
+ * read as "not installed": the first run of a freshly updated binary is held
+ * while macOS assesses it, and a window opening beside others runs under load.
+ */
+export const PROBE_TIMEOUT_MS = 5000;
 
 export interface ExecutableProbeDeps {
   exec(file: string, args: string[], options: { timeout: number }): Promise<{ stdout: string; stderr: string }>;

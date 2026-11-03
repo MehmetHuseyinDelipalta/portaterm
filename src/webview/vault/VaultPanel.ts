@@ -87,6 +87,8 @@ export type VaultPanelPostMessage = (
 
 /** Rows shown per group before a "Show more" affordance keeps the list scannable. */
 const MAX_VISIBLE_PER_GROUP = 10;
+/** The least time between two asks for the start targets while none came back. */
+export const START_TARGETS_RETRY_MS = 30_000;
 /**
  * Keystrokes typed inside this window coalesce into one list rebuild and one
  * worktree re-filter. Every keystroke used to `replaceChildren` the whole list
@@ -271,6 +273,8 @@ export class VaultPanel {
    * until it answers, and empty means no header carries a start button.
    */
   private startableAgents: ReadonlySet<string> = new Set();
+  /** When the start targets were last asked for (epoch ms), so a retry is spaced out. */
+  private startTargetsAskedAt = Number.NEGATIVE_INFINITY;
   /** Entry id being inline-renamed (enhance-vault-sessions D1). While set, an
    *  incoming list push defers its DOM rebuild so it can't destroy the open
    *  editor mid-edit; the next render after the edit ends repaints. */
@@ -1009,7 +1013,26 @@ export class VaultPanel {
    */
   private requestStartTargets(): void {
     if (this.actionsAvailable) {
+      this.startTargetsAskedAt = Date.now();
       this.postMessage({ type: "requestVaultStartTargets" });
+    }
+  }
+
+  /**
+   * Ask again while the host has named no startable agent. The answer is a probe
+   * of each agent's executable, and one that timed out — a window opening under
+   * load, an agent mid-update — would otherwise hide every start button until
+   * the panel is folded and reopened. Each list that arrives is the cue, spaced
+   * by `START_TARGETS_RETRY_MS` so a host with no agent installed is not probed
+   * on every refresh.
+   */
+  private retryStartTargets(): void {
+    if (
+      !this.collapsed &&
+      this.startableAgents.size === 0 &&
+      Date.now() - this.startTargetsAskedAt >= START_TARGETS_RETRY_MS
+    ) {
+      this.requestStartTargets();
     }
   }
 
@@ -1041,6 +1064,7 @@ export class VaultPanel {
    */
   render(result: VaultListResult): void {
     this.entries = result.entries;
+    this.retryStartTargets();
     this.openPendingPreview();
     // Keep the open preview's entry reference live even when the DOM re-render is
     // skipped below — preview re-render paths (e.g. "show more steps") read
