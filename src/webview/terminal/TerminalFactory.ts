@@ -26,6 +26,7 @@ import { applyFit, measureFit } from "../resize/XtermFitService";
 import { createLeaf, getAllSessionIds } from "../SplitModel";
 import type { TerminalInstance, WebviewStateStore } from "../state/WebviewStateStore";
 import type { ThemeManager } from "../theme/ThemeManager";
+import { ensureCanvasFontLeadingWhitespaceFix } from "./canvasFontFix";
 import { applyTitleChange } from "./titleSignature";
 import { trackUserInput } from "./userInputSignal";
 
@@ -137,19 +138,31 @@ export class TerminalFactory {
    */
   attachDeferredTerminal(instance: { terminal: Terminal; container: HTMLDivElement }): void {
     instance.terminal.open(instance.container);
-    if (!this.webglFailed) {
-      try {
-        const webglAddon = new WebglAddon();
-        webglAddon.onContextLoss(() => {
-          webglAddon.dispose();
-          this.webglFailed = true;
-          console.warn("[Portaterm] WebGL context lost, falling back to canvas renderer");
-        });
-        instance.terminal.loadAddon(webglAddon);
-      } catch {
+    this.loadWebgl(instance.terminal);
+  }
+
+  /**
+   * Load the WebGL renderer onto an opened terminal, unless WebGL already failed
+   * once in this webview. The canvas font fix goes first: on a Chromium that
+   * rejects a font with leading whitespace the addon's glyph atlas would draw
+   * every glyph at 10px (see `canvasFontFix.ts`).
+   */
+  private loadWebgl(terminal: Terminal): void {
+    if (this.webglFailed) {
+      return;
+    }
+    try {
+      ensureCanvasFontLeadingWhitespaceFix(window);
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose();
         this.webglFailed = true;
-        console.warn("[Portaterm] WebGL renderer failed, using canvas fallback for all future terminals");
-      }
+        console.warn("[Portaterm] WebGL context lost, falling back to canvas renderer");
+      });
+      terminal.loadAddon(webglAddon);
+    } catch {
+      this.webglFailed = true;
+      console.warn("[Portaterm] WebGL renderer failed, using canvas fallback for all future terminals");
     }
   }
 
@@ -446,20 +459,7 @@ export class TerminalFactory {
 
       // Try to enable WebGL renderer for better rendering on Retina displays.
       // Only meaningful AFTER open() — opening attaches the canvas.
-      if (!this.webglFailed) {
-        try {
-          const webglAddon = new WebglAddon();
-          webglAddon.onContextLoss(() => {
-            webglAddon.dispose();
-            this.webglFailed = true;
-            console.warn("[Portaterm] WebGL context lost, falling back to canvas renderer");
-          });
-          terminal.loadAddon(webglAddon);
-        } catch {
-          this.webglFailed = true;
-          console.warn("[Portaterm] WebGL renderer failed, using canvas fallback for all future terminals");
-        }
-      }
+      this.loadWebgl(terminal);
     }
 
     // Wire resize event -> send resize message to extension
