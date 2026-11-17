@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.49.9] — 2026-11-17
+
+### Fixed
+
+- **Terminal text is drawn at its normal size again in Cursor 3.30.** Cursor 3.30.14 ships an Electron build (43.8.9) whose canvas rejects a font name that starts with a space and falls back to 10px; the WebGL renderer passes its font that way, so letters came out tiny and spread across the line, whatever the font settings. Portaterm now removes that space before the canvas sees it, only on a build that needs it.
+
 ## [0.49.8] — 2026-11-03
 
 ### Fixed
