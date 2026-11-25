@@ -113,6 +113,9 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   /** Callback fired when this provider receives user interaction (message from webview). */
   private _onDidReceiveInteraction: (() => void) | undefined;
 
+  /** Callback fired when the user brings this view on screen or into keyboard focus. */
+  private _onDidEngage: (() => void) | undefined;
+
   private _activeNavigation: { tabId: string; paneId: string } | null | undefined;
   /** Whether the webview holds keyboard focus, as its `focus` / `blur` messages last said. */
   private _webviewFocused = false;
@@ -193,6 +196,16 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
   /** Register a callback to be notified when the user interacts with this view. */
   set onDidReceiveInteraction(callback: (() => void) | undefined) {
     this._onDidReceiveInteraction = callback;
+  }
+
+  /**
+   * Register a callback for the user opening this view: it came on screen, or
+   * its webview took keyboard focus. Unlike `onDidReceiveInteraction` it is not
+   * fired by the webview's own background messages, so it names where the user
+   * last chose to work.
+   */
+  set onDidEngage(callback: (() => void) | undefined) {
+    this._onDidEngage = callback;
   }
 
   /**
@@ -385,6 +398,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         // and catch up once when it is shown.
         vaultWatchClient?.setDisplayed(webviewView.visible);
         if (webviewView.visible) {
+          this._onDidEngage?.();
           // Resume output flushing when view becomes visible
           this.sessionManager.resumeOutputForView(viewId);
           if (this._ready) {
@@ -1454,6 +1468,7 @@ export class TerminalViewProvider implements vscode.WebviewViewProvider {
         case "focus":
           this.markFocused();
           this._webviewFocused = true;
+          this._onDidEngage?.();
           break;
 
         case "blur":

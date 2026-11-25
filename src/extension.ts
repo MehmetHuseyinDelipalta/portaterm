@@ -49,7 +49,10 @@ import {
   focusViewCommand,
   GO_TO_AGENT_COMMAND,
   goToAgent,
+  LAST_OPENED_VIEW_KEY,
   OPEN_COMMAND,
+  OPEN_LOCATION_SETTING,
+  resolveOpenViewId,
   summarizeAttention,
 } from "./session/agentStatusBar";
 import type { MessageSender } from "./session/OutputBuffer";
@@ -2262,6 +2265,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   panelProvider.onDidReceiveInteraction = () => {
     lastFocusedProvider = panelProvider;
   };
+  // Where the user last opened Portaterm, for the status bar entry's click.
+  // Kept in global state so a reload does not send the click back to the sidebar.
+  for (const provider of [sidebarProvider, panelProvider]) {
+    provider.onDidEngage = () => {
+      if (context.globalState.get(LAST_OPENED_VIEW_KEY) !== provider.getViewId()) {
+        void context.globalState.update(LAST_OPENED_VIEW_KEY, provider.getViewId());
+      }
+    };
+  }
 
   // Helper: get the focused provider for keybinding context (both views may be visible).
   const getFocusedProvider = (): TerminalViewProvider => {
@@ -2878,10 +2890,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("portaterm.focusPanel", () => {
       void vscode.commands.executeCommand("portaterm.panel.focus");
     }),
-    // The status bar entry's click while no agent is counted: back to the view
-    // the user last worked in, the sidebar until they have used either.
+    // The status bar entry's click while no agent is counted: the view the
+    // `statusBar.openLocation` setting pins, or by default the one the user
+    // last opened — remembered across reloads, the sidebar until there is one.
     vscode.commands.registerCommand(OPEN_COMMAND, () =>
-      vscode.commands.executeCommand(focusViewCommand(lastFocusedProvider.getViewId())),
+      vscode.commands.executeCommand(
+        focusViewCommand(
+          resolveOpenViewId(
+            vscode.workspace.getConfiguration("portaterm").get(OPEN_LOCATION_SETTING),
+            context.globalState.get(LAST_OPENED_VIEW_KEY),
+          ),
+        ),
+      ),
     ),
     vscode.commands.registerCommand("portaterm.moveToSecondary", async () => {
       await vscode.commands.executeCommand("portaterm.sidebar.focus");

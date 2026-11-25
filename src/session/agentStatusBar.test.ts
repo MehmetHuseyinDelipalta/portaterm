@@ -11,8 +11,13 @@ import {
   GO_TO_AGENT_COMMAND,
   type GoToAgentDeps,
   goToAgent,
+  LAST_OPENED_VIEW_KEY,
   OPEN_COMMAND,
+  OPEN_LOCATION_SETTING,
+  PANEL_VIEW_ID,
   planGoToAgent,
+  resolveOpenViewId,
+  SIDEBAR_VIEW_ID,
   summarizeAttention,
 } from "./agentStatusBar";
 
@@ -240,6 +245,32 @@ describe("goToAgent", () => {
   });
 });
 
+describe("resolveOpenViewId", () => {
+  it("opens the view the setting pins, whatever was opened last", () => {
+    expect(resolveOpenViewId("sidebar", PANEL_VIEW_ID)).toBe(SIDEBAR_VIEW_ID);
+    expect(resolveOpenViewId("panel", SIDEBAR_VIEW_ID)).toBe(PANEL_VIEW_ID);
+    expect(resolveOpenViewId("panel", undefined)).toBe(PANEL_VIEW_ID);
+  });
+
+  it("goes back to the view last opened under the default", () => {
+    expect(resolveOpenViewId("last", PANEL_VIEW_ID)).toBe(PANEL_VIEW_ID);
+    expect(resolveOpenViewId("last", SIDEBAR_VIEW_ID)).toBe(SIDEBAR_VIEW_ID);
+    expect(resolveOpenViewId(undefined, PANEL_VIEW_ID)).toBe(PANEL_VIEW_ID);
+  });
+
+  // Global state outlives a release: a renamed key would forget, on update,
+  // where every user last opened Portaterm.
+  it("keeps the last opened view under a stable, Portaterm-prefixed key", () => {
+    expect(LAST_OPENED_VIEW_KEY).toBe("portaterm.lastOpenedView");
+  });
+
+  it("opens the sidebar while no view is on record or the record is not a view", () => {
+    expect(resolveOpenViewId("last", undefined)).toBe(SIDEBAR_VIEW_ID);
+    expect(resolveOpenViewId("last", "portaterm.gone")).toBe(SIDEBAR_VIEW_ID);
+    expect(resolveOpenViewId("somewhere", 42)).toBe(SIDEBAR_VIEW_ID);
+  });
+});
+
 describe("the commands the entry runs", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "../../package.json"), "utf8")) as {
     contributes: { commands: { command: string }[]; views: Record<string, { id: string }[]> };
@@ -253,6 +284,23 @@ describe("the commands the entry runs", () => {
     for (const viewId of viewIds) {
       expect(focusViewCommand(viewId)).toBe(`${viewId}.focus`);
     }
+  });
+
+  it("names the two views the manifest declares", () => {
+    expect(manifest.contributes.views.portaterm.map((view) => view.id)).toEqual([SIDEBAR_VIEW_ID]);
+    expect(manifest.contributes.views.portatermPanel.map((view) => view.id)).toEqual([PANEL_VIEW_ID]);
+  });
+
+  it("declares the open-location setting with the choices resolveOpenViewId reads", () => {
+    const settings = (
+      manifest.contributes as unknown as {
+        configuration: { properties: Record<string, { enum?: string[]; default?: unknown }> };
+      }
+    ).configuration.properties;
+    expect(settings[`portaterm.${OPEN_LOCATION_SETTING}`]).toMatchObject({
+      enum: ["last", "sidebar", "panel"],
+      default: "last",
+    });
   });
 
   it("offers the pick of agents in the command palette", () => {

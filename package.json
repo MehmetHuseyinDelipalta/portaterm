@@ -145,6 +145,21 @@
           "default": true,
           "description": "Also notify when an agent you cannot see finishes its turn. Requires portaterm.agentNotifications.enabled."
         },
+        "portaterm.statusBar.openLocation": {
+          "type": "string",
+          "enum": [
+            "last",
+            "sidebar",
+            "panel"
+          ],
+          "enumDescriptions": [
+            "Open the view you last opened — the side bar or the bottom panel. Remembered across reloads.",
+            "Always open the side bar view.",
+            "Always open the bottom panel view."
+          ],
+          "default": "last",
+          "description": "Where a click on the Portaterm status bar entry opens Portaterm while no agent is counted."
+        },
         "portaterm.cursorAgent.hooks.enabled": {
           "type": "boolean",
           "default": false,

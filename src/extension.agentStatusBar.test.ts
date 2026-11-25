@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { GO_TO_AGENT_COMMAND, OPEN_COMMAND } from "./session/agentStatusBar";
+import { GO_TO_AGENT_COMMAND, LAST_OPENED_VIEW_KEY, OPEN_COMMAND } from "./session/agentStatusBar";
 
 // Every test re-imports and re-activates the whole extension; under full-suite
 // load that is slower than Vitest's 5s default.
@@ -50,16 +50,46 @@ beforeEach(() => {
   vi.resetModules();
 });
 
-async function activateExtension() {
+interface ActivateOptions {
+  /** What global state holds when the window starts: what an earlier window left. */
+  stored?: Record<string, unknown>;
+  /** The user's `portaterm.*` settings. */
+  settings?: Record<string, unknown>;
+}
+
+async function activateExtension(options: ActivateOptions = {}) {
   const { activate, deactivate } = await import("./extension");
   teardown = deactivate;
   const vscode = await import("./test/__mocks__/vscode");
   vscode.__resetAll();
+  vscode.__setConfigValues(options.settings ?? {});
+  const stored = new Map<string, unknown>(Object.entries(options.stored ?? {}));
+  const globalUpdates: Array<[string, unknown]> = [];
+  const globalState = {
+    get: (key: string) => stored.get(key),
+    update: async (key: string, value: unknown) => {
+      globalUpdates.push([key, value]);
+      stored.set(key, value);
+    },
+    keys: () => [...stored.keys()],
+  };
+  const viewProviders = new Map<string, { resolveWebviewView(view: unknown, ctx: unknown, token: unknown): unknown }>();
+  vi.spyOn(vscode.window, "registerWebviewViewProvider").mockImplementation((viewType, provider) => {
+    viewProviders.set(viewType, provider as never);
+    return { dispose: () => {} };
+  });
   (vscode.extensions as { onDidChange?: unknown }).onDidChange = () => ({ dispose: () => {} });
   const win = vscode.window as Record<string, unknown>;
   win.state ??= { focused: true, active: true };
   win.onDidChangeWindowState ??= () => ({ dispose: () => {} });
   win.tabGroups ??= { all: [], onDidChangeTabs: () => ({ dispose: () => {} }) };
+  // The store watchers a resolved view starts are not under test; a quiet stand-in keeps the log readable.
+  (vscode.workspace as Record<string, unknown>).createFileSystemWatcher = () => ({
+    onDidCreate: () => ({ dispose: () => {} }),
+    onDidChange: () => ({ dispose: () => {} }),
+    onDidDelete: () => ({ dispose: () => {} }),
+    dispose: () => {},
+  });
 
   const items: StatusItem[] = [];
   vi.spyOn(vscode.window, "createStatusBarItem").mockImplementation((id?: string) => {
@@ -99,7 +129,7 @@ async function activateExtension() {
   await activate({
     extensionUri: { fsPath: "/mock/extension" },
     subscriptions,
-    globalState: { get: () => undefined, update: async () => {}, keys: () => [] },
+    globalState,
     workspaceState: { get: () => undefined, update: async () => {}, keys: () => [] },
     globalStorageUri: { fsPath: path.join(TMP, "storage") },
     storageUri: { fsPath: path.join(TMP, "workspace-storage") },
@@ -121,7 +151,52 @@ async function activateExtension() {
     executed.length = 0;
     await handler();
   };
-  return { entry, executed, run, quickPick };
+  // A view as the editor resolves it: hidden until shown, its webview able to
+  // post focus and blur as the real one does.
+  const resolveView = (viewType: string) => {
+    const provider = viewProviders.get(viewType);
+    if (provider === undefined) {
+      throw new Error(`activate registered no ${viewType} provider`);
+    }
+    const messageHandlers: Array<(msg: unknown) => void> = [];
+    const visibilityHandlers: Array<() => void> = [];
+    const view = {
+      visible: false,
+      viewType,
+      webview: {
+        html: "",
+        options: {},
+        cspSource: "https://mock.csp.source",
+        asWebviewUri: (uri: { fsPath: string }) => uri.fsPath,
+        onDidReceiveMessage: (handler: (msg: unknown) => void) => {
+          messageHandlers.push(handler);
+          return { dispose: () => {} };
+        },
+        postMessage: async () => true,
+      },
+      onDidDispose: () => ({ dispose: () => {} }),
+      onDidChangeVisibility: (handler: () => void) => {
+        visibilityHandlers.push(handler);
+        return { dispose: () => {} };
+      },
+      show: () => {},
+    };
+    provider.resolveWebviewView(view, {}, { isCancellationRequested: false, onCancellationRequested: () => {} });
+    return {
+      setVisible(visible: boolean) {
+        view.visible = visible;
+        for (const handler of visibilityHandlers) {
+          handler();
+        }
+      },
+      post(msg: unknown) {
+        for (const handler of messageHandlers) {
+          handler(msg);
+        }
+      },
+    };
+  };
+  return { entry, executed, run, quickPick, resolveView, stored, globalUpdates };
 }
 
 describe("the agent status entry as activate wires it", () => {
@@ -150,5 +225,58 @@ describe("the agent status entry as activate wires it", () => {
     await h.run(GO_TO_AGENT_COMMAND);
     expect(h.quickPick).not.toHaveBeenCalled();
     expect(h.executed).toEqual([OPEN_COMMAND, "portaterm.sidebar.focus"]);
+  });
+});
+
+describe("where a click on the bare entry opens Portaterm", () => {
+  it("goes back to the panel an earlier window last opened, not the sidebar", async () => {
+    const h = await activateExtension({ stored: { [LAST_OPENED_VIEW_KEY]: "portaterm.panel" } });
+    await h.run(OPEN_COMMAND);
+    expect(h.executed).toEqual(["portaterm.panel.focus"]);
+  });
+
+  it("remembers the panel once its webview takes focus, and the sidebar once it is shown", async () => {
+    const h = await activateExtension();
+    const panel = h.resolveView("portaterm.panel");
+    const sidebar = h.resolveView("portaterm.sidebar");
+
+    panel.post({ type: "focus" });
+    expect(h.stored.get(LAST_OPENED_VIEW_KEY)).toBe("portaterm.panel");
+    await h.run(OPEN_COMMAND);
+    expect(h.executed).toEqual(["portaterm.panel.focus"]);
+
+    sidebar.setVisible(true);
+    expect(h.stored.get(LAST_OPENED_VIEW_KEY)).toBe("portaterm.sidebar");
+    await h.run(OPEN_COMMAND);
+    expect(h.executed).toEqual(["portaterm.sidebar.focus"]);
+  });
+
+  it("remembers the panel once it is shown", async () => {
+    const h = await activateExtension({ stored: { [LAST_OPENED_VIEW_KEY]: "portaterm.sidebar" } });
+    h.resolveView("portaterm.panel").setVisible(true);
+    expect(h.stored.get(LAST_OPENED_VIEW_KEY)).toBe("portaterm.panel");
+  });
+
+  it("does not rewrite global state when the view on record is opened again", async () => {
+    const h = await activateExtension({ stored: { [LAST_OPENED_VIEW_KEY]: "portaterm.panel" } });
+    const panel = h.resolveView("portaterm.panel");
+    panel.post({ type: "focus" });
+    panel.setVisible(true);
+    expect(h.globalUpdates).toEqual([]);
+  });
+
+  it("opens the view the setting pins, whatever was opened last", async () => {
+    const pinnedSidebar = await activateExtension({
+      settings: { "portaterm.statusBar.openLocation": "sidebar" },
+      stored: { [LAST_OPENED_VIEW_KEY]: "portaterm.panel" },
+    });
+    await pinnedSidebar.run(OPEN_COMMAND);
+    expect(pinnedSidebar.executed).toEqual(["portaterm.sidebar.focus"]);
+    await teardown?.();
+    teardown = undefined;
+
+    const pinnedPanel = await activateExtension({ settings: { "portaterm.statusBar.openLocation": "panel" } });
+    await pinnedPanel.run(OPEN_COMMAND);
+    expect(pinnedPanel.executed).toEqual(["portaterm.panel.focus"]);
   });
 });

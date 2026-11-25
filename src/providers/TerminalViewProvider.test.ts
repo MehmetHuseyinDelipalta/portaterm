@@ -2003,6 +2003,57 @@ describe("TerminalViewProvider: committed navigation", () => {
   });
 });
 
+describe("TerminalViewProvider: onDidEngage", () => {
+  const resolved = () => {
+    const sm = new SessionManager();
+    const provider = new TerminalViewProvider({ fsPath: "/mock/extension" } as vscode.Uri, sm, "panel");
+    const mock = createMockWebviewView();
+    provider.resolveWebviewView(
+      mock.webviewView,
+      {} as vscode.WebviewViewResolveContext,
+      {} as vscode.CancellationToken,
+    );
+    for (const handler of mock.messageHandlers) {
+      handler({ type: "ready" });
+    }
+    const engaged = vi.fn();
+    provider.onDidEngage = engaged;
+    return { sm, mock, engaged };
+  };
+
+  it("fires when the view comes on screen, not when it is hidden", () => {
+    const { sm, mock, engaged } = resolved();
+    mock.setVisible(false);
+    expect(engaged).not.toHaveBeenCalled();
+    mock.setVisible(true);
+    expect(engaged).toHaveBeenCalledTimes(1);
+    sm.dispose();
+  });
+
+  it("fires when the webview takes keyboard focus, not when it loses it", () => {
+    const { sm, mock, engaged } = resolved();
+    for (const handler of mock.messageHandlers) {
+      handler({ type: "blur" });
+    }
+    expect(engaged).not.toHaveBeenCalled();
+    for (const handler of mock.messageHandlers) {
+      handler({ type: "focus" });
+    }
+    expect(engaged).toHaveBeenCalledTimes(1);
+    sm.dispose();
+  });
+
+  it("is not fired by the webview's other messages", () => {
+    const { sm, mock, engaged } = resolved();
+    for (const handler of mock.messageHandlers) {
+      handler({ type: "ready" });
+      handler({ type: "paneEngaged", paneIds: [] });
+    }
+    expect(engaged).not.toHaveBeenCalled();
+    sm.dispose();
+  });
+});
+
 describe("TerminalViewProvider: split attachment lifecycle", () => {
   it("destroys a child rejected by the webview", async () => {
     const sm = new SessionManager();

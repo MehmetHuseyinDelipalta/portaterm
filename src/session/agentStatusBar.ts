@@ -183,6 +183,32 @@ export async function goToAgent(deps: GoToAgentDeps<AgentStatusTarget>): Promise
   }
 }
 
+/** The sidebar view's id, as the manifest declares it. */
+export const SIDEBAR_VIEW_ID = "portaterm.sidebar";
+/** The bottom panel view's id, as the manifest declares it. */
+export const PANEL_VIEW_ID = "portaterm.panel";
+/** The setting naming where a click on the bare entry opens Portaterm. */
+export const OPEN_LOCATION_SETTING = "statusBar.openLocation";
+/** Where the user last opened a Portaterm view, kept across reloads. */
+export const LAST_OPENED_VIEW_KEY = "portaterm.lastOpenedView";
+
+/**
+ * The view a click on the bare entry opens. `sidebar` and `panel` pin it;
+ * anything else (the default `last`) goes back to the view the user last
+ * opened, and to the sidebar while there is none on record. A remembered value
+ * that is not one of the two views is ignored, so a stale key cannot send the
+ * click to a view that does not exist.
+ */
+export function resolveOpenViewId(location: unknown, lastOpenedView: unknown): string {
+  if (location === "sidebar") {
+    return SIDEBAR_VIEW_ID;
+  }
+  if (location === "panel") {
+    return PANEL_VIEW_ID;
+  }
+  return lastOpenedView === PANEL_VIEW_ID ? PANEL_VIEW_ID : SIDEBAR_VIEW_ID;
+}
+
 /** The command that reveals and focuses a Portaterm view. */
 export function focusViewCommand(viewId: string): string {
   return `${viewId}.focus`;
