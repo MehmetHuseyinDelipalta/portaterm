@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.50.0] — 2026-11-25
+
+### Added
+
+- **Choose where the Portaterm status bar entry opens Portaterm.** The new `portaterm.statusBar.openLocation` setting pins the side bar (`sidebar`) or the bottom panel (`panel`); the default, `last`, opens the view you last opened.
+
+### Fixed
+
+- **The status bar entry goes back to the view you last used, after a reload too.** With no agent running, a click opened the side bar whenever the window had been reloaded, or the panel had not yet been used in that window, even if you work in the bottom panel. The view you last showed or focused is now remembered across reloads.
+
 ## [0.49.9] — 2026-11-17
 
 ### Fixed
